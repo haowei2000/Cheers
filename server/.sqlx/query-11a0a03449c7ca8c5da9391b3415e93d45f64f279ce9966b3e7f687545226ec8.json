@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_messages SET next_run_at=$2,enabled=$3,lease_until=NULL,\n                 retry_attempt=0,retry_scheduled_for=NULL,last_run_at=NOW(),last_error=NULL,\n                 consecutive_failures=0,updated_at=NOW()\n                 WHERE task_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "11a0a03449c7ca8c5da9391b3415e93d45f64f279ce9966b3e7f687545226ec8"
+}

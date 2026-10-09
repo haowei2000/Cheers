@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE voice_participant_sessions\n                 SET mic_published_at = COALESCE(mic_published_at, NOW()),\n                     provider_track_id = NULLIF($2, '')\n                 WHERE provider_identity = $1 AND left_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "657aede3f72c75f830c325842d839ed647ce6ca20c92974328914a06ff300c3f"
+}

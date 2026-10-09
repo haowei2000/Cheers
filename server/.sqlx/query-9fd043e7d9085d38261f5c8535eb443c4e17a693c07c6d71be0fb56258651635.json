@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n                SELECT 1 AS present FROM bot_accounts b\n                WHERE b.bot_id = $1 AND b.is_disabled = FALSE AND (\n                    $3::boolean OR b.created_by = $2 OR EXISTS (\n                        SELECT 1 AS present FROM channel_memberships bm\n                        JOIN channel_memberships um ON um.channel_id = bm.channel_id\n                        WHERE bm.member_id = b.bot_id AND bm.member_type = 'bot'\n                          AND um.member_id = $2 AND um.member_type = 'user'\n                    )\n                )\n             ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9fd043e7d9085d38261f5c8535eb443c4e17a693c07c6d71be0fb56258651635"
+}

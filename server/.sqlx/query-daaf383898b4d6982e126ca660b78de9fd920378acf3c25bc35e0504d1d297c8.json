@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ci.user_id AS member_id, ci.role, u.username, u.display_name, u.avatar_url,\n                u.bio, u.status_text, u.status_emoji, wm.status AS \"workspace_status?\"\n         FROM channel_invites ci\n         JOIN users u ON u.user_id = ci.user_id\n         JOIN channels c ON c.channel_id = ci.channel_id\n         LEFT JOIN workspace_memberships wm\n           ON wm.workspace_id = c.workspace_id AND wm.user_id = ci.user_id\n         WHERE ci.channel_id = $1\n         ORDER BY u.username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "bio",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status_text",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "workspace_status?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "daaf383898b4d6982e126ca660b78de9fd920378acf3c25bc35e0504d1d297c8"
+}

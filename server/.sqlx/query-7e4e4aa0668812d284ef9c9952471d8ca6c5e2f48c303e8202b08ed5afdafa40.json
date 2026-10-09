@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT decision FROM bot_event_access\n         WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = 'bot'\n           AND subject_id = $3 AND event_class = $4 AND capability = $5\n         FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "decision",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7e4e4aa0668812d284ef9c9952471d8ca6c5e2f48c303e8202b08ed5afdafa40"
+}

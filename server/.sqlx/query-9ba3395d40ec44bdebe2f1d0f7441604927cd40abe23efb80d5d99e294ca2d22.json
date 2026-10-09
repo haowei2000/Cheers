@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cm.member_id AS bot_id, cm.channel_id, c.name AS channel_name,\n                COALESCE(ba.display_name, ba.username) AS bot_name,\n                ba.status_text, ba.status_emoji\n         FROM channel_memberships cm\n         JOIN channels c ON c.channel_id = cm.channel_id\n         JOIN channel_memberships me\n           ON me.channel_id = cm.channel_id\n          AND me.member_id = $1 AND me.member_type = 'user'\n         JOIN bot_accounts ba ON ba.bot_id = cm.member_id\n         WHERE cm.member_type = 'bot'\n         ORDER BY c.name, bot_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "status_text",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "9ba3395d40ec44bdebe2f1d0f7441604927cd40abe23efb80d5d99e294ca2d22"
+}

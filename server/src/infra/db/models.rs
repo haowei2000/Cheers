@@ -118,40 +118,33 @@ pub struct MessageDto {
 }
 
 impl MessageDto {
-    pub fn from_row(row: &sqlx::postgres::PgRow) -> Self {
-        use sqlx::Row;
+    pub(crate) fn from_row(row: &crate::infra::db::query_rows::MessageRow) -> Self {
         Self {
             v: MESSAGE_SCHEMA_VERSION,
-            msg_id: row.try_get("id").unwrap_or_default(),
-            channel_id: row.try_get("channel_id").unwrap_or_default(),
-            channel_seq: row.try_get("channel_seq").ok().flatten(),
-            depth: row.try_get("depth").unwrap_or(0),
-            sender_type: row.try_get("sender_type").unwrap_or_default(),
-            sender_id: row.try_get("sender_id").ok(),
-            sender_name: row.try_get("sender_name").ok(),
-            content: row.try_get("content").unwrap_or_default(),
-            msg_type: row
-                .try_get("msg_type")
-                .unwrap_or_else(|_| "text".to_string()),
-            is_partial: row.try_get("is_partial").unwrap_or(false),
-            is_deleted: row.try_get("is_deleted").unwrap_or(false),
-            reply_to_msg_id: row.try_get("reply_to_msg_id").ok(),
-            thread_root_msg_id: row.try_get("thread_root_msg_id").ok(),
-            file_ids: match row.try_get::<Vec<String>, _>("file_ids") {
-                Ok(ids) => ids,
-                Err(_) => row
-                    .try_get::<Value, _>("file_ids")
-                    .ok()
-                    .and_then(|value| serde_json::from_value(value).ok())
-                    .unwrap_or_default(),
-            },
+            msg_id: row.id.clone(),
+            channel_id: row.channel_id.clone(),
+            channel_seq: row.channel_seq,
+            depth: row.depth,
+            sender_type: row.sender_type.clone(),
+            sender_id: Some(row.sender_id.clone()),
+            sender_name: row.sender_name.clone(),
+            content: row.content.clone(),
+            msg_type: row.msg_type.clone(),
+            is_partial: row.is_partial,
+            is_deleted: row.is_deleted,
+            reply_to_msg_id: row.reply_to_msg_id.clone(),
+            thread_root_msg_id: row.thread_root_msg_id.clone(),
+            file_ids: serde_json::from_value(
+                row.file_ids.clone().unwrap_or(serde_json::Value::Null),
+            )
+            .unwrap_or_default(),
             mentions: Vec::new(),
             files: Vec::new(),
-            created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
-            content_data: row.try_get::<Value, _>("content_data").ok(),
-            context_bundle: row.try_get::<Value, _>("context_bundle").ok(),
-            trace_count: row.try_get("trace_count").ok(),
-            trace_has_failure: row.try_get("trace_has_failure").ok(),
+            created_at: row.created_at,
+            content_data: row.content_data.clone(),
+            context_bundle: row.context_bundle.clone(),
+            trace_count: row.trace_count,
+            trace_has_failure: row.trace_has_failure,
         }
     }
 }

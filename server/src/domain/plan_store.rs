@@ -33,23 +33,23 @@ pub async fn record(
     let total = plan.total() as i32;
     let completed = plan.completed() as i32;
 
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "INSERT INTO bot_session_plans
             (channel_id, bot_id, session_id, entries, total, completed, updated_at)
-         VALUES ($1, $2, $3, $4::jsonb, $5, $6, now())
+         VALUES ($1, $2, $3, $4::text::jsonb, $5, $6, now())
          ON CONFLICT (channel_id, bot_id, session_id)
          DO UPDATE SET
-            entries    = $4::jsonb,
+            entries    = $4::text::jsonb,
             total      = $5,
             completed  = $6,
             updated_at = now()",
+        channel_id.to_string(),
+        bot_id.to_string(),
+        session_id.to_string(),
+        entries_json,
+        total,
+        completed,
     )
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(session_id.to_string())
-    .bind(entries_json)
-    .bind(total)
-    .bind(completed)
     .execute(db)
     .await;
 

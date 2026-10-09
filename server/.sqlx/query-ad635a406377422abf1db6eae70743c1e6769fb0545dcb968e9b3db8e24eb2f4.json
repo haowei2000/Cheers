@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n           (CASE WHEN password_hash IS NOT NULL AND NOT password_2fa_enabled THEN 1 ELSE 0 END) +\n           (SELECT COUNT(*) FROM auth_external_identities\n              WHERE user_id = users.user_id AND provider <> $2) +\n           (SELECT COUNT(*) FROM webauthn_credentials\n              WHERE user_id = users.user_id) AS \"value!\" FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ad635a406377422abf1db6eae70743c1e6769fb0545dcb968e9b3db8e24eb2f4"
+}

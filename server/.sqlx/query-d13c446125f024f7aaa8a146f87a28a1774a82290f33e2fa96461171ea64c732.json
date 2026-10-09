@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT path, version, is_dir, LENGTH(content)::bigint AS size_bytes,\n                created_at, updated_at\n         FROM context_files\n         WHERE channel_id = $1\n           AND ($2 = '' OR path = $2 OR left(path, char_length($2) + 1) = $2 || '/')\n         ORDER BY is_dir DESC, path ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "path",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_dir",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "size_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "d13c446125f024f7aaa8a146f87a28a1774a82290f33e2fa96461171ea64c732"
+}

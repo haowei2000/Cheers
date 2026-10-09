@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO file_records\n            (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,\n             storage_bucket, original_filename, content_type, size_bytes, status, expires_at)\n         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'pending_upload', $10)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d9754864a56dddde6b73a41edb6be82d1f41d40b70c637ae6c3d00ac23c29c8c"
+}

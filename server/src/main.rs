@@ -21,16 +21,15 @@ use server::{api, gateway, infra, router, AppState, Config};
 /// schema constraint change with no rows left to move.
 async fn prepare_channel_feature_migration(db: &sqlx::PgPool) -> anyhow::Result<()> {
     let migrations_table_exists: bool =
-        sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations') IS NOT NULL")
+        sqlx::query_scalar!(r#"SELECT to_regclass('_sqlx_migrations') IS NOT NULL AS "value!""#,)
             .fetch_one(db)
             .await?;
     if !migrations_table_exists {
         return Ok(());
     }
 
-    let migration_pending: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = 89)\
-             AND NOT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = 90)",
+    let migration_pending: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 AS present FROM _sqlx_migrations WHERE version = 89)AND NOT EXISTS (SELECT 1 AS present FROM _sqlx_migrations WHERE version = 90) AS "value!" "#,
     )
     .fetch_one(db)
     .await?;
@@ -38,17 +37,20 @@ async fn prepare_channel_feature_migration(db: &sqlx::PgPool) -> anyhow::Result<
         return Ok(());
     }
 
-    let has_voice_channels: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM channels WHERE kind = 'voice')")
-            .fetch_one(db)
-            .await?;
+    let has_voice_channels: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 AS present FROM channels WHERE kind = 'voice') AS "value!" "#,
+    )
+    .fetch_one(db)
+    .await?;
     if !has_voice_channels {
         return Ok(());
     }
 
     let mut tx = db.begin().await?;
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS channel_features (\
+    sqlx::Executor::execute(
+        &mut *tx,
+        sqlx::query!(
+            "CREATE TABLE IF NOT EXISTS channel_features (\
              channel_id VARCHAR(36) NOT NULL REFERENCES channels(channel_id) ON DELETE CASCADE,\
              feature VARCHAR(64) NOT NULL,\
              config JSONB NOT NULL DEFAULT '{}'::jsonb,\
@@ -57,16 +59,18 @@ async fn prepare_channel_feature_migration(db: &sqlx::PgPool) -> anyhow::Result<
              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\
              PRIMARY KEY (channel_id, feature)\
          )",
+        ),
     )
-    .execute(&mut *tx)
     .await?;
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS ix_channel_features_enabled \
+    sqlx::Executor::execute(
+        &mut *tx,
+        sqlx::query!(
+            "CREATE INDEX IF NOT EXISTS ix_channel_features_enabled \
          ON channel_features(feature, channel_id) WHERE enabled = TRUE",
+        ),
     )
-    .execute(&mut *tx)
     .await?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO channel_features (channel_id, feature, config, enabled) \
          SELECT channel_id, 'voice', voice_config, TRUE FROM channels WHERE kind = 'voice' \
          ON CONFLICT (channel_id, feature) DO UPDATE \
@@ -77,7 +81,7 @@ async fn prepare_channel_feature_migration(db: &sqlx::PgPool) -> anyhow::Result<
     )
     .execute(&mut *tx)
     .await?;
-    let migrated = sqlx::query("UPDATE channels SET kind = 'text' WHERE kind = 'voice'")
+    let migrated = sqlx::query!("UPDATE channels SET kind = 'text' WHERE kind = 'voice'",)
         .execute(&mut *tx)
         .await?
         .rows_affected();

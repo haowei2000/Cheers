@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, NaiveTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -234,11 +234,12 @@ async fn normalize_schedule(
 }
 
 async fn validate_timezone(db: &PgPool, timezone: &str) -> Result<(), AppError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_timezone_names WHERE name=$1)")
-            .bind(timezone)
-            .fetch_one(db)
-            .await?;
+    let exists: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 AS present FROM pg_timezone_names WHERE name=$1) AS "value!" "#,
+        timezone,
+    )
+    .fetch_one(db)
+    .await?;
     if exists {
         Ok(())
     } else {
@@ -254,15 +255,15 @@ pub async fn next_daily_run(
     timezone: &str,
 ) -> Result<DateTime<Utc>, AppError> {
     validate_timezone(db, timezone).await?;
-    sqlx::query_scalar(
-        "SELECT CASE
+    sqlx::query_scalar!(
+        r#"SELECT CASE
            WHEN ((CURRENT_DATE + $2::time) AT TIME ZONE $1) > NOW()
              THEN ((CURRENT_DATE + $2::time) AT TIME ZONE $1)
            ELSE (((CURRENT_DATE + 1) + $2::time) AT TIME ZONE $1)
-         END",
+         END AS "value!""#,
+        timezone,
+        local_time,
     )
-    .bind(timezone)
-    .bind(local_time)
     .fetch_one(db)
     .await
     .map_err(AppError::Db)
@@ -316,24 +317,24 @@ async fn authorize_targets(
     user_id: Uuid,
     input: &ScheduledMessageInput,
 ) -> Result<(), AppError> {
-    let is_member: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM channel_memberships
-         WHERE channel_id=$1 AND member_id=$2 AND member_type='user')",
+    let is_member: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
+         WHERE channel_id=$1 AND member_id=$2 AND member_type='user') AS "value!" "#,
+        input.channel_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(input.channel_id.to_string())
-    .bind(user_id.to_string())
     .fetch_one(&state.db)
     .await?;
     if !is_member {
         return Err(AppError::Forbidden("not a channel member".into()));
     }
     for mention_id in &input.mention_ids {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM channel_memberships
-             WHERE channel_id=$1 AND member_id=$2)",
+        let exists: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
+             WHERE channel_id=$1 AND member_id=$2) AS "value!" "#,
+            input.channel_id.to_string(),
+            mention_id.to_string(),
         )
-        .bind(input.channel_id.to_string())
-        .bind(mention_id.to_string())
         .fetch_one(&state.db)
         .await?;
         if !exists {
@@ -362,32 +363,32 @@ pub async fn create(
     authorize_targets(state, user_id, &input).await?;
     let schedule = normalize_schedule(&state.db, &input.schedule, input.enabled).await?;
     let id = Uuid::new_v4().to_string();
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO scheduled_messages
          (task_id,created_by,channel_id,title,content,mention_ids,schedule_kind,
           run_at,interval_minutes,local_time,timezone,next_run_at,enabled,
           source_extension_id,source_automation_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+        &id,
+        user_id.to_string(),
+        input.channel_id.to_string(),
+        input.title.trim(),
+        input.content.trim(),
+        serde_json::json!(input
+            .mention_ids
+            .iter()
+            .map(Uuid::to_string)
+            .collect::<Vec<_>>()),
+        schedule.kind,
+        schedule.run_at,
+        schedule.interval_minutes,
+        schedule.local_time,
+        schedule.timezone,
+        schedule.next_run_at,
+        input.enabled,
+        input.source_extension_id,
+        input.source_automation_id,
     )
-    .bind(&id)
-    .bind(user_id.to_string())
-    .bind(input.channel_id.to_string())
-    .bind(input.title.trim())
-    .bind(input.content.trim())
-    .bind(serde_json::json!(input
-        .mention_ids
-        .iter()
-        .map(Uuid::to_string)
-        .collect::<Vec<_>>()))
-    .bind(schedule.kind)
-    .bind(schedule.run_at)
-    .bind(schedule.interval_minutes)
-    .bind(schedule.local_time)
-    .bind(schedule.timezone)
-    .bind(schedule.next_run_at)
-    .bind(input.enabled)
-    .bind(input.source_extension_id)
-    .bind(input.source_automation_id)
     .execute(&state.db)
     .await?;
     get(&state.db, user_id, &id)
@@ -404,33 +405,33 @@ pub async fn update(
     validate_input(&input)?;
     authorize_targets(state, user_id, &input).await?;
     let schedule = normalize_schedule(&state.db, &input.schedule, input.enabled).await?;
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE scheduled_messages SET channel_id=$3,title=$4,content=$5,mention_ids=$6,
          schedule_kind=$7,run_at=$8,interval_minutes=$9,local_time=$10,timezone=$11,
          next_run_at=$12,enabled=$13,source_extension_id=$14,source_automation_id=$15,
          lease_until=NULL,last_error=NULL,retry_attempt=0,retry_scheduled_for=NULL,
          consecutive_failures=0,updated_at=NOW()
          WHERE task_id=$1 AND created_by=$2",
+        id,
+        user_id.to_string(),
+        input.channel_id.to_string(),
+        input.title.trim(),
+        input.content.trim(),
+        serde_json::json!(input
+            .mention_ids
+            .iter()
+            .map(Uuid::to_string)
+            .collect::<Vec<_>>()),
+        schedule.kind,
+        schedule.run_at,
+        schedule.interval_minutes,
+        schedule.local_time,
+        schedule.timezone,
+        schedule.next_run_at,
+        input.enabled,
+        input.source_extension_id,
+        input.source_automation_id,
     )
-    .bind(id)
-    .bind(user_id.to_string())
-    .bind(input.channel_id.to_string())
-    .bind(input.title.trim())
-    .bind(input.content.trim())
-    .bind(serde_json::json!(input
-        .mention_ids
-        .iter()
-        .map(Uuid::to_string)
-        .collect::<Vec<_>>()))
-    .bind(schedule.kind)
-    .bind(schedule.run_at)
-    .bind(schedule.interval_minutes)
-    .bind(schedule.local_time)
-    .bind(schedule.timezone)
-    .bind(schedule.next_run_at)
-    .bind(input.enabled)
-    .bind(input.source_extension_id)
-    .bind(input.source_automation_id)
     .execute(&state.db)
     .await?;
     if result.rows_affected() == 0 {
@@ -440,12 +441,11 @@ pub async fn update(
 }
 
 pub async fn list(db: &PgPool, user_id: Uuid) -> Result<Vec<ScheduledMessageDto>, AppError> {
-    let rows = sqlx::query(
-        "SELECT s.*,c.name AS channel_name FROM scheduled_messages s
+    let rows = sqlx::query_as!(crate::infra::db::query_rows::ScheduledMessageRow, r###"SELECT s.task_id,s.channel_id,s.title,s.content,s.mention_ids,s.schedule_kind,s.run_at,s.interval_minutes,s.next_run_at,s.enabled,s.source_extension_id,s.source_automation_id,s.last_run_at,s.last_error,s.consecutive_failures,s.created_at,s.updated_at,s.local_time,s.timezone,s.retry_attempt,c.name AS channel_name FROM scheduled_messages s
          JOIN channels c ON c.channel_id=s.channel_id
-         WHERE s.created_by=$1 ORDER BY s.enabled DESC,s.next_run_at NULLS LAST,s.created_at DESC",
+         WHERE s.created_by=$1 ORDER BY s.enabled DESC,s.next_run_at NULLS LAST,s.created_at DESC"###,
+        user_id.to_string(),
     )
-    .bind(user_id.to_string())
     .fetch_all(db)
     .await?;
     rows.into_iter().map(row_to_dto).collect()
@@ -456,28 +456,29 @@ pub async fn get(
     user_id: Uuid,
     id: &str,
 ) -> Result<Option<ScheduledMessageDto>, AppError> {
-    let row = sqlx::query(
-        "SELECT s.*,c.name AS channel_name FROM scheduled_messages s
+    let row = sqlx::query_as!(
+        crate::infra::db::query_rows::ScheduledMessageRow,
+        r###"SELECT s.task_id,s.channel_id,s.title,s.content,s.mention_ids,s.schedule_kind,s.run_at,s.interval_minutes,s.next_run_at,s.enabled,s.source_extension_id,s.source_automation_id,s.last_run_at,s.last_error,s.consecutive_failures,s.created_at,s.updated_at,s.local_time,s.timezone,s.retry_attempt,c.name AS channel_name FROM scheduled_messages s
          JOIN channels c ON c.channel_id=s.channel_id
-         WHERE s.task_id=$1 AND s.created_by=$2",
+         WHERE s.task_id=$1 AND s.created_by=$2"###,
+        id,
+        user_id.to_string(),
     )
-    .bind(id)
-    .bind(user_id.to_string())
     .fetch_optional(db)
     .await?;
     row.map(row_to_dto).transpose()
 }
 
 pub async fn delete(db: &PgPool, user_id: Uuid, id: &str) -> Result<bool, AppError> {
-    Ok(
-        sqlx::query("DELETE FROM scheduled_messages WHERE task_id=$1 AND created_by=$2")
-            .bind(id)
-            .bind(user_id.to_string())
-            .execute(db)
-            .await?
-            .rows_affected()
-            > 0,
+    Ok(sqlx::query!(
+        "DELETE FROM scheduled_messages WHERE task_id=$1 AND created_by=$2",
+        id,
+        user_id.to_string(),
     )
+    .execute(db)
+    .await?
+    .rows_affected()
+        > 0)
 }
 
 pub async fn list_runs(
@@ -485,79 +486,82 @@ pub async fn list_runs(
     user_id: Uuid,
     id: &str,
 ) -> Result<Vec<ScheduledMessageRunDto>, AppError> {
-    let owns_task: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM scheduled_messages WHERE task_id=$1 AND created_by=$2)",
+    let owns_task: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 AS present FROM scheduled_messages WHERE task_id=$1 AND created_by=$2) AS "value!" "#,
+        id,
+        user_id.to_string(),
     )
-    .bind(id)
-    .bind(user_id.to_string())
     .fetch_one(db)
     .await?;
     if !owns_task {
         return Err(AppError::NotFound);
     }
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT r.* FROM scheduled_message_runs r
          JOIN scheduled_messages s ON s.task_id=r.task_id
          WHERE r.task_id=$1 AND s.created_by=$2 ORDER BY r.started_at DESC LIMIT 50",
+        id,
+        user_id.to_string(),
     )
-    .bind(id)
-    .bind(user_id.to_string())
     .fetch_all(db)
     .await?;
     rows.into_iter()
         .map(|row| {
             Ok(ScheduledMessageRunDto {
-                id: row.try_get("run_id")?,
-                scheduled_for: row.try_get("scheduled_for")?,
-                trigger: row.try_get("trigger")?,
-                status: row.try_get("status")?,
-                attempt: row.try_get("attempt")?,
-                message_id: row.try_get("message_id")?,
-                error: row.try_get("error")?,
-                started_at: row.try_get("started_at")?,
-                finished_at: row.try_get("finished_at")?,
+                id: row.run_id.clone(),
+                scheduled_for: row.scheduled_for.clone(),
+                trigger: row.trigger.clone(),
+                status: row.status.clone(),
+                attempt: row.attempt.clone(),
+                message_id: row.message_id.clone(),
+                error: row.error.clone(),
+                started_at: row.started_at.clone(),
+                finished_at: row.finished_at.clone(),
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()
         .map_err(AppError::Db)
 }
 
-fn row_to_dto(row: sqlx::postgres::PgRow) -> Result<ScheduledMessageDto, AppError> {
-    let mention_value: Value = row.try_get("mention_ids")?;
+fn row_to_dto(
+    row: crate::infra::db::query_rows::ScheduledMessageRow,
+) -> Result<ScheduledMessageDto, AppError> {
+    let mention_value: Value = row.mention_ids.clone();
     let mention_ids = serde_json::from_value::<Vec<String>>(mention_value)
         .map_err(|error| AppError::Internal(format!("invalid stored mention_ids: {error}")))?;
-    let kind: String = row.try_get("schedule_kind")?;
+    let kind: String = row.schedule_kind.clone();
     Ok(ScheduledMessageDto {
-        id: row.try_get("task_id")?,
-        title: row.try_get("title")?,
-        channel_id: row.try_get("channel_id")?,
-        channel_name: row.try_get("channel_name")?,
-        content: row.try_get("content")?,
+        id: row.task_id.clone(),
+        title: row.title.clone(),
+        channel_id: row.channel_id.clone(),
+        channel_name: row.channel_name.clone(),
+        content: row.content.clone(),
         mention_ids,
         schedule: ScheduleDto {
             kind,
-            run_at: row.try_get("run_at")?,
-            every_minutes: row.try_get("interval_minutes")?,
+            run_at: row.run_at.clone(),
+            every_minutes: row.interval_minutes.clone(),
             local_time: row
-                .try_get::<Option<NaiveTime>, _>("local_time")?
+                .local_time
+                .clone()
                 .map(|time| time.format("%H:%M").to_string()),
-            timezone: row.try_get("timezone")?,
+            timezone: row.timezone.clone(),
         },
-        next_run_at: row.try_get("next_run_at")?,
-        enabled: row.try_get("enabled")?,
-        source_extension_id: row.try_get("source_extension_id")?,
-        source_automation_id: row.try_get("source_automation_id")?,
-        last_run_at: row.try_get("last_run_at")?,
-        last_error: row.try_get("last_error")?,
-        consecutive_failures: row.try_get("consecutive_failures")?,
-        retry_attempt: row.try_get("retry_attempt")?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
+        next_run_at: row.next_run_at.clone(),
+        enabled: row.enabled.clone(),
+        source_extension_id: row.source_extension_id.clone(),
+        source_automation_id: row.source_automation_id.clone(),
+        last_run_at: row.last_run_at.clone(),
+        last_error: row.last_error.clone(),
+        consecutive_failures: row.consecutive_failures.clone(),
+        retry_attempt: row.retry_attempt.clone(),
+        created_at: row.created_at.clone(),
+        updated_at: row.updated_at.clone(),
     })
 }
 
 pub async fn claim_due(db: &PgPool) -> Result<Vec<ClaimedTask>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "WITH due AS (
            SELECT task_id FROM scheduled_messages
            WHERE enabled=TRUE AND next_run_at IS NOT NULL AND next_run_at<=NOW()
@@ -574,7 +578,7 @@ pub async fn claim_due(db: &PgPool) -> Result<Vec<ClaimedTask>, AppError> {
     .await?;
     rows.into_iter()
         .map(|row| {
-            let mention_value: Value = row.try_get("mention_ids")?;
+            let mention_value: Value = row.mention_ids.clone();
             let mention_ids = serde_json::from_value::<Vec<String>>(mention_value)
                 .map_err(|error| {
                     AppError::Internal(format!("invalid stored mention_ids: {error}"))
@@ -586,23 +590,25 @@ pub async fn claim_due(db: &PgPool) -> Result<Vec<ClaimedTask>, AppError> {
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let created_by: String = row.try_get("created_by")?;
-            let channel_id: String = row.try_get("channel_id")?;
+            let created_by: String = row.created_by.clone();
+            let channel_id: String = row.channel_id.clone();
             Ok(ClaimedTask {
-                id: row.try_get("task_id")?,
+                id: row.task_id.clone(),
                 created_by: Uuid::parse_str(&created_by)
                     .map_err(|error| AppError::Internal(format!("invalid task owner: {error}")))?,
                 channel_id: Uuid::parse_str(&channel_id).map_err(|error| {
                     AppError::Internal(format!("invalid task channel: {error}"))
                 })?,
-                content: row.try_get("content")?,
+                content: row.content.clone(),
                 mention_ids,
-                schedule_kind: row.try_get("schedule_kind")?,
-                interval_minutes: row.try_get("interval_minutes")?,
-                local_time: row.try_get("local_time")?,
-                timezone: row.try_get("timezone")?,
-                scheduled_for: row.try_get("scheduled_for")?,
-                retry_attempt: row.try_get("retry_attempt")?,
+                schedule_kind: row.schedule_kind.clone(),
+                interval_minutes: row.interval_minutes.clone(),
+                local_time: row.local_time.clone(),
+                timezone: row.timezone.clone(),
+                scheduled_for: row.scheduled_for.clone().ok_or_else(|| {
+                    sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError))
+                })?,
+                retry_attempt: row.retry_attempt.clone(),
             })
         })
         .collect()
@@ -643,15 +649,15 @@ async fn finish_schedule(
     };
     match result {
         Ok(_) => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE scheduled_messages SET next_run_at=$2,enabled=$3,lease_until=NULL,
                  retry_attempt=0,retry_scheduled_for=NULL,last_run_at=NOW(),last_error=NULL,
                  consecutive_failures=0,updated_at=NOW()
                  WHERE task_id=$1",
+                &task.id,
+                next,
+                next.is_some(),
             )
-            .bind(&task.id)
-            .bind(next)
-            .bind(next.is_some())
             .execute(db)
             .await?;
         }
@@ -659,30 +665,30 @@ async fn finish_schedule(
             let message = error.to_string();
             if retryable_before_persist(error) && task.retry_attempt < MAX_SAFE_RETRIES {
                 let delay_seconds = [60_i64, 300, 900][task.retry_attempt as usize];
-                sqlx::query(
-                    "UPDATE scheduled_messages SET next_run_at=NOW()+($2 * INTERVAL '1 second'),
+                sqlx::query!(
+                    "UPDATE scheduled_messages SET next_run_at=NOW()+($2::int8 * INTERVAL '1 second'),
                      retry_attempt=retry_attempt+1,retry_scheduled_for=$3,lease_until=NULL,
                      last_run_at=NOW(),last_error=$4,consecutive_failures=consecutive_failures+1,
                      updated_at=NOW() WHERE task_id=$1",
+                    &task.id,
+                    delay_seconds,
+                    task.scheduled_for,
+                    message.chars().take(500).collect::<String>(),
                 )
-                .bind(&task.id)
-                .bind(delay_seconds)
-                .bind(task.scheduled_for)
-                .bind(message.chars().take(500).collect::<String>())
                 .execute(db)
                 .await?;
                 return Ok(());
             }
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE scheduled_messages SET next_run_at=$2,enabled=$3,lease_until=NULL,
                  retry_attempt=0,retry_scheduled_for=NULL,last_run_at=NOW(),last_error=$4,
                  consecutive_failures=consecutive_failures+1,
                  updated_at=NOW() WHERE task_id=$1",
+                &task.id,
+                next,
+                next.is_some(),
+                message.chars().take(500).collect::<String>(),
             )
-            .bind(&task.id)
-            .bind(next)
-            .bind(next.is_some())
-            .bind(message.chars().take(500).collect::<String>())
             .execute(db)
             .await?;
         }
@@ -730,16 +736,16 @@ async fn execute(state: &AppState, task: &ClaimedTask, trigger: &str) -> Result<
 
 pub async fn execute_claimed(state: &AppState, task: ClaimedTask) -> Result<(), AppError> {
     let run_id = Uuid::new_v4().to_string();
-    let inserted = sqlx::query(
+    let inserted = sqlx::query!(
         "INSERT INTO scheduled_message_runs
          (run_id,task_id,scheduled_for,trigger,status,attempt)
          VALUES ($1,$2,$3,'schedule','running',$4)
          ON CONFLICT (task_id,scheduled_for,trigger,attempt) DO NOTHING",
+        &run_id,
+        &task.id,
+        task.scheduled_for,
+        task.retry_attempt + 1,
     )
-    .bind(&run_id)
-    .bind(&task.id)
-    .bind(task.scheduled_for)
-    .bind(task.retry_attempt + 1)
     .execute(&state.db)
     .await?
     .rows_affected();
@@ -748,15 +754,15 @@ pub async fn execute_claimed(state: &AppState, task: ClaimedTask) -> Result<(), 
             "a previous scheduled-message run was interrupted; skipped to prevent a duplicate"
                 .into(),
         );
-        sqlx::query(
+        sqlx::query!(
             "UPDATE scheduled_message_runs SET status='failed',error=$4,finished_at=NOW()
              WHERE task_id=$1 AND scheduled_for=$2 AND trigger=$3 AND attempt=$5 AND status='running'",
+            &task.id,
+            task.scheduled_for,
+            "schedule",
+            interrupted.to_string(),
+            task.retry_attempt + 1,
         )
-        .bind(&task.id)
-        .bind(task.scheduled_for)
-        .bind("schedule")
-        .bind(interrupted.to_string())
-        .bind(task.retry_attempt + 1)
         .execute(&state.db)
         .await?;
         finish_schedule(&state.db, &task, &Err(interrupted)).await?;
@@ -765,22 +771,22 @@ pub async fn execute_claimed(state: &AppState, task: ClaimedTask) -> Result<(), 
     let result = execute(state, &task, "schedule").await;
     match &result {
         Ok(message_id) => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE scheduled_message_runs SET status='succeeded',message_id=$2,
                  finished_at=NOW() WHERE run_id=$1",
+                &run_id,
+                message_id,
             )
-            .bind(&run_id)
-            .bind(message_id)
             .execute(&state.db)
             .await?;
         }
         Err(error) => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE scheduled_message_runs SET status='failed',error=$2,
                  finished_at=NOW() WHERE run_id=$1",
+                &run_id,
+                error.to_string().chars().take(500).collect::<String>(),
             )
-            .bind(&run_id)
-            .bind(error.to_string().chars().take(500).collect::<String>())
             .execute(&state.db)
             .await?;
         }
@@ -790,79 +796,79 @@ pub async fn execute_claimed(state: &AppState, task: ClaimedTask) -> Result<(), 
 }
 
 pub async fn run_now(state: &AppState, user_id: Uuid, id: &str) -> Result<String, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT task_id,created_by,channel_id,content,mention_ids,schedule_kind,
                 interval_minutes,local_time,timezone
          FROM scheduled_messages WHERE task_id=$1 AND created_by=$2",
+        id,
+        user_id.to_string(),
     )
-    .bind(id)
-    .bind(user_id.to_string())
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let mention_ids = serde_json::from_value::<Vec<String>>(row.try_get("mention_ids")?)
+    let mention_ids = serde_json::from_value::<Vec<String>>(row.mention_ids.clone())
         .map_err(|error| AppError::Internal(format!("invalid stored mention_ids: {error}")))?
         .into_iter()
         .map(|id| Uuid::parse_str(&id).map_err(|error| AppError::Internal(error.to_string())))
         .collect::<Result<Vec<_>, _>>()?;
     let task = ClaimedTask {
-        id: row.try_get("task_id")?,
+        id: row.task_id.clone(),
         created_by: user_id,
-        channel_id: Uuid::parse_str(&row.try_get::<String, _>("channel_id")?)
+        channel_id: Uuid::parse_str(&row.channel_id.clone())
             .map_err(|error| AppError::Internal(error.to_string()))?,
-        content: row.try_get("content")?,
+        content: row.content.clone(),
         mention_ids,
-        schedule_kind: row.try_get("schedule_kind")?,
-        interval_minutes: row.try_get("interval_minutes")?,
-        local_time: row.try_get("local_time")?,
-        timezone: row.try_get("timezone")?,
+        schedule_kind: row.schedule_kind.clone(),
+        interval_minutes: row.interval_minutes.clone(),
+        local_time: row.local_time.clone(),
+        timezone: row.timezone.clone(),
         scheduled_for: Utc::now(),
         retry_attempt: 0,
     };
     let run_id = Uuid::new_v4().to_string();
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO scheduled_message_runs
          (run_id,task_id,scheduled_for,trigger,status) VALUES ($1,$2,$3,'manual','running')",
+        &run_id,
+        &task.id,
+        task.scheduled_for,
     )
-    .bind(&run_id)
-    .bind(&task.id)
-    .bind(task.scheduled_for)
     .execute(&state.db)
     .await?;
     let result = execute(state, &task, "manual").await;
     match &result {
         Ok(message_id) => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE scheduled_message_runs SET status='succeeded',message_id=$2,
                  finished_at=NOW() WHERE run_id=$1",
+                &run_id,
+                message_id,
             )
-            .bind(&run_id)
-            .bind(message_id)
             .execute(&state.db)
             .await?;
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE scheduled_messages SET last_run_at=NOW(),last_error=NULL,
                  consecutive_failures=0,updated_at=NOW() WHERE task_id=$1",
+                &task.id,
             )
-            .bind(&task.id)
             .execute(&state.db)
             .await?;
         }
         Err(error) => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE scheduled_message_runs SET status='failed',error=$2,
                  finished_at=NOW() WHERE run_id=$1",
+                &run_id,
+                error.to_string().chars().take(500).collect::<String>(),
             )
-            .bind(&run_id)
-            .bind(error.to_string().chars().take(500).collect::<String>())
             .execute(&state.db)
             .await?;
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE scheduled_messages SET last_run_at=NOW(),last_error=$2,
                  consecutive_failures=consecutive_failures+1,updated_at=NOW() WHERE task_id=$1",
+                &task.id,
+                error.to_string().chars().take(500).collect::<String>(),
             )
-            .bind(&task.id)
-            .bind(error.to_string().chars().take(500).collect::<String>())
             .execute(&state.db)
             .await?;
         }

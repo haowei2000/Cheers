@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (EXISTS(\n            SELECT 1 AS present FROM workspace_memberships\n            WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'\n        ) OR EXISTS(\n            SELECT 1 AS present FROM workspaces\n            WHERE workspace_id = $1 AND owner_user_id = $2\n        )) AS ok",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f5c7bae2f3478f1229ec6aefabd33eda7b2e9665f21c17b4bb4e7f169dd9c015"
+}

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT stream, event, reason, connection_id, created_at\n         FROM bot_connection_events\n         WHERE bot_id = $1\n         ORDER BY created_at DESC, id DESC\n         LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stream",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "event",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "reason",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "connection_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "d1e126d0e6490bba4b97fee88c972b389b816eceff9a5d33eea056f266ba71bd"
+}

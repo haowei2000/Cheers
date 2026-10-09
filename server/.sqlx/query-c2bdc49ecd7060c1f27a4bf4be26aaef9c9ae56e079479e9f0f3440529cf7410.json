@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)\n                 VALUES ($1, $2, 'user', 'member', $3)\n                 ON CONFLICT (channel_id, member_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c2bdc49ecd7060c1f27a4bf4be26aaef9c9ae56e079479e9f0f3440529cf7410"
+}

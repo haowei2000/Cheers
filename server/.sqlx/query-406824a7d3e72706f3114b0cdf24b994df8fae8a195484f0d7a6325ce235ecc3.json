@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_features SET config = $1, updated_at = NOW()\n             WHERE channel_id = $2 AND feature = 'voice' AND enabled = TRUE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "406824a7d3e72706f3114b0cdf24b994df8fae8a195484f0d7a6325ce235ecc3"
+}

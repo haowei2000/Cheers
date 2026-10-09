@@ -139,6 +139,27 @@ jobs:
         with:
           workspaces: server
 
+      - name: Require checked SQLx queries
+        run: |
+          python3 ../scripts/check-sqlx-queries.py
+          python3 -m unittest discover -s ../scripts/tests -p test_sqlx_queries.py
+
+      - name: Install SQLx CLI
+        run: cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features rustls,postgres
+
+      - name: Apply migrations to the schema-check database
+        run: cargo sqlx migrate run
+
+      - name: Verify SQLx metadata against the migrated database
+        env:
+          SQLX_OFFLINE: "false"
+        run: cargo sqlx prepare --check -- --all-targets --features integration
+
+      - name: Compile using committed SQLx metadata
+        env:
+          SQLX_OFFLINE: "true"
+        run: cargo check --all-targets --features integration
+
       # One feature-enabled invocation compiles the gateway once and runs its
       # unit, doc, and Postgres-backed integration suites.
       - name: Unit and integration tests (real Postgres)

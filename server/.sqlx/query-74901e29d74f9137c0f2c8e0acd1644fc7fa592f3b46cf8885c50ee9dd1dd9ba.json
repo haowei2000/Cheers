@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.bot_id, b.username, b.display_name, h.device_name AS \"device_name?\"\n         FROM channel_memberships m\n         JOIN bot_accounts b ON b.bot_id = m.member_id\n         LEFT JOIN connector_hosts h\n                ON h.bot_id = b.bot_id\n               AND h.status = 'active'\n               AND h.revoked_at IS NULL\n         WHERE m.channel_id = $1 AND m.member_type = 'bot'\n         ORDER BY b.username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "device_name?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "74901e29d74f9137c0f2c8e0acd1644fc7fa592f3b46cf8885c50ee9dd1dd9ba"
+}

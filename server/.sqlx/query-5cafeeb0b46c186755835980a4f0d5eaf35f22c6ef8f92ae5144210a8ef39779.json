@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts\n                 SET binding_config = COALESCE(binding_config, '{}'::jsonb)\n                     || jsonb_build_object(\n                         'connector_control',\n                         COALESCE(binding_config->'connector_control', '{}'::jsonb)\n                         || jsonb_build_object($2::text, $3::text::jsonb)\n                 )\n                 WHERE bot_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5cafeeb0b46c186755835980a4f0d5eaf35f22c6ef8f92ae5144210a8ef39779"
+}

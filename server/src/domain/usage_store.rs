@@ -39,21 +39,21 @@ pub async fn record(
     }
 
     let id = Uuid::new_v4().to_string();
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "INSERT INTO bot_usage_events \
             (id, channel_id, bot_id, session_id, \
              input_tokens, output_tokens, total_tokens, context_window, cost_usd) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        id,
+        channel_id.to_string(),
+        bot_id.to_string(),
+        session_id.map(|s| s.to_string()),
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.total_tokens,
+        usage.context_window,
+        usage.cost_usd,
     )
-    .bind(id)
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(session_id.map(|s| s.to_string()))
-    .bind(usage.input_tokens)
-    .bind(usage.output_tokens)
-    .bind(usage.total_tokens)
-    .bind(usage.context_window)
-    .bind(usage.cost_usd)
     .execute(db)
     .await;
 

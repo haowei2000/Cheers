@@ -1,3 +1,11 @@
+#[derive(Debug)]
+struct ElicitationRow {
+    msg_id: String,
+    channel_id: String,
+    channel_seq: Option<i64>,
+    content: String,
+    content_data: Option<serde_json::Value>,
+}
 /// Agent Bridge WebSocket 处理器。
 ///
 /// 两个端点：
@@ -12,7 +20,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -294,11 +302,11 @@ async fn handle_control(
 const LAST_SEEN_WRITE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
 async fn touch_host(state: &AppState, bot: &BotInfo) {
-    let _ = sqlx::query(
+    let _ = sqlx::query!(
         "UPDATE connector_hosts SET last_seen_at = NOW(), updated_at = NOW()
          WHERE host_id = $1 AND revoked_at IS NULL",
+        bot.host_id.to_string(),
     )
-    .bind(bot.host_id.to_string())
     .execute(&state.db)
     .await;
 }
@@ -345,15 +353,15 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
             if caps.is_some() || connector_version.is_some() {
                 let caps_str = serde_json::to_string(&caps.unwrap_or(Value::Null))
                     .unwrap_or_else(|_| "null".into());
-                let result = sqlx::query(
+                let result = sqlx::query!(
                     "UPDATE bot_accounts
                      SET binding_config = COALESCE(binding_config, '{}'::jsonb)
                          || jsonb_build_object(
                              'connector_control',
                              COALESCE(binding_config->'connector_control', '{}'::jsonb)
-                             || CASE WHEN $2::jsonb IS NOT NULL AND $2::jsonb <> 'null'::jsonb
+                             || CASE WHEN $2::text::jsonb IS NOT NULL AND $2::text::jsonb <> 'null'::jsonb
                                      THEN jsonb_build_object(
-                                         'capabilities', $2::jsonb,
+                                         'capabilities', $2::text::jsonb,
                                          'capabilities_updated_at', to_jsonb(NOW())
                                      )
                                      ELSE '{}'::jsonb END
@@ -362,26 +370,26 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                                      ELSE '{}'::jsonb END
                      )
                      WHERE bot_id = $1",
+                    bot_id.to_string(),
+                    &caps_str,
+                    connector_version.as_deref(),
                 )
-                .bind(bot_id.to_string())
-                .bind(&caps_str)
-                .bind(connector_version.as_deref())
                 .execute(&state.db)
                 .await;
                 if let Err(e) = result {
                     tracing::warn!(bot_id = %bot_id, err = %e, "capabilities persist failed");
                 }
-                let host_result = sqlx::query(
+                let host_result = sqlx::query!(
                     "UPDATE connector_hosts
                      SET connector_version = COALESCE($2, connector_version),
-                         capabilities = CASE WHEN $3::jsonb = 'null'::jsonb
-                                             THEN capabilities ELSE $3::jsonb END,
+                         capabilities = CASE WHEN $3::text::jsonb = 'null'::jsonb
+                                             THEN capabilities ELSE $3::text::jsonb END,
                          last_seen_at = NOW(), updated_at = NOW()
                      WHERE host_id = $1 AND revoked_at IS NULL",
+                    bot.host_id.to_string(),
+                    connector_version.as_deref(),
+                    &caps_str,
                 )
-                .bind(bot.host_id.to_string())
-                .bind(connector_version.as_deref())
-                .bind(&caps_str)
                 .execute(&state.db)
                 .await;
                 if let Err(e) = host_result {
@@ -422,7 +430,7 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
             let incoming_str =
                 serde_json::to_string(&Value::Object(incoming)).unwrap_or_else(|_| "{}".into());
             let v_str = v.to_string();
-            let result = sqlx::query(
+            let result = sqlx::query!(
                 "UPDATE bot_accounts SET binding_config = jsonb_set(
                      jsonb_set(
                          COALESCE(binding_config, '{}'::jsonb),
@@ -431,16 +439,16 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                          true),
                      '{connector_control,options}',
                      jsonb_build_object(
-                         'v', $2::jsonb,
+                         'v', $2::text::jsonb,
                          'options',
                          COALESCE(binding_config #> '{connector_control,options,options}',
-                                  '{}'::jsonb) || $3::jsonb),
+                                  '{}'::jsonb) || $3::text::jsonb),
                      true)
                  WHERE bot_id = $1",
+                bot_id.to_string(),
+                &v_str,
+                &incoming_str,
             )
-            .bind(bot_id.to_string())
-            .bind(&v_str)
-            .bind(&incoming_str)
             .execute(&state.db)
             .await;
             if let Err(e) = result {
@@ -462,19 +470,19 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 obj.remove("type");
             }
             let payload_str = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
-            let result = sqlx::query(
+            let result = sqlx::query!(
                 "UPDATE bot_accounts
                  SET binding_config = COALESCE(binding_config, '{}'::jsonb)
                      || jsonb_build_object(
                          'connector_control',
                          COALESCE(binding_config->'connector_control', '{}'::jsonb)
-                         || jsonb_build_object($2::text, $3::jsonb)
+                         || jsonb_build_object($2::text, $3::text::jsonb)
                  )
                  WHERE bot_id = $1",
+                bot_id.to_string(),
+                config_key,
+                &payload_str,
             )
-            .bind(bot_id.to_string())
-            .bind(config_key)
-            .bind(&payload_str)
             .execute(&state.db)
             .await;
             if let Err(e) = result {
@@ -915,11 +923,11 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                         error = %error,
                         "task-claim completion failed"
                     );
-                    if let Err(update_error) = sqlx::query(
+                    if let Err(update_error) = sqlx::query!(
                         "UPDATE task_claim_evaluations SET status='failed', error=$2, completed_at=NOW() WHERE evaluation_id=$1 AND status='dispatched'",
+                        evaluation_id.to_string(),
+                        format!("claim completion failed: {error}"),
                     )
-                    .bind(evaluation_id.to_string())
-                    .bind(format!("claim completion failed: {error}"))
                     .execute(&state.db)
                     .await
                     {
@@ -1144,17 +1152,17 @@ async fn handle_acp_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) 
         .map(|e| e.home.as_str())
         .unwrap_or("");
     let payload = frame.get("payload").cloned().unwrap_or(Value::Null);
-    if let Err(err) = sqlx::query(
+    if let Err(err) = sqlx::query!(
         "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7::text::jsonb)",
+        Uuid::new_v4().to_string(),
+        bot.bot_id.to_string(),
+        frame.get("channel_id").and_then(Value::as_str),
+        frame.get("session_id").and_then(Value::as_str),
+        name,
+        home,
+        payload.to_string(),
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(bot.bot_id.to_string())
-    .bind(frame.get("channel_id").and_then(Value::as_str))
-    .bind(frame.get("session_id").and_then(Value::as_str))
-    .bind(name)
-    .bind(home)
-    .bind(payload.to_string())
     .execute(&state.db)
     .await
     {
@@ -1428,27 +1436,21 @@ pub(crate) async fn allowed_seers(
     }
     let mut chan_role: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut platform_admin: std::collections::HashSet<String> = std::collections::HashSet::new();
-    if let Ok(rows) = sqlx::query(
+    if let Ok(rows) = sqlx::query!(
         "SELECT cm.member_id, cm.role AS crole, u.role AS prole
          FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id
          WHERE cm.channel_id = $1 AND cm.member_type = 'user'",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_all(&state.db)
     .await
     {
         for r in rows {
-            let mid: String = r.try_get("member_id").unwrap_or_default();
-            if let Ok(Some(c)) = r.try_get::<Option<String>, _>("crole") {
+            let mid: String = r.member_id.clone();
+            if let Some(c) = Some(r.crole.clone()) {
                 chan_role.insert(mid.clone(), c);
             }
-            if matches!(
-                r.try_get::<Option<String>, _>("prole")
-                    .ok()
-                    .flatten()
-                    .as_deref(),
-                Some("system_admin") | Some("admin")
-            ) {
+            if matches!(Some(r.prole.as_str()), Some("system_admin") | Some("admin")) {
                 platform_admin.insert(mid);
             }
         }
@@ -1514,15 +1516,14 @@ async fn handle_terminal_frame(
     {
         Ok(()) => {
             if let Some(mid) = msg_id {
-                if let Ok(Some(row)) = sqlx::query(
+                if let Ok(Some(row)) = sqlx::query!(
                     "UPDATE task_claim_requests SET status='completed',updated_at=NOW() WHERE execution_msg_id=$1 AND status='executing' RETURNING claim_id,channel_id",
-                )
-                .bind(mid.to_string())
-                .fetch_optional(&state.db)
+                    mid.to_string(),
+                ).fetch_optional(&state.db)
                 .await
                 {
-                    if let Ok(channel_id) = row.try_get::<String, _>("channel_id").unwrap_or_default().parse::<Uuid>() {
-                        state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "task_claim_updated", json!({"claim_id":row.try_get::<String,_>("claim_id").unwrap_or_default(),"status":"completed","execution_msg_id":mid}))).await;
+                    if let Ok(channel_id) = row.channel_id.clone().parse::<Uuid>() {
+                        state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "task_claim_updated", json!({"claim_id": row.claim_id.clone(),"status":"completed","execution_msg_id":mid}))).await;
                     }
                 }
             }
@@ -1604,34 +1605,29 @@ async fn handle_terminal_frame(
 fn spawn_bot_mention_pushes(state: &AppState, bot_id: Uuid, msg_id: Uuid) {
     let state = state.clone();
     tokio::spawn(async move {
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             "SELECT mm.member_id, m.channel_id, m.content
              FROM message_mentions mm
              JOIN messages m ON m.msg_id = mm.msg_id
              WHERE mm.msg_id = $1 AND mm.member_type = 'user'",
+            msg_id.to_string(),
         )
-        .bind(msg_id.to_string())
         .fetch_all(&state.db)
         .await
         .unwrap_or_default();
         if rows.is_empty() {
             return;
         }
-        let sender_name: Option<String> = sqlx::query_scalar(
-            "SELECT COALESCE(display_name, username) FROM bot_accounts WHERE bot_id = $1",
+        let sender_name: Option<String> = sqlx::query_scalar!(
+            r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
+            bot_id.to_string(),
         )
-        .bind(bot_id.to_string())
         .fetch_optional(&state.db)
         .await
         .ok()
         .flatten();
-        let channel_id: String = rows[0].try_get("channel_id").unwrap_or_default();
-        let body: String = rows[0]
-            .try_get::<String, _>("content")
-            .unwrap_or_default()
-            .chars()
-            .take(200)
-            .collect();
+        let channel_id: String = rows[0].channel_id.clone();
+        let body: String = rows[0].content.clone().chars().take(200).collect();
         let payload = json!({
             "kind": "mention",
             "channel_id": channel_id,
@@ -1641,7 +1637,7 @@ fn spawn_bot_mention_pushes(state: &AppState, bot_id: Uuid, msg_id: Uuid) {
         });
         let mut mentioned_users = Vec::new();
         for row in &rows {
-            let user_id: String = row.try_get("member_id").unwrap_or_default();
+            let user_id: String = row.member_id.clone();
             // Desktop shell: user-scoped WS frame (works without VAPID).
             crate::api::notifications::push_notification(&state, &user_id, payload.clone()).await;
             // Browsers/PWA: Web Push, when configured.
@@ -1716,18 +1712,18 @@ async fn handle_permission_request_frame(
             .map_err(crate::gateway::log_db_err(
                 "permission_request: allocate channel_seq",
             ))?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
              is_partial, content_data, file_ids, channel_seq)
-         VALUES ($1, $2, 'bot', $3, $4, 'permission', FALSE, $5::jsonb, '[]'::jsonb, $6)",
+         VALUES ($1, $2, 'bot', $3, $4, 'permission', FALSE, $5::text::jsonb, '[]'::jsonb, $6)",
+        msg_id.to_string(),
+        channel_id.to_string(),
+        bot.bot_id.to_string(),
+        &content,
+        &content_data_for_db,
+        channel_seq,
     )
-    .bind(msg_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(bot.bot_id.to_string())
-    .bind(&content)
-    .bind(&content_data_for_db)
-    .bind(channel_seq)
     .execute(&mut *tx)
     .await
     .map_err(crate::gateway::log_db_err(
@@ -2025,8 +2021,8 @@ async fn handle_elicitation_request_frame(
             .get("origin_msg_id")
             .and_then(Value::as_str)
             .ok_or("request-scoped elicitation missing origin_msg_id")?;
-        let verified = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(
+        let verified = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
                 SELECT 1
                 FROM messages AS m
                 INNER JOIN channel_memberships AS cm
@@ -2034,11 +2030,11 @@ async fn handle_elicitation_request_frame(
                 WHERE m.msg_id = $1 AND m.channel_id = $2
                   AND m.sender_type = 'user' AND m.sender_id = $3
                   AND cm.member_type = 'user'
-            )",
+            ) AS "value!" "#,
+            origin_msg_id,
+            channel_id.to_string(),
+            initiating_user_id,
         )
-        .bind(origin_msg_id)
-        .bind(channel_id.to_string())
-        .bind(initiating_user_id)
         .fetch_one(&state.db)
         .await
         .map_err(crate::gateway::log_db_err(
@@ -2102,18 +2098,18 @@ async fn handle_elicitation_request_frame(
             .map_err(crate::gateway::log_db_err(
                 "elicitation: allocate channel_seq",
             ))?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
           is_partial, content_data, file_ids, channel_seq)
-         VALUES ($1, $2, 'bot', $3, $4, 'elicitation', FALSE, $5::jsonb, '[]'::jsonb, $6)",
+         VALUES ($1, $2, 'bot', $3, $4, 'elicitation', FALSE, $5::text::jsonb, '[]'::jsonb, $6)",
+        msg_id.to_string(),
+        channel_id.to_string(),
+        bot.bot_id.to_string(),
+        message,
+        content_data.to_string(),
+        channel_seq,
     )
-    .bind(msg_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(bot.bot_id.to_string())
-    .bind(message)
-    .bind(content_data.to_string())
-    .bind(channel_seq)
     .execute(&mut *tx)
     .await
     .map_err(crate::gateway::log_db_err("elicitation: insert"))?;
@@ -2122,13 +2118,13 @@ async fn handle_elicitation_request_frame(
         .map_err(crate::gateway::log_db_err("elicitation: commit"))?;
 
     if interaction_kind == "mcp_oauth" {
-        sqlx::query(
+        sqlx::query!(
             "UPDATE connector_hosts
              SET mcp_connection_state = 'action_required', mcp_state_updated_at = NOW()
              WHERE host_id = $1 AND revoked_at IS NULL
                AND mcp_connection_state <> 'connected'",
+            bot.host_id.to_string(),
         )
-        .bind(bot.host_id.to_string())
         .execute(&state.db)
         .await
         .map_err(crate::gateway::log_db_err(
@@ -2178,46 +2174,40 @@ async fn handle_elicitation_terminal_frame(
         return;
     };
     let row = if completed {
-        sqlx::query(
+        sqlx::query_as!(ElicitationRow,
             "UPDATE messages SET content_data = content_data || jsonb_build_object('resolved', true, 'status', 'completed')
              WHERE sender_id = $1 AND msg_type = 'elicitation'
                AND content_data ->> 'elicitation_id' = $2
                AND content_data ->> 'status' = 'accept'
              RETURNING msg_id, channel_id, channel_seq, content, content_data",
-        )
-        .bind(bot.bot_id.to_string())
-        .bind(value)
-        .fetch_optional(&state.db)
+            bot.bot_id.to_string(),
+            value,
+        ).fetch_optional(&state.db)
         .await
     } else {
-        sqlx::query(
+        sqlx::query_as!(ElicitationRow,
             "UPDATE messages SET content_data = content_data || jsonb_build_object('resolved', true, 'status', 'cancelled')
              WHERE sender_id = $1 AND msg_type = 'elicitation' AND content_data ->> $2 = $3
                AND COALESCE((content_data ->> 'resolved')::boolean, false) = false
              RETURNING msg_id, channel_id, channel_seq, content, content_data",
-        )
-        .bind(bot.bot_id.to_string())
-        .bind(field)
-        .bind(value)
-        .fetch_optional(&state.db)
+            bot.bot_id.to_string(),
+            field,
+            value,
+        ).fetch_optional(&state.db)
         .await
     };
     if let Ok(Some(row)) = row {
-        use sqlx::Row;
-        let channel_id = row
-            .try_get::<String, _>("channel_id")
-            .ok()
-            .and_then(|v| v.parse::<Uuid>().ok());
+        let channel_id = Some(row.channel_id.clone()).and_then(|v| v.parse::<Uuid>().ok());
         if let Some(channel_id) = channel_id {
             state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "message", json!({
                 "v": MESSAGE_SCHEMA_VERSION,
-                "msg_id": row.try_get::<String,_>("msg_id").unwrap_or_default(),
+                "msg_id": row.msg_id.clone(),
                 "channel_id": channel_id,
-                "channel_seq": row.try_get::<i64,_>("channel_seq").unwrap_or_default(),
+                "channel_seq": row.channel_seq.clone().unwrap_or_default(),
                 "sender_type":"bot", "sender_id":bot.bot_id,
-                "content":row.try_get::<String,_>("content").unwrap_or_default(),
+                "content":row.content.clone(),
                 "msg_type":"elicitation", "is_partial":false, "file_ids":[], "mentions":[], "files":[],
-                "content_data":row.try_get::<Value,_>("content_data").unwrap_or(Value::Null),
+                "content_data":row.content_data.clone().unwrap_or(Value::Null),
             }))).await;
         }
     }
@@ -2235,10 +2225,10 @@ async fn handle_auth_required_frame(
         .and_then(|raw| raw.parse().ok())
         .ok_or("missing channel_id")?;
     ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
-    let agent_type = sqlx::query_scalar::<_, String>(
+    let agent_type = sqlx::query_scalar!(
         "SELECT agent_type FROM connector_hosts WHERE host_id = $1",
+        bot.host_id.to_string(),
     )
-    .bind(bot.host_id.to_string())
     .fetch_optional(&state.db)
     .await
     .map_err(crate::gateway::log_db_err(
@@ -2313,18 +2303,18 @@ async fn handle_auth_required_frame(
             .map_err(crate::gateway::log_db_err(
                 "auth_required: allocate channel_seq",
             ))?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
              is_partial, content_data, file_ids, channel_seq)
-         VALUES ($1, $2, 'bot', $3, $4, 'auth_required', FALSE, $5::jsonb, '[]'::jsonb, $6)",
+         VALUES ($1, $2, 'bot', $3, $4, 'auth_required', FALSE, $5::text::jsonb, '[]'::jsonb, $6)",
+        msg_id.to_string(),
+        channel_id.to_string(),
+        bot.bot_id.to_string(),
+        &content,
+        &content_data_for_db,
+        channel_seq,
     )
-    .bind(msg_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(bot.bot_id.to_string())
-    .bind(&content)
-    .bind(&content_data_for_db)
-    .bind(channel_seq)
     .execute(&mut *tx)
     .await
     .map_err(crate::gateway::log_db_err("auth_required: insert message"))?;
@@ -2505,20 +2495,21 @@ async fn ensure_bot_channel_member(
     bot_id: Uuid,
     channel_id: Uuid,
 ) -> Result<(), &'static str> {
-    let is_member = sqlx::query(
+    let is_member = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot'
         ) AS ok",
+        channel_id.to_string(),
+        bot_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
     .fetch_one(db)
     .await
     .map_err(crate::gateway::log_db_err(
         "ensure_bot_channel_member: select membership exists",
     ))?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
 
     if is_member {
@@ -2533,17 +2524,17 @@ async fn ensure_bot_channel_member(
 /// owns `msg_id` but consumes its channel_id internally, and the message is now
 /// finalized (so `verify_ownership` can no longer be reused), so we re-derive it here.
 async fn channel_of_bot_message(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Option<Uuid> {
-    sqlx::query(
+    sqlx::query!(
         "SELECT channel_id FROM messages
          WHERE msg_id = $1 AND sender_id = $2 AND sender_type = 'bot'",
+        msg_id.to_string(),
+        bot_id.to_string(),
     )
-    .bind(msg_id.to_string())
-    .bind(bot_id.to_string())
     .fetch_optional(db)
     .await
     .ok()
     .flatten()
-    .and_then(|row| row.try_get::<String, _>("channel_id").ok())
+    .and_then(|row| Some(row.channel_id.clone()))
     .and_then(|s| s.parse::<Uuid>().ok())
 }
 
@@ -2731,15 +2722,15 @@ async fn resolve_host(
 ) -> Result<BotInfo, AuthFailure> {
     let credential_hash = hash_host_credential(credential);
 
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT i.host_id, i.status, i.revoked_at,
                 b.bot_id, b.username, b.display_name, b.is_disabled,
                 b.binding_config, b.created_by
          FROM connector_hosts i
          JOIN bot_accounts b ON b.bot_id = i.bot_id
          WHERE i.credential_hash = $1",
+        &credential_hash,
     )
-    .bind(&credential_hash)
     .fetch_optional(db)
     .await
     .ok()
@@ -2748,51 +2739,40 @@ async fn resolve_host(
 
     // Admin kill-switch: a disabled bot may not establish the bridge, so a kicked
     // connector can't immediately reconnect.
-    let is_disabled: bool = row.try_get("is_disabled").unwrap_or(false);
+    let is_disabled: bool = row.is_disabled.clone();
     if is_disabled {
         return Err(AuthFailure::BotUnavailable);
     }
-    let status: String = row.try_get("status").unwrap_or_default();
-    let revoked = row
-        .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("revoked_at")
-        .ok()
-        .flatten()
-        .is_some();
+    let status: String = row.status.clone();
+    let revoked = row.revoked_at.clone().is_some();
     if revoked || status != "active" {
         return Err(AuthFailure::BotUnavailable);
     }
 
-    let bot_id: Uuid = row
-        .try_get::<String, _>("bot_id")
-        .ok()
+    let bot_id: Uuid = Some(row.bot_id.clone())
         .and_then(|raw| raw.parse().ok())
         .ok_or(AuthFailure::InvalidToken)?;
-    let host_id: Uuid = row
-        .try_get::<String, _>("host_id")
-        .ok()
+    let host_id: Uuid = Some(row.host_id.clone())
         .and_then(|raw| raw.parse().ok())
         .ok_or(AuthFailure::InvalidToken)?;
     let connector_version = connector
         .and_then(|value| value.get("version"))
         .and_then(Value::as_str);
-    let touched = sqlx::query(
+    let touched = sqlx::query!(
         "UPDATE connector_hosts
          SET connector_version = COALESCE($2, connector_version),
              last_seen_at = NOW(), connected_at = NOW(), updated_at = NOW()
          WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
+        host_id.to_string(),
+        connector_version,
     )
-    .bind(host_id.to_string())
-    .bind(connector_version)
     .execute(db)
     .await
     .map_err(|_| AuthFailure::InvalidToken)?;
     if touched.rows_affected() == 0 {
         return Err(AuthFailure::BotUnavailable);
     }
-    let binding_config = row
-        .try_get::<Option<Value>, _>("binding_config")
-        .ok()
-        .flatten();
+    let binding_config = row.binding_config.clone();
     let provider_account_id = resolve_bot_provider_account_id(binding_config.as_ref())
         .unwrap_or_else(|| bot_id.to_string());
     // H6 (non-breaking): honor an explicit require_capability, else enforce only
@@ -2806,15 +2786,12 @@ async fn resolve_host(
         bot_id,
         host_id,
         provider_account_id,
-        username: row.try_get("username").unwrap_or_default(),
-        display_name: row.try_get("display_name").ok(),
+        username: row.username.clone(),
+        display_name: row.display_name.clone(),
         require_capability,
         acp_security: resolve_bot_acp_security(binding_config.as_ref()),
         connector_config: resolve_bot_connector_config(binding_config.as_ref()),
-        owner_id: row
-            .try_get::<Option<String>, _>("created_by")
-            .ok()
-            .flatten(),
+        owner_id: row.created_by.clone(),
     })
 }
 
@@ -2833,21 +2810,21 @@ fn resolve_bot_require_capability(binding_config: Option<&Value>) -> Option<bool
 /// Whether a bot has at least one active (non-revoked, in-status, non-expired,
 /// not uses-exhausted) capability delegation.
 async fn bot_has_active_delegation(db: &PgPool, bot_id: &Uuid) -> bool {
-    sqlx::query(
+    sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM acp_capability_delegations
+            SELECT 1 AS present FROM acp_capability_delegations
             WHERE bot_id = $1
               AND revoked = FALSE
               AND status = 'active'
               AND (expires_at IS NULL OR expires_at > NOW())
               AND (max_uses IS NULL OR use_count < max_uses)
         ) AS ok",
+        bot_id.to_string(),
     )
-    .bind(bot_id.to_string())
     .fetch_one(db)
     .await
     .ok()
-    .and_then(|row| row.try_get::<bool, _>("ok").ok())
+    .and_then(|row| row.ok.clone())
     .unwrap_or(false)
 }
 
@@ -2944,11 +2921,11 @@ async fn handle_workspace_event_frame(frame: &Value, state: &AppState, bot: &Bot
     let root = frame.get("root").cloned().unwrap_or(Value::Null);
     let paths = frame.get("paths").cloned().unwrap_or_else(|| json!([]));
 
-    let channels: Vec<Uuid> = sqlx::query_scalar::<_, String>(
+    let channels: Vec<Uuid> = sqlx::query_scalar!(
         "SELECT channel_id FROM channel_memberships
          WHERE member_id = $1 AND member_type = 'bot'",
+        bot.bot_id.to_string(),
     )
-    .bind(bot.bot_id.to_string())
     .fetch_all(&state.db)
     .await
     .unwrap_or_default()
@@ -2971,13 +2948,13 @@ async fn handle_workspace_event_frame(frame: &Value, state: &AppState, bot: &Bot
 }
 
 async fn load_memberships(db: &PgPool, bot_id: Uuid) -> Vec<Value> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT cm.channel_id, c.name
          FROM channel_memberships cm
          JOIN channels c ON c.channel_id = cm.channel_id
          WHERE cm.member_id = $1 AND cm.member_type = 'bot'",
+        bot_id.to_string(),
     )
-    .bind(bot_id.to_string())
     .fetch_all(db)
     .await
     .unwrap_or_default();
@@ -2985,8 +2962,8 @@ async fn load_memberships(db: &PgPool, bot_id: Uuid) -> Vec<Value> {
     rows.iter()
         .map(|r| {
             json!({
-                "channel_id": r.try_get::<String, _>("channel_id").unwrap_or_default(),
-                "channel_name": r.try_get::<String, _>("name").unwrap_or_default(),
+                "channel_id": r.channel_id.clone(),
+                "channel_name": r.name.clone(),
             })
         })
         .collect()

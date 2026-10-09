@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE connector_hosts SET mcp_rejected_at = NOW(), mcp_rejection = $2\n         WHERE host_id = $1 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b45a00ccfa19cbc8c80f1062251dd6b2fb7f496cf81ee1122425a18d3f28ac7c"
+}

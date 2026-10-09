@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests\n         SET status='failed', resolution_note='expired', updated_at=NOW()\n         WHERE status IN ('pending','executing') AND expires_at IS NOT NULL AND expires_at <= NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7e6bff0c683525fa878fe4d399886d5170ed2d6473b6a259fa62fe1892833077"
+}

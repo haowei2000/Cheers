@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests SET status='failed',resolution_note=COALESCE(resolution_note,'Bot is offline'),updated_at=NOW() WHERE claim_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7bf46f125dca685351928ad8cd9799d75d6ed103f3d749377c76ecf27de06279"
+}

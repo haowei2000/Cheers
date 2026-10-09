@@ -7,7 +7,7 @@ use axum::{
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{api::middleware::Claims, app_state::AppState, errors::AppError};
@@ -139,79 +139,44 @@ fn resolve_file_url(config: &crate::config::Config, object_key: &str) -> String 
 }
 
 async fn load_file_record(state: &AppState, file_id: &str) -> Result<FileRecord, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT file_id, channel_id, workspace_id, uploader_id, object_key, original_filename,
                 content_type, status, size_bytes, summary_3lines, last_error, expires_at,
                 preview_object_key, md_path, transcribe_requested_at
          FROM file_records
          WHERE file_id = $1",
+        file_id,
     )
-    .bind(file_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
     Ok(FileRecord {
-        file_id: row.try_get::<String, _>("file_id").unwrap_or_default(),
-        channel_id: row
-            .try_get::<Option<String>, _>("channel_id")
-            .ok()
-            .flatten(),
-        workspace_id: row
-            .try_get::<Option<String>, _>("workspace_id")
-            .ok()
-            .flatten(),
-        uploader_id: row
-            .try_get::<Option<String>, _>("uploader_id")
-            .ok()
-            .flatten(),
-        object_key: row
-            .try_get::<Option<String>, _>("object_key")
-            .ok()
-            .flatten(),
-        original_filename: row
-            .try_get::<Option<String>, _>("original_filename")
-            .ok()
-            .flatten(),
-        content_type: row
-            .try_get::<Option<String>, _>("content_type")
-            .ok()
-            .flatten(),
-        status: row
-            .try_get::<String, _>("status")
-            .unwrap_or_else(|_| "pending_upload".to_string()),
-        size_bytes: row.try_get::<Option<i32>, _>("size_bytes").ok().flatten(),
-        summary_3lines: row
-            .try_get::<Option<String>, _>("summary_3lines")
-            .ok()
-            .flatten(),
-        last_error: row
-            .try_get::<Option<String>, _>("last_error")
-            .ok()
-            .flatten(),
-        expires_at: row
-            .try_get::<Option<DateTime<Utc>>, _>("expires_at")
-            .ok()
-            .flatten(),
-        preview_object_key: row
-            .try_get::<Option<String>, _>("preview_object_key")
-            .ok()
-            .flatten(),
-        md_path: row.try_get::<Option<String>, _>("md_path").ok().flatten(),
-        transcribe_requested_at: row
-            .try_get::<Option<DateTime<Utc>>, _>("transcribe_requested_at")
-            .ok()
-            .flatten(),
+        file_id: row.file_id.clone(),
+        channel_id: row.channel_id.clone(),
+        workspace_id: row.workspace_id.clone(),
+        uploader_id: Some(row.uploader_id.clone()),
+        object_key: row.object_key.clone(),
+        original_filename: row.original_filename.clone(),
+        content_type: row.content_type.clone(),
+        status: row.status.clone(),
+        size_bytes: row.size_bytes.clone(),
+        summary_3lines: row.summary_3lines.clone(),
+        last_error: row.last_error.clone(),
+        expires_at: row.expires_at.clone(),
+        preview_object_key: row.preview_object_key.clone(),
+        md_path: row.md_path.clone(),
+        transcribe_requested_at: row.transcribe_requested_at.clone(),
     })
 }
 
 async fn mark_file_expired(state: &AppState, file_id: &str) -> Result<(), AppError> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE file_records
          SET status = 'expired', last_error = 'expired'
          WHERE file_id = $1",
+        file_id,
     )
-    .bind(file_id)
     .execute(&state.db)
     .await?;
     Ok(())
@@ -226,18 +191,19 @@ async fn ensure_channel_member(
         return Ok(());
     }
 
-    let ok = sqlx::query(
+    let ok = sqlx::query!(
         "SELECT EXISTS(
             SELECT 1
             FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
          ) AS ok",
+        channel_id,
+        &claims.sub,
     )
-    .bind(channel_id)
-    .bind(&claims.sub)
     .fetch_one(&state.db)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
 
     if ok {
@@ -256,18 +222,19 @@ async fn ensure_workspace_member(
         return Ok(());
     }
 
-    let ok = sqlx::query(
+    let ok = sqlx::query!(
         "SELECT EXISTS(
             SELECT 1
             FROM workspace_memberships
             WHERE workspace_id = $1 AND user_id = $2
          ) AS ok",
+        workspace_id,
+        &claims.sub,
     )
-    .bind(workspace_id)
-    .bind(&claims.sub)
     .fetch_one(&state.db)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
 
     if ok {
@@ -333,37 +300,37 @@ pub async fn list_channel_files(
     Extension(claims): Extension<Claims>,
     Path(channel_id): Path<String>,
 ) -> Result<Json<Vec<Value>>, AppError> {
-    let member = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+    let member = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
-        )",
+        ) AS "value!" "#,
+        &channel_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&claims.sub)
     .fetch_one(&state.db)
     .await?;
     if !member && !matches!(claims.role.as_str(), "system_admin" | "admin") {
         return Err(AppError::Forbidden("channel member required".into()));
     }
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT file_id, original_filename, content_type, size_bytes
          FROM file_records
          WHERE channel_id = $1 AND status IN ('uploaded', 'converted')
          ORDER BY created_at DESC
          LIMIT 200",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(
         rows.iter()
             .map(|r| {
                 json!({
-                    "file_id": r.try_get::<String, _>("file_id").unwrap_or_default(),
-                    "original_filename": r.try_get::<Option<String>, _>("original_filename").unwrap_or(None),
-                    "content_type": r.try_get::<Option<String>, _>("content_type").unwrap_or(None),
-                    "size_bytes": r.try_get::<Option<i32>, _>("size_bytes").unwrap_or(None),
+                    "file_id": r.file_id.clone(),
+                    "original_filename": r.original_filename.clone(),
+                    "content_type": r.content_type.clone(),
+                    "size_bytes": r.size_bytes.clone(),
                 })
             })
             .collect(),
@@ -380,18 +347,18 @@ pub async fn upload_file(
     Query(q): Query<UploadQuery>,
     body: Bytes,
 ) -> Result<Json<Value>, AppError> {
-    let member = sqlx::query(
+    let member = sqlx::query!(
         "SELECT c.workspace_id
          FROM channels c
          JOIN channel_memberships cm ON cm.channel_id = c.channel_id
          WHERE c.channel_id = $1 AND cm.member_id = $2 AND cm.member_type = 'user'",
+        &q.channel_id,
+        &claims.sub,
     )
-    .bind(&q.channel_id)
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Forbidden("not a channel member".into()))?;
-    let workspace_id: Option<String> = member.try_get("workspace_id").ok();
+    let workspace_id: Option<String> = Some(member.workspace_id.clone());
 
     if body.is_empty() {
         return Err(AppError::BadRequest("empty file".into()));
@@ -420,23 +387,23 @@ pub async fn upload_file(
     .map_err(|e| AppError::Internal(format!("upload failed: {e}")))?;
 
     let expires_at = Utc::now() + Duration::seconds(7 * 24 * 60 * 60);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO file_records
             (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
              storage_bucket, original_filename, content_type, size_bytes, status,
              uploaded_at, expires_at)
          VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'uploaded', NOW(), $10)",
+        &file_id,
+        &q.channel_id,
+        workspace_id.as_deref(),
+        &claims.sub,
+        &object_key,
+        &state.config.s3_bucket,
+        &filename,
+        &content_type,
+        size_bytes,
+        expires_at,
     )
-    .bind(&file_id)
-    .bind(&q.channel_id)
-    .bind(&workspace_id)
-    .bind(&claims.sub)
-    .bind(&object_key)
-    .bind(&state.config.s3_bucket)
-    .bind(&filename)
-    .bind(&content_type)
-    .bind(size_bytes)
-    .bind(expires_at)
     .execute(&state.db)
     .await?;
 
@@ -472,14 +439,14 @@ pub async fn request_presign(
     Extension(claims): Extension<Claims>,
     Json(body): Json<PresignRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let member = sqlx::query(
+    let member = sqlx::query!(
         "SELECT c.workspace_id
          FROM channels c
          JOIN channel_memberships cm ON cm.channel_id = c.channel_id
          WHERE c.channel_id = $1 AND cm.member_id = $2 AND cm.member_type = 'user'",
+        &body.channel_id,
+        &claims.sub,
     )
-    .bind(&body.channel_id)
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Forbidden("not a channel member".into()))?;
@@ -494,22 +461,22 @@ pub async fn request_presign(
     let expires_in_seconds = resolve_expires_in(body.expires_in_seconds);
     let expires_at = Utc::now() + Duration::seconds(expires_in_seconds);
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO file_records
             (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
              storage_bucket, original_filename, content_type, size_bytes, status, expires_at)
          VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'pending_upload', $10)",
+        &file_id,
+        &body.channel_id,
+        Some(member.workspace_id.clone()),
+        &claims.sub,
+        &object_key,
+        &state.config.s3_bucket,
+        &filename,
+        &content_type,
+        size_bytes,
+        expires_at,
     )
-    .bind(&file_id)
-    .bind(&body.channel_id)
-    .bind(member.try_get::<String, _>("workspace_id").ok())
-    .bind(&claims.sub)
-    .bind(&object_key)
-    .bind(&state.config.s3_bucket)
-    .bind(&filename)
-    .bind(&content_type)
-    .bind(size_bytes)
-    .bind(expires_at)
     .execute(&state.db)
     .await?;
 
@@ -548,31 +515,25 @@ pub async fn confirm_upload(
         }
     }
 
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "UPDATE file_records
          SET status = 'uploaded', uploaded_at = NOW()
          WHERE file_id = $1 AND uploader_id = $2
          RETURNING file_id, original_filename, content_type, size_bytes, status, expires_at",
+        &file_id,
+        &claims.sub,
     )
-    .bind(&file_id)
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
     Ok(Json(json!({
-        "file_id": row
-            .try_get::<String, _>("file_id")
-            .unwrap_or_else(|_| file_id.clone()),
-        "original_filename": row.try_get::<String, _>("original_filename").ok(),
-        "content_type": row.try_get::<String, _>("content_type").ok(),
-        "size_bytes": row.try_get::<i32, _>("size_bytes").ok(),
-        "status": row
-            .try_get::<String, _>("status")
-            .unwrap_or_else(|_| "uploaded".into()),
-        "expires_at": row
-            .try_get::<DateTime<Utc>, _>("expires_at")
-            .ok()
+        "file_id": row.file_id.clone(),
+        "original_filename": row.original_filename.clone(),
+        "content_type": row.content_type.clone(),
+        "size_bytes": row.size_bytes.clone(),
+        "status": row.status.clone(),
+        "expires_at": row.expires_at.clone()
             .map(|dt| dt.to_rfc3339()),
         "preview_url": format!("/api/v1/files/{}/preview", file_id),
         "download_url": format!("/api/v1/files/{}/download", file_id),
@@ -660,14 +621,14 @@ pub async fn transcribe_file(
     // First request stamps transcribe_requested_at; a re-request after terminal
     // failure resets the attempt counter so the worker picks the file up again
     // (otherwise the retry button would be a no-op at MAX_ATTEMPTS).
-    sqlx::query(
+    sqlx::query!(
         "UPDATE file_records
          SET transcribe_requested_at = COALESCE(transcribe_requested_at, NOW()),
              conversion_attempts = 0,
              last_error = NULL
          WHERE file_id = $1 AND md_path IS NULL",
+        &file_id,
     )
-    .bind(&file_id)
     .execute(&state.db)
     .await?;
     Ok(Json(json!({ "status": "pending" })))

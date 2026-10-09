@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.password_hash IS NOT NULL AS has_password,\n                    EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)\n                        OR EXISTS(SELECT 1 AS present FROM auth_external_identities e\n                                  WHERE e.user_id = u.user_id) AS has_other_primary\n             FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_password",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "has_other_primary",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "04afe0f7d0c5f3f070488e0277005c38eca5553ba07a403887c92f70a23d1015"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channels SET avatar_url = $1 WHERE channel_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0a7a2b1c543b64aaf37a516512108014ec21838f45a15d2ec00e0792d439fe8f"
+}

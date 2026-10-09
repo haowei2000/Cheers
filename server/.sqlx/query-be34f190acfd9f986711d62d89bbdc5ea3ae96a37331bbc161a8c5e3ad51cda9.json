@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO apple_auth_credentials (identity_id, refresh_token_encrypted, client_id, last_validated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (identity_id) DO UPDATE SET refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, client_id = EXCLUDED.client_id, last_validated_at = NOW(), revoked_at = NULL, updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "be34f190acfd9f986711d62d89bbdc5ea3ae96a37331bbc161a8c5e3ad51cda9"
+}

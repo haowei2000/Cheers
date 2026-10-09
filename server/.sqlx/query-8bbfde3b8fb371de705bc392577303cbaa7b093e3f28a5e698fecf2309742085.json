@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_devices (user_id, push_token, platform, device_name)\n         VALUES ($1, $2, $3, $4)\n         ON CONFLICT (push_token) DO UPDATE\n            SET user_id = EXCLUDED.user_id,\n                platform = EXCLUDED.platform,\n                device_name = EXCLUDED.device_name,\n                last_seen_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8bbfde3b8fb371de705bc392577303cbaa7b093e3f28a5e698fecf2309742085"
+}

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM approval_delegations\n            WHERE bot_id = $1 AND channel_id = $2 AND user_id = $3\n              AND (operation_kind = $4 OR operation_kind = '*')\n              AND revoked_at IS NULL\n        ) AS ok",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "bdf910b4675abbe2ef4f08aa8e01b4d8d36efb4547b62820a3e7a9809e2677e7"
+}

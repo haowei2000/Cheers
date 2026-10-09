@@ -10,11 +10,11 @@ use std::time::Duration;
 use sqlx::PgPool;
 
 async fn reap_once(db: &PgPool, retention_secs: i64) {
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "DELETE FROM bot_connection_events
          WHERE created_at < NOW() - make_interval(secs => $1)",
+        retention_secs as f64,
     )
-    .bind(retention_secs as f64)
     .execute(db)
     .await;
     match res {

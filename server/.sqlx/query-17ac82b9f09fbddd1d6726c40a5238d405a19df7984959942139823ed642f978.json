@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bot_id, created_by AS \"created_by!\" FROM bot_accounts\n         WHERE status_auto_update = TRUE\n           AND is_disabled = FALSE\n           AND created_by IS NOT NULL\n           AND (status_last_auto_update_at IS NULL\n                OR status_last_auto_update_at\n                   < NOW() - make_interval(mins => GREATEST(status_update_interval_minutes, 1)))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_by!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "17ac82b9f09fbddd1d6726c40a5238d405a19df7984959942139823ed642f978"
+}

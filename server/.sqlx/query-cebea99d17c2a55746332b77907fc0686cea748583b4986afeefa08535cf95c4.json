@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM workspace_bot_memberships WHERE workspace_id = $1 AND bot_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cebea99d17c2a55746332b77907fc0686cea748583b4986afeefa08535cf95c4"
+}

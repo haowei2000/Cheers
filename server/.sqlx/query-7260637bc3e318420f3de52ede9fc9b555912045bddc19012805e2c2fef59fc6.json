@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT voice_session_id, provider_room_id, transcriber_dispatch_id\n         FROM voice_sessions\n         WHERE channel_id = $1 AND ended_at IS NULL\n         ORDER BY started_at DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "voice_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_room_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "transcriber_dispatch_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "7260637bc3e318420f3de52ede9fc9b555912045bddc19012805e2c2fef59fc6"
+}

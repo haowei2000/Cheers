@@ -24,15 +24,15 @@ pub fn record_bg(
 ) {
     let db = db.clone();
     tokio::spawn(async move {
-        let res = sqlx::query(
+        let res = sqlx::query!(
             "INSERT INTO bot_connection_events (bot_id, stream, event, reason, connection_id)
              VALUES ($1, $2, $3, $4, $5)",
+            bot_id.to_string(),
+            stream,
+            event,
+            reason,
+            connection_id.to_string(),
         )
-        .bind(bot_id.to_string())
-        .bind(stream)
-        .bind(event)
-        .bind(reason)
-        .bind(connection_id.to_string())
         .execute(&db)
         .await;
         if let Err(e) = res {

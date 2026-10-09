@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cm.member_id, cm.role AS crole, u.role AS prole\n         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id\n         WHERE cm.channel_id = $1 AND cm.member_type = 'user'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "crole",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "prole",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "692e93041fd14c2b90de5d44213f36d1b698806fe03b735516f1e6cdddcd76ab"
+}

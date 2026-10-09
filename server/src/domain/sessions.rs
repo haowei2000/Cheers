@@ -1,6 +1,6 @@
 use chrono::Utc;
 use serde_json::{json, Value};
-use sqlx::{Executor, PgPool, Postgres, Row, Transaction};
+use sqlx::{Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -105,7 +105,7 @@ pub async fn acquire_scope_session(
     }
 
     let now = Utc::now();
-    let session_id: String = sqlx::query_scalar(
+    let session_id: String = sqlx::query_scalar!(
         "INSERT INTO cheers_sessions (
             session_id, bot_id, provider, provider_account_id, provider_agent_id,
             provider_session_key, provider_session_id, current_scope_type, current_scope_id,
@@ -122,17 +122,17 @@ pub async fn acquire_scope_session(
             updated_at = EXCLUDED.updated_at,
             last_used_at = EXCLUDED.last_used_at
         RETURNING session_id",
+        Uuid::new_v4().to_string(),
+        bot_id.to_string(),
+        PROVIDER,
+        provider_account_id,
+        PROVIDER_AGENT_ID,
+        provider_session_key,
+        scope_type,
+        scope_id,
+        SESSION_STATUS_BUSY,
+        now,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(bot_id.to_string())
-    .bind(PROVIDER)
-    .bind(provider_account_id)
-    .bind(PROVIDER_AGENT_ID)
-    .bind(provider_session_key)
-    .bind(scope_type)
-    .bind(scope_id)
-    .bind(SESSION_STATUS_BUSY)
-    .bind(now)
     .fetch_one(db)
     .await
     .map_err(AppError::Db)?;
@@ -201,24 +201,24 @@ pub async fn create_channel_session(
     let provider_session_key = format!("cheers:session:{session_uuid}");
     let now = Utc::now();
     let metadata = workspace_metadata(cwd, additional_dirs);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO cheers_sessions (
             session_id, bot_id, provider, provider_account_id, provider_agent_id,
             provider_session_key, provider_session_id, current_scope_type, current_scope_id,
             status, metadata, last_used_at, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $11::jsonb, $10, $10, $10)",
+        session_uuid.to_string(),
+        bot_id.to_string(),
+        PROVIDER,
+        provider_account_id,
+        PROVIDER_AGENT_ID,
+        &provider_session_key,
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        SESSION_STATUS_IDLE,
+        now,
+        metadata,
     )
-    .bind(session_uuid.to_string())
-    .bind(bot_id.to_string())
-    .bind(PROVIDER)
-    .bind(provider_account_id)
-    .bind(PROVIDER_AGENT_ID)
-    .bind(&provider_session_key)
-    .bind(SESSION_SCOPE_CHANNEL)
-    .bind(channel_id)
-    .bind(SESSION_STATUS_IDLE)
-    .bind(now)
-    .bind(metadata)
     .execute(db)
     .await
     .map_err(AppError::Db)?;
@@ -303,7 +303,7 @@ pub async fn ensure_primary_session_workspace_tx(
     // Insert-if-absent, pinning the workspace on creation. On conflict, a no-op
     // touch of `updated_at` so we still get the existing session_id back WITHOUT
     // overwriting the immutable `metadata.workspace`.
-    let session_id: String = sqlx::query_scalar(
+    let session_id: String = sqlx::query_scalar!(
         "INSERT INTO cheers_sessions (
             session_id, bot_id, provider, provider_account_id, provider_agent_id,
             provider_session_key, provider_session_id, current_scope_type, current_scope_id,
@@ -312,18 +312,18 @@ pub async fn ensure_primary_session_workspace_tx(
         ON CONFLICT (provider, provider_account_id, provider_session_key)
         DO UPDATE SET updated_at = EXCLUDED.updated_at
         RETURNING session_id",
+        Uuid::new_v4().to_string(),
+        bot_id.to_string(),
+        PROVIDER,
+        provider_account_id,
+        PROVIDER_AGENT_ID,
+        &provider_session_key,
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        SESSION_STATUS_IDLE,
+        now,
+        metadata,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(bot_id.to_string())
-    .bind(PROVIDER)
-    .bind(provider_account_id)
-    .bind(PROVIDER_AGENT_ID)
-    .bind(&provider_session_key)
-    .bind(SESSION_SCOPE_CHANNEL)
-    .bind(channel_id)
-    .bind(SESSION_STATUS_IDLE)
-    .bind(now)
-    .bind(metadata)
     .fetch_one(&mut **tx)
     .await
     .map_err(AppError::Db)?;
@@ -334,19 +334,19 @@ pub async fn ensure_primary_session_workspace_tx(
     // (re)bind the deterministic session as primary when no live primary binding
     // exists for this scope. When the deterministic session already IS the
     // primary, the upsert would be a no-op anyway.
-    let has_live_primary: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
+    let has_live_primary: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
             SELECT 1
             FROM cheers_session_bindings b
             JOIN cheers_sessions s ON s.session_id = b.session_id
             WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3
               AND b.role = 'primary'
               AND s.status NOT IN ('terminated', 'revoked', 'expired')
-        )",
+        ) AS "value!" "#,
+        bot_id.to_string(),
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
     )
-    .bind(bot_id.to_string())
-    .bind(SESSION_SCOPE_CHANNEL)
-    .bind(channel_id)
     .fetch_one(&mut **tx)
     .await
     .map_err(AppError::Db)?;
@@ -375,10 +375,10 @@ pub async fn ensure_primary_session_workspace_tx(
 /// Empty when the session has no pinned workspace (the connector then falls back to
 /// its `default_cwd`). Best-effort: a DB error yields an empty list.
 pub async fn session_root_set(db: &PgPool, provider_session_key: &str) -> Vec<String> {
-    let ws: Option<Value> = sqlx::query_scalar::<_, Option<Value>>(
+    let ws: Option<Value> = sqlx::query_scalar!(
         "SELECT metadata->'workspace' FROM cheers_sessions WHERE provider_session_key = $1 LIMIT 1",
+        provider_session_key,
     )
-    .bind(provider_session_key)
     .fetch_optional(db)
     .await
     .ok()
@@ -407,16 +407,17 @@ pub async fn channel_session_workdirs(
     channel_id: Uuid,
     bot_id: Uuid,
 ) -> Vec<(String, String)> {
-    let rows = sqlx::query_as::<_, (String, Option<String>)>(
+    let rows = sqlx::query!(
         "SELECT s.session_id, s.metadata->'workspace'->>'cwd' AS cwd
            FROM cheers_sessions s
            JOIN cheers_session_bindings b ON b.session_id = s.session_id
           WHERE b.channel_id = $1 AND s.bot_id = $2
             AND s.status NOT IN ('terminated', 'revoked', 'expired')
           ORDER BY s.last_used_at DESC",
+        channel_id.to_string(),
+        bot_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
+    .map(|row| (row.session_id, row.cwd))
     .fetch_all(db)
     .await
     .unwrap_or_default();
@@ -448,7 +449,7 @@ pub async fn set_session_additional_dirs(
         .map_err(|e| AppError::Internal(format!("serialize additional_dirs: {e}")))?;
     // Shallow-merge a rebuilt `workspace` object so `cwd` (and any other keys)
     // survive: keep the existing workspace, overwrite only `additional_dirs`.
-    let updated: Option<String> = sqlx::query_scalar(
+    let updated: Option<String> = sqlx::query_scalar!(
         "UPDATE cheers_sessions
          SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
                  'workspace',
@@ -457,10 +458,10 @@ pub async fn set_session_additional_dirs(
              updated_at = now()
          WHERE session_id = $2 AND bot_id = $3
          RETURNING session_id",
+        dirs,
+        session_id.to_string(),
+        bot_id.to_string(),
     )
-    .bind(dirs)
-    .bind(session_id.to_string())
-    .bind(bot_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?;
@@ -479,7 +480,7 @@ pub async fn resolve_primary_session(
     bot_id: Uuid,
     channel_id: &str,
 ) -> Result<Option<(Uuid, String)>, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT s.session_id, s.provider_session_key
          FROM cheers_session_bindings b
          JOIN cheers_sessions s ON s.session_id = b.session_id
@@ -487,19 +488,16 @@ pub async fn resolve_primary_session(
            AND b.role = 'primary'
            AND s.status NOT IN ('terminated', 'revoked', 'expired')
          LIMIT 1",
+        bot_id.to_string(),
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
     )
-    .bind(bot_id.to_string())
-    .bind(SESSION_SCOPE_CHANNEL)
-    .bind(channel_id)
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?;
     Ok(row.and_then(|r| {
-        let sid = r
-            .try_get::<String, _>("session_id")
-            .ok()
-            .and_then(|v| Uuid::parse_str(&v).ok())?;
-        let key = r.try_get::<String, _>("provider_session_key").ok()?;
+        let sid = Some(r.session_id.clone()).and_then(|v| Uuid::parse_str(&v).ok())?;
+        let key = Some(r.provider_session_key.clone())?;
         Some((sid, key))
     }))
 }
@@ -521,30 +519,30 @@ pub async fn set_primary_session(
     let mut tx = db.begin().await.map_err(AppError::Db)?;
     // Demote whatever holds the primary role now (skip if the target already does,
     // making a re-promote a no-op instead of a demote-then-fail).
-    sqlx::query(
+    sqlx::query!(
         "UPDATE cheers_session_bindings SET role = 'other'
          WHERE bot_id = $1 AND scope_type = $2 AND scope_id = $3
            AND role = 'primary' AND session_id <> $4",
+        bot_id.to_string(),
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        session_id.to_string(),
     )
-    .bind(bot_id.to_string())
-    .bind(SESSION_SCOPE_CHANNEL)
-    .bind(channel_id)
-    .bind(session_id.to_string())
     .execute(&mut *tx)
     .await
     .map_err(AppError::Db)?;
     // Promote the target's binding (and re-attach it). RETURNING → NotFound when
     // the session isn't bound to this channel+bot; the tx rolls back on drop, so
     // the demote above never sticks without a new primary.
-    let promoted: Option<String> = sqlx::query_scalar(
+    let promoted: Option<String> = sqlx::query_scalar!(
         "UPDATE cheers_session_bindings SET role = 'primary', detached_at = NULL
          WHERE bot_id = $1 AND scope_type = $2 AND scope_id = $3 AND session_id = $4
          RETURNING binding_id",
+        bot_id.to_string(),
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        session_id.to_string(),
     )
-    .bind(bot_id.to_string())
-    .bind(SESSION_SCOPE_CHANNEL)
-    .bind(channel_id)
-    .bind(session_id.to_string())
     .fetch_optional(&mut *tx)
     .await
     .map_err(AppError::Db)?;
@@ -561,40 +559,37 @@ pub async fn list_channel_sessions(
     bot_id: Uuid,
     channel_id: &str,
 ) -> Result<Vec<Value>, AppError> {
-    let rows = sqlx::query(
-        // No detached_at filter: bindings are detached on every finalize, but an
-        // idle session stays addressable. Exclude only truly-closed sessions.
+    let rows = sqlx::query!(
         "SELECT s.session_id, b.role, s.status, s.provider_session_key, s.last_used_at, s.metadata
          FROM cheers_session_bindings b
          JOIN cheers_sessions s ON s.session_id = b.session_id
          WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3
            AND s.status NOT IN ('terminated', 'revoked', 'expired')
          ORDER BY (b.role = 'primary') DESC, s.last_used_at DESC",
+        bot_id.to_string(),
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
     )
-    .bind(bot_id.to_string())
-    .bind(SESSION_SCOPE_CHANNEL)
-    .bind(channel_id)
     .fetch_all(db)
     .await
     .map_err(AppError::Db)?;
     Ok(rows
         .into_iter()
         .map(|r| {
-            let role: String = r.try_get("role").unwrap_or_default();
+            let role: String = r.role.clone();
             // The session's mode/config overrides (set via set_mode / set_config_option),
             // so the UI can show each session's *current* mode + config values.
             let session_config = r
-                .try_get::<Option<Value>, _>("metadata")
-                .ok()
-                .flatten()
+                .metadata
+                .clone()
                 .and_then(|m| m.get("session_config").cloned())
                 .unwrap_or_else(|| json!({}));
             json!({
-                "session_id": r.try_get::<String, _>("session_id").unwrap_or_default(),
+                "session_id": r.session_id.clone(),
                 "role": role.clone(),
                 "is_primary": role == "primary",
-                "status": r.try_get::<String, _>("status").unwrap_or_default(),
-                "last_used_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("last_used_at")
+                "status": r.status.clone(),
+                "last_used_at": Some(r.last_used_at.clone())
                     .map(|t| t.to_rfc3339()).unwrap_or_default(),
                 "session_config": session_config,
             })
@@ -610,7 +605,7 @@ pub async fn resolve_channel_session(
     channel_id: &str,
     session_id: Uuid,
 ) -> Result<(Uuid, String), AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT s.bot_id, s.provider_session_key
          FROM cheers_session_bindings b
          JOIN cheers_sessions s ON s.session_id = b.session_id
@@ -618,22 +613,18 @@ pub async fn resolve_channel_session(
            AND b.session_id = $3
            AND s.status NOT IN ('terminated', 'revoked', 'expired')
          LIMIT 1",
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        session_id.to_string(),
     )
-    .bind(SESSION_SCOPE_CHANNEL)
-    .bind(channel_id)
-    .bind(session_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
     .ok_or(AppError::NotFound)?;
-    let bot_id = row
-        .try_get::<String, _>("bot_id")
-        .ok()
+    let bot_id = Some(row.bot_id.clone())
         .and_then(|v| Uuid::parse_str(&v).ok())
         .ok_or(AppError::NotFound)?;
-    let key = row
-        .try_get::<String, _>("provider_session_key")
-        .map_err(|_| AppError::NotFound)?;
+    let key = row.provider_session_key.clone();
     Ok((bot_id, key))
 }
 
@@ -660,21 +651,23 @@ pub async fn close_channel_session(
     // Reuse the bound-to-this-channel check (errors NotFound if not).
     resolve_channel_session(db, channel_id, session_id).await?;
     let now = Utc::now();
-    sqlx::query("UPDATE cheers_sessions SET status = $1, updated_at = $2 WHERE session_id = $3")
-        .bind(SESSION_STATUS_TERMINATED)
-        .bind(now)
-        .bind(session_id.to_string())
-        .execute(db)
-        .await
-        .map_err(AppError::Db)?;
-    sqlx::query(
+    sqlx::query!(
+        "UPDATE cheers_sessions SET status = $1, updated_at = $2 WHERE session_id = $3",
+        SESSION_STATUS_TERMINATED,
+        now,
+        session_id.to_string(),
+    )
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+    sqlx::query!(
         "UPDATE cheers_session_bindings
          SET detached_at = COALESCE(detached_at, $1),
              role = CASE WHEN role = 'primary' THEN 'other' ELSE role END
          WHERE session_id = $2",
+        now,
+        session_id.to_string(),
     )
-    .bind(now)
-    .bind(session_id.to_string())
     .execute(db)
     .await
     .map_err(AppError::Db)?;
@@ -708,7 +701,7 @@ where
     // insert, which would violate the same-session unique constraint.
     // `uq_cheers_session_binding_primary` (bot+scope, role='primary') still
     // guards against two different sessions racing to hold primary.
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO cheers_session_bindings (
             binding_id, session_id, bot_id, provider, provider_account_id, provider_agent_id,
             scope_type, scope_id, channel_id, task_id, role, created_at
@@ -727,18 +720,18 @@ where
             channel_id = EXCLUDED.channel_id,
             created_at = EXCLUDED.created_at
         ",
+        Uuid::new_v4().to_string(),
+        session_id.to_string(),
+        bot_id.to_string(),
+        PROVIDER,
+        provider_account_id,
+        PROVIDER_AGENT_ID,
+        scope_type,
+        scope_id,
+        channel_id,
+        binding_task_id.or(task_id),
+        role,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(session_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(PROVIDER)
-    .bind(provider_account_id)
-    .bind(PROVIDER_AGENT_ID)
-    .bind(scope_type)
-    .bind(scope_id)
-    .bind(channel_id)
-    .bind(binding_task_id.or(task_id))
-    .bind(role)
     .execute(db)
     .await
     .map_err(AppError::Db)?;
@@ -748,14 +741,14 @@ where
 
 pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
     let now = Utc::now();
-    sqlx::query(
+    sqlx::query!(
         "UPDATE cheers_sessions
          SET status = $1, last_used_at = $2, updated_at = $2
          WHERE session_id = $3",
+        SESSION_STATUS_BUSY,
+        now,
+        session_id.to_string(),
     )
-    .bind(SESSION_STATUS_BUSY)
-    .bind(now)
-    .bind(session_id.to_string())
     .execute(db)
     .await
     .map_err(AppError::Db)?;
@@ -765,25 +758,25 @@ pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError
 
 pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
     let now = Utc::now();
-    sqlx::query(
+    sqlx::query!(
         "UPDATE cheers_sessions
          SET status = $1, last_used_at = $2, updated_at = $2
          WHERE session_id = $3",
+        SESSION_STATUS_IDLE,
+        now,
+        session_id.to_string(),
     )
-    .bind(SESSION_STATUS_IDLE)
-    .bind(now)
-    .bind(session_id.to_string())
     .execute(db)
     .await
     .map_err(AppError::Db)?;
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE cheers_session_bindings
          SET detached_at = COALESCE(detached_at, $1)
          WHERE session_id = $2 AND detached_at IS NULL",
+        now,
+        session_id.to_string(),
     )
-    .bind(now)
-    .bind(session_id.to_string())
     .execute(db)
     .await
     .map_err(AppError::Db)?;
@@ -797,22 +790,22 @@ pub async fn resolve_session_id_by_key(
     provider_account_id: &str,
     provider_session_key: &str,
 ) -> Result<Uuid, AppError> {
-    sqlx::query(
+    sqlx::query!(
         "SELECT session_id FROM cheers_sessions
          WHERE provider = $1
            AND provider_account_id = $2
            AND bot_id = $3
            AND provider_session_key = $4
          LIMIT 1",
+        PROVIDER,
+        provider_account_id,
+        bot_id.to_string(),
+        provider_session_key,
     )
-    .bind(PROVIDER)
-    .bind(provider_account_id)
-    .bind(bot_id.to_string())
-    .bind(provider_session_key)
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
-    .and_then(|row| row.try_get::<String, _>("session_id").ok())
+    .and_then(|row| Some(row.session_id.clone()))
     .and_then(|value| Uuid::parse_str(&value).ok())
     .ok_or_else(|| AppError::NotFound)
 }
@@ -823,7 +816,7 @@ pub async fn resolve_session_id_by_provider_id(
     provider_account_id: &str,
     provider_session_id: &str,
 ) -> Result<Uuid, AppError> {
-    sqlx::query(
+    sqlx::query!(
         "SELECT session_id FROM cheers_sessions
          WHERE provider = $1
            AND provider_account_id = $2
@@ -831,15 +824,15 @@ pub async fn resolve_session_id_by_provider_id(
            AND provider_session_id = $4
          ORDER BY updated_at DESC
          LIMIT 1",
+        PROVIDER,
+        provider_account_id,
+        bot_id.to_string(),
+        provider_session_id,
     )
-    .bind(PROVIDER)
-    .bind(provider_account_id)
-    .bind(bot_id.to_string())
-    .bind(provider_session_id)
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
-    .and_then(|row| row.try_get::<String, _>("session_id").ok())
+    .and_then(|row| Some(row.session_id.clone()))
     .and_then(|value| Uuid::parse_str(&value).ok())
     .ok_or_else(|| AppError::NotFound)
 }
@@ -885,11 +878,11 @@ pub async fn apply_session_update(
     let now = Utc::now();
     let metadata_json = metadata.map(|value| value.to_string());
 
-    let updated: String = sqlx::query_scalar(
+    let updated: String = sqlx::query_scalar!(
         "UPDATE cheers_sessions
          SET provider_session_id = COALESCE($1, provider_session_id),
              metadata = CASE
-                WHEN $2 IS NULL THEN metadata
+                WHEN $2::text IS NULL THEN metadata
                 WHEN jsonb_typeof($2::jsonb) = 'object' THEN COALESCE(metadata, '{}'::jsonb) || $2::jsonb
                 ELSE metadata
              END,
@@ -898,12 +891,12 @@ pub async fn apply_session_update(
              updated_at = $4
          WHERE session_id = $5
          RETURNING session_id",
+        provider_session_id,
+        metadata_json,
+        SESSION_STATUS_BUSY,
+        now,
+        session_id.to_string(),
     )
-    .bind(provider_session_id)
-    .bind(metadata_json)
-    .bind(SESSION_STATUS_BUSY)
-    .bind(now)
-    .bind(session_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
@@ -957,12 +950,12 @@ pub async fn apply_runtime_session_ack(
     let now = Utc::now();
     let metadata_json = metadata.map(|value| value.to_string());
 
-    let updated: String = sqlx::query_scalar(
+    let updated: String = sqlx::query_scalar!(
         "UPDATE cheers_sessions
          SET provider_session_id = COALESCE($1, provider_session_id),
              provider_session_key = COALESCE($2, provider_session_key),
              metadata = CASE
-                WHEN $3 IS NULL THEN metadata
+                WHEN $3::text IS NULL THEN metadata
                 WHEN jsonb_typeof($3::jsonb) = 'object' THEN COALESCE(metadata, '{}'::jsonb) || $3::jsonb
                 ELSE metadata
              END,
@@ -974,16 +967,16 @@ pub async fn apply_runtime_session_ack(
            AND provider = $8
            AND provider_account_id = $9
          RETURNING session_id",
+        provider_session_id,
+        provider_session_key,
+        metadata_json,
+        status,
+        now,
+        session_id.to_string(),
+        bot_id.to_string(),
+        PROVIDER,
+        provider_account_id,
     )
-    .bind(provider_session_id)
-    .bind(provider_session_key)
-    .bind(metadata_json)
-    .bind(status)
-    .bind(now)
-    .bind(session_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(PROVIDER)
-    .bind(provider_account_id)
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?

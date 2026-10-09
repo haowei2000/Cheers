@@ -15,7 +15,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::dispatcher::{bot_unavailable_frame, remove_placeholder};
@@ -29,14 +29,14 @@ pub async fn sweep_once(
     fanout: &Arc<dyn Fanout>,
     threshold_secs: u64,
 ) -> usize {
-    let rows = match sqlx::query(
+    let rows = match sqlx::query!(
         "SELECT msg_id, sender_id
          FROM messages
          WHERE is_partial = TRUE
            AND channel_seq IS NULL
            AND created_at < NOW() - make_interval(secs => $1)",
+        threshold_secs as f64,
     )
-    .bind(threshold_secs as f64)
     .fetch_all(db)
     .await
     {
@@ -49,11 +49,7 @@ pub async fn sweep_once(
 
     let mut reclaimed = 0usize;
     for row in rows {
-        let Some(msg_id) = row
-            .try_get::<String, _>("msg_id")
-            .ok()
-            .and_then(|s| s.parse::<Uuid>().ok())
-        else {
+        let Some(msg_id) = Some(row.msg_id.clone()).and_then(|s| s.parse::<Uuid>().ok()) else {
             continue;
         };
 
@@ -62,10 +58,7 @@ pub async fn sweep_once(
             continue;
         }
 
-        let bot_id = row
-            .try_get::<String, _>("sender_id")
-            .ok()
-            .and_then(|s| s.parse::<Uuid>().ok());
+        let bot_id = Some(row.sender_id.clone()).and_then(|s| s.parse::<Uuid>().ok());
 
         match remove_placeholder(db, msg_id).await {
             Ok(Some(failed)) => {
@@ -119,15 +112,15 @@ pub async fn sweep_bot(
     fanout: &Arc<dyn Fanout>,
     bot_id: Uuid,
 ) -> usize {
-    let rows = match sqlx::query(
+    let rows = match sqlx::query!(
         "SELECT msg_id
          FROM messages
          WHERE is_partial = TRUE
            AND channel_seq IS NULL
            AND sender_type = 'bot'
            AND sender_id = $1",
+        bot_id.to_string(),
     )
-    .bind(bot_id.to_string())
     .fetch_all(db)
     .await
     {
@@ -140,11 +133,7 @@ pub async fn sweep_bot(
 
     let mut reclaimed = 0usize;
     for row in rows {
-        let Some(msg_id) = row
-            .try_get::<String, _>("msg_id")
-            .ok()
-            .and_then(|s| s.parse::<Uuid>().ok())
-        else {
+        let Some(msg_id) = Some(row.msg_id.clone()).and_then(|s| s.parse::<Uuid>().ok()) else {
             continue;
         };
         if registry.contains(msg_id) {

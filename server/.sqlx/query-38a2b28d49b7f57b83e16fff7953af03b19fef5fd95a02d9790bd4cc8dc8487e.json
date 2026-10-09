@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mcp_oauth_refresh_tokens\n         (refresh_token_id,family_id,token_hash,host_id,credential_hash,client_id,scope,resource,expires_at,channel_id)\n         VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38a2b28d49b7f57b83e16fff7953af03b19fef5fd95a02d9790bd4cc8dc8487e"
+}

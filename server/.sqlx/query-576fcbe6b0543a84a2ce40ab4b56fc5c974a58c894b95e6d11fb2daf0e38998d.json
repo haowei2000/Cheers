@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "576fcbe6b0543a84a2ce40ab4b56fc5c974a58c894b95e6d11fb2daf0e38998d"
+}

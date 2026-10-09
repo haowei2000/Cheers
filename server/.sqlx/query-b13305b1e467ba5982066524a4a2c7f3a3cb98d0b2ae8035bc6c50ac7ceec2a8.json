@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mcp_oauth_refresh_tokens SET rotated_at=NOW(), replaced_by_id=$1\n         WHERE refresh_token_id=$2 AND rotated_at IS NULL AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b13305b1e467ba5982066524a4a2c7f3a3cb98d0b2ae8035bc6c50ac7ceec2a8"
+}

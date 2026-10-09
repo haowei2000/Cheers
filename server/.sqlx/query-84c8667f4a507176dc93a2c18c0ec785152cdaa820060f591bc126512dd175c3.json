@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.host_id, i.status, i.revoked_at,\n                b.bot_id, b.username, b.display_name, b.is_disabled,\n                b.binding_config, b.created_by\n         FROM connector_hosts i\n         JOIN bot_accounts b ON b.bot_id = i.bot_id\n         WHERE i.credential_hash = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "binding_config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_by",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "84c8667f4a507176dc93a2c18c0ec785152cdaa820060f591bc126512dd175c3"
+}

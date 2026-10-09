@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT voice_session_id, status, transcription_status, started_at\n         FROM voice_sessions\n         WHERE channel_id = $1 AND ended_at IS NULL\n         ORDER BY started_at DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "voice_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "transcription_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "started_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f62367abeafee8a69b5709cb0b48f01f1c8882a7c65ded042c5ff71617c2c8bf"
+}

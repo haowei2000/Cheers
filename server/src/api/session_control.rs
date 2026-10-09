@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -33,17 +33,18 @@ async fn ensure_channel_member(
     if matches!(claims.role.as_str(), "system_admin" | "admin") {
         return Ok(user_id);
     }
-    let ok = sqlx::query(
+    let ok = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
         ) AS ok",
+        channel_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
     .fetch_one(&state.db)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     if ok {
         Ok(user_id)
@@ -263,15 +264,15 @@ async fn caller_role(
     channel_id: Uuid,
     user_id: Uuid,
 ) -> Result<String, AppError> {
-    let role = sqlx::query(
+    let role = sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
     .fetch_optional(&state.db)
     .await? // DB error → propagates (no silent 'member' fallback)
-    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .and_then(|r| Some(r.role.clone()))
     .unwrap_or_else(|| "member".to_string());
     Ok(role)
 }
@@ -322,24 +323,22 @@ async fn gate_initiate(
 /// agents (mode is a first-class posture control, changed via set_mode — see
 /// `connector_config::dedup_mode_config_options`).
 async fn advertised_config_options(state: &AppState, bot_id: Uuid) -> Vec<Value> {
-    let snapshot = sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id.to_string())
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|r| {
-            r.try_get::<Option<Value>, _>("binding_config")
-                .ok()
-                .flatten()
-        })
-        .and_then(|b| {
-            b.get("connector_control")?
-                .get("options")?
-                .get("options")
-                .cloned()
-        })
-        .unwrap_or_else(|| json!({}));
+    let snapshot = sqlx::query!(
+        "SELECT binding_config FROM bot_accounts WHERE bot_id = $1",
+        bot_id.to_string(),
+    )
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.binding_config.clone())
+    .and_then(|b| {
+        b.get("connector_control")?
+            .get("options")?
+            .get("options")
+            .cloned()
+    })
+    .unwrap_or_else(|| json!({}));
     let options = snapshot
         .get("configOptions")
         .and_then(Value::as_array)
@@ -356,26 +355,28 @@ async fn persist_session_override(
     session_id: Uuid,
     set: impl FnOnce(&mut serde_json::Map<String, Value>),
 ) -> Result<(), AppError> {
-    let meta = sqlx::query("SELECT metadata FROM cheers_sessions WHERE session_id = $1")
-        .bind(session_id.to_string())
-        .fetch_optional(&state.db)
-        .await?
-        .and_then(|r| r.try_get::<Option<Value>, _>("metadata").ok().flatten())
-        .unwrap_or_else(|| json!({}));
+    let meta = sqlx::query!(
+        "SELECT metadata FROM cheers_sessions WHERE session_id = $1",
+        session_id.to_string(),
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .and_then(|r| r.metadata.clone())
+    .unwrap_or_else(|| json!({}));
     let mut sc = meta
         .get("session_config")
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
     set(&mut sc);
-    sqlx::query(
+    sqlx::query!(
         "UPDATE cheers_sessions
          SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('session_config', $2::jsonb),
              updated_at = NOW()
          WHERE session_id = $1",
+        session_id.to_string(),
+        Value::Object(sc),
     )
-    .bind(session_id.to_string())
-    .bind(Value::Object(sc))
     .execute(&state.db)
     .await?;
     Ok(())
@@ -670,7 +671,7 @@ pub async fn session_controls(
 }
 
 async fn bot_agent_type(state: &AppState, bot_id: Uuid) -> String {
-    sqlx::query(
+    sqlx::query!(
         "SELECT COALESCE(
                     (SELECT NULLIF(TRIM(i.agent_type), '')
                      FROM connector_hosts i
@@ -683,13 +684,13 @@ async fn bot_agent_type(state: &AppState, bot_id: Uuid) -> String {
                 ) AS agent_type
          FROM bot_accounts b
          WHERE b.bot_id = $1",
+        bot_id.to_string(),
     )
-    .bind(bot_id.to_string())
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| r.try_get::<String, _>("agent_type").ok())
+    .and_then(|r| r.agent_type.clone())
     .filter(|s| !s.trim().is_empty())
     .unwrap_or_else(|| "generic".to_string())
 }

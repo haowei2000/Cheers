@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT identity_id FROM auth_external_identities\n         WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default'\n           AND subject = $2 AND user_id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "identity_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c0a3df275e04f46ab6ccbd290a7e22d3e9f7edfc8c0bb29bb33baad94fbc9c4c"
+}

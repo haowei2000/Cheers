@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE workspace_bot_memberships SET role = $3 WHERE workspace_id = $1 AND bot_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4987ecf4896c7e08e17dc54a1ff4b50617673305af48a40950c58d4e48061066"
+}

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cm.member_id, cm.member_type, cm.role,\n                COALESCE(u.username, b.username) AS username,\n                COALESCE(u.display_name, b.display_name) AS display_name,\n                COALESCE(u.avatar_url, b.avatar_url) AS avatar_url,\n                COALESCE(u.bio, b.description) AS bio,\n                COALESCE(u.status_text, b.status_text) AS status_text,\n                COALESCE(u.status_emoji, b.status_emoji) AS status_emoji,\n                (b.binding_config->'connector_control'->'capabilities'->>'audio')::boolean\n                    AS can_receive_audio\n         FROM channel_memberships cm\n         LEFT JOIN users u ON cm.member_type = 'user' AND u.user_id = cm.member_id\n         LEFT JOIN bot_accounts b ON cm.member_type = 'bot' AND b.bot_id = cm.member_id\n         WHERE cm.channel_id = $1\n         ORDER BY cm.member_type, username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "member_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "bio",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "status_text",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "can_receive_audio",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ffef0fc48dfece73f996de302277e05600b38d1e5f72aef77806f0b99a50720d"
+}

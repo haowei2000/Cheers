@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_usage_events (id, channel_id, bot_id, session_id, input_tokens, output_tokens, total_tokens, context_window, cost_usd) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "edda1a9f24461122da986880c7973c9d215b8d18907d11602af8d56fae1d40c4"
+}

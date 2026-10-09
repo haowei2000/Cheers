@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM workspace_memberships wm\n            JOIN channels c ON c.workspace_id = wm.workspace_id\n            WHERE c.channel_id = $1 AND wm.user_id = $2 AND wm.status = 'active'\n        ) AS ok",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "97ca3587180a3deeba9ea383cc418ea54c748f2990f53ddc34adf9b690bf83f5"
+}

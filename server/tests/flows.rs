@@ -3150,9 +3150,11 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
         "exactly the @me message is counted (the plain one is not)"
     );
 
-    // Advancing my last_read_at (what opening the channel does) clears it.
+    // Advance to the latest persisted message: application timestamps and the
+    // PostgreSQL container clock need not be perfectly synchronized.
     sqlx::query(
-        "UPDATE channel_memberships SET last_read_at = NOW()
+        "UPDATE channel_memberships SET last_read_at =
+             (SELECT MAX(created_at) FROM messages WHERE channel_id = $1)
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
     )
     .bind(ch.to_string())
@@ -4187,4 +4189,44 @@ async fn idempotent_inbox_deliver_retry_replays_before_touching_storage(db: PgPo
     assert_eq!(retry["ok"], true, "{retry}");
     assert_eq!(retry["data"]["file_id"], "f1");
     assert_eq!(retry["data"]["idempotent_replay"], true);
+}
+
+/// Shared typed projections must preserve persisted values across paging paths,
+/// including a bot sender with no matching row in the users outer join.
+#[sqlx::test]
+async fn typed_message_reads_preserve_depth_and_nullable_sender(db: PgPool) {
+    let workspace = seed_workspace(&db).await;
+    let channel = seed_channel(&db, workspace).await;
+    let message_id = Uuid::new_v4().to_string();
+    let bot_id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO messages
+         (msg_id, channel_id, sender_type, sender_id, content, depth, channel_seq)
+         VALUES ($1, $2, 'bot', $3, 'nested response', 3, 1)",
+    )
+    .bind(&message_id)
+    .bind(channel.to_string())
+    .bind(&bot_id)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let latest = messages::list_channel_messages(&db, &channel, None, None, 20)
+        .await
+        .unwrap();
+    let catch_up = messages::list_channel_messages_since_seq(&db, &channel, 0, 20)
+        .await
+        .unwrap();
+    let by_seq = messages::list_channel_messages_by_seq(&db, &channel, 1, None, 20)
+        .await
+        .unwrap();
+    for page in [latest, catch_up, by_seq] {
+        assert_eq!(page.messages.len(), 1);
+        let message = &page.messages[0];
+        assert_eq!(message.msg_id, message_id);
+        assert_eq!(message.depth, 3);
+        assert_eq!(message.sender_id.as_deref(), Some(bot_id.as_str()));
+        assert!(message.sender_name.is_none());
+        assert!(message.file_ids.is_empty());
+    }
 }

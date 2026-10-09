@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.email IS NOT NULL AND btrim(u.email) <> ''\n                AND ((u.password_hash IS NOT NULL)\n                     OR EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id))\n                    AS email_available,\n                u.password_hash IS NOT NULL\n                AND (EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)\n                     OR EXISTS(SELECT 1 AS present FROM auth_external_identities e WHERE e.user_id = u.user_id))\n                    AS password_available\n         FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email_available",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "password_available",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "b6ec78dac048399ec03b84782673ffb7893e2c0abed1caf5a4f574fe1e6ed2e6"
+}

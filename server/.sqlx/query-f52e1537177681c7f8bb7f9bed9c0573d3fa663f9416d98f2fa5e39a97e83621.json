@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.processor_policy_version FROM channel_memberships m JOIN bot_accounts b ON b.bot_id = m.member_id\n         WHERE m.channel_id = $1 AND m.member_id = $2 AND m.member_type = 'bot' AND b.external_processor = TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "processor_policy_version",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f52e1537177681c7f8bb7f9bed9c0573d3fa663f9416d98f2fa5e39a97e83621"
+}

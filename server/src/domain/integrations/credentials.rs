@@ -16,7 +16,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::secret::Secret;
@@ -142,7 +142,7 @@ pub async fn upsert(
         .transpose()?;
     let credential_id = Uuid::new_v4().to_string();
 
-    let stored: String = sqlx::query_scalar(
+    let stored: String = sqlx::query_scalar!(
         "INSERT INTO integration_credentials (
              credential_id, integration_id, subject_type, subject_id, external_account,
              access_token_enc, refresh_token_enc, scopes, expires_at, created_by
@@ -157,17 +157,17 @@ pub async fn upsert(
              last_refreshed_at = NOW(),
              updated_at        = NOW()
          RETURNING credential_id",
+        &credential_id,
+        integration_id,
+        subject_type.as_str(),
+        subject_id,
+        external_account,
+        &access_enc,
+        refresh_enc.as_deref(),
+        scopes,
+        expires_at,
+        created_by,
     )
-    .bind(&credential_id)
-    .bind(integration_id)
-    .bind(subject_type.as_str())
-    .bind(subject_id)
-    .bind(external_account)
-    .bind(&access_enc)
-    .bind(&refresh_enc)
-    .bind(scopes)
-    .bind(expires_at)
-    .bind(created_by)
     .fetch_one(db)
     .await?;
     Ok(stored)
@@ -223,7 +223,7 @@ async fn load_where(
     subject_id: &str,
     external_account: Option<&str>,
 ) -> anyhow::Result<Option<Credential>> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT credential_id, integration_id, subject_type, subject_id, external_account,
                 access_token_enc, refresh_token_enc, scopes, expires_at, revoked_at
            FROM integration_credentials
@@ -231,34 +231,34 @@ async fn load_where(
             AND ($4::text IS NULL OR external_account = $4)
           ORDER BY updated_at DESC
           LIMIT 1",
+        integration_id,
+        subject_type.as_str(),
+        subject_id,
+        external_account,
     )
-    .bind(integration_id)
-    .bind(subject_type.as_str())
-    .bind(subject_id)
-    .bind(external_account)
     .fetch_optional(db)
     .await?;
 
     let Some(row) = row else { return Ok(None) };
     let key = master_key(config);
-    let access_enc: String = row.try_get("access_token_enc")?;
-    let refresh_enc: Option<String> = row.try_get("refresh_token_enc")?;
-    let stored_subject: String = row.try_get("subject_type")?;
+    let access_enc: String = row.access_token_enc.clone();
+    let refresh_enc: Option<String> = row.refresh_token_enc.clone();
+    let stored_subject: String = row.subject_type.clone();
 
     Ok(Some(Credential {
-        credential_id: row.try_get("credential_id")?,
-        integration_id: row.try_get("integration_id")?,
+        credential_id: row.credential_id.clone(),
+        integration_id: row.integration_id.clone(),
         subject_type: SubjectType::parse(&stored_subject)
             .ok_or_else(|| anyhow::anyhow!("unknown subject_type {stored_subject}"))?,
-        subject_id: row.try_get("subject_id")?,
-        external_account: row.try_get("external_account")?,
+        subject_id: row.subject_id.clone(),
+        external_account: row.external_account.clone(),
         access_token: Secret::new(crypto::decrypt_secret(&key, &access_enc)?),
         refresh_token: refresh_enc
             .map(|blob| crypto::decrypt_secret(&key, &blob).map(Secret::new))
             .transpose()?,
-        scopes: row.try_get("scopes")?,
-        expires_at: row.try_get("expires_at")?,
-        revoked_at: row.try_get("revoked_at")?,
+        scopes: row.scopes.clone(),
+        expires_at: row.expires_at.clone(),
+        revoked_at: row.revoked_at.clone(),
     }))
 }
 
@@ -268,12 +268,12 @@ async fn load_where(
 /// GitHub" from "GitHub was never connected", and so channel bindings that
 /// reference it do not dangle.
 pub async fn revoke(db: &PgPool, credential_id: &str) -> anyhow::Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE integration_credentials
             SET revoked_at = NOW(), updated_at = NOW()
           WHERE credential_id = $1 AND revoked_at IS NULL",
+        credential_id,
     )
-    .bind(credential_id)
     .execute(db)
     .await?;
     Ok(())

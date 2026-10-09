@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT event_type, bot_id, request_id, msg_id, actor_id, target_user_id,\n                decision, option_id, detail, created_at\n         FROM approval_audit\n         WHERE channel_id = $1\n         ORDER BY created_at DESC\n         LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "request_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "target_user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "decision",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "option_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "detail",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "8da3b5d8484cbd61009a37d594a7834ee229e86dbc34c6903851a6b336209d9c"
+}

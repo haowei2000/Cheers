@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM bot_accounts b\n            WHERE b.bot_id = $1 AND (\n                b.created_by = $2\n                OR EXISTS (\n                    SELECT 1 AS present FROM channel_memberships bcm\n                    JOIN channel_memberships ucm ON ucm.channel_id = bcm.channel_id\n                    WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'\n                      AND ucm.member_id = $2 AND ucm.member_type = 'user'\n                )\n            )\n        ) AS ok",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0d4e4d3a526bc9b4e95a52b3202280f147960e7c0e8bc0c5d93d920201d9736f"
+}

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.host_id, i.device_name, b.bot_id, b.display_name, b.username,\n                    c.channel_id AS \"channel_id?\", c.name AS \"channel_name?\"\n             FROM connector_hosts i JOIN bot_accounts b ON b.bot_id = i.bot_id\n             LEFT JOIN channel_memberships bm ON bm.member_id=b.bot_id AND bm.member_type='bot'\n             LEFT JOIN channels c ON c.channel_id=bm.channel_id\n             WHERE i.status = 'active' AND i.revoked_at IS NULL AND b.is_disabled = FALSE\n               AND b.created_by = $1\n               AND (c.channel_id IS NULL OR EXISTS (\n                   SELECT 1 AS present FROM channel_memberships um\n                   WHERE um.member_id=$1 AND um.member_type='user' AND um.channel_id=c.channel_id\n               ))\n             ORDER BY b.username, i.device_name, c.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "device_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "channel_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "channel_name?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d749c2bac6769dd9a86c24d315e0d081e2969dd3ab625b70c546aa021c979914"
+}

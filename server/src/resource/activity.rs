@@ -6,7 +6,7 @@
 //!
 //! 操作事件对浏览器不 fan-out（realtime::Fanout 只推对话帧）；bot 通过 pull 发现。
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{authorize_channel_read, Principal, ResourceResult};
@@ -31,146 +31,45 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .and_then(|v| v.as_i64())
         .unwrap_or(50)
         .clamp(1, 200);
-    // Board mode: `desc` returns the LATEST events first (an activity feed); the
-    // default (asc) is the bot's forward-cursor read. The direction is a validated
-    // literal (never user text), so the runtime replace below can't inject.
-    let order = if params
-        .get("desc")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        "DESC"
-    } else {
-        "ASC"
-    };
-
-    let base_query = r#"
-        SELECT event_type, channel_seq, created_at, payload
-        FROM (
-            SELECT
-                'message'::text AS event_type,
-                m.channel_seq,
-                m.created_at,
-                jsonb_build_object(
-                    'v', 1,
-                    'msg_id', m.msg_id,
-                    'channel_id', m.channel_id,
-                    'channel_seq', m.channel_seq,
-                    'sender_type', m.sender_type,
-                    'sender_id', m.sender_id,
-                    'content', m.content,
-                    'msg_type', m.msg_type,
-                    'is_partial', m.is_partial,
-                    'reply_to_msg_id', m.in_reply_to_msg_id,
-                    'file_ids', COALESCE(m.file_ids, '[]'::jsonb),
-                    'mentions', COALESCE(mm.mentions, '[]'::jsonb),
-                    'created_at', m.created_at
-                ) AS payload
-            FROM messages m
-            LEFT JOIN LATERAL (
-                SELECT jsonb_agg(
-                    jsonb_build_object(
-                        'member_id', member_id,
-                        'member_type', member_type
-                    )
-                    ORDER BY member_type, member_id
-                ) AS mentions
-                FROM message_mentions
-                WHERE msg_id = m.msg_id
-            ) mm ON TRUE
-            WHERE m.channel_id = $1
-              AND m.channel_seq IS NOT NULL
-              AND m.channel_seq > $2
-              AND m.is_partial = FALSE
-
-            UNION ALL
-
-            SELECT
-                'operation'::text AS event_type,
-                o.channel_seq,
-                o.created_at,
-                jsonb_build_object(
-                    'op_id', o.id,
-                    'channel_id', o.channel_id,
-                    'channel_seq', o.channel_seq,
-                    'op_type', o.op_type,
-                    'actor_type', o.actor_type,
-                    'actor_id', o.actor_id,
-                    'target_ref', o.target_ref,
-                    'payload', COALESCE(o.payload, '{}'::jsonb),
-                    'created_at', o.created_at
-                ) AS payload
-            FROM channel_operations o
-            WHERE o.channel_id = $1
-              AND o.channel_seq > $2
-
-            UNION ALL
-
-            SELECT
-                'voice_transcript_final'::text AS event_type,
-                t.channel_seq,
-                t.created_at,
-                jsonb_build_object(
-                    'segment_id', t.segment_id,
-                    'voice_session_id', t.voice_session_id,
-                    'channel_id', t.channel_id,
-                    'channel_seq', t.channel_seq,
-                    'user_id', t.user_id,
-                    'provider_segment_id', t.provider_segment_id,
-                    'track_id', t.track_id,
-                    'text', t.text,
-                    'started_at_ms', t.started_at_ms,
-                    'ended_at_ms', t.ended_at_ms,
-                    'language', t.language,
-                    'confidence', t.confidence,
-                    'supersedes_segment_id', t.supersedes_segment_id,
-                    'finalized_at', t.finalized_at,
-                    'created_at', t.created_at
-                ) AS payload
-            FROM voice_transcript_segments t
-            WHERE t.channel_id = $1
-              AND t.channel_seq > $2
-
-            UNION ALL
-
-            SELECT
-                'task_claim_evaluation'::text AS event_type,
-                e.source_seq_to AS channel_seq,
-                e.reserved_at AS created_at,
-                jsonb_build_object(
-                    'evaluation_id', e.evaluation_id,
-                    'channel_id', e.channel_id,
-                    'bot_id', e.bot_id,
-                    'source_seq_from', e.source_seq_from,
-                    'source_seq_to', e.source_seq_to,
-                    'status', e.status,
-                    'error', e.error,
-                    'created_at', e.reserved_at
-                ) AS payload
-            FROM task_claim_evaluations e
-            WHERE e.channel_id = $1
-              AND e.source_seq_to > $2
-        ) events
-        ORDER BY channel_seq ASC
-        LIMIT $3
-        "#;
-    let query = base_query.replace("channel_seq ASC", &format!("channel_seq {order}"));
-    let rows = sqlx::query(&query)
-        .bind(channel_id.to_string())
-        .bind(since_seq)
-        .bind(limit)
+    struct ActivityRow {
+        event_type: String,
+        channel_seq: i64,
+        created_at: chrono::DateTime<chrono::Utc>,
+        payload: Value,
+    }
+    // Board mode reads newest first; bot cursor reads keep ascending order.
+    let descending = params.get("desc").and_then(Value::as_bool).unwrap_or(false);
+    let rows = if descending {
+        sqlx::query_file_as!(
+            ActivityRow,
+            "queries/activity_desc.sql",
+            channel_id.to_string(),
+            since_seq,
+            limit,
+        )
         .fetch_all(db)
         .await
-        .map_err(super::db_err("activity.read: select channel operations"))?;
+    } else {
+        sqlx::query_file_as!(
+            ActivityRow,
+            "queries/activity_asc.sql",
+            channel_id.to_string(),
+            since_seq,
+            limit,
+        )
+        .fetch_all(db)
+        .await
+    }
+    .map_err(super::db_err("activity.read: select channel operations"))?;
 
     let events: Vec<Value> = rows
         .into_iter()
         .map(|row| {
             json!({
-                "event_type": row.try_get::<String, _>("event_type").unwrap_or_default(),
-                "channel_seq": row.try_get::<i64, _>("channel_seq").unwrap_or_default(),
-                "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok(),
-                "data": row.try_get::<Value, _>("payload").unwrap_or_else(|_| json!({})),
+                "event_type": row.event_type,
+                "channel_seq": row.channel_seq,
+                "created_at": row.created_at,
+                "data": row.payload,
             })
         })
         .collect();
@@ -199,7 +98,7 @@ pub async fn handle_index(db: &PgPool, principal: &Principal, params: &Value) ->
 
     authorize_channel_read(db, principal, channel_id).await?;
 
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT MIN(channel_seq) AS min_seq,
                 MAX(channel_seq) AS max_seq,
                 COUNT(*) AS count
@@ -207,16 +106,16 @@ pub async fn handle_index(db: &PgPool, principal: &Principal, params: &Value) ->
          WHERE channel_id = $1
            AND channel_seq IS NOT NULL
            AND is_partial = FALSE",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_one(db)
     .await
     .map_err(super::db_err("activity.index: select min/max/count seq"))?;
 
     Ok(json!({
         "channel_id": channel_id,
-        "min_seq": row.try_get::<Option<i64>, _>("min_seq").ok().flatten(),
-        "max_seq": row.try_get::<Option<i64>, _>("max_seq").ok().flatten(),
-        "count": row.try_get::<i64, _>("count").unwrap_or(0),
+        "min_seq": row.min_seq.clone(),
+        "max_seq": row.max_seq.clone(),
+        "count": row.count.clone().unwrap_or(0),
     }))
 }

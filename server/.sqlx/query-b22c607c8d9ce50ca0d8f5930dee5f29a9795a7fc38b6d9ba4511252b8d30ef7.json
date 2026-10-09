@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.session_id, b.role, s.status, s.provider_session_key, s.last_used_at, s.metadata\n         FROM cheers_session_bindings b\n         JOIN cheers_sessions s ON s.session_id = b.session_id\n         WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3\n           AND s.status NOT IN ('terminated', 'revoked', 'expired')\n         ORDER BY (b.role = 'primary') DESC, s.last_used_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_session_key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_used_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "b22c607c8d9ce50ca0d8f5930dee5f29a9795a7fc38b6d9ba4511252b8d30ef7"
+}

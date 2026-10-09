@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE enrollment_codes SET redeemed_at = NOW()\n         WHERE code_hash = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()\n         RETURNING bot_id, agent_type, host_id, created_by",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "agent_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_by",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "00e6ebe1c048467ede883f990fcc0720fde55ee43e22c3b12fee7150d25556a5"
+}

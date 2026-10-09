@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO transcript_audit_events\n            (channel_id, voice_session_id, segment_id, actor_user_id, action, details)\n         VALUES ($1, $2, $3, $4, $5, $6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d2e29d21e9f939393d3f6e4b9515fe0cdb3ec540c4afa6d3f47af52615574d11"
+}

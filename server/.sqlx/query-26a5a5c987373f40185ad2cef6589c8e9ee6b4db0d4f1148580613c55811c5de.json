@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE workspace_memberships SET role = 'owner' WHERE workspace_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "26a5a5c987373f40185ad2cef6589c8e9ee6b4db0d4f1148580613c55811c5de"
+}

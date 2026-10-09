@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id\n         FROM messages\n         WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "18f071126fc7cc5b0c0650845d82835cd32c4a587283e0f3861b5b3556a9e017"
+}

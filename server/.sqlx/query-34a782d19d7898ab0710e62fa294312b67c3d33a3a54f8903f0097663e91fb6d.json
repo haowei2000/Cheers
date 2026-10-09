@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO webauthn_credentials\n         (credential_pk, user_id, credential_id, public_key, sign_count, transports,\n          backup_eligible, backup_state, name)\n         VALUES ($1, $2, $3, $4, 0, '[]'::jsonb, FALSE, FALSE, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Bytea",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "34a782d19d7898ab0710e62fa294312b67c3d33a3a54f8903f0097663e91fb6d"
+}

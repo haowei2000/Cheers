@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM channel_memberships removing\n            JOIN channels c ON c.channel_id = removing.channel_id\n            WHERE removing.channel_id = $1 AND removing.member_id = $2\n              AND removing.member_type = 'user' AND removing.role = 'owner'\n              AND c.type <> 'dm' AND c.archived_at IS NULL\n              AND NOT EXISTS (\n                SELECT 1 AS present FROM channel_memberships other\n                WHERE other.channel_id = removing.channel_id\n                  AND other.member_type = 'user' AND other.role = 'owner'\n                  AND other.member_id <> removing.member_id\n              )\n        ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4efafaa9caa88de074adaecc1110ac99b424cae9578b4ae92a45b66b60613ade"
+}

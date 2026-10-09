@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE acp_capability_delegations\n         SET status = 'revoked', revoked = TRUE, revoked_at = NOW(), updated_at = NOW()\n         WHERE bot_id = $1 AND delegation_id = $2\n         RETURNING delegation_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "delegation_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5cb9db6f35a4aa165d5236aca0da9d220809d794ef2ae0dcd62e03b63001254f"
+}

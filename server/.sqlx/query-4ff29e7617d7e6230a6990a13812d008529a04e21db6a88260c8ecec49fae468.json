@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT provider_identity FROM voice_participant_sessions\n         WHERE user_id = $1 AND voice_session_id = $2 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_identity",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4ff29e7617d7e6230a6990a13812d008529a04e21db6a88260c8ecec49fae468"
+}

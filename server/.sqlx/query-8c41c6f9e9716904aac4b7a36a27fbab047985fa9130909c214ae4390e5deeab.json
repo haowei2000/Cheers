@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, operation_kind, granted_by, granted_at\n         FROM approval_delegations\n         WHERE bot_id = $1 AND channel_id = $2 AND revoked_at IS NULL\n         ORDER BY granted_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "operation_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "granted_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "granted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8c41c6f9e9716904aac4b7a36a27fbab047985fa9130909c214ae4390e5deeab"
+}

@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT delegation_id, bot_id, scope_type, scope_id, session_id, allowed_actions,\n                    allowed_resources, max_uses, use_count, expires_at, public_key,\n                    algorithm, delegated_to, status, revoked, revoked_at, granted_by, created_at,\n                    updated_at, note\n             FROM acp_capability_delegations\n             WHERE bot_id = $1 AND status = 'active' AND revoked = FALSE\n             ORDER BY created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "delegation_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "scope_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "scope_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "allowed_actions",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 6,
+        "name": "allowed_resources",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_uses",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "use_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "public_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "algorithm",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "delegated_to",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "revoked",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "granted_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "note",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "997265f2ace473d9483c53e4495ff89e6222e2f6f4f63ac1ee0840a2f464f1de"
+}

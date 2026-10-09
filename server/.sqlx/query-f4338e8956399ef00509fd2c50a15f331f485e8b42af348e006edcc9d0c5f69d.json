@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id FROM channel_memberships\n             WHERE member_type = 'bot' AND member_id = $1\n             ORDER BY channel_id LIMIT 100",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f4338e8956399ef00509fd2c50a15f331f485e8b42af348e006edcc9d0c5f69d"
+}

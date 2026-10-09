@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT confidence_threshold::float8 AS \"value!\" FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "09733b721bddfa85662d6336ea34bdf1848ad9613adac2640bc8141cfb54f598"
+}

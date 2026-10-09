@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users\n         SET is_deleted = TRUE, deleted_at = NOW(), token_version = token_version + 1\n         WHERE user_id = $1 AND is_deleted = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "56a9a5480055dac9b91512ab17bcd604710efab1ecd0ddb769e9edab1d094ec3"
+}

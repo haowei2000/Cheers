@@ -44,11 +44,11 @@ pub async fn disable_feature(
         return Err(AppError::BadRequest("unsupported channel feature".into()));
     }
     if feature == channel_features::VOICE {
-        let active: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM voice_sessions
-              WHERE channel_id = $1 AND ended_at IS NULL)",
+        let active: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 AS present FROM voice_sessions
+              WHERE channel_id = $1 AND ended_at IS NULL) AS "value!" "#,
+            &channel_id,
         )
-        .bind(&channel_id)
         .fetch_one(&state.db)
         .await?;
         if active {

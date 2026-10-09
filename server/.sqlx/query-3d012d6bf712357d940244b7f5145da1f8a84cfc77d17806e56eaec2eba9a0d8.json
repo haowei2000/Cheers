@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages SET content_data = content_data || jsonb_build_object('resolved', true, 'status', 'cancelled')\n             WHERE sender_id = $1 AND msg_type = 'elicitation' AND content_data ->> $2 = $3\n               AND COALESCE((content_data ->> 'resolved')::boolean, false) = false\n             RETURNING msg_id, channel_id, channel_seq, content, content_data",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "content_data",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "3d012d6bf712357d940244b7f5145da1f8a84cfc77d17806e56eaec2eba9a0d8"
+}

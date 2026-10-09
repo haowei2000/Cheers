@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,reserved_at,dispatched_at) VALUES($1,$2,$3,$4,$5,'dispatched',NOW(),NOW()) ON CONFLICT(channel_id,bot_id,source_seq_from,source_seq_to) DO UPDATE SET status='dispatched', error=NULL, reserved_at=NOW(), dispatched_at=NOW(), completed_at=NULL WHERE task_claim_evaluations.status='failed' RETURNING evaluation_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "evaluation_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bb70619b822394e3d4b8c28dc86a419bdf2e1fac7b7fdbbf46105826d91500c7"
+}

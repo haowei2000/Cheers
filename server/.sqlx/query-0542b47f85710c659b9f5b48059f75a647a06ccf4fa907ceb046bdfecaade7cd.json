@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth_external_identities\n         (identity_id, provider, issuer, provider_config_id, subject, user_id,\n          corp_id, display_name, email, profile)\n         VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7,\n                 jsonb_build_object('is_private_email', $8::boolean))\n         ON CONFLICT (provider, issuer, provider_config_id, subject) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0542b47f85710c659b9f5b48059f75a647a06ccf4fa907ceb046bdfecaade7cd"
+}

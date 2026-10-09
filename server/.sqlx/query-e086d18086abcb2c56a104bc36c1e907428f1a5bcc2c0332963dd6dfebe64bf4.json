@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 AS present FROM channel_memberships\n             WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner' FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "present",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e086d18086abcb2c56a104bc36c1e907428f1a5bcc2c0332963dd6dfebe64bf4"
+}

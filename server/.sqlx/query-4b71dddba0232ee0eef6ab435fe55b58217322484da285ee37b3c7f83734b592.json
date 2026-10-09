@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO task_chains (chain_id, channel_id, root_task_id, root_msg_id, status)\n         VALUES ($1, $2, $3, $4, 'active')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b71dddba0232ee0eef6ab435fe55b58217322484da285ee37b3c7f83734b592"
+}

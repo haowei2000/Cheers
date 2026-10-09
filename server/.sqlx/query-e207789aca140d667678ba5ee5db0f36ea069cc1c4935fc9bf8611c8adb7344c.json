@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO friendships (friendship_id, user_id, friend_id, pair_key, status, message)\n         VALUES ($1, $2, $3, $4, 'pending', $5)\n         ON CONFLICT (pair_key) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e207789aca140d667678ba5ee5db0f36ea069cc1c4935fc9bf8611c8adb7344c"
+}

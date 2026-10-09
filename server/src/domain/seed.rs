@@ -11,7 +11,7 @@
 
 use std::env;
 
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -25,10 +25,12 @@ pub async fn ensure_admin_user(db: &PgPool) -> anyhow::Result<()> {
         }
     };
 
-    let existing: i64 = sqlx::query("SELECT COUNT(*) AS n FROM users")
+    let existing: i64 = sqlx::query!("SELECT COUNT(*) AS n FROM users",)
         .fetch_one(db)
         .await?
-        .try_get("n")?;
+        .n
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
     if existing > 0 {
         return Ok(());
     }
@@ -41,15 +43,15 @@ pub async fn ensure_admin_user(db: &PgPool) -> anyhow::Result<()> {
     let password_hash = crate::infra::crypto::hash_password(password.clone()).await?;
     let user_id = Uuid::new_v4().to_string();
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO users (user_id, username, email, password_hash, display_name, role)
          VALUES ($1, $2, NULL, $3, $4, 'system_admin')
          ON CONFLICT (username) DO NOTHING",
+        &user_id,
+        &username,
+        &password_hash,
+        &display_name,
     )
-    .bind(&user_id)
-    .bind(&username)
-    .bind(&password_hash)
-    .bind(&display_name)
     .execute(db)
     .await?;
 

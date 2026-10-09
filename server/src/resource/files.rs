@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use aws_sdk_s3::Client;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{
@@ -57,29 +57,31 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
         .unwrap_or(50)
         .min(200);
 
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT file_id, original_filename, content_type, size_bytes, status, created_at
          FROM file_records
          WHERE channel_id = $1 AND status IN ('uploaded', 'converted')
          ORDER BY created_at DESC
          LIMIT $2",
+        channel_id.to_string(),
+        limit,
     )
-    .bind(channel_id.to_string())
-    .bind(limit)
     .fetch_all(db)
     .await
     .map_err(super::db_err("files.list: select file records"))?;
 
     let files: Vec<Value> = rows
         .iter()
-        .map(|r| json!({
-            "file_id": r.try_get::<String, _>("file_id").unwrap_or_default(),
-            "filename": r.try_get::<Option<String>, _>("original_filename").unwrap_or(None),
-            "content_type": r.try_get::<Option<String>, _>("content_type").unwrap_or(None),
-            "size_bytes": r.try_get::<Option<i32>, _>("size_bytes").unwrap_or(None),
-            "status": r.try_get::<Option<String>, _>("status").unwrap_or(None),
-            "created_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("created_at").unwrap_or(None),
-        }))
+        .map(|r| {
+            json!({
+                "file_id": r.file_id.clone(),
+                "filename": r.original_filename.clone(),
+                "content_type": r.content_type.clone(),
+                "size_bytes": r.size_bytes.clone(),
+                "status": Some(r.status.clone()),
+                "created_at": Some(r.created_at.clone()),
+            })
+        })
         .collect();
 
     Ok(json!({ "files": files, "total": files.len(), "next_cursor": null }))
@@ -166,27 +168,27 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     // Gate on status + expiry exactly like the REST download path (api::files): a file the
     // product treats as expired/not-yet-uploaded must not be readable through the agent door
     // either, and the same gate keeps inbox_open consistent with inbox_list (handle_list).
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT original_filename, content_type, size_bytes, object_key, storage_bucket,
                 status, summary_3lines
          FROM file_records
          WHERE file_id = $1 AND channel_id = $2
            AND status IN ('uploaded', 'converted')
            AND (expires_at IS NULL OR expires_at > NOW())",
+        file_id,
+        channel_id.to_string(),
     )
-    .bind(file_id)
-    .bind(channel_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(super::db_err("files.read: select file record"))?
     .ok_or_else(|| not_found("file"))?;
 
-    let filename: Option<String> = row.try_get("original_filename").unwrap_or(None);
-    let content_type: Option<String> = row.try_get("content_type").unwrap_or(None);
-    let size_bytes: Option<i32> = row.try_get("size_bytes").unwrap_or(None);
-    let object_key: Option<String> = row.try_get("object_key").unwrap_or(None);
-    let storage_bucket: Option<String> = row.try_get("storage_bucket").unwrap_or(None);
-    let summary: Option<String> = row.try_get("summary_3lines").unwrap_or(None);
+    let filename: Option<String> = row.original_filename.clone();
+    let content_type: Option<String> = row.content_type.clone();
+    let size_bytes: Option<i32> = row.size_bytes.clone();
+    let object_key: Option<String> = row.object_key.clone();
+    let storage_bucket: Option<String> = row.storage_bucket.clone();
+    let summary: Option<String> = row.summary_3lines.clone();
 
     let meta = json!({
         "file_id": file_id,
@@ -367,12 +369,13 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         ))?;
 
     // channels.workspace_id is NOT NULL; carry it onto the record like upload_file does.
-    let workspace_id: Option<String> =
-        sqlx::query_scalar("SELECT workspace_id FROM channels WHERE channel_id = $1")
-            .bind(channel_id.to_string())
-            .fetch_optional(db)
-            .await
-            .map_err(super::db_err("files.create: select channel workspace_id"))?;
+    let workspace_id: Option<String> = sqlx::query_scalar!(
+        "SELECT workspace_id FROM channels WHERE channel_id = $1",
+        channel_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(super::db_err("files.create: select channel workspace_id"))?;
 
     let mut tx = db
         .begin()
@@ -387,23 +390,23 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         }
     }
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO file_records
             (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
              storage_bucket, original_filename, content_type, size_bytes, status,
              uploaded_at, expires_at)
          VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'uploaded', NOW(), $10)",
+        &file_id,
+        channel_id.to_string(),
+        workspace_id.as_deref(),
+        principal.principal_id.to_string(),
+        &object_key,
+        bucket,
+        &filename,
+        &content_type,
+        size_bytes,
+        expires_at,
     )
-    .bind(&file_id)
-    .bind(channel_id.to_string())
-    .bind(&workspace_id)
-    .bind(principal.principal_id.to_string())
-    .bind(&object_key)
-    .bind(bucket)
-    .bind(&filename)
-    .bind(&content_type)
-    .bind(size_bytes)
-    .bind(expires_at)
     .execute(&mut *tx)
     .await
     .map_err(super::db_err("files.create: insert file record"))?;

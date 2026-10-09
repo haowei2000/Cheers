@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -30,7 +30,7 @@ async fn load_posture(
     state: &AppState,
     bot_id: &str,
 ) -> Result<(String, Option<String>), AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT b.binding_config,
                 COALESCE(
                     (SELECT NULLIF(TRIM(i.agent_type), '')
@@ -44,19 +44,18 @@ async fn load_posture(
                 ) AS agent_type
          FROM bot_accounts b
          WHERE b.bot_id = $1",
+        bot_id,
     )
-    .bind(bot_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
     let agent_type = row
-        .try_get::<String, _>("agent_type")
-        .ok()
+        .agent_type
+        .clone()
         .unwrap_or_else(|| "generic".to_string());
     let current = row
-        .try_get::<Option<Value>, _>("binding_config")
-        .ok()
-        .flatten()
+        .binding_config
+        .clone()
         .as_ref()
         .and_then(|b| b.get("connector_control"))
         .and_then(|c| c.get("agentNativePermissionMode"))
@@ -110,15 +109,16 @@ pub async fn list_permissions(
 /// Read the bot's `connector_control` object — advertised options (reported by the
 /// connector under `options`) + desired overrides (`configOptions`) live here.
 async fn load_connector_control(state: &AppState, bot_id: &str) -> Result<Value, AppError> {
-    let row = sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let row = sqlx::query!(
+        "SELECT binding_config FROM bot_accounts WHERE bot_id = $1",
+        bot_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
     Ok(row
-        .try_get::<Option<Value>, _>("binding_config")
-        .ok()
-        .flatten()
+        .binding_config
+        .clone()
         .and_then(|b| b.get("connector_control").cloned())
         .unwrap_or_else(|| json!({})))
 }
@@ -178,7 +178,7 @@ pub async fn set_posture(
     // L1 persist under binding_config.connector_control.agentNativePermissionMode.
     // The inner jsonb_set guarantees connector_control exists as an object before
     // the outer set writes the leaf (jsonb_set can't create intermediate objects).
-    sqlx::query(
+    sqlx::query!(
         "UPDATE bot_accounts SET binding_config = jsonb_set(
             jsonb_set(
                 COALESCE(binding_config, '{}'::jsonb),
@@ -189,9 +189,9 @@ pub async fn set_posture(
             to_jsonb($2::text),
             true)
          WHERE bot_id = $1",
+        &bot_id,
+        &mode,
     )
-    .bind(&bot_id)
-    .bind(&mode)
     .execute(&state.db)
     .await?;
 
@@ -284,7 +284,7 @@ pub async fn set_config_option(
 
     // L1 persist under binding_config.connector_control.configOptions (the inner
     // jsonb_set guarantees connector_control exists before the leaf is written).
-    sqlx::query(
+    sqlx::query!(
         "UPDATE bot_accounts SET binding_config = jsonb_set(
             jsonb_set(
                 COALESCE(binding_config, '{}'::jsonb),
@@ -295,9 +295,9 @@ pub async fn set_config_option(
             $2::jsonb,
             true)
          WHERE bot_id = $1",
+        &bot_id,
+        &desired,
     )
-    .bind(&bot_id)
-    .bind(&desired)
     .execute(&state.db)
     .await?;
 
@@ -350,27 +350,27 @@ fn parse_capability(raw: &str) -> Result<Capability, AppError> {
 async fn group_catalog(state: &AppState, bot_id: &str) -> Vec<Value> {
     let mut out = vec![json!({ "ref": "friends", "label": "Owner's friends" })];
     let mut seen_ws: Vec<String> = Vec::new();
-    if let Ok(rows) = sqlx::query(
+    if let Ok(rows) = sqlx::query!(
         "SELECT c.channel_id, c.name AS cname, w.workspace_id AS wid, w.name AS wname
          FROM channel_memberships cm
          JOIN channels c ON c.channel_id = cm.channel_id
          JOIN workspaces w ON w.workspace_id = c.workspace_id
          WHERE cm.member_id = $1 AND cm.member_type = 'bot'",
+        bot_id,
     )
-    .bind(bot_id)
     .fetch_all(&state.db)
     .await
     {
         for r in rows {
-            let cid: String = r.try_get("channel_id").unwrap_or_default();
-            let cname: String = r.try_get("cname").unwrap_or_default();
+            let cid: String = r.channel_id.clone();
+            let cname: String = r.cname.clone();
             out.push(
                 json!({ "ref": format!("channel:{cid}"), "label": format!("#{cname} members") }),
             );
-            let wid: String = r.try_get("wid").unwrap_or_default();
+            let wid: String = r.wid.clone();
             if !wid.is_empty() && !seen_ws.contains(&wid) {
                 seen_ws.push(wid.clone());
-                let wname: String = r.try_get("wname").unwrap_or_default();
+                let wname: String = r.wname.clone();
                 out.push(json!({ "ref": format!("workspace:{wid}"), "label": format!("{wname} members") }));
             }
         }
@@ -494,18 +494,18 @@ pub async fn delete_event_rule(
     let capability = parse_capability(q.capability.trim())?;
     let channel = normalize_channel(q.channel_id);
     let mut tx = state.db.begin().await?;
-    let decision = sqlx::query_scalar::<_, String>(
+    let decision = sqlx::query_scalar!(
         "SELECT decision FROM bot_event_access
          WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = $3
            AND subject_id = $4 AND event_class = $5 AND capability = $6
          FOR UPDATE",
+        &bot_id,
+        &channel,
+        q.subject_kind.trim(),
+        q.subject_id.trim(),
+        q.event_class.trim(),
+        capability.as_str(),
     )
-    .bind(&bot_id)
-    .bind(&channel)
-    .bind(q.subject_kind.trim())
-    .bind(q.subject_id.trim())
-    .bind(q.event_class.trim())
-    .bind(capability.as_str())
     .fetch_optional(&mut *tx)
     .await?;
     let Some(decision) = decision else {
@@ -515,17 +515,17 @@ pub async fn delete_event_rule(
         crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid)
             .await?;
     }
-    sqlx::query(
+    sqlx::query!(
         "DELETE FROM bot_event_access
          WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = $3
            AND subject_id = $4 AND event_class = $5 AND capability = $6",
+        &bot_id,
+        &channel,
+        q.subject_kind.trim(),
+        q.subject_id.trim(),
+        q.event_class.trim(),
+        capability.as_str(),
     )
-    .bind(&bot_id)
-    .bind(&channel)
-    .bind(q.subject_kind.trim())
-    .bind(q.subject_id.trim())
-    .bind(q.event_class.trim())
-    .bind(capability.as_str())
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -569,23 +569,23 @@ fn bot_grant_kind(event_class: &str, capability: &str) -> Option<&'static str> {
 /// channel with this bot (id + display label + which channel surfaced it). Plus the
 /// `*` wildcard ("any bot") is always available client-side.
 async fn bot_subject_catalog(state: &AppState, bot_id: &str) -> Vec<Value> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT DISTINCT b.bot_id, b.username, b.display_name
          FROM channel_memberships mine
          JOIN channel_memberships theirs ON theirs.channel_id = mine.channel_id
          JOIN bot_accounts b ON b.bot_id = theirs.member_id
          WHERE mine.member_id = $1 AND mine.member_type = 'bot'
            AND theirs.member_type = 'bot' AND theirs.member_id <> $1",
+        bot_id,
     )
-    .bind(bot_id)
     .fetch_all(&state.db)
     .await
     .unwrap_or_default();
     rows.into_iter()
         .map(|r| {
-            let id: String = r.try_get("bot_id").unwrap_or_default();
-            let username: String = r.try_get("username").unwrap_or_default();
-            let display: Option<String> = r.try_get("display_name").ok().flatten();
+            let id: String = r.bot_id.clone();
+            let username: String = r.username.clone();
+            let display: Option<String> = r.display_name.clone();
             json!({
                 "bot_id": id,
                 "label": display.filter(|s| !s.trim().is_empty()).unwrap_or(username),
@@ -715,17 +715,17 @@ pub async fn delete_bot_grant(
     let (event_class, capability) = bot_grant_key(q.grant.trim())?;
     let channel = normalize_channel(q.channel_id);
     let mut tx = state.db.begin().await?;
-    let decision = sqlx::query_scalar::<_, String>(
+    let decision = sqlx::query_scalar!(
         "SELECT decision FROM bot_event_access
          WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = 'bot'
            AND subject_id = $3 AND event_class = $4 AND capability = $5
          FOR UPDATE",
+        &bot_id,
+        &channel,
+        q.subject_id.trim(),
+        event_class,
+        capability.as_str(),
     )
-    .bind(&bot_id)
-    .bind(&channel)
-    .bind(q.subject_id.trim())
-    .bind(event_class)
-    .bind(capability.as_str())
     .fetch_optional(&mut *tx)
     .await?;
     let Some(decision) = decision else {
@@ -735,16 +735,16 @@ pub async fn delete_bot_grant(
         crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid)
             .await?;
     }
-    sqlx::query(
+    sqlx::query!(
         "DELETE FROM bot_event_access
          WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = 'bot'
            AND subject_id = $3 AND event_class = $4 AND capability = $5",
+        &bot_id,
+        &channel,
+        q.subject_id.trim(),
+        event_class,
+        capability.as_str(),
     )
-    .bind(&bot_id)
-    .bind(&channel)
-    .bind(q.subject_id.trim())
-    .bind(event_class)
-    .bind(capability.as_str())
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -794,25 +794,25 @@ pub async fn list_acp_events(
 ) -> Result<Json<Value>, AppError> {
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let limit = q.limit.clamp(1, 500);
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT name, home, channel_id, session_id, payload, created_at
          FROM acp_event_log WHERE bot_id = $1
          ORDER BY created_at DESC LIMIT $2",
+        &bot_id,
+        limit,
     )
-    .bind(&bot_id)
-    .bind(limit)
     .fetch_all(&state.db)
     .await?;
     let events: Vec<Value> = rows
         .into_iter()
         .map(|r| {
             json!({
-                "name": r.try_get::<String, _>("name").unwrap_or_default(),
-                "home": r.try_get::<String, _>("home").unwrap_or_default(),
-                "channel_id": r.try_get::<Option<String>, _>("channel_id").ok().flatten(),
-                "session_id": r.try_get::<Option<String>, _>("session_id").ok().flatten(),
-                "payload": r.try_get::<Option<Value>, _>("payload").ok().flatten(),
-                "created_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                "name": r.name.clone(),
+                "home": r.home.clone(),
+                "channel_id": r.channel_id.clone(),
+                "session_id": r.session_id.clone(),
+                "payload": r.payload.clone(),
+                "created_at": Some(r.created_at.clone())
                     .map(|t| t.to_rfc3339()).unwrap_or_default(),
             })
         })

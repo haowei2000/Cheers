@@ -12,7 +12,7 @@ use std::sync::{
 
 use dashmap::DashMap;
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -339,7 +339,7 @@ pub async fn handle_done(
             .map_err(crate::gateway::log_db_err(
                 "stream.done: allocate channel_seq",
             ))?;
-    let details = sqlx::query(
+    let details = sqlx::query!(
         "UPDATE messages
          SET channel_seq = $1,
              content = $2,
@@ -348,11 +348,11 @@ pub async fn handle_done(
          WHERE msg_id = $4 AND is_partial = TRUE AND channel_seq IS NULL
          RETURNING channel_id, channel_seq, depth, file_ids, msg_type,
                    in_reply_to_msg_id AS reply_to_msg_id, chain_id, context_bundle, content_data",
+        channel_seq,
+        content,
+        done_file_ids,
+        msg_id.to_string(),
     )
-    .bind(channel_seq)
-    .bind(content)
-    .bind(done_file_ids)
-    .bind(msg_id.to_string())
     .fetch_optional(&mut *tx)
     .await
     .map_err(crate::gateway::log_db_err(
@@ -367,34 +367,26 @@ pub async fn handle_done(
         .map_err(crate::gateway::log_db_err("stream.done: commit tx"))?;
 
     let channel_id = details
-        .try_get::<String, _>("channel_id")
-        .map_err(|_| "invalid channel_id")?
+        .channel_id
+        .clone()
         .parse()
         .map_err(|_| "invalid channel_id")?;
-    let channel_seq =
-        details
-            .try_get::<i64, _>("channel_seq")
-            .map_err(crate::gateway::log_db_err(
-                "stream.done: read channel_seq column",
-            ))?;
-    let depth = details.try_get::<i32, _>("depth").unwrap_or(0);
-    let file_ids = details
-        .try_get::<Vec<String>, _>("file_ids")
-        .ok()
-        .unwrap_or_default();
-    let msg_type = details
-        .try_get::<String, _>("msg_type")
-        .unwrap_or_else(|_| "text".to_string());
-    let reply_to_msg_id = details
-        .try_get::<Option<String>, _>("reply_to_msg_id")
-        .ok()
-        .flatten();
+    let channel_seq = details
+        .channel_seq
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))
+        .map_err(crate::gateway::log_db_err(
+            "stream.done: read channel_seq column",
+        ))?;
+    let depth = details.depth.clone();
+    let file_ids: Vec<String> =
+        serde_json::from_value(details.file_ids.clone().unwrap_or(serde_json::Value::Null))
+            .unwrap_or_default();
+    let msg_type = details.msg_type.clone();
+    let reply_to_msg_id = details.reply_to_msg_id.clone();
     // The chain this reply belongs to — propagated to any next hop so the whole
     // bot@bot cascade shares one cancelable chain (§8).
-    let chain_id = details
-        .try_get::<Option<String>, _>("chain_id")
-        .ok()
-        .flatten();
+    let chain_id = details.chain_id.clone();
 
     // Resolve attachment metadata, including the status of retired historical
     // records, so the live frame can render unavailable attachments explicitly.
@@ -421,16 +413,10 @@ pub async fn handle_done(
             "files": files,
             // session_id (and any other bot-turn metadata) stamped at placeholder
             // create — keep it on finalize so Reply can reuse session/model.
-            "content_data": details
-                .try_get::<Option<Value>, _>("content_data")
-                .ok()
-                .flatten(),
+            "content_data": details.content_data.clone(),
             // Preserve the F2 handoff card on the finalized bot message (round-trips
             // via the DTO too; here it keeps the card without a history refetch).
-            "context_bundle": details
-                .try_get::<Option<Value>, _>("context_bundle")
-                .ok()
-                .flatten(),
+            "context_bundle": details.context_bundle.clone(),
         }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
@@ -665,20 +651,20 @@ pub async fn handle_send(
             .map_err(crate::gateway::log_db_err(
                 "stream.send: allocate channel_seq",
             ))?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
              is_partial, file_ids, channel_seq, in_reply_to_msg_id)
          VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6, $7, $8)",
+        msg_id.to_string(),
+        channel_id.to_string(),
+        bot_id.to_string(),
+        content,
+        msg_type,
+        serde_json::json!(file_ids.clone()),
+        channel_seq,
+        reply_to_msg_id.as_deref(),
     )
-    .bind(msg_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(content)
-    .bind(msg_type)
-    .bind(serde_json::json!(file_ids.clone()))
-    .bind(channel_seq)
-    .bind(&reply_to_msg_id)
     .execute(&mut *tx)
     .await
     .map_err(crate::gateway::log_db_err("stream.send: insert message"))?;
@@ -929,13 +915,11 @@ async fn mark_session_alive(
 /// R1: 校验 msg_id 的占位 owner == bot_id，且占位仍 active（is_partial=true 或内容为空）。
 /// 返回 channel_id（用于后续 fanout）。
 async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uuid, &'static str> {
-    use sqlx::Row;
-
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT channel_id, sender_id, is_partial, content
          FROM messages WHERE msg_id = $1",
+        msg_id.to_string(),
     )
-    .bind(msg_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(crate::gateway::log_db_err(
@@ -944,27 +928,19 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
     .ok_or("message not found")?;
 
     // owner 必须是当前 bot
-    let sender_id: String = row
-        .try_get("sender_id")
-        .map_err(crate::gateway::log_db_err(
-            "verify_ownership: read sender_id column",
-        ))?;
+    let sender_id: String = row.sender_id.clone();
     if sender_id != bot_id.to_string() {
         return Err("ownership check failed: msg_id not owned by this bot");
     }
 
     // 占位必须仍 active
-    let is_partial: bool = row.try_get("is_partial").unwrap_or(false);
-    let content: String = row.try_get("content").unwrap_or_default();
+    let is_partial: bool = row.is_partial.clone();
+    let content: String = row.content.clone();
     if !is_partial && !content.is_empty() {
         return Err("message already finalized");
     }
 
-    let channel_id_str: String = row
-        .try_get("channel_id")
-        .map_err(crate::gateway::log_db_err(
-            "verify_ownership: read channel_id column",
-        ))?;
+    let channel_id_str: String = row.channel_id.clone();
     channel_id_str.parse().map_err(|_| "invalid channel_id")
 }
 

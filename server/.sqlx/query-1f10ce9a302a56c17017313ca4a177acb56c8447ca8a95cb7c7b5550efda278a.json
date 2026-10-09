@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE invite_links SET revoked = TRUE WHERE link_id = $1 AND workspace_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f10ce9a302a56c17017313ca4a177acb56c8447ca8a95cb7c7b5550efda278a"
+}

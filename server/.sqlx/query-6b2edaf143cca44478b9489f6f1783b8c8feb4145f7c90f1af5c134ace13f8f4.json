@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts SET avatar_url = $1 WHERE bot_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b2edaf143cca44478b9489f6f1783b8c8feb4145f7c90f1af5c134ace13f8f4"
+}

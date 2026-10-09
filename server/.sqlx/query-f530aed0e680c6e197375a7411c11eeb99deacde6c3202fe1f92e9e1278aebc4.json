@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_transactions\n         SET failed_attempts = LEAST(failed_attempts + 1, 5),\n             status = CASE WHEN failed_attempts + 1 >= 5 THEN 'failed' ELSE status END,\n             updated_at = NOW()\n         WHERE transaction_id = $1 AND consumed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f530aed0e680c6e197375a7411c11eeb99deacde6c3202fe1f92e9e1278aebc4"
+}

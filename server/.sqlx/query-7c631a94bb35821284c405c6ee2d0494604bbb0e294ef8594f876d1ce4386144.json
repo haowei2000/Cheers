@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n                SELECT 1\n                FROM messages AS m\n                INNER JOIN channel_memberships AS cm\n                    ON cm.channel_id = m.channel_id AND cm.member_id = m.sender_id\n                WHERE m.msg_id = $1 AND m.channel_id = $2\n                  AND m.sender_type = 'user' AND m.sender_id = $3\n                  AND cm.member_type = 'user'\n            ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7c631a94bb35821284c405c6ee2d0494604bbb0e294ef8594f876d1ce4386144"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(\n                    (SELECT cf.config FROM channel_features cf\n                     WHERE cf.channel_id = channels.channel_id\n                       AND cf.feature = 'voice' AND cf.enabled = TRUE),\n                    voice_config)\n             FROM channels WHERE channel_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coalesce",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "bfa88a00810a2dc04417d35e2e0fa95dca754e9def7f7a8c31a5eb59d63b8649"
+}

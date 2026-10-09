@@ -4,7 +4,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -125,9 +125,13 @@ async fn actor(
     } else {
         vec!["owner", "admin", "member", "readonly"]
     };
-    let role = sqlx::query_scalar::<_, String>(
-        "SELECT role FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='user'"
-    ).bind(channel_id.to_string()).bind(user_id.to_string()).fetch_optional(&state.db).await?;
+    let role = sqlx::query_scalar!(
+        "SELECT role FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='user'",
+        channel_id.to_string(),
+        user_id.to_string(),
+    )
+    .fetch_optional(&state.db)
+    .await?;
     if role.as_deref().is_some_and(|r| roles.contains(&r)) {
         Ok(user_id)
     } else {
@@ -186,8 +190,12 @@ pub async fn get_monitoring(
     Path((channel_id, bot_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>, AppError> {
     actor(&state, channel_id, &claims, false).await?;
-    let row = sqlx::query_as::<_, MonitoringDto>("SELECT channel_id, bot_id, mode, scope, debounce_seconds, min_interval_seconds, max_evaluations_per_hour, batch_size, confidence_threshold::float8 AS confidence_threshold, policy FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2")
-        .bind(channel_id.to_string()).bind(bot_id.to_string()).fetch_optional(&state.db).await?;
+    let row = sqlx::query_as!(
+        MonitoringDto,
+        r#"SELECT channel_id, bot_id, mode, scope, debounce_seconds, min_interval_seconds, max_evaluations_per_hour, batch_size, confidence_threshold::float8 AS "confidence_threshold!", policy FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2"#,
+        channel_id.to_string(),
+        bot_id.to_string(),
+    ).fetch_optional(&state.db).await?;
     Ok(Json(json!(row.unwrap_or(MonitoringDto {
         channel_id: channel_id.to_string(),
         bot_id: bot_id.to_string(),
@@ -210,16 +218,31 @@ pub async fn put_monitoring(
 ) -> Result<Json<MonitoringDto>, AppError> {
     actor(&state, channel_id, &claims, true).await?;
     validate(&input)?;
-    let member = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='bot')")
-        .bind(channel_id.to_string()).bind(bot_id.to_string()).fetch_one(&state.db).await?;
+    let member = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='bot') AS "value!" "#,
+        channel_id.to_string(),
+        bot_id.to_string(),
+    ).fetch_one(&state.db).await?;
     if !member {
         return Err(AppError::BadRequest("bot is not a channel member".into()));
     }
-    let row = sqlx::query_as::<_, MonitoringDto>(r#"INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold,next_eligible_at,policy)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $3='off' THEN NULL ELSE NOW() END,$10)
+    let row = sqlx::query_as!(
+        MonitoringDto,
+        r#"INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold,next_eligible_at,policy)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::float8,CASE WHEN $3::varchar='off' THEN NULL ELSE NOW() END,$10)
         ON CONFLICT(channel_id,bot_id) DO UPDATE SET mode=EXCLUDED.mode,scope=EXCLUDED.scope,debounce_seconds=EXCLUDED.debounce_seconds,min_interval_seconds=EXCLUDED.min_interval_seconds,max_evaluations_per_hour=EXCLUDED.max_evaluations_per_hour,batch_size=EXCLUDED.batch_size,confidence_threshold=EXCLUDED.confidence_threshold,next_eligible_at=CASE WHEN EXCLUDED.mode='off' THEN NULL ELSE NOW() END,policy=EXCLUDED.policy,updated_at=NOW()
-        RETURNING channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,policy"#)
-        .bind(channel_id.to_string()).bind(bot_id.to_string()).bind(&input.mode).bind(input.scope.trim()).bind(input.debounce_seconds).bind(input.min_interval_seconds).bind(input.max_evaluations_per_hour).bind(input.batch_size).bind(input.confidence_threshold).bind(&input.policy).fetch_one(&state.db).await?;
+        RETURNING channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS "confidence_threshold!",policy"#,
+        channel_id.to_string(),
+        bot_id.to_string(),
+        &input.mode,
+        input.scope.trim(),
+        input.debounce_seconds,
+        input.min_interval_seconds,
+        input.max_evaluations_per_hour,
+        input.batch_size,
+        input.confidence_threshold,
+        &input.policy,
+    ).fetch_one(&state.db).await?;
     Ok(Json(row))
 }
 
@@ -231,8 +254,13 @@ pub async fn list_claims(
 ) -> Result<Json<Value>, AppError> {
     actor(&state, channel_id, &claims, false).await?;
     let limit = q.limit.unwrap_or(50).clamp(1, 100);
-    let rows = sqlx::query_as::<_, ClaimDto>(r#"SELECT r.claim_id,r.evaluation_id,r.channel_id,r.bot_id,COALESCE(NULLIF(b.display_name,''),b.username) AS bot_name,r.summary,r.proposed_action,r.confidence::float8 AS confidence,r.impact,r.status,r.resolved_by,r.resolution_note,r.execution_msg_id,r.created_at,r.resolved_at,r.requester_id,r.source_message_id,r.confirmation_message_id FROM task_claim_requests r JOIN bot_accounts b ON b.bot_id=r.bot_id WHERE r.channel_id=$1 AND ($2::text IS NULL OR r.status=$2) ORDER BY r.created_at DESC LIMIT $3"#)
-        .bind(channel_id.to_string()).bind(q.status.as_deref()).bind(limit).fetch_all(&state.db).await?;
+    let rows = sqlx::query_as!(
+        ClaimDto,
+        r#"SELECT r.claim_id,r.evaluation_id,r.channel_id,r.bot_id,COALESCE(NULLIF(b.display_name,''),b.username) AS "bot_name!",r.summary,r.proposed_action,r.confidence::float8 AS "confidence!",r.impact,r.status,r.resolved_by,r.resolution_note,r.execution_msg_id,r.created_at,r.resolved_at,r.requester_id,r.source_message_id,r.confirmation_message_id FROM task_claim_requests r JOIN bot_accounts b ON b.bot_id=r.bot_id WHERE r.channel_id=$1 AND ($2::text IS NULL OR r.status=$2) ORDER BY r.created_at DESC LIMIT $3"#,
+        channel_id.to_string(),
+        q.status.as_deref(),
+        limit,
+    ).fetch_all(&state.db).await?;
     Ok(Json(json!({"claims": rows})))
 }
 
@@ -248,8 +276,11 @@ pub async fn resolve_claim(
             "decision must be accept or reject".into(),
         ));
     }
-    let requester_id = sqlx::query_scalar::<_, Option<String>>("SELECT requester_id FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2 AND status='pending'")
-        .bind(claim_id.to_string()).bind(channel_id.to_string()).fetch_optional(&state.db).await?
+    let requester_id = sqlx::query_scalar!(
+        "SELECT requester_id FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2 AND status='pending'",
+        claim_id.to_string(),
+        channel_id.to_string(),
+    ).fetch_optional(&state.db).await?
         .flatten()
         .ok_or_else(|| AppError::Conflict("claim is no longer pending".into()))?;
     if requester_id != user_id.to_string() {
@@ -266,11 +297,11 @@ pub async fn resolve_claim(
     // Previously a missing PRIMARY session returned 409 only after the claim had
     // already become accepted, making the approval impossible to retry.
     let dispatch_session = if status == "accepted" {
-        let bot_id = sqlx::query_scalar::<_, String>(
+        let bot_id = sqlx::query_scalar!(
             "SELECT bot_id FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2 AND status='pending'",
+            claim_id.to_string(),
+            channel_id.to_string(),
         )
-        .bind(claim_id.to_string())
-        .bind(channel_id.to_string())
         .fetch_optional(&state.db)
         .await?
         .ok_or_else(|| AppError::Conflict("claim is no longer pending".into()))?
@@ -288,28 +319,35 @@ pub async fn resolve_claim(
     } else {
         None
     };
-    let row = sqlx::query(r#"UPDATE task_claim_requests SET status=$3,resolved_by=$4,resolution_note=$5,resolved_at=NOW(),updated_at=NOW() WHERE claim_id=$1 AND channel_id=$2 AND status='pending' RETURNING bot_id,summary,proposed_action"#)
-        .bind(claim_id.to_string()).bind(channel_id.to_string()).bind(status).bind(user_id.to_string()).bind(input.note.as_deref()).fetch_optional(&state.db).await?;
+    let row = sqlx::query!(
+        r#"UPDATE task_claim_requests SET status=$3,resolved_by=$4,resolution_note=$5,resolved_at=NOW(),updated_at=NOW() WHERE claim_id=$1 AND channel_id=$2 AND status='pending' RETURNING bot_id,summary,proposed_action"#,
+        claim_id.to_string(),
+        channel_id.to_string(),
+        status,
+        user_id.to_string(),
+        input.note.as_deref(),
+    ).fetch_optional(&state.db).await?;
     let Some(row) = row else {
         return Err(AppError::Conflict("claim is no longer pending".into()));
     };
     // Persist the response on the confirmation message too. This keeps the
     // inline controls collapsed after a page reload, not only in local React
     // state after the click.
-    sqlx::query(
-        "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('resolved', TRUE, 'decision', $2, 'resolved_by', $3) WHERE msg_id = (SELECT confirmation_message_id FROM task_claim_requests WHERE claim_id=$1)",
+    sqlx::query!(
+        "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('resolved', TRUE, 'decision', $2::text, 'resolved_by', $3::text) WHERE msg_id = (SELECT confirmation_message_id FROM task_claim_requests WHERE claim_id=$1)",
+        claim_id.to_string(),
+        &input.decision,
+        user_id.to_string(),
     )
-    .bind(claim_id.to_string())
-    .bind(&input.decision)
-    .bind(user_id.to_string())
     .execute(&state.db)
     .await?;
     let bot_id: Uuid = row
-        .try_get::<String, _>("bot_id")?
+        .bot_id
+        .clone()
         .parse()
         .map_err(|_| AppError::Internal("invalid bot id".into()))?;
-    let summary: String = row.try_get("summary")?;
-    let action: String = row.try_get("proposed_action")?;
+    let summary: String = row.summary.clone();
+    let action: String = row.proposed_action.clone();
     let mut execution_msg_id = None;
     if status == "accepted" {
         // A private trigger row gives the existing dispatcher one durable, idempotent
@@ -318,14 +356,23 @@ pub async fn resolve_claim(
             &Uuid::NAMESPACE_URL,
             format!("cheers:task-claim:{claim_id}").as_bytes(),
         );
-        sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_secret,is_partial) VALUES($1,$2,$3,'user',$4,'task_claim',TRUE,FALSE) ON CONFLICT(msg_id) DO NOTHING")
-            .bind(trigger_id.to_string()).bind(channel_id.to_string()).bind(user_id.to_string()).bind(format!("Approved proactive task claim.\nSummary: {summary}\nRequested action: {action}\nComplete the requested work and report the result in this channel.")).execute(&state.db).await?;
+        sqlx::query!(
+            "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_secret,is_partial) VALUES($1,$2,$3,'user',$4,'task_claim',TRUE,FALSE) ON CONFLICT(msg_id) DO NOTHING",
+            trigger_id.to_string(),
+            channel_id.to_string(),
+            user_id.to_string(),
+            format!("Approved proactive task claim.\nSummary: {summary}\nRequested action: {action}\nComplete the requested work and report the result in this channel."),
+        ).execute(&state.db).await?;
         let session = dispatch_session.expect("accepted claims preflight a primary session");
         let result = dispatcher::dispatch(&state.db,&state.fanout,&state.stream_registry,&state.bot_locator,DispatchParams { trigger_msg_id: trigger_id,trigger_seq: 0,bot_id,channel_id,depth: 0,provider_session_key: session.1,session_id: Some(session.0),chain_id: None,context_bundle: Some(json!({"kind":"task_claim","claim_id":claim_id,"summary":summary,"proposed_action":action})) },&MediaCache::default()).await;
         match result {
             dispatcher::DispatchResult::Dispatched { placeholder_msg_id } => {
                 execution_msg_id = Some(placeholder_msg_id.to_string());
-                sqlx::query("UPDATE task_claim_requests SET status='executing',execution_msg_id=$2,updated_at=NOW() WHERE claim_id=$1").bind(claim_id.to_string()).bind(&execution_msg_id).execute(&state.db).await?;
+                sqlx::query!(
+                    "UPDATE task_claim_requests SET status='executing',execution_msg_id=$2,updated_at=NOW() WHERE claim_id=$1",
+                    claim_id.to_string(),
+                    execution_msg_id.as_deref(),
+                ).execute(&state.db).await?;
             }
             dispatcher::DispatchResult::AlreadyInProgress => {
                 let placeholder_msg_id = Uuid::new_v5(
@@ -333,10 +380,17 @@ pub async fn resolve_claim(
                     format!("{trigger_id}:{bot_id}").as_bytes(),
                 );
                 execution_msg_id = Some(placeholder_msg_id.to_string());
-                sqlx::query("UPDATE task_claim_requests SET status='executing',execution_msg_id=$2,updated_at=NOW() WHERE claim_id=$1").bind(claim_id.to_string()).bind(&execution_msg_id).execute(&state.db).await?;
+                sqlx::query!(
+                    "UPDATE task_claim_requests SET status='executing',execution_msg_id=$2,updated_at=NOW() WHERE claim_id=$1",
+                    claim_id.to_string(),
+                    execution_msg_id.as_deref(),
+                ).execute(&state.db).await?;
             }
             dispatcher::DispatchResult::BotOffline | dispatcher::DispatchResult::DbError(_) => {
-                sqlx::query("UPDATE task_claim_requests SET status='failed',resolution_note=COALESCE(resolution_note,'Bot is offline'),updated_at=NOW() WHERE claim_id=$1").bind(claim_id.to_string()).execute(&state.db).await?;
+                sqlx::query!(
+                    "UPDATE task_claim_requests SET status='failed',resolution_note=COALESCE(resolution_note,'Bot is offline'),updated_at=NOW() WHERE claim_id=$1",
+                    claim_id.to_string(),
+                ).execute(&state.db).await?;
             }
         }
     }
@@ -356,25 +410,24 @@ pub async fn cancel_claim(
     Json(input): Json<CancelInput>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = actor(&state, channel_id, &claims, true).await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "UPDATE task_claim_requests
          SET status='cancelled', resolved_by=$3, resolution_note=$4, resolved_at=NOW(), updated_at=NOW()
          WHERE claim_id=$1 AND channel_id=$2 AND status IN ('pending','executing')
          RETURNING status",
-    )
-    .bind(claim_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
-    .bind(input.note.as_deref())
-    .fetch_optional(&state.db)
+        claim_id.to_string(),
+        channel_id.to_string(),
+        user_id.to_string(),
+        input.note.as_deref(),
+    ).fetch_optional(&state.db)
     .await?;
     if row.is_none() {
         // Either the claim doesn't exist or it's already terminal — report which.
-        let existing: Option<String> = sqlx::query_scalar(
+        let existing: Option<String> = sqlx::query_scalar!(
             "SELECT status FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2",
+            claim_id.to_string(),
+            channel_id.to_string(),
         )
-        .bind(claim_id.to_string())
-        .bind(channel_id.to_string())
         .fetch_optional(&state.db)
         .await?;
         return match existing.as_deref() {
@@ -401,7 +454,7 @@ pub async fn cancel_claim(
 /// (e.g. 60 s) from `main.rs`. A claim with `expires_at = NULL` never expires
 /// (default for back-compat / migrated rows).
 pub async fn sweep_expired_claims(db: &sqlx::PgPool) -> Result<u64, AppError> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE task_claim_requests
          SET status='failed', resolution_note='expired', updated_at=NOW()
          WHERE status IN ('pending','executing') AND expires_at IS NOT NULL AND expires_at <= NOW()",
@@ -420,14 +473,14 @@ pub async fn supersede_claim(
     superseded_claim_id: &str,
     new_claim_id: &str,
 ) -> Result<bool, AppError> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE task_claim_requests
          SET superseded_at = NOW(), resolution_note = $3, updated_at = NOW()
          WHERE claim_id = $1 AND channel_id = $2 AND status = 'pending'",
+        superseded_claim_id,
+        channel_id,
+        format!("superseded by {new_claim_id}"),
     )
-    .bind(superseded_claim_id)
-    .bind(channel_id)
-    .bind(format!("superseded by {new_claim_id}"))
     .execute(db)
     .await?;
     Ok(result.rows_affected() > 0)

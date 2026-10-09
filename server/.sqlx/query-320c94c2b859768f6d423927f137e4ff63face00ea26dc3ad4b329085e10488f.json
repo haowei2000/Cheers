@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bci.channel_id, c.workspace_id, c.name AS title, bci.bot_id,\n                COALESCE(b.display_name, b.username) AS bot_name, bci.role,\n                bci.invited_by AS actor_id,\n                COALESCE(iu.display_name, iu.username) AS actor_name,\n                bci.cwd, bci.additional_dirs, bci.invited_at::text AS created_at\n         FROM bot_channel_invites bci\n         JOIN channels c ON c.channel_id = bci.channel_id\n         JOIN bot_accounts b ON b.bot_id = bci.bot_id\n         LEFT JOIN users iu ON iu.user_id = bci.invited_by\n         WHERE bci.owner_user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "bot_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "actor_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "actor_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "cwd",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "additional_dirs",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      null,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "320c94c2b859768f6d423927f137e4ff63face00ea26dc3ad4b329085e10488f"
+}

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT role, projected_from FROM channel_memberships\n              WHERE channel_id = $1 AND member_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "projected_from",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "5e67d17db8a1febea3c5a4a13098eff202398b9671a97164821e45d5c61a9336"
+}

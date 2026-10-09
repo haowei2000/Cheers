@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 AS present FROM connector_hosts i JOIN bot_accounts b ON b.bot_id=i.bot_id\n             WHERE i.host_id=$1 AND i.status='active' AND i.revoked_at IS NULL\n               AND b.is_disabled=FALSE AND b.created_by=$2) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "69f506ad74bc69d7a12b062e0bcae4d51d0dcd0fed415dab0ea9b2c2f81960cf"
+}

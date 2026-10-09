@@ -20,7 +20,6 @@ use p256::{
     PublicKey, SecretKey,
 };
 use sha2::Sha256;
-use sqlx::Row;
 
 use crate::{app_state::AppState, config::Config};
 
@@ -250,8 +249,7 @@ pub fn spawn_push_to_users(state: &AppState, user_ids: Vec<String>, payload: ser
 /// also stop receiving lock-screen content. Best-effort — callers log nothing;
 /// the per-request join in [`push_to_user`] is the backstop.
 pub async fn revoke_user_subscriptions(db: &sqlx::PgPool, user_id: &str) {
-    if let Err(e) = sqlx::query("DELETE FROM push_subscriptions WHERE user_id = $1")
-        .bind(user_id)
+    if let Err(e) = sqlx::query!("DELETE FROM push_subscriptions WHERE user_id = $1", user_id,)
         .execute(db)
         .await
     {
@@ -269,13 +267,13 @@ pub async fn push_to_user(
     user_id: &str,
     payload: serde_json::Value,
 ) {
-    let rows = match sqlx::query(
+    let rows = match sqlx::query!(
         "SELECT ps.endpoint, ps.p256dh, ps.auth
          FROM push_subscriptions ps
          JOIN users u ON u.user_id = ps.user_id
          WHERE ps.user_id = $1 AND NOT u.is_suspended AND NOT u.is_deleted",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await
     {
@@ -286,19 +284,21 @@ pub async fn push_to_user(
         }
     };
     for row in rows {
-        let endpoint: String = row.try_get("endpoint").unwrap_or_default();
-        let p256dh: String = row.try_get("p256dh").unwrap_or_default();
-        let auth: String = row.try_get("auth").unwrap_or_default();
+        let endpoint: String = row.endpoint.clone();
+        let p256dh: String = row.p256dh.clone();
+        let auth: String = row.auth.clone();
         match sender
             .send(&endpoint, &p256dh, &auth, &payload, PUSH_TTL_SECS)
             .await
         {
             Ok(()) => {}
             Err(PushError::Gone) => {
-                let _ = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = $1")
-                    .bind(&endpoint)
-                    .execute(db)
-                    .await;
+                let _ = sqlx::query!(
+                    "DELETE FROM push_subscriptions WHERE endpoint = $1",
+                    &endpoint,
+                )
+                .execute(db)
+                .await;
             }
             Err(e) => {
                 tracing::warn!(target: "cheers::push", error = %e, "web push delivery failed");

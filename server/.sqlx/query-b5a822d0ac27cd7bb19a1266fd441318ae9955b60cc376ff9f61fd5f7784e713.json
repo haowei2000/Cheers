@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cheers_session_bindings\n         SET detached_at = COALESCE(detached_at, $1)\n         WHERE session_id = $2 AND detached_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b5a822d0ac27cd7bb19a1266fd441318ae9955b60cc376ff9f61fd5f7784e713"
+}

@@ -1,0 +1,185 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bot_id, username, display_name, description, avatar_url, is_disabled, scope,\n                binding_type, bridge_provider, model_id, template_id, intro, binding_config,\n                created_by, status_text, status_emoji, status_updated_at,\n                status_auto_update, status_update_prompt, status_update_interval_minutes,\n                external_processor, processor_name, processor_privacy_url,\n                processor_data_use, processor_policy_version,\n                COALESCE(visibility, 'public') AS visibility,\n                COALESCE(friend_policy, 'open') AS friend_policy,\n                COALESCE(invite_policy, 'require_approval') AS invite_policy\n         FROM bot_accounts b\n         WHERE $1\n            OR b.created_by = $2\n            OR EXISTS (\n                SELECT 1 AS present FROM channel_memberships bcm\n                JOIN channel_memberships ucm ON ucm.channel_id = bcm.channel_id\n                WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'\n                  AND ucm.member_id = $2 AND ucm.member_type = 'user'\n            )\n         ORDER BY username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "scope",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "binding_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "bridge_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "model_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "template_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "intro",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "binding_config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "status_text",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "status_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "status_auto_update",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 18,
+        "name": "status_update_prompt",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "status_update_interval_minutes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "external_processor",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 21,
+        "name": "processor_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 22,
+        "name": "processor_privacy_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 23,
+        "name": "processor_data_use",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "processor_policy_version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 25,
+        "name": "visibility",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 26,
+        "name": "friend_policy",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 27,
+        "name": "invite_policy",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "3bc91410941c3c8980c8cfe83b6ee842fba509cd15f55c5fba4be4c33527f4e6"
+}

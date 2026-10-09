@@ -4,7 +4,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{Postgres, Row, Transaction};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
@@ -123,44 +123,17 @@ pub struct DmCreateRequest {
     pub target_bot_id: Option<String>,
 }
 
-fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
-    let stored_kind: String = row.try_get("kind").unwrap_or_else(|_| "text".to_string());
-    let mut features: Vec<String> = row.try_get("features").unwrap_or_default();
-    // Before migration 0090, voice lived only in kind. Keeping this fallback
-    // makes rolling deploys safe while the migration and binary overlap.
-    if stored_kind == "voice" && !features.iter().any(|feature| feature == "voice") {
-        features.push("voice".into());
+fn dto(mut channel: ChannelDto) -> ChannelDto {
+    // Preserve the legacy voice projection while features are the canonical model.
+    if channel.kind == "voice" && !channel.features.iter().any(|feature| feature == "voice") {
+        channel.features.push("voice".into());
     }
-    let legacy_kind = if features.iter().any(|feature| feature == "voice") {
-        "voice".to_string()
+    channel.kind = if channel.features.iter().any(|feature| feature == "voice") {
+        "voice".into()
     } else {
-        "text".to_string()
+        "text".into()
     };
-    ChannelDto {
-        channel_id: row.try_get("channel_id").unwrap_or_default(),
-        workspace_id: row.try_get("workspace_id").unwrap_or_default(),
-        name: row.try_get("name").unwrap_or_default(),
-        avatar_url: row.try_get("avatar_url").ok(),
-        channel_type: row.try_get("type").unwrap_or_else(|_| "public".to_string()),
-        kind: legacy_kind,
-        features,
-        conversation_mode: row
-            .try_get("conversation_mode")
-            .unwrap_or_else(|_| "chat".to_string()),
-        purpose: row.try_get("purpose").ok(),
-        auto_assist: row.try_get("auto_assist").unwrap_or(false),
-        allow_member_invites: row.try_get("allow_member_invites").unwrap_or(true),
-        allow_bot_adds: row.try_get("allow_bot_adds").unwrap_or(true),
-        unread_count: row.try_get("unread_count").unwrap_or(0),
-        mention_count: row.try_get("mention_count").unwrap_or(0),
-        // Only the workspace-scoped listing computes this; the other queries are
-        // membership-gated (or membership-joined) already, so absent → true.
-        is_member: row.try_get("is_member").unwrap_or(true),
-        // Only the workspace-scoped listing computes these; other queries leave
-        // them absent → None / false (no role gating needed for create/get/update).
-        my_role: row.try_get("my_role").ok(),
-        can_manage: row.try_get("can_manage").unwrap_or(false),
-    }
+    channel
 }
 
 async fn is_channel_member(
@@ -172,17 +145,18 @@ async fn is_channel_member(
     if matches!(role, "system_admin" | "admin") {
         return Ok(true);
     }
-    let ok = sqlx::query(
+    let ok = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
         ) AS ok",
+        channel_id,
+        user_id,
     )
-    .bind(channel_id)
-    .bind(user_id)
     .fetch_one(&state.db)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     Ok(ok)
 }
@@ -196,18 +170,15 @@ pub(crate) async fn ensure_channel_admin(
     if matches!(role, "system_admin" | "admin") {
         return Ok(());
     }
-    let ok = sqlx::query(
+    let ok = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user' AND role IN ('owner', 'admin')
         ) AS ok",
-    )
-    .bind(channel_id)
-    .bind(user_id)
-    .fetch_one(&state.db)
-    .await?
-    .try_get::<bool, _>("ok")
-    .unwrap_or(false);
+        channel_id,
+        user_id,
+    ).fetch_one(&state.db)
+    .await?.ok.clone().unwrap_or(false);
     if ok {
         Ok(())
     } else {
@@ -233,12 +204,7 @@ pub async fn list_channels(
     // workspaces you're an active member of (joinable via POST /channels/:id/join).
     // Private channels never show to non-members. Unread/mention counts are only
     // meaningful for members — non-members get 0, not "every message ever".
-    let rows = sqlx::query(
-        // Both counts come from ONE lateral scan of the unread message range instead
-        // of two independent correlated count(*) subqueries. The non-member guard
-        // (`cm.member_id IS NOT NULL`) lives inside the lateral WHERE, so non-members
-        // scan zero rows and an aggregate over zero rows still yields one row of 0 —
-        // preserving the old CASE-based "non-members get 0" invariant.
+    let rows = sqlx::query!(
         "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
                 ARRAY(SELECT cf.feature FROM channel_features cf
                       WHERE cf.channel_id = c.channel_id AND cf.enabled = TRUE
@@ -246,7 +212,7 @@ pub async fn list_channels(
                 c.conversation_mode, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
                 (cm.member_id IS NOT NULL) AS is_member,
-                cm.role AS my_role,
+                cm.role AS \"my_role?\",
                 (cm.role IN ('owner', 'admin') OR $3::boolean) AS can_manage,
                 counts.unread_count,
                 counts.mention_count
@@ -286,13 +252,37 @@ pub async fn list_channels(
                 OR (wm.user_id IS NOT NULL AND c.type = 'public'))
            AND ($2::text IS NULL OR c.workspace_id = $2)
          ORDER BY c.created_at DESC",
+        &claims.sub,
+        q.workspace_id.as_deref(),
+        claims.role == "system_admin" || claims.role == "admin",
     )
-    .bind(&claims.sub)
-    .bind(&q.workspace_id)
-    .bind(claims.role == "system_admin" || claims.role == "admin")
     .fetch_all(&state.db)
     .await?;
-    Ok(Json(rows.into_iter().map(dto).collect()))
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| {
+                dto(ChannelDto {
+                    channel_id: row.channel_id.clone(),
+                    workspace_id: row.workspace_id.clone(),
+                    name: row.name.clone(),
+                    avatar_url: row.avatar_url.clone(),
+                    channel_type: row.r#type.clone(),
+                    kind: row.kind.clone(),
+                    conversation_mode: row.conversation_mode.clone(),
+                    purpose: row.purpose.clone(),
+                    auto_assist: row.auto_assist.clone(),
+                    allow_member_invites: row.allow_member_invites.clone(),
+                    allow_bot_adds: row.allow_bot_adds.clone(),
+                    features: row.features.clone().unwrap_or_default(),
+                    unread_count: row.unread_count.clone().unwrap_or_default(),
+                    mention_count: row.mention_count.clone().unwrap_or_default(),
+                    is_member: row.is_member.clone().unwrap_or_default(),
+                    my_role: row.my_role.clone(),
+                    can_manage: row.can_manage.clone().unwrap_or_default(),
+                })
+            })
+            .collect(),
+    ))
 }
 
 /// Whether two users may open a DM: they're accepted friends or already share a
@@ -302,22 +292,23 @@ async fn users_can_dm(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bool, AppEr
     if crate::api::friends::is_blocked(db, a, b).await? {
         return Ok(false);
     }
-    let ok: bool = sqlx::query(
+    let ok: bool = sqlx::query!(
         "SELECT (
-            EXISTS(SELECT 1 FROM friendships
+            EXISTS(SELECT 1 AS present FROM friendships
                    WHERE status = 'accepted'
                      AND ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)))
-            OR EXISTS(SELECT 1 FROM channel_memberships ma
+            OR EXISTS(SELECT 1 AS present FROM channel_memberships ma
                       JOIN channel_memberships mb ON ma.channel_id = mb.channel_id
                       WHERE ma.member_type = 'user' AND mb.member_type = 'user'
                         AND ma.member_id = $1 AND mb.member_id = $2)
          ) AS ok",
+        a,
+        b,
     )
-    .bind(a)
-    .bind(b)
     .fetch_one(db)
     .await?
-    .try_get("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     Ok(ok)
 }
@@ -348,22 +339,22 @@ pub async fn create_dm(
         ));
     }
     if is_bot {
-        let visible: bool = sqlx::query_scalar(
-            "SELECT EXISTS(
-                SELECT 1 FROM bot_accounts b
+        let visible: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                SELECT 1 AS present FROM bot_accounts b
                 WHERE b.bot_id = $1 AND b.is_disabled = FALSE AND (
                     $3::boolean OR b.created_by = $2 OR EXISTS (
-                        SELECT 1 FROM channel_memberships bm
+                        SELECT 1 AS present FROM channel_memberships bm
                         JOIN channel_memberships um ON um.channel_id = bm.channel_id
                         WHERE bm.member_id = b.bot_id AND bm.member_type = 'bot'
                           AND um.member_id = $2 AND um.member_type = 'user'
                     )
                 )
-             )",
+             ) AS "value!" "#,
+            target_id.to_string(),
+            &claims.sub,
+            matches!(claims.role.as_str(), "system_admin" | "admin"),
         )
-        .bind(target_id.to_string())
-        .bind(&claims.sub)
-        .bind(matches!(claims.role.as_str(), "system_admin" | "admin"))
         .fetch_one(&state.db)
         .await?;
         if !visible {
@@ -387,7 +378,7 @@ pub async fn create_dm(
             .broadcast_user(target_id, dm_created_frame(channel_id))
             .await;
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT channel_id, workspace_id, name, avatar_url, type, kind,
                 ARRAY(SELECT cf.feature FROM channel_features cf
                       WHERE cf.channel_id = channels.channel_id AND cf.enabled = TRUE
@@ -396,11 +387,29 @@ pub async fn create_dm(
                 purpose, auto_assist,
                 allow_member_invites, allow_bot_adds
          FROM channels WHERE channel_id = $1",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_one(&state.db)
     .await?;
-    Ok(Json(dto(row)))
+    Ok(Json(dto(ChannelDto {
+        channel_id: row.channel_id.clone(),
+        workspace_id: row.workspace_id.clone(),
+        name: row.name.clone(),
+        avatar_url: row.avatar_url.clone(),
+        channel_type: row.r#type.clone(),
+        kind: row.kind.clone(),
+        conversation_mode: row.conversation_mode.clone(),
+        purpose: row.purpose.clone(),
+        auto_assist: row.auto_assist.clone(),
+        allow_member_invites: row.allow_member_invites.clone(),
+        allow_bot_adds: row.allow_bot_adds.clone(),
+        features: row.features.clone().unwrap_or_default(),
+        unread_count: 0,
+        mention_count: 0,
+        is_member: true,
+        my_role: None,
+        can_manage: false,
+    })))
 }
 
 fn dm_created_frame(channel_id: Uuid) -> WireFrame {
@@ -434,7 +443,7 @@ pub async fn list_dms(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<Value>>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
                 ARRAY(SELECT cf.feature FROM channel_features cf
                       WHERE cf.channel_id = c.channel_id AND cf.enabled = TRUE
@@ -471,15 +480,34 @@ pub async fn list_dms(
            ON cm.channel_id = c.channel_id AND cm.member_id = $1 AND cm.member_type = 'user'
          WHERE c.type = 'dm'
          ORDER BY c.created_at DESC",
+        &claims.sub,
     )
-    .bind(&claims.sub)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(
         rows.into_iter()
             .map(|r| {
-                let peer: String = r.try_get("peer_name").unwrap_or_default();
-                let mut v = serde_json::to_value(dto(r)).unwrap_or_else(|_| json!({}));
+                let peer: String = r.peer_name.clone().unwrap_or_default();
+                let mut v = serde_json::to_value(dto(ChannelDto {
+                    channel_id: r.channel_id.clone(),
+                    workspace_id: r.workspace_id.clone(),
+                    name: r.name.clone(),
+                    avatar_url: r.avatar_url.clone(),
+                    channel_type: r.r#type.clone(),
+                    kind: r.kind.clone(),
+                    conversation_mode: r.conversation_mode.clone(),
+                    purpose: r.purpose.clone(),
+                    auto_assist: r.auto_assist.clone(),
+                    allow_member_invites: r.allow_member_invites.clone(),
+                    allow_bot_adds: r.allow_bot_adds.clone(),
+                    features: r.features.clone().unwrap_or_default(),
+                    unread_count: r.unread_count.clone().unwrap_or_default(),
+                    mention_count: 0,
+                    is_member: true,
+                    my_role: None,
+                    can_manage: false,
+                }))
+                .unwrap_or_else(|_| json!({}));
                 if let Value::Object(ref mut m) = v {
                     m.insert("peer_name".into(), json!(peer));
                 }
@@ -497,12 +525,12 @@ pub async fn create_channel(
     if body.name.trim().is_empty() {
         return Err(AppError::BadRequest("name is required".into()));
     }
-    let workspace_role: Option<String> = sqlx::query_scalar(
+    let workspace_role: Option<String> = sqlx::query_scalar!(
         "SELECT role FROM workspace_memberships
          WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'",
+        &body.workspace_id,
+        &claims.sub,
     )
-    .bind(&body.workspace_id)
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?;
     let platform_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
@@ -551,17 +579,19 @@ pub async fn create_channel(
     for bot_id in &body.initial_bot_ids {
         Uuid::parse_str(bot_id)
             .map_err(|_| AppError::BadRequest("initial_bot_ids must contain bot uuids".into()))?;
-        let bot = sqlx::query("SELECT created_by, is_disabled FROM bot_accounts WHERE bot_id = $1")
-            .bind(bot_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?;
-        if bot.try_get::<bool, _>("is_disabled").unwrap_or(false) {
+        let bot = sqlx::query!(
+            "SELECT created_by, is_disabled FROM bot_accounts WHERE bot_id = $1",
+            bot_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+        if bot.is_disabled.clone() {
             return Err(AppError::BadRequest(
                 "disabled bot cannot be invited".into(),
             ));
         }
-        let owner_id: Option<String> = bot.try_get("created_by").ok().flatten();
+        let owner_id: Option<String> = bot.created_by.clone();
         if owner_id.as_deref() != Some(claims.sub.as_str())
             && !matches!(claims.role.as_str(), "system_admin" | "admin")
         {
@@ -572,33 +602,32 @@ pub async fn create_channel(
         initial_bots.push((bot_id.clone(), owner_id));
     }
     let mut tx = state.db.begin().await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "INSERT INTO channels
             (channel_id, workspace_id, name, type, kind, conversation_mode, purpose,
              allow_member_invites, allow_bot_adds)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING channel_id, workspace_id, name, avatar_url, type, kind,
                    conversation_mode, purpose, auto_assist, allow_member_invites, allow_bot_adds",
+        &channel_id,
+        &body.workspace_id,
+        body.name.trim(),
+        &channel_type,
+        "text",
+        &conversation_mode,
+        body.purpose.as_deref(),
+        body.allow_member_invites.unwrap_or(true),
+        body.allow_bot_adds.unwrap_or(true),
     )
-    .bind(&channel_id)
-    .bind(&body.workspace_id)
-    .bind(body.name.trim())
-    .bind(&channel_type)
-    // `kind=voice` is accepted from old clients, but storage is feature-based.
-    .bind("text")
-    .bind(&conversation_mode)
-    .bind(&body.purpose)
-    .bind(body.allow_member_invites.unwrap_or(true))
-    .bind(body.allow_bot_adds.unwrap_or(true))
     .fetch_one(&mut *tx)
     .await?;
     for feature in &features {
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO channel_features (channel_id, feature, config, enabled)
              VALUES ($1, $2, '{}'::jsonb, TRUE)",
+            &channel_id,
+            feature,
         )
-        .bind(&channel_id)
-        .bind(feature)
         .execute(&mut *tx)
         .await?;
     }
@@ -607,19 +636,21 @@ pub async fn create_channel(
         // non-DM membership invariant still requires every human channel member
         // to be active in the workspace. Activate/create that membership in the
         // same transaction as the channel and its owner membership.
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
              VALUES ($1, $2, 'admin', 'active')
              ON CONFLICT (workspace_id, user_id) DO UPDATE SET status = 'active'",
+            &body.workspace_id,
+            &claims.sub,
         )
-        .bind(&body.workspace_id)
-        .bind(&claims.sub)
         .execute(&mut *tx)
         .await?;
     }
-    sqlx::query("INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by) VALUES ($1, $2, 'user', 'owner', $2) ON CONFLICT DO NOTHING")
-        .bind(&channel_id)
-        .bind(&claims.sub)
+    sqlx::query!(
+        "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by) VALUES ($1, $2, 'user', 'owner', $2) ON CONFLICT DO NOTHING",
+        &channel_id,
+        &claims.sub,
+    )
         .execute(&mut *tx)
         .await?;
     // Founding members are invited rather than force-added. Private channels may
@@ -633,12 +664,12 @@ pub async fn create_channel(
         if user_id == &claims.sub {
             continue;
         }
-        let ws_status: Option<String> = sqlx::query_scalar(
+        let ws_status: Option<String> = sqlx::query_scalar!(
             "SELECT status FROM workspace_memberships
              WHERE workspace_id = $1 AND user_id = $2",
+            &body.workspace_id,
+            user_id,
         )
-        .bind(&body.workspace_id)
-        .bind(user_id)
         .fetch_optional(&mut *tx)
         .await?;
         if ws_status.as_deref() != Some("active") {
@@ -649,16 +680,16 @@ pub async fn create_channel(
                 ));
             }
             if ws_status.is_none() {
-                let friend: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(
-                        SELECT 1 FROM friendships
+                let friend: bool = sqlx::query_scalar!(
+                    r#"SELECT EXISTS(
+                        SELECT 1 AS present FROM friendships
                         WHERE status = 'accepted'
                           AND ((user_id = $1 AND friend_id = $2)
                             OR (user_id = $2 AND friend_id = $1))
-                    )",
+                    ) AS "value!" "#,
+                    &claims.sub,
+                    user_id,
                 )
-                .bind(&claims.sub)
-                .bind(user_id)
                 .fetch_one(&mut *tx)
                 .await?;
                 if !friend || !creator_is_workspace_admin {
@@ -667,15 +698,15 @@ pub async fn create_channel(
                             .into(),
                     ));
                 }
-                let inserted = sqlx::query(
+                let inserted = sqlx::query!(
                     "INSERT INTO workspace_memberships
                         (workspace_id, user_id, role, status, invited_by, invited_at)
                      VALUES ($1, $2, 'member', 'pending', $3, NOW())
                      ON CONFLICT (workspace_id, user_id) DO NOTHING",
+                    &body.workspace_id,
+                    user_id,
+                    &claims.sub,
                 )
-                .bind(&body.workspace_id)
-                .bind(user_id)
-                .bind(&claims.sub)
                 .execute(&mut *tx)
                 .await?
                 .rows_affected();
@@ -684,14 +715,14 @@ pub async fn create_channel(
                 }
             }
         }
-        let n = sqlx::query(
+        let n = sqlx::query!(
             "INSERT INTO channel_invites (channel_id, user_id, role, invited_by, invited_at)
              VALUES ($1, $2, 'member', $3, NOW())
              ON CONFLICT (channel_id, user_id) DO NOTHING",
+            &channel_id,
+            user_id,
+            &claims.sub,
         )
-        .bind(&channel_id)
-        .bind(user_id)
-        .bind(&claims.sub)
         .execute(&mut *tx)
         .await?
         .rows_affected();
@@ -738,16 +769,16 @@ pub async fn create_channel(
             let owner_id = owner_id.clone().ok_or_else(|| {
                 AppError::Forbidden("ownerless bots may only be added by an admin".into())
             })?;
-            let inserted = sqlx::query(
+            let inserted = sqlx::query!(
                 "INSERT INTO bot_channel_invites
                     (channel_id, bot_id, owner_user_id, invited_by, role)
                  VALUES ($1, $2, $3, $4, 'member')
                  ON CONFLICT (channel_id, bot_id) DO NOTHING",
+                &channel_id,
+                bot_id,
+                &owner_id,
+                &claims.sub,
             )
-            .bind(&channel_id)
-            .bind(bot_id)
-            .bind(&owner_id)
-            .bind(&claims.sub)
             .execute(&state.db)
             .await?
             .rows_affected();
@@ -773,7 +804,25 @@ pub async fn create_channel(
             .await?;
         }
     }
-    let mut response = dto(row);
+    let mut response = dto(ChannelDto {
+        channel_id: row.channel_id.clone(),
+        workspace_id: row.workspace_id.clone(),
+        name: row.name.clone(),
+        avatar_url: row.avatar_url.clone(),
+        channel_type: row.r#type.clone(),
+        kind: row.kind.clone(),
+        conversation_mode: row.conversation_mode.clone(),
+        purpose: row.purpose.clone(),
+        auto_assist: row.auto_assist.clone(),
+        allow_member_invites: row.allow_member_invites.clone(),
+        allow_bot_adds: row.allow_bot_adds.clone(),
+        features: Vec::new(),
+        unread_count: 0,
+        mention_count: 0,
+        is_member: true,
+        my_role: None,
+        can_manage: false,
+    });
     response.features = features;
     response.kind = if response.features.iter().any(|feature| feature == "voice") {
         "voice".into()
@@ -791,26 +840,44 @@ pub async fn get_channel(
     if !is_channel_member(&state, &channel_id, &claims.sub, &claims.role).await? {
         return Err(AppError::Forbidden("not a channel member".into()));
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
                 ARRAY(SELECT cf.feature FROM channel_features cf
                       WHERE cf.channel_id = c.channel_id AND cf.enabled = TRUE
                       ORDER BY cf.feature) AS features,
                 c.conversation_mode, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds,
-                cm.role AS my_role,
+                cm.role AS \"my_role?\",
                 (cm.role IN ('owner', 'admin') OR $2::boolean) AS can_manage
          FROM channels c
          LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
          WHERE c.channel_id = $3",
+        &claims.sub,
+        claims.role == "system_admin" || claims.role == "admin",
+        &channel_id,
     )
-    .bind(&claims.sub)
-    .bind(claims.role == "system_admin" || claims.role == "admin")
-    .bind(&channel_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    Ok(Json(dto(row)))
+    Ok(Json(dto(ChannelDto {
+        channel_id: row.channel_id.clone(),
+        workspace_id: row.workspace_id.clone(),
+        name: row.name.clone(),
+        avatar_url: row.avatar_url.clone(),
+        channel_type: row.r#type.clone(),
+        kind: row.kind.clone(),
+        conversation_mode: row.conversation_mode.clone(),
+        purpose: row.purpose.clone(),
+        auto_assist: row.auto_assist.clone(),
+        allow_member_invites: row.allow_member_invites.clone(),
+        allow_bot_adds: row.allow_bot_adds.clone(),
+        features: row.features.clone().unwrap_or_default(),
+        unread_count: 0,
+        mention_count: 0,
+        is_member: true,
+        my_role: row.my_role.clone(),
+        can_manage: row.can_manage.clone().unwrap_or_default(),
+    })))
 }
 
 pub async fn update_channel(
@@ -827,7 +894,7 @@ pub async fn update_channel(
             ));
         }
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "UPDATE channels
          SET name = COALESCE($2, name),
              purpose = COALESCE($3, purpose),
@@ -839,19 +906,37 @@ pub async fn update_channel(
          WHERE channel_id = $1
          RETURNING channel_id, workspace_id, name, avatar_url, type, kind,
                    conversation_mode, purpose, auto_assist, allow_member_invites, allow_bot_adds",
+        &channel_id,
+        body.name,
+        body.purpose,
+        body.channel_type,
+        body.auto_assist,
+        body.allow_member_invites,
+        body.allow_bot_adds,
+        body.conversation_mode,
     )
-    .bind(&channel_id)
-    .bind(body.name)
-    .bind(body.purpose)
-    .bind(body.channel_type)
-    .bind(body.auto_assist)
-    .bind(body.allow_member_invites)
-    .bind(body.allow_bot_adds)
-    .bind(body.conversation_mode)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let mut response = dto(row);
+    let mut response = dto(ChannelDto {
+        channel_id: row.channel_id.clone(),
+        workspace_id: row.workspace_id.clone(),
+        name: row.name.clone(),
+        avatar_url: row.avatar_url.clone(),
+        channel_type: row.r#type.clone(),
+        kind: row.kind.clone(),
+        conversation_mode: row.conversation_mode.clone(),
+        purpose: row.purpose.clone(),
+        auto_assist: row.auto_assist.clone(),
+        allow_member_invites: row.allow_member_invites.clone(),
+        allow_bot_adds: row.allow_bot_adds.clone(),
+        features: Vec::new(),
+        unread_count: 0,
+        mention_count: 0,
+        is_member: true,
+        my_role: None,
+        can_manage: false,
+    });
     response.features = crate::domain::channel_features::list(&state.db, &channel_id).await?;
     response.kind = if response.features.iter().any(|feature| feature == "voice") {
         "voice".into()
@@ -871,14 +956,14 @@ pub async fn update_notification_preference(
     if !is_channel_member(&state, &channel_id, &claims.sub, &claims.role).await? {
         return Err(AppError::Forbidden("not a channel member".into()));
     }
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO channel_notification_preferences (user_id, channel_id, muted)
          VALUES ($1, $2, $3)
          ON CONFLICT (user_id, channel_id) DO UPDATE SET muted = EXCLUDED.muted, updated_at = NOW()",
+        &claims.sub,
+        &channel_id,
+        body.muted,
     )
-    .bind(&claims.sub)
-    .bind(&channel_id)
-    .bind(body.muted)
     .execute(&state.db)
     .await?;
     Ok(Json(
@@ -891,15 +976,14 @@ pub async fn list_notification_preferences(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
-    let rows = sqlx::query(
-        "SELECT channel_id FROM channel_notification_preferences WHERE user_id = $1 AND muted = TRUE",
-    )
-    .bind(&claims.sub)
-    .fetch_all(&state.db)
+    let rows = sqlx::query!(
+            "SELECT channel_id FROM channel_notification_preferences WHERE user_id = $1 AND muted = TRUE",
+            &claims.sub,
+        ).fetch_all(&state.db)
     .await?;
     let channel_ids: Vec<String> = rows
         .into_iter()
-        .filter_map(|r| r.try_get("channel_id").ok())
+        .filter_map(|r| Some(r.channel_id.clone()))
         .collect();
     Ok(Json(json!({ "channel_ids": channel_ids })))
 }
@@ -910,18 +994,19 @@ pub async fn delete_channel(
     Path(channel_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
-    let pending_users: Vec<String> =
-        sqlx::query_scalar("SELECT user_id FROM channel_invites WHERE channel_id = $1")
-            .bind(&channel_id)
-            .fetch_all(&state.db)
-            .await?;
-    let pending_bots =
-        sqlx::query("SELECT bot_id, owner_user_id FROM bot_channel_invites WHERE channel_id = $1")
-            .bind(&channel_id)
-            .fetch_all(&state.db)
-            .await?;
-    sqlx::query("DELETE FROM channels WHERE channel_id = $1")
-        .bind(&channel_id)
+    let pending_users: Vec<String> = sqlx::query_scalar!(
+        "SELECT user_id FROM channel_invites WHERE channel_id = $1",
+        &channel_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let pending_bots = sqlx::query!(
+        "SELECT bot_id, owner_user_id FROM bot_channel_invites WHERE channel_id = $1",
+        &channel_id,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    sqlx::query!("DELETE FROM channels WHERE channel_id = $1", &channel_id,)
         .execute(&state.db)
         .await?;
     // Drop every live realtime subscription to the deleted channel.
@@ -937,8 +1022,8 @@ pub async fn delete_channel(
         .await;
     }
     for row in pending_bots {
-        let bot_id: String = row.try_get("bot_id").unwrap_or_default();
-        let owner_id: String = row.try_get("owner_user_id").unwrap_or_default();
+        let bot_id: String = row.bot_id.clone();
+        let owner_id: String = row.owner_user_id.clone();
         crate::api::notifications::resolve_notification(
             &state,
             &owner_id,
@@ -957,7 +1042,7 @@ pub async fn list_channel_members(
     if !is_channel_member(&state, &channel_id, &claims.sub, &claims.role).await? {
         return Err(AppError::Forbidden("not a channel member".into()));
     }
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT cm.member_id, cm.member_type, cm.role,
                 COALESCE(u.username, b.username) AS username,
                 COALESCE(u.display_name, b.display_name) AS display_name,
@@ -972,8 +1057,8 @@ pub async fn list_channel_members(
          LEFT JOIN bot_accounts b ON cm.member_type = 'bot' AND b.bot_id = cm.member_id
          WHERE cm.channel_id = $1
          ORDER BY cm.member_type, username",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_all(&state.db)
     .await?;
     // is_online：用户 = 有订阅本频道的活跃浏览器连接；bot = connector 双 WS 在线。
@@ -989,8 +1074,8 @@ pub async fn list_channel_members(
         .unwrap_or_default();
     let mut members = Vec::with_capacity(rows.len());
     for r in rows {
-        let member_id = r.try_get::<String, _>("member_id").unwrap_or_default();
-        let member_type = r.try_get::<String, _>("member_type").unwrap_or_default();
+        let member_id = r.member_id.clone();
+        let member_type = r.member_type.clone();
         let is_online = match member_type.as_str() {
             "user" => online_users.contains(&member_id),
             "bot" => match Uuid::parse_str(&member_id) {
@@ -1003,29 +1088,26 @@ pub async fn list_channel_members(
             "member_id": member_id,
             "member_type": member_type,
             "status": "active",
-            "role": r.try_get::<String, _>("role").unwrap_or_else(|_| "member".into()),
-            "username": r.try_get::<String, _>("username").ok(),
-            "display_name": r.try_get::<String, _>("display_name").ok(),
-            "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+            "role": r.role.clone(),
+            "username": r.username.clone(),
+            "display_name": r.display_name.clone(),
+            "avatar_url": r.avatar_url.clone(),
             // Profile fields for the member hovercard: bio = the long self-description
             // (users.bio, falling back to a bot's description); status = the short line.
-            "bio": r.try_get::<Option<String>, _>("bio").ok().flatten(),
-            "status_text": r.try_get::<Option<String>, _>("status_text").ok().flatten(),
-            "status_emoji": r.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+            "bio": r.bio.clone(),
+            "status_text": r.status_text.clone(),
+            "status_emoji": r.status_emoji.clone(),
             "is_online": is_online,
             // Bots only: whether the connector says the agent accepts audio
             // prompts (policy AND promptCapabilities.audio). NULL = unknown
             // (never connected / pre-capability connector) — treat as false.
-            "can_receive_audio": r
-                .try_get::<Option<bool>, _>("can_receive_audio")
-                .ok()
-                .flatten(),
+            "can_receive_audio": r.can_receive_audio.clone(),
         }));
     }
     // Pending invites (users who haven't accepted yet) — shown greyed with a badge.
-    let pending = sqlx::query(
+    let pending = sqlx::query!(
         "SELECT ci.user_id AS member_id, ci.role, u.username, u.display_name, u.avatar_url,
-                u.bio, u.status_text, u.status_emoji, wm.status AS workspace_status
+                u.bio, u.status_text, u.status_emoji, wm.status AS \"workspace_status?\"
          FROM channel_invites ci
          JOIN users u ON u.user_id = ci.user_id
          JOIN channels c ON c.channel_id = ci.channel_id
@@ -1033,28 +1115,28 @@ pub async fn list_channel_members(
            ON wm.workspace_id = c.workspace_id AND wm.user_id = ci.user_id
          WHERE ci.channel_id = $1
          ORDER BY u.username",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_all(&state.db)
     .await?;
     for r in pending {
-        let workspace_status: Option<String> = r.try_get("workspace_status").ok().flatten();
+        let workspace_status: Option<String> = r.workspace_status.clone();
         members.push(json!({
-            "member_id": r.try_get::<String, _>("member_id").unwrap_or_default(),
+            "member_id": r.member_id.clone(),
             "member_type": "user",
             "status": pending_channel_invite_status(workspace_status.as_deref()),
-            "role": r.try_get::<String, _>("role").unwrap_or_else(|_| "member".into()),
-            "username": r.try_get::<String, _>("username").ok(),
-            "display_name": r.try_get::<String, _>("display_name").ok(),
-            "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-            "bio": r.try_get::<Option<String>, _>("bio").ok().flatten(),
-            "status_text": r.try_get::<Option<String>, _>("status_text").ok().flatten(),
-            "status_emoji": r.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+            "role": r.role.clone(),
+            "username": r.username.clone(),
+            "display_name": r.display_name.clone(),
+            "avatar_url": r.avatar_url.clone(),
+            "bio": r.bio.clone(),
+            "status_text": r.status_text.clone(),
+            "status_emoji": r.status_emoji.clone(),
             "is_online": false,
             "can_receive_audio": Value::Null,
         }));
     }
-    let pending_bots = sqlx::query(
+    let pending_bots = sqlx::query!(
         "SELECT bci.bot_id AS member_id, bci.role, b.username, b.display_name,
                 b.avatar_url, b.description AS bio, b.status_text, b.status_emoji,
                 bci.cwd, bci.additional_dirs
@@ -1062,26 +1144,26 @@ pub async fn list_channel_members(
          JOIN bot_accounts b ON b.bot_id = bci.bot_id
          WHERE bci.channel_id = $1
          ORDER BY b.username",
+        &channel_id,
     )
-    .bind(&channel_id)
     .fetch_all(&state.db)
     .await?;
     for r in pending_bots {
         members.push(json!({
-            "member_id": r.try_get::<String, _>("member_id").unwrap_or_default(),
+            "member_id": r.member_id.clone(),
             "member_type": "bot",
             "status": "pending_owner",
-            "role": r.try_get::<String, _>("role").unwrap_or_else(|_| "member".into()),
-            "username": r.try_get::<String, _>("username").ok(),
-            "display_name": r.try_get::<String, _>("display_name").ok(),
-            "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-            "bio": r.try_get::<Option<String>, _>("bio").ok().flatten(),
-            "status_text": r.try_get::<Option<String>, _>("status_text").ok().flatten(),
-            "status_emoji": r.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+            "role": r.role.clone(),
+            "username": r.username.clone(),
+            "display_name": r.display_name.clone(),
+            "avatar_url": r.avatar_url.clone(),
+            "bio": r.bio.clone(),
+            "status_text": r.status_text.clone(),
+            "status_emoji": r.status_emoji.clone(),
             "is_online": false,
             "can_receive_audio": Value::Null,
-            "requested_cwd": r.try_get::<Option<String>, _>("cwd").ok().flatten(),
-            "requested_additional_dirs": r.try_get::<Value, _>("additional_dirs").unwrap_or_else(|_| json!([])),
+            "requested_cwd": r.cwd.clone(),
+            "requested_additional_dirs": r.additional_dirs.clone(),
         }));
     }
     Ok(Json(members))
@@ -1168,26 +1250,26 @@ async fn bind_bot_to_channel_tx(
     cwd: Option<String>,
     additional_dirs: Vec<String>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO workspace_bot_memberships (workspace_id, bot_id, role, added_by)
          SELECT workspace_id, $2, 'member', $3 FROM channels WHERE channel_id = $1 AND type <> 'dm'
          ON CONFLICT (workspace_id, bot_id) DO NOTHING",
+        channel_id,
+        bot_id,
+        added_by,
     )
-    .bind(channel_id)
-    .bind(bot_id)
-    .bind(added_by)
     .execute(&mut **tx)
     .await?;
-    let written = sqlx::query(
+    let written = sqlx::query!(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
          VALUES ($1, $2, 'bot', $3, $4)
          ON CONFLICT (channel_id, member_id) DO UPDATE SET role = EXCLUDED.role
          WHERE channel_memberships.member_type = EXCLUDED.member_type",
+        channel_id,
+        bot_id,
+        role,
+        added_by,
     )
-    .bind(channel_id)
-    .bind(bot_id)
-    .bind(role)
-    .bind(added_by)
     .execute(&mut **tx)
     .await?
     .rows_affected();
@@ -1250,13 +1332,15 @@ pub async fn add_channel_member(
     // bot-side authorization. An optional pinned working directory rides the same
     // authorization (it can only be chosen through an invite the caller may make).
     if body.member_type == "bot" {
-        let bot = sqlx::query("SELECT created_by, is_disabled FROM bot_accounts WHERE bot_id = $1")
-            .bind(&body.member_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?;
-        let owner_id: Option<String> = bot.try_get("created_by").ok().flatten();
-        let disabled: bool = bot.try_get("is_disabled").unwrap_or(false);
+        let bot = sqlx::query!(
+            "SELECT created_by, is_disabled FROM bot_accounts WHERE bot_id = $1",
+            &body.member_id,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+        let owner_id: Option<String> = bot.created_by.clone();
+        let disabled: bool = bot.is_disabled.clone();
         if disabled {
             return Err(AppError::BadRequest(
                 "disabled bot cannot be invited".into(),
@@ -1327,19 +1411,19 @@ pub async fn add_channel_member(
         let owner_id = owner_id.ok_or_else(|| {
             AppError::Forbidden("ownerless bots may only be added by an admin".into())
         })?;
-        let inserted = sqlx::query(
+        let inserted = sqlx::query!(
             "INSERT INTO bot_channel_invites
                 (channel_id, bot_id, owner_user_id, invited_by, role, cwd, additional_dirs, invited_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
+             VALUES ($1, $2, $3, $4, $5, $6, $7::text::jsonb, NOW())
              ON CONFLICT (channel_id, bot_id) DO NOTHING",
+            &channel_id,
+            &body.member_id,
+            &owner_id,
+            &claims.sub,
+            &role,
+            cwd.as_deref(),
+            json!(additional_dirs).to_string(),
         )
-        .bind(&channel_id)
-        .bind(&body.member_id)
-        .bind(&owner_id)
-        .bind(&claims.sub)
-        .bind(&role)
-        .bind(&cwd)
-        .bind(json!(additional_dirs).to_string())
         .execute(&state.db)
         .await?
         .rows_affected();
@@ -1360,17 +1444,18 @@ pub async fn add_channel_member(
         })));
     }
 
-    let already_member: bool = sqlx::query(
+    let already_member: bool = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
         ) AS ok",
+        &channel_id,
+        &body.member_id,
     )
-    .bind(&channel_id)
-    .bind(&body.member_id)
     .fetch_one(&state.db)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     if already_member {
         return Err(AppError::BadRequest(
@@ -1378,18 +1463,20 @@ pub async fn add_channel_member(
         ));
     }
 
-    let channel = sqlx::query("SELECT workspace_id, type FROM channels WHERE channel_id = $1")
-        .bind(&channel_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    let workspace_id: String = channel.try_get("workspace_id").unwrap_or_default();
-    let channel_type: String = channel.try_get("type").unwrap_or_default();
-    let workspace_status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2",
+    let channel = sqlx::query!(
+        "SELECT workspace_id, type FROM channels WHERE channel_id = $1",
+        &channel_id,
     )
-    .bind(&workspace_id)
-    .bind(&body.member_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let workspace_id: String = channel.workspace_id.clone();
+    let channel_type: String = channel.r#type.clone();
+    let workspace_status: Option<String> = sqlx::query_scalar!(
+        "SELECT status FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2",
+        &workspace_id,
+        &body.member_id,
+    )
     .fetch_optional(&state.db)
     .await?;
 
@@ -1399,16 +1486,16 @@ pub async fn add_channel_member(
         ));
     }
     if workspace_status.is_none() {
-        let friends: bool = sqlx::query_scalar(
-            "SELECT EXISTS(
-                SELECT 1 FROM friendships f
+        let friends: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                SELECT 1 AS present FROM friendships f
                 WHERE f.status = 'accepted'
                   AND ((f.user_id = $1 AND f.friend_id = $2)
                     OR (f.user_id = $2 AND f.friend_id = $1))
-             )",
+             ) AS "value!" "#,
+            &claims.sub,
+            &body.member_id,
         )
-        .bind(&claims.sub)
-        .bind(&body.member_id)
         .fetch_one(&state.db)
         .await?;
         if !friends {
@@ -1428,29 +1515,29 @@ pub async fn add_channel_member(
     let mut tx = state.db.begin().await?;
     let mut workspace_invite_created = false;
     if workspace_status.is_none() {
-        workspace_invite_created = sqlx::query(
+        workspace_invite_created = sqlx::query!(
             "INSERT INTO workspace_memberships
                 (workspace_id, user_id, role, status, invited_by, invited_at)
              VALUES ($1, $2, 'member', 'pending', $3, NOW())
              ON CONFLICT (workspace_id, user_id) DO NOTHING",
+            &workspace_id,
+            &body.member_id,
+            &claims.sub,
         )
-        .bind(&workspace_id)
-        .bind(&body.member_id)
-        .bind(&claims.sub)
         .execute(&mut *tx)
         .await?
         .rows_affected()
             > 0;
     }
-    let inserted = sqlx::query(
+    let inserted = sqlx::query!(
         "INSERT INTO channel_invites (channel_id, user_id, role, invited_by, invited_at)
          VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (channel_id, user_id) DO NOTHING",
+        &channel_id,
+        &body.member_id,
+        &role,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&body.member_id)
-    .bind(&role)
-    .bind(&claims.sub)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -1496,19 +1583,16 @@ pub async fn accept_channel_invite(
 ) -> Result<Json<Value>, AppError> {
     let mut tx = state.db.begin().await?;
     // Row-returning delete → 404 if there's no pending invite (or it was already answered).
-    let invite = sqlx::query(
+    let invite = sqlx::query!(
         "DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2
          RETURNING role, invited_by",
+        &channel_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&claims.sub)
     .fetch_optional(&mut *tx)
     .await?;
     let (role, invited_by): (String, Option<String>) = match invite {
-        Some(r) => (
-            r.try_get("role").unwrap_or_else(|_| "member".into()),
-            r.try_get::<Option<String>, _>("invited_by").ok().flatten(),
-        ),
+        Some(r) => (r.role.clone(), r.invited_by.clone()),
         None => return Err(AppError::NotFound),
     };
     // Workspace-first invariant re-checked at accept time: you may only JOIN a
@@ -1516,18 +1600,19 @@ pub async fn accept_channel_invite(
     // while active, then removed from / having left the workspace before answering,
     // must not sneak in via a stale invite. We commit the DELETE anyway (consume the
     // now-invalid invite so it stops showing in their inbox) and then reject.
-    let still_ws_member: bool = sqlx::query(
+    let still_ws_member: bool = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM workspace_memberships wm
+            SELECT 1 AS present FROM workspace_memberships wm
             JOIN channels c ON c.workspace_id = wm.workspace_id
             WHERE c.channel_id = $1 AND wm.user_id = $2 AND wm.status = 'active'
         ) AS ok",
+        &channel_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&claims.sub)
     .fetch_one(&mut *tx)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     if !still_ws_member {
         tx.commit().await?;
@@ -1542,15 +1627,15 @@ pub async fn accept_channel_invite(
         ));
     }
     let added_by = invited_by.unwrap_or_else(|| claims.sub.clone());
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
          VALUES ($1, $2, 'user', $3, $4)
          ON CONFLICT (channel_id, member_id) DO NOTHING",
+        &channel_id,
+        &claims.sub,
+        &role,
+        &added_by,
     )
-    .bind(&channel_id)
-    .bind(&claims.sub)
-    .bind(&role)
-    .bind(&added_by)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1580,13 +1665,15 @@ pub async fn join_channel(
     Extension(claims): Extension<Claims>,
     Path(channel_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let channel = sqlx::query("SELECT type, workspace_id FROM channels WHERE channel_id = $1")
-        .bind(&channel_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    let channel_type: String = channel.try_get("type").unwrap_or_default();
-    let workspace_id: String = channel.try_get("workspace_id").unwrap_or_default();
+    let channel = sqlx::query!(
+        "SELECT type, workspace_id FROM channels WHERE channel_id = $1",
+        &channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let channel_type: String = channel.r#type.clone();
+    let workspace_id: String = channel.workspace_id.clone();
     if channel_type != "public" {
         return Err(AppError::Forbidden(
             "only public channels can be joined without an invite".into(),
@@ -1594,17 +1681,18 @@ pub async fn join_channel(
     }
     // Workspace-first invariant: self-join is a workspace-member privilege, checked
     // at join time (mirrors accept_channel_invite's re-check).
-    let ws_member: bool = sqlx::query(
+    let ws_member: bool = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM workspace_memberships
+            SELECT 1 AS present FROM workspace_memberships
             WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'
         ) AS ok",
+        &workspace_id,
+        &claims.sub,
     )
-    .bind(&workspace_id)
-    .bind(&claims.sub)
     .fetch_one(&state.db)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     if !ws_member {
         return Err(AppError::Forbidden(
@@ -1613,23 +1701,25 @@ pub async fn join_channel(
     }
     let mut tx = state.db.begin().await?;
     // Self-join always starts at 'member'; an invite-carried role never applies here.
-    let inserted = sqlx::query(
+    let inserted = sqlx::query!(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
          VALUES ($1, $2, 'user', 'member', $2)
          ON CONFLICT (channel_id, member_id) DO NOTHING",
+        &channel_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&claims.sub)
     .execute(&mut *tx)
     .await?
     .rows_affected();
     // A pending invite to this channel is now moot — consume it so it stops
     // showing in the invitee's inbox and the member list's pending section.
-    sqlx::query("DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2")
-        .bind(&channel_id)
-        .bind(&claims.sub)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2",
+        &channel_id,
+        &claims.sub,
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     crate::api::notifications::resolve_notification(
@@ -1660,11 +1750,13 @@ pub async fn decline_channel_invite(
     Extension(claims): Extension<Claims>,
     Path(channel_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    sqlx::query("DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2")
-        .bind(&channel_id)
-        .bind(&claims.sub)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2",
+        &channel_id,
+        &claims.sub,
+    )
+    .execute(&state.db)
+    .await?;
     crate::api::notifications::resolve_notification(
         &state,
         &claims.sub,
@@ -1680,29 +1772,27 @@ pub async fn accept_bot_channel_invite(
     Extension(claims): Extension<Claims>,
     Path((channel_id, bot_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT bci.role, bci.invited_by, bci.cwd, bci.additional_dirs,
                 b.is_disabled
          FROM bot_channel_invites bci
          JOIN bot_accounts b ON b.bot_id = bci.bot_id
          WHERE bci.channel_id = $1 AND bci.bot_id = $2
            AND bci.owner_user_id = $3 AND b.created_by = $3",
+        &channel_id,
+        &bot_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&bot_id)
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    if row.try_get::<bool, _>("is_disabled").unwrap_or(false) {
+    if row.is_disabled.clone() {
         return Err(AppError::BadRequest("disabled bot cannot be added".into()));
     }
-    let role: String = row.try_get("role").unwrap_or_else(|_| "member".into());
-    let invited_by: String = row
-        .try_get("invited_by")
-        .unwrap_or_else(|_| claims.sub.clone());
-    let cwd: Option<String> = row.try_get("cwd").ok().flatten();
-    let dirs_value: Value = row.try_get("additional_dirs").unwrap_or_else(|_| json!([]));
+    let role: String = row.role.clone();
+    let invited_by: String = row.invited_by.clone();
+    let cwd: Option<String> = row.cwd.clone();
+    let dirs_value: Value = row.additional_dirs.clone();
     let additional_dirs: Vec<String> = dirs_value
         .as_array()
         .map(|values| {
@@ -1733,7 +1823,7 @@ pub async fn accept_bot_channel_invite(
             .unwrap_or_else(|_| bot_id.clone());
 
     let mut tx = state.db.begin().await?;
-    let locked = sqlx::query(
+    let locked = sqlx::query!(
         "SELECT bci.role, bci.invited_by, bci.cwd, bci.additional_dirs,
                 b.is_disabled
          FROM bot_channel_invites bci
@@ -1741,27 +1831,21 @@ pub async fn accept_bot_channel_invite(
          WHERE bci.channel_id = $1 AND bci.bot_id = $2
            AND bci.owner_user_id = $3 AND b.created_by = $3
          FOR UPDATE OF bci, b",
+        &channel_id,
+        &bot_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&bot_id)
-    .bind(&claims.sub)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
-    if locked.try_get::<bool, _>("is_disabled").unwrap_or(false) {
+    if locked.is_disabled.clone() {
         return Err(AppError::BadRequest("disabled bot cannot be added".into()));
     }
     let locked_signature = (
-        locked
-            .try_get::<String, _>("role")
-            .unwrap_or_else(|_| "member".into()),
-        locked
-            .try_get::<String, _>("invited_by")
-            .unwrap_or_else(|_| claims.sub.clone()),
-        locked.try_get::<Option<String>, _>("cwd").ok().flatten(),
-        locked
-            .try_get::<Value, _>("additional_dirs")
-            .unwrap_or_else(|_| json!([])),
+        locked.role.clone(),
+        locked.invited_by.clone(),
+        locked.cwd.clone(),
+        locked.additional_dirs.clone(),
     );
     if locked_signature != invite_signature {
         return Err(AppError::Conflict(
@@ -1780,13 +1864,14 @@ pub async fn accept_bot_channel_invite(
         additional_dirs,
     )
     .await?;
-    let deleted =
-        sqlx::query("DELETE FROM bot_channel_invites WHERE channel_id = $1 AND bot_id = $2")
-            .bind(&channel_id)
-            .bind(&bot_id)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
+    let deleted = sqlx::query!(
+        "DELETE FROM bot_channel_invites WHERE channel_id = $1 AND bot_id = $2",
+        &channel_id,
+        &bot_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
     if deleted != 1 {
         return Err(AppError::Conflict(
             "bot invitation was already resolved".into(),
@@ -1816,13 +1901,13 @@ pub async fn decline_bot_channel_invite(
     Extension(claims): Extension<Claims>,
     Path((channel_id, bot_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
-    let deleted = sqlx::query(
+    let deleted = sqlx::query!(
         "DELETE FROM bot_channel_invites
          WHERE channel_id = $1 AND bot_id = $2 AND owner_user_id = $3",
+        &channel_id,
+        &bot_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&bot_id)
-    .bind(&claims.sub)
     .execute(&state.db)
     .await?
     .rows_affected();
@@ -1852,6 +1937,7 @@ mod tests {
     /// marker. Setting a role by hand must release the row.
     #[test]
     fn setting_a_role_by_hand_releases_the_row_from_its_integration() {
+        const SET_HUMAN_ROLE: &str = include_str!("../../queries/set_human_role.sql");
         assert!(
             SET_HUMAN_ROLE.contains("projected_from = NULL"),
             "a human role edit must clear the projection marker: {SET_HUMAN_ROLE}"
@@ -1900,18 +1986,20 @@ async fn purge_channel_approval_authority(
     channel_id: &str,
     user_id: &str,
 ) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM approval_delegations WHERE channel_id = $1 AND user_id = $2")
-        .bind(channel_id)
-        .bind(user_id)
-        .execute(&state.db)
-        .await?;
-    sqlx::query(
+    sqlx::query!(
+        "DELETE FROM approval_delegations WHERE channel_id = $1 AND user_id = $2",
+        channel_id,
+        user_id,
+    )
+    .execute(&state.db)
+    .await?;
+    sqlx::query!(
         "DELETE FROM bot_event_access
          WHERE channel_id = $1 AND subject_kind = 'user' AND subject_id = $2
         ",
+        channel_id,
+        user_id,
     )
-    .bind(channel_id)
-    .bind(user_id)
     .execute(&state.db)
     .await?;
     Ok(())
@@ -1923,23 +2011,23 @@ pub async fn remove_channel_member(
     Path((channel_id, member_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
     ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
-    let removing_last_owner: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships removing
+    let removing_last_owner: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM channel_memberships removing
             JOIN channels c ON c.channel_id = removing.channel_id
             WHERE removing.channel_id = $1 AND removing.member_id = $2
               AND removing.member_type = 'user' AND removing.role = 'owner'
               AND c.type <> 'dm' AND c.archived_at IS NULL
               AND NOT EXISTS (
-                SELECT 1 FROM channel_memberships other
+                SELECT 1 AS present FROM channel_memberships other
                 WHERE other.channel_id = removing.channel_id
                   AND other.member_type = 'user' AND other.role = 'owner'
                   AND other.member_id <> removing.member_id
               )
-        )",
+        ) AS "value!" "#,
+        &channel_id,
+        &member_id,
     )
-    .bind(&channel_id)
-    .bind(&member_id)
     .fetch_one(&state.db)
     .await?;
     if removing_last_owner {
@@ -1947,37 +2035,43 @@ pub async fn remove_channel_member(
             "transfer channel ownership or delete the channel first".into(),
         ));
     }
-    let pending_user: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM channel_invites WHERE channel_id = $1 AND user_id = $2)",
+    let pending_user: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 AS present FROM channel_invites WHERE channel_id = $1 AND user_id = $2) AS "value!" "#,
+        &channel_id,
+        &member_id,
     )
-    .bind(&channel_id)
-    .bind(&member_id)
     .fetch_one(&state.db)
     .await?;
-    let pending_bot_owner: Option<String> = sqlx::query_scalar(
+    let pending_bot_owner: Option<String> = sqlx::query_scalar!(
         "SELECT owner_user_id FROM bot_channel_invites WHERE channel_id = $1 AND bot_id = $2",
+        &channel_id,
+        &member_id,
     )
-    .bind(&channel_id)
-    .bind(&member_id)
     .fetch_optional(&state.db)
     .await?;
-    sqlx::query("DELETE FROM channel_memberships WHERE channel_id = $1 AND member_id = $2")
-        .bind(&channel_id)
-        .bind(&member_id)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM channel_memberships WHERE channel_id = $1 AND member_id = $2",
+        &channel_id,
+        &member_id,
+    )
+    .execute(&state.db)
+    .await?;
     // Also rescind a still-pending invite (removing = "not in this channel", whether
     // they'd accepted yet or not). Harmless no-op for active members / bots.
-    sqlx::query("DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2")
-        .bind(&channel_id)
-        .bind(&member_id)
-        .execute(&state.db)
-        .await?;
-    sqlx::query("DELETE FROM bot_channel_invites WHERE channel_id = $1 AND bot_id = $2")
-        .bind(&channel_id)
-        .bind(&member_id)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2",
+        &channel_id,
+        &member_id,
+    )
+    .execute(&state.db)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM bot_channel_invites WHERE channel_id = $1 AND bot_id = $2",
+        &channel_id,
+        &member_id,
+    )
+    .execute(&state.db)
+    .await?;
     if let Some(owner_id) = pending_bot_owner {
         crate::api::notifications::resolve_notification(
             &state,
@@ -2026,12 +2120,12 @@ async fn caller_channel_is_owner(
     if matches!(claims.role.as_str(), "system_admin" | "admin") {
         return Ok(true);
     }
-    let role: Option<String> = sqlx::query_scalar(
+    let role: Option<String> = sqlx::query_scalar!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id,
+        &claims.sub,
     )
-    .bind(channel_id)
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?;
     Ok(role.as_deref() == Some("owner"))
@@ -2041,12 +2135,12 @@ async fn caller_channel_is_owner(
 /// `"member"` when not found / on a DB error — the acp_policy resolution is itself
 /// fail-closed for owner-default events, so a downgraded role never over-grants.
 async fn caller_channel_role(state: &AppState, channel_id: &str, user_id: &str) -> String {
-    sqlx::query_scalar::<_, String>(
+    sqlx::query_scalar!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id,
+        user_id,
     )
-    .bind(channel_id)
-    .bind(user_id)
     .fetch_optional(&state.db)
     .await
     .ok()
@@ -2063,21 +2157,22 @@ pub async fn leave_channel(
     Extension(claims): Extension<Claims>,
     Path(channel_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let role: Option<String> = sqlx::query_scalar(
+    let role: Option<String> = sqlx::query_scalar!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        &channel_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?;
     let role = role.ok_or(AppError::NotFound)?;
 
-    let channel_type: Option<String> =
-        sqlx::query_scalar("SELECT type FROM channels WHERE channel_id = $1")
-            .bind(&channel_id)
-            .fetch_optional(&state.db)
-            .await?;
+    let channel_type: Option<String> = sqlx::query_scalar!(
+        "SELECT type FROM channels WHERE channel_id = $1",
+        &channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
     if channel_type.as_deref() == Some("dm") {
         return Err(AppError::BadRequest("cannot leave a direct message".into()));
     }
@@ -2086,11 +2181,11 @@ pub async fn leave_channel(
         // Owner leaving reduces the owner count, so serialize against concurrent
         // owner leaves/demotes: lock the owner rows, re-count, delete, all in one tx.
         let mut tx = state.db.begin().await?;
-        let owners = sqlx::query(
-            "SELECT 1 FROM channel_memberships
+        let owners = sqlx::query!(
+            "SELECT 1 AS present FROM channel_memberships
              WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner' FOR UPDATE",
+            &channel_id,
         )
-        .bind(&channel_id)
         .fetch_all(&mut *tx)
         .await?;
         if owners.len() <= 1 {
@@ -2098,22 +2193,22 @@ pub async fn leave_channel(
                 "you are the last owner — transfer ownership or delete the channel first".into(),
             ));
         }
-        sqlx::query(
+        sqlx::query!(
             "DELETE FROM channel_memberships
              WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+            &channel_id,
+            &claims.sub,
         )
-        .bind(&channel_id)
-        .bind(&claims.sub)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
     } else {
-        sqlx::query(
+        sqlx::query!(
             "DELETE FROM channel_memberships
              WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+            &channel_id,
+            &claims.sub,
         )
-        .bind(&channel_id)
-        .bind(&claims.sub)
         .execute(&state.db)
         .await?;
     }
@@ -2145,10 +2240,6 @@ pub async fn leave_channel(
 /// `integrations::projection::decide` treat the row as human-owned, which it now
 /// is, so the projection may still promote that member but will never demote
 /// them again.
-const SET_HUMAN_ROLE: &str = "UPDATE channel_memberships
-        SET role = $3, projected_from = NULL
-      WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'";
-
 pub async fn set_channel_member_role(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -2167,17 +2258,17 @@ pub async fn set_channel_member_role(
             "role must be owner, admin, member, or readonly".into(),
         ));
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT role, member_type FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2",
+        &channel_id,
+        &member_id,
     )
-    .bind(&channel_id)
-    .bind(&member_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let current: String = row.try_get("role").unwrap_or_else(|_| "member".into());
-    let member_type: String = row.try_get("member_type").unwrap_or_else(|_| "user".into());
+    let current: String = row.role.clone();
+    let member_type: String = row.member_type.clone();
 
     if member_type == "bot" {
         if !matches!(role.as_str(), "member" | "readonly") {
@@ -2185,13 +2276,13 @@ pub async fn set_channel_member_role(
                 "a bot's channel role must be member or readonly".into(),
             ));
         }
-        sqlx::query(
+        sqlx::query!(
             "UPDATE channel_memberships SET role = $3
              WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot'",
+            &channel_id,
+            &member_id,
+            &role,
         )
-        .bind(&channel_id)
-        .bind(&member_id)
-        .bind(&role)
         .execute(&state.db)
         .await?;
         return Ok(Json(json!({ "member_id": member_id, "role": role })));
@@ -2210,11 +2301,11 @@ pub async fn set_channel_member_role(
     if current == "owner" && role != "owner" {
         // Demoting an owner reduces the owner count — serialize like leave.
         let mut tx = state.db.begin().await?;
-        let owners = sqlx::query(
-            "SELECT 1 FROM channel_memberships
+        let owners = sqlx::query!(
+            "SELECT 1 AS present FROM channel_memberships
              WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner' FOR UPDATE",
+            &channel_id,
         )
-        .bind(&channel_id)
         .fetch_all(&mut *tx)
         .await?;
         if owners.len() <= 1 {
@@ -2222,20 +2313,18 @@ pub async fn set_channel_member_role(
                 "can't demote the last owner — promote another owner first".into(),
             ));
         }
-        sqlx::query(SET_HUMAN_ROLE)
-            .bind(&channel_id)
-            .bind(&member_id)
-            .bind(&role)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::Executor::execute(
+            &mut *tx,
+            sqlx::query_file!("queries/set_human_role.sql", &channel_id, &member_id, &role,),
+        )
+        .await?;
         tx.commit().await?;
     } else {
-        sqlx::query(SET_HUMAN_ROLE)
-            .bind(&channel_id)
-            .bind(&member_id)
-            .bind(&role)
-            .execute(&state.db)
-            .await?;
+        sqlx::Executor::execute(
+            &state.db,
+            sqlx::query_file!("queries/set_human_role.sql", &channel_id, &member_id, &role,),
+        )
+        .await?;
     }
     Ok(Json(json!({ "member_id": member_id, "role": role })))
 }
@@ -2248,12 +2337,12 @@ pub async fn mark_channel_read(
     Extension(claims): Extension<Claims>,
     Path(channel_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE channel_memberships SET last_read_at = NOW()
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        &channel_id,
+        &claims.sub,
     )
-    .bind(&channel_id)
-    .bind(&claims.sub)
     .execute(&state.db)
     .await?;
     Ok(Json(json!({"ok": true})))

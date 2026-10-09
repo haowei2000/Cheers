@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE connector_hosts\n         SET revoked_at = COALESCE(revoked_at, NOW()), status = $3,\n             mcp_connection_state = 'revoked', mcp_state_updated_at = NOW(), updated_at = NOW()\n         WHERE host_id = $1 AND bot_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "592793e9858816deb633b5d908ad63e90f69ee907fbbd0cfd8555876d21522cd"
+}

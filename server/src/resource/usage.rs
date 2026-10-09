@@ -10,7 +10,7 @@
 //! `created_at`). (Agents like Claude report `cost.amount` cumulatively + a `used`/`size`
 //! context snapshot rather than per-turn token counts — see `acp_session_updates`.)
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{authorize_channel_read, Principal, ResourceResult};
@@ -32,7 +32,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     // joined back so each (bot, session) is one row. The session filter ($2) applies to
     // both the aggregate and the latest-snapshot lookup. `IS NOT DISTINCT FROM` keeps
     // NULL-session events (channel-level, not session-bound) grouped correctly.
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r#"
         SELECT
             agg.bot_id,
@@ -70,9 +70,9 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         ) latest ON TRUE
         ORDER BY agg.bot_id ASC, agg.session_id ASC
         "#,
+        channel_id.to_string(),
+        session_id,
     )
-    .bind(channel_id.to_string())
-    .bind(session_id)
     .fetch_all(db)
     .await
     .map_err(super::db_err("usage.read: aggregate bot_usage_events"))?;
@@ -81,13 +81,13 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .into_iter()
         .map(|row| {
             json!({
-                "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
-                "session_id": row.try_get::<Option<String>, _>("session_id").ok().flatten(),
-                "input_tokens": row.try_get::<Option<i64>, _>("input_tokens").ok().flatten(),
-                "output_tokens": row.try_get::<Option<i64>, _>("output_tokens").ok().flatten(),
-                "total_tokens": row.try_get::<Option<i64>, _>("total_tokens").ok().flatten(),
-                "context_window": row.try_get::<Option<i64>, _>("context_window").ok().flatten(),
-                "cost_usd": row.try_get::<Option<f64>, _>("cost_usd").ok().flatten(),
+                "bot_id": row.bot_id.clone(),
+                "session_id": row.session_id.clone(),
+                "input_tokens": row.input_tokens.clone(),
+                "output_tokens": row.output_tokens.clone(),
+                "total_tokens": row.total_tokens.clone(),
+                "context_window": row.context_window.clone(),
+                "cost_usd": row.cost_usd.clone(),
             })
         })
         .collect();

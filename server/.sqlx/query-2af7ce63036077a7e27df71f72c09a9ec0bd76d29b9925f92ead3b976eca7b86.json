@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE file_records\n         SET transcribe_requested_at = COALESCE(transcribe_requested_at, NOW()),\n             conversion_attempts = 0,\n             last_error = NULL\n         WHERE file_id = $1 AND md_path IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2af7ce63036077a7e27df71f72c09a9ec0bd76d29b9925f92ead3b976eca7b86"
+}

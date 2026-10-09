@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT display_name, avatar_url, bio, status_text, status_emoji, status_updated_at\n         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "bio",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status_text",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "status_updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "0c5cc05fefc130ccd56e15700ecab190dd3fb397f1b624240da0761cc0d12183"
+}

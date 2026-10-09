@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.bot_id, COUNT(*) FILTER (WHERE i.revoked_at IS NULL) AS count\n             FROM connector_hosts i JOIN bot_accounts b ON b.bot_id = i.bot_id\n             WHERE $2 OR b.created_by = $1 GROUP BY i.bot_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "ab36663d7ffe986592dbf183cbcbdf78642c0c1155551eae78d2fd630c2d2476"
+}

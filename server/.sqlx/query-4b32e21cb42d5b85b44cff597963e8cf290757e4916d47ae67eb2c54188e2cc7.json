@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE integration_webhook_events AS e\n            SET process_attempts = e.process_attempts + 1\n          WHERE (e.integration_id, e.installation_id, e.event_id) IN (\n                SELECT c.integration_id, c.installation_id, c.event_id\n                  FROM integration_webhook_events c\n                 WHERE c.processed_at IS NULL\n                   AND c.process_attempts < $1\n                 ORDER BY c.received_at\n                 LIMIT $2\n                 FOR UPDATE SKIP LOCKED\n          )\n      RETURNING e.integration_id, e.installation_id, e.event_id, e.event_type,\n                e.payload, e.process_attempts",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "integration_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "installation_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "event_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "event_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "payload",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "process_attempts",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4b32e21cb42d5b85b44cff597963e8cf290757e4916d47ae67eb2c54188e2cc7"
+}

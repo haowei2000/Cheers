@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO enrollment_codes\n            (code_id, bot_id, code_hash, created_by, agent_type, host_id, expires_at)\n         VALUES ($1, $2, $3, $4, $5, $6, NOW() + make_interval(secs => $7))\n         RETURNING expires_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "61c48e398ffb8c25ce186e37be4341b545ad2b1b32cf98713f068653e1119f7d"
+}

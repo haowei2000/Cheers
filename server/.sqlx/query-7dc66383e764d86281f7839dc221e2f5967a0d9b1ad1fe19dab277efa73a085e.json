@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_integration_bindings SET synced_at = NOW() WHERE channel_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7dc66383e764d86281f7839dc221e2f5967a0d9b1ad1fe19dab277efa73a085e"
+}

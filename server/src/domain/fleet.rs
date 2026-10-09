@@ -8,7 +8,7 @@
 //! pushing policy into SQL isn't worth the coupling.
 
 use serde_json::Value;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// One unresolved permission card in a channel the user is a member of.
@@ -29,8 +29,9 @@ pub async fn find_pending_for_user(
     workspace_id: Uuid,
     user_id: Uuid,
 ) -> Result<Vec<FleetPending>, sqlx::Error> {
-    let rows = sqlx::query(
-        "SELECT m.msg_id, m.channel_id, c.name AS channel_name, m.sender_id,
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::FleetPermissionRow,
+        r###"SELECT m.msg_id, m.channel_id, c.name AS channel_name, m.sender_id,
                 m.content_data, m.created_at
          FROM messages m
          JOIN channels c ON c.channel_id = m.channel_id
@@ -42,37 +43,25 @@ pub async fn find_pending_for_user(
            AND (m.content_data->>'resolved' IS NULL
                 OR m.content_data->>'resolved' = 'false')
          ORDER BY m.created_at DESC
-         LIMIT 100",
+         LIMIT 100"###,
+        workspace_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(workspace_id.to_string())
-    .bind(user_id.to_string())
     .fetch_all(db)
     .await?;
     Ok(rows.into_iter().filter_map(row_to_fleet_pending).collect())
 }
 
-fn row_to_fleet_pending(r: sqlx::postgres::PgRow) -> Option<FleetPending> {
+fn row_to_fleet_pending(
+    r: crate::infra::db::query_rows::FleetPermissionRow,
+) -> Option<FleetPending> {
     Some(FleetPending {
-        msg_id: r
-            .try_get::<String, _>("msg_id")
-            .ok()
-            .and_then(|s| s.parse().ok())?,
-        channel_id: r
-            .try_get::<String, _>("channel_id")
-            .ok()
-            .and_then(|s| s.parse().ok())?,
-        channel_name: r.try_get("channel_name").unwrap_or_default(),
-        bot_id: r
-            .try_get::<String, _>("sender_id")
-            .ok()
-            .and_then(|s| s.parse().ok())?,
-        content_data: r
-            .try_get::<Option<Value>, _>("content_data")
-            .ok()
-            .flatten()
-            .unwrap_or(Value::Null),
-        created_at: r
-            .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+        msg_id: Some(r.msg_id.clone()).and_then(|s| s.parse().ok())?,
+        channel_id: Some(r.channel_id.clone()).and_then(|s| s.parse().ok())?,
+        channel_name: r.channel_name.clone(),
+        bot_id: Some(r.sender_id.clone()).and_then(|s| s.parse().ok())?,
+        content_data: r.content_data.clone().unwrap_or(Value::Null),
+        created_at: Some(r.created_at.clone())
             .map(|t| t.to_rfc3339())
             .unwrap_or_default(),
     })
@@ -85,8 +74,9 @@ pub async fn find_pending_for_user_all(
     db: &PgPool,
     user_id: Uuid,
 ) -> Result<Vec<FleetPending>, sqlx::Error> {
-    let rows = sqlx::query(
-        "SELECT m.msg_id, m.channel_id, c.name AS channel_name, m.sender_id,
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::FleetPermissionRow,
+        r###"SELECT m.msg_id, m.channel_id, c.name AS channel_name, m.sender_id,
                 m.content_data, m.created_at
          FROM messages m
          JOIN channels c ON c.channel_id = m.channel_id
@@ -97,9 +87,9 @@ pub async fn find_pending_for_user_all(
            AND (m.content_data->>'resolved' IS NULL
                 OR m.content_data->>'resolved' = 'false')
          ORDER BY m.created_at DESC
-         LIMIT 100",
+         LIMIT 100"###,
+        user_id.to_string(),
     )
-    .bind(user_id.to_string())
     .fetch_all(db)
     .await?;
     Ok(rows.into_iter().filter_map(row_to_fleet_pending).collect())
@@ -121,8 +111,9 @@ pub async fn list_fleet_bots(
     workspace_id: Uuid,
     user_id: Uuid,
 ) -> Result<Vec<FleetBotRow>, sqlx::Error> {
-    let rows = sqlx::query(
-        "SELECT cm.member_id AS bot_id, cm.channel_id, c.name AS channel_name,
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::FleetAgentRow,
+        r###"SELECT cm.member_id AS bot_id, cm.channel_id, c.name AS channel_name,
                 COALESCE(ba.display_name, ba.username) AS bot_name,
                 ba.status_text, ba.status_emoji
          FROM channel_memberships cm
@@ -132,10 +123,10 @@ pub async fn list_fleet_bots(
           AND me.member_id = $2 AND me.member_type = 'user'
          JOIN bot_accounts ba ON ba.bot_id = cm.member_id
          WHERE c.workspace_id = $1 AND cm.member_type = 'bot'
-         ORDER BY c.name, bot_name",
+         ORDER BY c.name, bot_name"###,
+        workspace_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(workspace_id.to_string())
-    .bind(user_id.to_string())
     .fetch_all(db)
     .await?;
     Ok(rows.into_iter().filter_map(row_to_fleet_bot).collect())
@@ -148,8 +139,9 @@ pub async fn list_fleet_bots_all(
     db: &PgPool,
     user_id: Uuid,
 ) -> Result<Vec<FleetBotRow>, sqlx::Error> {
-    let rows = sqlx::query(
-        "SELECT cm.member_id AS bot_id, cm.channel_id, c.name AS channel_name,
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::FleetAgentRow,
+        r###"SELECT cm.member_id AS bot_id, cm.channel_id, c.name AS channel_name,
                 COALESCE(ba.display_name, ba.username) AS bot_name,
                 ba.status_text, ba.status_emoji
          FROM channel_memberships cm
@@ -159,31 +151,22 @@ pub async fn list_fleet_bots_all(
           AND me.member_id = $1 AND me.member_type = 'user'
          JOIN bot_accounts ba ON ba.bot_id = cm.member_id
          WHERE cm.member_type = 'bot'
-         ORDER BY c.name, bot_name",
+         ORDER BY c.name, bot_name"###,
+        user_id.to_string(),
     )
-    .bind(user_id.to_string())
     .fetch_all(db)
     .await?;
     Ok(rows.into_iter().filter_map(row_to_fleet_bot).collect())
 }
 
-fn row_to_fleet_bot(r: sqlx::postgres::PgRow) -> Option<FleetBotRow> {
+fn row_to_fleet_bot(r: crate::infra::db::query_rows::FleetAgentRow) -> Option<FleetBotRow> {
     Some(FleetBotRow {
-        bot_id: r
-            .try_get::<String, _>("bot_id")
-            .ok()
-            .and_then(|s| s.parse().ok())?,
-        channel_id: r
-            .try_get::<String, _>("channel_id")
-            .ok()
-            .and_then(|s| s.parse().ok())?,
-        channel_name: r.try_get("channel_name").unwrap_or_default(),
-        bot_name: r.try_get("bot_name").unwrap_or_default(),
-        status_text: r.try_get::<Option<String>, _>("status_text").ok().flatten(),
-        status_emoji: r
-            .try_get::<Option<String>, _>("status_emoji")
-            .ok()
-            .flatten(),
+        bot_id: Some(r.bot_id.clone()).and_then(|s| s.parse().ok())?,
+        channel_id: Some(r.channel_id.clone()).and_then(|s| s.parse().ok())?,
+        channel_name: r.channel_name.clone(),
+        bot_name: r.bot_name.clone().unwrap_or_default(),
+        status_text: r.status_text.clone(),
+        status_emoji: r.status_emoji.clone(),
     })
 }
 
@@ -194,7 +177,7 @@ pub async fn session_counts(
     db: &PgPool,
     channel_ids: &[String],
 ) -> Result<std::collections::HashMap<(Uuid, Uuid), (i64, i64)>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT b.bot_id, b.scope_id AS channel_id,
                 COUNT(*) FILTER (WHERE s.status = 'busy') AS busy,
                 COUNT(*) FILTER (WHERE s.status NOT IN
@@ -203,23 +186,17 @@ pub async fn session_counts(
          JOIN cheers_sessions s ON s.session_id = b.session_id
          WHERE b.scope_type = 'channel' AND b.scope_id = ANY($1)
          GROUP BY b.bot_id, b.scope_id",
+        channel_ids,
     )
-    .bind(channel_ids)
     .fetch_all(db)
     .await?;
     Ok(rows
         .into_iter()
         .filter_map(|r| {
-            let bot: Uuid = r
-                .try_get::<String, _>("bot_id")
-                .ok()
-                .and_then(|s| s.parse().ok())?;
-            let ch: Uuid = r
-                .try_get::<String, _>("channel_id")
-                .ok()
-                .and_then(|s| s.parse().ok())?;
-            let busy: i64 = r.try_get("busy").unwrap_or(0);
-            let idle: i64 = r.try_get("idle").unwrap_or(0);
+            let bot: Uuid = Some(r.bot_id.clone()).and_then(|s| s.parse().ok())?;
+            let ch: Uuid = Some(r.channel_id.clone()).and_then(|s| s.parse().ok())?;
+            let busy: i64 = r.busy.clone().unwrap_or(0);
+            let idle: i64 = r.idle.clone().unwrap_or(0);
             Some(((bot, ch), (busy, idle)))
         })
         .collect())
@@ -235,7 +212,7 @@ pub async fn cost_today(
     db: &PgPool,
     channel_ids: &[String],
 ) -> Result<std::collections::HashMap<(Uuid, Uuid), f64>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT channel_id, bot_id, SUM(max_cost) AS cost
          FROM (
              SELECT channel_id, bot_id, session_id, MAX(cost_usd) AS max_cost
@@ -245,22 +222,16 @@ pub async fn cost_today(
              GROUP BY channel_id, bot_id, session_id
          ) per_session
          GROUP BY channel_id, bot_id",
+        channel_ids,
     )
-    .bind(channel_ids)
     .fetch_all(db)
     .await?;
     Ok(rows
         .into_iter()
         .filter_map(|r| {
-            let bot: Uuid = r
-                .try_get::<String, _>("bot_id")
-                .ok()
-                .and_then(|s| s.parse().ok())?;
-            let ch: Uuid = r
-                .try_get::<String, _>("channel_id")
-                .ok()
-                .and_then(|s| s.parse().ok())?;
-            let cost: Option<f64> = r.try_get("cost").ok();
+            let bot: Uuid = Some(r.bot_id.clone()).and_then(|s| s.parse().ok())?;
+            let ch: Uuid = Some(r.channel_id.clone()).and_then(|s| s.parse().ok())?;
+            let cost: Option<f64> = r.cost.clone();
             Some(((bot, ch), cost.unwrap_or(0.0)))
         })
         .collect())
@@ -278,18 +249,18 @@ pub async fn is_workspace_member(
     workspace_id: Uuid,
     user_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT (EXISTS(
-            SELECT 1 FROM workspace_memberships
+            SELECT 1 AS present FROM workspace_memberships
             WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'
         ) OR EXISTS(
-            SELECT 1 FROM workspaces
+            SELECT 1 AS present FROM workspaces
             WHERE workspace_id = $1 AND owner_user_id = $2
         )) AS ok",
+        workspace_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(workspace_id.to_string())
-    .bind(user_id.to_string())
     .fetch_one(db)
     .await?;
-    Ok(row.try_get::<bool, _>("ok").unwrap_or(false))
+    Ok(row.ok.clone().unwrap_or(false))
 }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE voice_participant_sessions\n         SET consent_version = NULL\n         WHERE user_id = $1 AND voice_session_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1996ddd8e3c2ac820a6374349d302800ae14333f93da795a4af4ef90b274bfa0"
+}

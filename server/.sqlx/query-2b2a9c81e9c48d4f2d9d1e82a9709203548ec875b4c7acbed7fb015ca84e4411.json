@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(\n                    (SELECT NULLIF(TRIM(i.agent_type), '')\n                     FROM connector_hosts i\n                     WHERE i.bot_id = b.bot_id AND i.status = 'active'\n                       AND i.revoked_at IS NULL\n                     ORDER BY i.updated_at DESC\n                     LIMIT 1),\n                    NULLIF(TRIM(b.bridge_provider), ''),\n                    'generic'\n                ) AS agent_type\n         FROM bot_accounts b\n         WHERE b.bot_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_type",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2b2a9c81e9c48d4f2d9d1e82a9709203548ec875b4c7acbed7fb015ca84e4411"
+}

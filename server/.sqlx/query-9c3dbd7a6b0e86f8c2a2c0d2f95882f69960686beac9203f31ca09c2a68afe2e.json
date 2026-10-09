@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT identity_id FROM auth_external_identities\n         WHERE user_id = $1 AND provider = $2 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "identity_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9c3dbd7a6b0e86f8c2a2c0d2f95882f69960686beac9203f31ca09c2a68afe2e"
+}

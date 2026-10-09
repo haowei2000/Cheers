@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*)::bigint AS \"value!\" FROM acp_capability_reject_logs\n         WHERE ($1::VARCHAR(36) IS NULL OR bot_id = $1)\n           AND ($2::VARCHAR(36) IS NULL OR delegation_id = $2)\n           AND ($3::timestamptz IS NULL OR created_at >= $3)\n           AND ($4::timestamptz IS NULL OR created_at <= $4)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "35f2d2a51794c5b8cbd9334cfaa65e2a80ed21d6a7d5eb6b2e5482bed09895a7"
+}

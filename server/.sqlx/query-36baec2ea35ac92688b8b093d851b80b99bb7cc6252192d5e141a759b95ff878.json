@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO github_app_installation_sessions\n             (state_hash, workspace_id, user_id, expires_at)\n         VALUES ($1, $2, $3, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36baec2ea35ac92688b8b093d851b80b99bb7cc6252192d5e141a759b95ff878"
+}

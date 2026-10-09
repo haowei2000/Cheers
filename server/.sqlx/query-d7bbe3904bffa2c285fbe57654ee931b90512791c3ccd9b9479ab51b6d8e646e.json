@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channel_features (channel_id, feature, config, enabled) SELECT channel_id, 'voice', voice_config, TRUE FROM channels WHERE kind = 'voice' ON CONFLICT (channel_id, feature) DO UPDATE SET enabled = TRUE, config = CASE WHEN channel_features.config = '{}'::jsonb THEN EXCLUDED.config ELSE channel_features.config END, updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d7bbe3904bffa2c285fbe57654ee931b90512791c3ccd9b9479ab51b6d8e646e"
+}

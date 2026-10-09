@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_bot_monitoring SET next_eligible_at=$3 WHERE channel_id=$1 AND bot_id=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "620f9d95d31e5bbbc828e0cc041dbe00972c8c99f65bf1de2d66fe833263b5ad"
+}

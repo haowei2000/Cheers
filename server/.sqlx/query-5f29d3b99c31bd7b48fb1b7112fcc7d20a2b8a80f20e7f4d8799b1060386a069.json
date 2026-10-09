@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM connector_hosts\n         WHERE host_id = $1 AND bot_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5f29d3b99c31bd7b48fb1b7112fcc7d20a2b8a80f20e7f4d8799b1060386a069"
+}

@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT event_type AS \"event_type!\", channel_seq AS \"channel_seq!\", created_at AS \"created_at!\", payload AS \"payload!\"\n        FROM (\n            SELECT\n                'message'::text AS event_type,\n                m.channel_seq,\n                m.created_at,\n                jsonb_build_object(\n                    'v', 1,\n                    'msg_id', m.msg_id,\n                    'channel_id', m.channel_id,\n                    'channel_seq', m.channel_seq,\n                    'sender_type', m.sender_type,\n                    'sender_id', m.sender_id,\n                    'content', m.content,\n                    'msg_type', m.msg_type,\n                    'is_partial', m.is_partial,\n                    'reply_to_msg_id', m.in_reply_to_msg_id,\n                    'file_ids', COALESCE(m.file_ids, '[]'::jsonb),\n                    'mentions', COALESCE(mm.mentions, '[]'::jsonb),\n                    'created_at', m.created_at\n                ) AS payload\n            FROM messages m\n            LEFT JOIN LATERAL (\n                SELECT jsonb_agg(\n                    jsonb_build_object(\n                        'member_id', member_id,\n                        'member_type', member_type\n                    )\n                    ORDER BY member_type, member_id\n                ) AS mentions\n                FROM message_mentions\n                WHERE msg_id = m.msg_id\n            ) mm ON TRUE\n            WHERE m.channel_id = $1\n              AND m.channel_seq IS NOT NULL\n              AND m.channel_seq > $2\n              AND m.is_partial = FALSE\n\n            UNION ALL\n\n            SELECT\n                'operation'::text AS event_type,\n                o.channel_seq,\n                o.created_at,\n                jsonb_build_object(\n                    'op_id', o.id,\n                    'channel_id', o.channel_id,\n                    'channel_seq', o.channel_seq,\n                    'op_type', o.op_type,\n                    'actor_type', o.actor_type,\n                    'actor_id', o.actor_id,\n                    'target_ref', o.target_ref,\n                    'payload', COALESCE(o.payload, '{}'::jsonb),\n                    'created_at', o.created_at\n                ) AS payload\n            FROM channel_operations o\n            WHERE o.channel_id = $1\n              AND o.channel_seq > $2\n\n            UNION ALL\n\n            SELECT\n                'voice_transcript_final'::text AS event_type,\n                t.channel_seq,\n                t.created_at,\n                jsonb_build_object(\n                    'segment_id', t.segment_id,\n                    'voice_session_id', t.voice_session_id,\n                    'channel_id', t.channel_id,\n                    'channel_seq', t.channel_seq,\n                    'user_id', t.user_id,\n                    'provider_segment_id', t.provider_segment_id,\n                    'track_id', t.track_id,\n                    'text', t.text,\n                    'started_at_ms', t.started_at_ms,\n                    'ended_at_ms', t.ended_at_ms,\n                    'language', t.language,\n                    'confidence', t.confidence,\n                    'supersedes_segment_id', t.supersedes_segment_id,\n                    'finalized_at', t.finalized_at,\n                    'created_at', t.created_at\n                ) AS payload\n            FROM voice_transcript_segments t\n            WHERE t.channel_id = $1\n              AND t.channel_seq > $2\n\n            UNION ALL\n\n            SELECT\n                'task_claim_evaluation'::text AS event_type,\n                e.source_seq_to AS channel_seq,\n                e.reserved_at AS created_at,\n                jsonb_build_object(\n                    'evaluation_id', e.evaluation_id,\n                    'channel_id', e.channel_id,\n                    'bot_id', e.bot_id,\n                    'source_seq_from', e.source_seq_from,\n                    'source_seq_to', e.source_seq_to,\n                    'status', e.status,\n                    'error', e.error,\n                    'created_at', e.reserved_at\n                ) AS payload\n            FROM task_claim_evaluations e\n            WHERE e.channel_id = $1\n              AND e.source_seq_to > $2\n        ) events\n        ORDER BY channel_seq DESC\n        LIMIT $3\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_seq!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "payload!",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "e177461fa953cc58a70c025fb60086deb28479181e03641e5de43d991e1787cc"
+}

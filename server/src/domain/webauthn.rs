@@ -9,7 +9,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 use webauthn_rs::prelude::*;
 
@@ -85,11 +85,12 @@ impl WebauthnService {
 }
 
 pub async fn user_has_passkeys(db: &PgPool, user_id: &str) -> Result<bool, AppError> {
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_one(db)
-            .await?;
+    let count: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "value!" FROM webauthn_credentials WHERE user_id = $1"#,
+        user_id,
+    )
+    .fetch_one(db)
+    .await?;
     Ok(count > 0)
 }
 
@@ -123,22 +124,24 @@ pub async fn allowed_login_factors(
 }
 
 pub async fn user_has_email(db: &PgPool, user_id: &str) -> Result<bool, AppError> {
-    let email: Option<String> =
-        sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-            .bind(user_id)
-            .fetch_optional(db)
-            .await?
-            .flatten();
+    let email: Option<String> = sqlx::query_scalar!(
+        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .flatten();
     Ok(email.as_deref().is_some_and(|e| !e.trim().is_empty()))
 }
 
 pub async fn user_email(db: &PgPool, user_id: &str) -> Result<Option<String>, AppError> {
-    let email: Option<String> =
-        sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-            .bind(user_id)
-            .fetch_optional(db)
-            .await?
-            .flatten();
+    let email: Option<String> = sqlx::query_scalar!(
+        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .flatten();
     Ok(email.filter(|e| !e.trim().is_empty()))
 }
 
@@ -171,46 +174,40 @@ pub async fn list_credentials(
     db: &PgPool,
     user_id: &str,
 ) -> Result<Vec<StoredCredential>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT credential_pk, credential_id, name, backup_eligible, backup_state,
                 created_at, last_used_at
          FROM webauthn_credentials
          WHERE user_id = $1
          ORDER BY created_at DESC",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await?;
     Ok(rows
         .into_iter()
         .map(|row| StoredCredential {
-            credential_pk: row.get("credential_pk"),
-            credential_id: row.get("credential_id"),
-            name: row.get("name"),
-            backup_eligible: row.get("backup_eligible"),
-            backup_state: row.get("backup_state"),
-            created_at: row
-                .get::<chrono::DateTime<Utc>, _>("created_at")
-                .to_rfc3339(),
-            last_used_at: row
-                .try_get::<Option<chrono::DateTime<Utc>>, _>("last_used_at")
-                .ok()
-                .flatten()
-                .map(|v| v.to_rfc3339()),
+            credential_pk: row.credential_pk.clone(),
+            credential_id: row.credential_id.clone(),
+            name: row.name.clone(),
+            backup_eligible: row.backup_eligible.clone(),
+            backup_state: row.backup_state.clone(),
+            created_at: row.created_at.clone().to_rfc3339(),
+            last_used_at: row.last_used_at.clone().map(|v| v.to_rfc3339()),
         })
         .collect())
 }
 
 async fn load_passkeys(db: &PgPool, user_id: &str) -> Result<Vec<Passkey>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT public_key FROM webauthn_credentials WHERE user_id = $1 ORDER BY created_at",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
-        let blob: Vec<u8> = row.get("public_key");
+        let blob: Vec<u8> = row.public_key.clone();
         let passkey: Passkey = serde_json::from_slice(&blob)
             .map_err(|e| AppError::Internal(format!("corrupt passkey blob: {e}")))?;
         out.push(passkey);
@@ -254,16 +251,16 @@ pub async fn start_registration_with_tx(
     let transaction_id = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + chrono::Duration::minutes(REGISTER_TTL_MINUTES);
     let envelope = RegisterStateEnvelope { state, name };
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_transactions
          (transaction_id, user_id, kind, status, client_type, challenge_json, expires_at)
          VALUES ($1, $2, $3, 'pending', 'ios', $4, $5)",
+        &transaction_id,
+        user_id,
+        REGISTER_KIND,
+        serde_json::to_value(&envelope).map_err(|e| AppError::Internal(e.to_string()))?,
+        expires_at,
     )
-    .bind(&transaction_id)
-    .bind(user_id)
-    .bind(REGISTER_KIND)
-    .bind(serde_json::to_value(&envelope).map_err(|e| AppError::Internal(e.to_string()))?)
-    .bind(expires_at)
     .execute(db)
     .await?;
     Ok((ccr, transaction_id))
@@ -277,28 +274,28 @@ pub async fn finish_registration(
     credential: RegisterPublicKeyCredential,
 ) -> Result<StoredCredential, AppError> {
     let mut tx = db.begin().await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT challenge_json, expires_at, status
          FROM auth_transactions
          WHERE transaction_id = $1 AND user_id = $2 AND kind = $3
            AND consumed_at IS NULL
          FOR UPDATE",
+        transaction_id,
+        user_id,
+        REGISTER_KIND,
     )
-    .bind(transaction_id)
-    .bind(user_id)
-    .bind(REGISTER_KIND)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::BadRequest("passkey registration session not found".into()))?;
 
-    let expires_at: chrono::DateTime<Utc> = row.get("expires_at");
-    let status: String = row.get("status");
+    let expires_at: chrono::DateTime<Utc> = row.expires_at.clone();
+    let status: String = row.status.clone();
     if expires_at <= Utc::now() || status != "pending" {
-        sqlx::query(
+        sqlx::query!(
             "UPDATE auth_transactions SET status = 'expired', updated_at = NOW()
              WHERE transaction_id = $1",
+            transaction_id,
         )
-        .bind(transaction_id)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -307,7 +304,10 @@ pub async fn finish_registration(
         ));
     }
 
-    let challenge: serde_json::Value = row.get("challenge_json");
+    let challenge: serde_json::Value = row
+        .challenge_json
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
     let envelope: RegisterStateEnvelope = serde_json::from_value(challenge)
         .map_err(|e| AppError::Internal(format!("invalid registration state: {e}")))?;
     let passkey = service
@@ -320,17 +320,17 @@ pub async fn finish_registration(
     let blob = serde_json::to_vec(&passkey)
         .map_err(|e| AppError::Internal(format!("serialize passkey: {e}")))?;
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO webauthn_credentials
          (credential_pk, user_id, credential_id, public_key, sign_count, transports,
           backup_eligible, backup_state, name)
          VALUES ($1, $2, $3, $4, 0, '[]'::jsonb, FALSE, FALSE, $5)",
+        &credential_pk,
+        user_id,
+        &credential_id,
+        &blob,
+        &envelope.name,
     )
-    .bind(&credential_pk)
-    .bind(user_id)
-    .bind(&credential_id)
-    .bind(&blob)
-    .bind(&envelope.name)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
@@ -342,12 +342,12 @@ pub async fn finish_registration(
         AppError::Db(e)
     })?;
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_transactions
          SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()
          WHERE transaction_id = $1",
+        transaction_id,
     )
-    .bind(transaction_id)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -368,12 +368,13 @@ pub async fn delete_credential(
     user_id: &str,
     credential_pk: &str,
 ) -> Result<(), AppError> {
-    let result =
-        sqlx::query("DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2")
-            .bind(credential_pk)
-            .bind(user_id)
-            .execute(db)
-            .await?;
+    let result = sqlx::query!(
+        "DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2",
+        credential_pk,
+        user_id,
+    )
+    .execute(db)
+    .await?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
@@ -398,15 +399,15 @@ pub async fn start_authentication(
         .map_err(|e| AppError::BadRequest(format!("could not start passkey assertion: {e}")))?;
 
     let envelope = AuthStateEnvelope { state };
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE auth_transactions
          SET challenge_json = $2, updated_at = NOW()
          WHERE transaction_id = $1 AND kind IN ('login', 'step_up')
            AND status IN ('method_required', 'factor_required', 'verified')
            AND consumed_at IS NULL AND expires_at > NOW()",
+        login_transaction_id,
+        serde_json::to_value(&envelope).map_err(|e| AppError::Internal(e.to_string()))?,
     )
-    .bind(login_transaction_id)
-    .bind(serde_json::to_value(&envelope).map_err(|e| AppError::Internal(e.to_string()))?)
     .execute(db)
     .await?;
     if result.rows_affected() != 1 {
@@ -424,18 +425,18 @@ pub async fn finish_authentication(
     login_transaction_id: &str,
     credential: PublicKeyCredential,
 ) -> Result<(), AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT challenge_json FROM auth_transactions
          WHERE transaction_id = $1 AND kind IN ('login', 'step_up')
            AND status IN ('method_required', 'factor_required', 'verified')
            AND consumed_at IS NULL AND expires_at > NOW()",
+        login_transaction_id,
     )
-    .bind(login_transaction_id)
     .fetch_optional(db)
     .await?
     .ok_or_else(|| AppError::Unauthorized("invalid authentication transaction".into()))?;
 
-    let challenge: serde_json::Value = row.try_get("challenge_json").unwrap_or_else(|_| json!({}));
+    let challenge: serde_json::Value = row.challenge_json.clone().unwrap_or_else(|| json!({}));
     if challenge.is_null() {
         return Err(AppError::BadRequest(
             "passkey assertion was not started for this login".into(),
@@ -457,27 +458,27 @@ pub async fn finish_authentication(
             let credential_id = credential_id_string(passkey.cred_id());
             let blob = serde_json::to_vec(passkey)
                 .map_err(|e| AppError::Internal(format!("serialize passkey: {e}")))?;
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE webauthn_credentials
                  SET public_key = $3, last_used_at = NOW(), updated_at = NOW(),
                      backup_eligible = $4, backup_state = $5
                  WHERE user_id = $1 AND credential_id = $2",
+                user_id,
+                &credential_id,
+                &blob,
+                result.backup_eligible(),
+                result.backup_state(),
             )
-            .bind(user_id)
-            .bind(&credential_id)
-            .bind(&blob)
-            .bind(result.backup_eligible())
-            .bind(result.backup_state())
             .execute(db)
             .await?;
             break;
         } else if passkey.cred_id() == result.cred_id() {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE webauthn_credentials SET last_used_at = NOW(), updated_at = NOW()
                  WHERE user_id = $1 AND credential_id = $2",
+                user_id,
+                credential_id_string(passkey.cred_id()),
             )
-            .bind(user_id)
-            .bind(credential_id_string(passkey.cred_id()))
             .execute(db)
             .await?;
             break;

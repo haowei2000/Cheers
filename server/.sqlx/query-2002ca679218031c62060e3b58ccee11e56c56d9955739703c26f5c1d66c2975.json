@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (m.thread_root_msg_id)\n                m.thread_root_msg_id AS root_id, m.msg_id, m.sender_id,\n                m.sender_type,\n                COALESCE(NULLIF(u.display_name, ''), u.username,\n                         NULLIF(b.display_name, ''), b.username, m.sender_id) AS sender_name,\n                m.content, m.created_at\n         FROM messages m\n         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id\n         LEFT JOIN bot_accounts b ON m.sender_type = 'bot' AND b.bot_id = m.sender_id\n         WHERE m.channel_id = $1\n           AND m.thread_root_msg_id = ANY($2)\n           AND m.is_partial = FALSE\n           AND m.is_secret = FALSE\n           AND m.is_deleted = FALSE\n           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')\n         ORDER BY m.thread_root_msg_id, m.channel_seq DESC NULLS LAST, m.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "root_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "sender_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "sender_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "2002ca679218031c62060e3b58ccee11e56c56d9955739703c26f5c1d66c2975"
+}

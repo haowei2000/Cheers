@@ -72,7 +72,7 @@ pub async fn subscribe(
         &ua[..end]
     });
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, user_agent)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (endpoint) DO UPDATE
@@ -80,12 +80,12 @@ pub async fn subscribe(
                 p256dh  = EXCLUDED.p256dh,
                 auth    = EXCLUDED.auth,
                 user_agent = EXCLUDED.user_agent",
+        &body.endpoint,
+        &claims.sub,
+        &body.p256dh,
+        &body.auth,
+        user_agent,
     )
-    .bind(&body.endpoint)
-    .bind(&claims.sub)
-    .bind(&body.p256dh)
-    .bind(&body.auth)
-    .bind(user_agent)
     .execute(&state.db)
     .await?;
     Ok(Json(json!({ "ok": true })))
@@ -103,10 +103,12 @@ pub async fn unsubscribe(
     Extension(claims): Extension<Claims>,
     Json(body): Json<UnsubscribeBody>,
 ) -> Result<Json<Value>, AppError> {
-    sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2")
-        .bind(&body.endpoint)
-        .bind(&claims.sub)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2",
+        &body.endpoint,
+        &claims.sub,
+    )
+    .execute(&state.db)
+    .await?;
     Ok(Json(json!({ "ok": true })))
 }

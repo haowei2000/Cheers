@@ -6,7 +6,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::Row;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -110,24 +109,38 @@ async fn member(
     user: &str,
     write: bool,
 ) -> Result<bool, AppError> {
-    let role: Option<String> = sqlx::query_scalar("SELECT role FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='user'")
-        .bind(channel).bind(user).fetch_optional(&state.db).await?;
+    let role: Option<String> = sqlx::query_scalar!(
+        "SELECT role FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='user'",
+        channel,
+        user,
+    ).fetch_optional(&state.db).await?;
     let role = role.ok_or_else(|| AppError::Forbidden("not a channel member".into()))?;
     if write && !crate::resource::role_can_write(&role) {
         return Err(AppError::Forbidden("channel role is read-only".into()));
     }
     Ok(crate::resource::role_can_admin(&role))
 }
-fn dto(row: sqlx::postgres::PgRow) -> Result<Value, sqlx::Error> {
-    Ok(
-        json!({ "id": row.try_get::<String,_>("id")?, "channel_id": row.try_get::<String,_>("channel_id")?,
-        "author_id": row.try_get::<Option<String>,_>("author_id")?, "target": row.try_get::<Value,_>("target")?,
-        "label": row.try_get::<String,_>("label")?, "note": row.try_get::<String,_>("note")?,
-        "revision": row.try_get::<i64,_>("revision")?,
-        "created_at": row.try_get::<chrono::DateTime<chrono::Utc>,_>("created_at")?,
-        "updated_at": row.try_get::<chrono::DateTime<chrono::Utc>,_>("updated_at")? }),
-    )
+struct AnnotationRow {
+    id: String,
+    channel_id: String,
+    author_id: Option<String>,
+    target: Value,
+    label: String,
+    note: String,
+    revision: i64,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
 }
+
+fn dto(row: AnnotationRow) -> Value {
+    json!({
+        "id": row.id, "channel_id": row.channel_id,
+        "author_id": row.author_id, "target": row.target,
+        "label": row.label, "note": row.note, "revision": row.revision,
+        "created_at": row.created_at, "updated_at": row.updated_at
+    })
+}
+
 async fn visible(
     state: &AppState,
     channel: &str,
@@ -177,17 +190,22 @@ async fn verify_target(
     {
         // Authoritative metadata and visibility come from a persisted source, never
         // from a client-supplied snapshot. Keep the snapshot if trace retention prunes it.
-        let row = sqlx::query("SELECT t.*,m.channel_seq FROM message_traces t LEFT JOIN messages m ON m.msg_id=t.msg_id AND m.channel_id=t.channel_id WHERE t.channel_id=$1 AND t.msg_id=$2 AND (t.id=$3 OR t.request_id=$3 OR t.data->>'event_id'=$3 OR t.data->>'toolCallId'=$3 OR t.data->>'tool_call_id'=$3 OR ($4::text IS NOT NULL AND (t.data->>'toolCallId'=$4 OR t.data->>'tool_call_id'=$4 OR t.data->'update'->>'toolCallId'=$4))) ORDER BY t.trace_seq LIMIT 1")
-            .bind(channel).bind(&msg_id).bind(&event_id).bind(&tool_call_id).fetch_optional(&state.db).await?
+        let row = sqlx::query!(
+            "SELECT t.id,t.data,t.title,t.phase,t.status,t.bot_id,t.kind,m.channel_seq AS \"channel_seq?\" FROM message_traces t LEFT JOIN messages m ON m.msg_id=t.msg_id AND m.channel_id=t.channel_id WHERE t.channel_id=$1 AND t.msg_id=$2 AND (t.id=$3 OR t.request_id=$3 OR t.data->>'event_id'=$3 OR t.data->>'toolCallId'=$3 OR t.data->>'tool_call_id'=$3 OR ($4::text IS NOT NULL AND (t.data->>'toolCallId'=$4 OR t.data->>'tool_call_id'=$4 OR t.data->'update'->>'toolCallId'=$4))) ORDER BY t.trace_seq LIMIT 1",
+            channel,
+            &msg_id,
+            &event_id,
+            tool_call_id.as_deref(),
+        ).fetch_optional(&state.db).await?
             .ok_or_else(||AppError::BadRequest("event is not saved in this channel yet; try again after it completes".into()))?;
-        let data: Option<Value> = row.try_get("data")?;
+        let data: Option<Value> = row.data;
         let presentation = data
             .as_ref()
             .and_then(crate::domain::tool_presentation::classify);
-        let snapshot = json!({"title":row.try_get::<Option<String>,_>("title")?,"phase":row.try_get::<String,_>("phase")?,"status":row.try_get::<Option<String>,_>("status")?,"bot_id":row.try_get::<Option<String>,_>("bot_id")?,"kind":row.try_get::<String,_>("kind")?,"channel_seq":row.try_get::<Option<i64>,_>("channel_seq")?,"presentation":presentation.map(|p|json!({"event_type":p["event_type"],"path":p["path"],"command":p["command"],"query":p["query"]}))});
+        let snapshot = json!({"title":row.title,"phase":row.phase,"status":row.status,"bot_id":row.bot_id,"kind":row.kind,"channel_seq":row.channel_seq,"presentation":presentation.map(|p|json!({"event_type":p["event_type"],"path":p["path"],"command":p["command"],"query":p["query"]}))});
         let result = Target::Event {
             msg_id,
-            event_id: row.try_get("id")?,
+            event_id: row.id,
             tool_call_id,
             snapshot,
         };
@@ -209,15 +227,16 @@ async fn writable_note(
     claims: &Claims,
     admin: bool,
 ) -> Result<(), AppError> {
-    let row = sqlx::query(
-        "SELECT * FROM channel_annotations WHERE channel_id=$1 AND id=$2 AND deleted_at IS NULL",
+    let row = sqlx::query_as!(
+        AnnotationRow,
+        "SELECT id,channel_id,author_id,target,label,note,revision,created_at,updated_at FROM channel_annotations WHERE channel_id=$1 AND id=$2 AND deleted_at IS NULL",
+        channel,
+        id,
     )
-    .bind(channel)
-    .bind(id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let item = dto(row)?;
+    let item = dto(row);
     if !admin && item["author_id"].as_str() != Some(claims.sub.as_str()) {
         return Err(AppError::Forbidden(
             "only the author or a channel administrator can change this annotation".into(),
@@ -243,12 +262,16 @@ pub async fn list(
         Err(AppError::BadRequest(message)) => Some(message),
         Err(error) => return Err(error),
     };
-    let rows = sqlx::query("SELECT * FROM channel_annotations WHERE channel_id=$1 AND deleted_at IS NULL ORDER BY created_at,id").bind(&channel).fetch_all(&state.db).await?;
+    let rows = sqlx::query_as!(
+        AnnotationRow,
+        "SELECT id,channel_id,author_id,target,label,note,revision,created_at,updated_at FROM channel_annotations WHERE channel_id=$1 AND deleted_at IS NULL ORDER BY created_at,id",
+        &channel,
+    ).fetch_all(&state.db).await?;
     let notes = visible(
         &state,
         &channel,
         &claims,
-        rows.into_iter().map(dto).collect::<Result<_, _>>()?,
+        rows.into_iter().map(dto).collect(),
     )
     .await?;
     Ok(Json(json!({"notes":notes,"import_warning":import_warning})))
@@ -264,9 +287,17 @@ pub async fn create(
     member(&state, &channel, &claims.sub, true).await?;
     validate_text(&body.label, &body.note)?;
     let target = verify_target(&state, &channel, &claims, body.target).await?;
-    let row = sqlx::query("INSERT INTO channel_annotations(id,channel_id,author_id,target,label,note) VALUES($1,$2,$3,$4,$5,$6) RETURNING *")
-        .bind(Uuid::new_v4().to_string()).bind(channel).bind(claims.sub).bind(serde_json::to_value(target).map_err(|e| AppError::Internal(e.to_string()))?).bind(body.label.trim()).bind(body.note.trim()).fetch_one(&state.db).await?;
-    Ok(Json(dto(row)?))
+    let row = sqlx::query_as!(
+        AnnotationRow,
+        "INSERT INTO channel_annotations(id,channel_id,author_id,target,label,note) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,channel_id,author_id,target,label,note,revision,created_at,updated_at",
+        Uuid::new_v4().to_string(),
+        channel,
+        claims.sub,
+        serde_json::to_value(target).map_err(|e| AppError::Internal(e.to_string()))?,
+        body.label.trim(),
+        body.note.trim(),
+    ).fetch_one(&state.db).await?;
+    Ok(Json(dto(row)))
 }
 pub async fn edit(
     State(state): State<AppState>,
@@ -278,11 +309,19 @@ pub async fn edit(
     let admin = member(&state, &channel, &claims.sub, true).await?;
     writable_note(&state, &channel, &id.to_string(), &claims, admin).await?;
     validate_text("note", &body.note)?;
-    let row = sqlx::query("UPDATE channel_annotations SET note=$3,revision=revision+1,updated_at=NOW() WHERE channel_id=$1 AND id=$2 AND deleted_at IS NULL AND revision=$4 AND (author_id=$5 OR $6) RETURNING *")
-        .bind(channel).bind(id.to_string()).bind(body.note.trim()).bind(body.revision).bind(claims.sub).bind(admin).fetch_optional(&state.db).await?;
+    let row = sqlx::query_as!(
+        AnnotationRow,
+        "UPDATE channel_annotations SET note=$3,revision=revision+1,updated_at=NOW() WHERE channel_id=$1 AND id=$2 AND deleted_at IS NULL AND revision=$4 AND (author_id=$5 OR $6) RETURNING id,channel_id,author_id,target,label,note,revision,created_at,updated_at",
+        channel,
+        id.to_string(),
+        body.note.trim(),
+        body.revision,
+        claims.sub,
+        admin,
+    ).fetch_optional(&state.db).await?;
     Ok(Json(dto(row.ok_or_else(|| {
         AppError::Conflict("annotation changed or you cannot edit it; refresh and retry".into())
-    })?)?))
+    })?)))
 }
 pub async fn remove(
     State(state): State<AppState>,
@@ -293,8 +332,14 @@ pub async fn remove(
     let channel = channel.to_string();
     let admin = member(&state, &channel, &claims.sub, true).await?;
     writable_note(&state, &channel, &id.to_string(), &claims, admin).await?;
-    let result = sqlx::query("UPDATE channel_annotations SET deleted_at=NOW(),revision=revision+1 WHERE channel_id=$1 AND id=$2 AND deleted_at IS NULL AND revision=$3 AND (author_id=$4 OR $5)")
-        .bind(channel).bind(id.to_string()).bind(body.revision).bind(claims.sub).bind(admin).execute(&state.db).await?;
+    let result = sqlx::query!(
+        "UPDATE channel_annotations SET deleted_at=NOW(),revision=revision+1 WHERE channel_id=$1 AND id=$2 AND deleted_at IS NULL AND revision=$3 AND (author_id=$4 OR $5)",
+        channel,
+        id.to_string(),
+        body.revision,
+        claims.sub,
+        admin,
+    ).execute(&state.db).await?;
     if result.rows_affected() == 0 {
         return Err(AppError::Conflict(
             "annotation changed or you cannot delete it; refresh and retry".into(),
@@ -372,8 +417,10 @@ fn legacy_entries(
         .collect()
 }
 async fn import_legacy(state: &AppState, channel: &str) -> Result<(), AppError> {
-    let content: Option<String> = sqlx::query_scalar("SELECT content FROM context_files WHERE channel_id=$1 AND path='annotations.yaml' AND NOT is_dir")
-        .bind(channel).fetch_optional(&state.db).await?;
+    let content: Option<String> = sqlx::query_scalar!(
+        "SELECT content FROM context_files WHERE channel_id=$1 AND path='annotations.yaml' AND NOT is_dir",
+        channel,
+    ).fetch_optional(&state.db).await?;
     let Some(content) = content else {
         return Ok(());
     };
@@ -389,8 +436,16 @@ async fn import_legacy(state: &AppState, channel: &str) -> Result<(), AppError> 
     let mut tx = state.db.begin().await?;
     for (legacy_id, target, label, note, created) in entries {
         // Missing historical authors remain unknown. Deleted ids are tombstones.
-        sqlx::query("INSERT INTO channel_annotations(id,channel_id,target,label,note,legacy_id,created_at) VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,NOW())) ON CONFLICT(channel_id,legacy_id) DO NOTHING")
-            .bind(Uuid::new_v4().to_string()).bind(channel).bind(serde_json::to_value(target).map_err(|e|AppError::Internal(e.to_string()))?).bind(label).bind(note).bind(legacy_id).bind(created).execute(&mut *tx).await?;
+        sqlx::query!(
+            "INSERT INTO channel_annotations(id,channel_id,target,label,note,legacy_id,created_at) VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,NOW())) ON CONFLICT(channel_id,legacy_id) DO NOTHING",
+            Uuid::new_v4().to_string(),
+            channel,
+            serde_json::to_value(target).map_err(|e|AppError::Internal(e.to_string()))?,
+            label,
+            note,
+            legacy_id,
+            created,
+        ).execute(&mut *tx).await?;
     }
     tx.commit().await?;
     Ok(())

@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mcp_oauth_authorization_codes SET used_at=NOW()\n         WHERE code_hash=$1 AND used_at IS NULL AND expires_at>NOW()\n           AND client_id=$2 AND redirect_uri=$3 AND resource=$4 AND code_challenge=$5\n         RETURNING host_id, scope, channel_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "scope",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "b9e9f4bfc10a9a9a8d8f851a87031df0af4545918acf397f42a99f3aaeb5506e"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"value!\" FROM enrollment_codes\n         WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "89950b4c5b707d83a743de35fca16eca44987244516f341ab5933625f101e212"
+}
