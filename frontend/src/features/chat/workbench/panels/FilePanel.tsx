@@ -1,7 +1,11 @@
+import type { SavedAnnotation } from "@/api/annotations";
+import toast from "react-hot-toast";
+import { useAnnotationSurface } from "@/features/annotations/AnnotationProvider";
 import { Button as UiButton } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
 import { Input as UiInput } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -31,7 +35,7 @@ import type { FsEntry } from "../fsClient";
 import { errMsg, useFileSession } from "../jsonFile";
 import { filterCollaborators } from "../collab";
 import { CollaboratorPills, ConflictBanner } from "../collabView";
-import { useAnnotations } from "../annotations";
+import { useAnnotations, resolveAnnotation } from "../annotations";
 import { inspectableIdLineRange } from "../contextSource";
 import { AnnotationComposer, type PendingAnnotation } from "../AnnotationComposer";
 import { AnnotationsButton } from "../AnnotationsButton";
@@ -206,25 +210,24 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // See FileSession — Raw and Preview each owning a session is what used to make an
   // unsaved edit vanish on a mode switch.
   const session = useFileSession(fs, selected ?? "");
-  // Notes anchored into this file. A separate session because they live in a separate
-  // file — the document belongs to whoever edits it, and a note is someone else's remark
-  // ABOUT it, so writing one must never touch the thing it is about.
-  const annotations = useAnnotations(fs, selected ?? "");
+  // File anchors adapt the shared channel annotation store without editing the source.
+  const annotations = useAnnotations(selected ?? "", ctx.channelId);
   const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
   const onAnnotate = useCallback(
     (target: LensContextTarget, at: { x: number; y: number }) =>
       selected && setPendingNote({ target, path: selected, at }),
     [selected]
   );
-  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  const onRemoveNote = useCallback((id: string) => void annotations.remove(id).catch(error => toast.error(error instanceof Error ? error.message : "Could not delete annotation.")), [annotations]);
   // Revealing a note means showing the lines it points at, which only Raw can do — so it
   // switches modes rather than pretending the preview can highlight a line range.
   const [revealLine, setRevealLine] = useState<number | undefined>();
   const revealedCard = useRef<string | null>(null);
+  const { openInspectableId, openTarget } = ctx;
   useEffect(() => {
-    const id = ctx.openInspectableId;
+    const id = openInspectableId;
     if (!id) { revealedCard.current = null; return; }
-    if (!selected || selected !== ctx.openTarget || session.path !== selected || session.version === null) return;
+    if (!selected || selected !== openTarget || session.path !== selected || session.version === null) return;
     const key = `${selected}#^${id}`;
     if (revealedCard.current === key) return;
     const range = inspectableIdLineRange(session.parsedText, id);
@@ -232,7 +235,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     revealedCard.current = key;
     showRaw(selected, true);
     setRevealLine(range.start);
-  }, [ctx.openInspectableId, ctx.openTarget, selected, session.path, session.version, session.parsedText, showRaw]);
+  }, [openInspectableId, openTarget, selected, session.path, session.version, session.parsedText, session.status, showRaw]);
   const onRevealNote = useCallback(
     (range: { start: number; end: number }) => {
       if (!selected) return;
@@ -242,12 +245,27 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     [selected, showRaw]
   );
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
-  // A pending note belongs to the file it was started on; changing files abandons it
-  // rather than silently re-aiming it at a row in a different document.
   useEffect(() => {
     setPendingNote(null);
     setActiveAnnotationId(null);
   }, [selected]);
+  const annotationSurface = useAnnotationSurface();
+  const lastAnnotationReveal = useRef<SavedAnnotation | null>(null);
+  useEffect(() => {
+    const item = annotationSurface?.revealed;
+    if (item?.target.kind !== "file" || item.target.path !== selected) return;
+    if (lastAnnotationReveal.current === item) return;
+    setActiveAnnotationId(item.id);
+    if (session.version === null && !session.status) return;
+    lastAnnotationReveal.current = item;
+    const note = annotations.doc.notes.find(n => n.id === item.id);
+    const range = note ? resolveAnnotation(note, session.parsedText) : null;
+    if (range) {
+      showRaw(selected!, true);
+      setRevealLine(range.start);
+    }
+  }, [annotationSurface?.revealed, selected, annotations.doc, session.parsedText, session.version, session.status, showRaw]);
+
   const fileSurfaceRef = useRef<HTMLDivElement>(null);
   const fileContextActions = useContextSurface({
     surfaceRef: fileSurfaceRef,
@@ -360,18 +378,20 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     void sessionRef.current.reload(true);
   }, [filesTick, refresh, selected]);
 
-  // Broadcast presence focus so other clients and bots see who is viewing/editing this file.
+  // Broadcast presence focus without depending on ctx identity; presence updates replace ctx.
+  const sendPresenceFocus = ctx.sendPresenceFocus;
+  const channelId = ctx.channelId;
   useEffect(() => {
-    if (!ctx.sendPresenceFocus) return;
+    if (!sendPresenceFocus) return;
     if (selected) {
-      ctx.sendPresenceFocus(ctx.channelId, { bot_id: "", path: selected });
+      sendPresenceFocus(channelId, { bot_id: "", path: selected });
     } else {
-      ctx.sendPresenceFocus(ctx.channelId, null);
+      sendPresenceFocus(channelId, null);
     }
     return () => {
-      ctx.sendPresenceFocus?.(ctx.channelId, null);
+      sendPresenceFocus(channelId, null);
     };
-  }, [ctx.sendPresenceFocus, ctx.channelId, selected]);
+  }, [sendPresenceFocus, channelId, selected]);
 
   const collaborators = useMemo(
     () => filterCollaborators(ctx.workspaceFocus, selected, ctx.currentUserId, ctx.memberNames),
@@ -477,9 +497,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
   const createInput = (depth: number) => (
     <div className="flex items-center gap-2 px-2 py-1" style={{ paddingLeft: depth * 12 + 8 }}>
-      <FileText className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
+      <FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />
       <UiInput
-        autoFocus
         value={newName}
         onChange={(e) => setNewName(e.target.value)}
         onKeyDown={(e) => {
@@ -555,11 +574,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 onClick={() => toggleCollapse(node.path)}
                 expanded={!isCollapsed}
                 disclosure={isCollapsed ? (
-                  <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
+                  <ChevronRight className="w-3.5 h-3.5 shrink-0 text-content-muted" />
                 ) : (
-                  <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />
+                  <ChevronDown className="w-3.5 h-3.5 shrink-0 text-content-muted" />
                 )}
-                leading={<Folder className="w-3.5 h-3.5 flex-shrink-0 text-accent-400/70" />}
+                leading={<Folder className="w-3.5 h-3.5 shrink-0 text-accent-400/70" />}
                 actions={<><UiButton variant="plain"
                 type="button"
                 content="icon" controlSize="compact"
@@ -591,7 +610,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           depth={depth}
           title={node.name}
           selected={selected === node.path}
-          leading={<FileText className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />}
+          leading={<FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />}
           actions={deleteControl(node.path, false)}
           onClick={() => pickFile(node.path)}
         />
@@ -605,10 +624,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         // Compact: overlay drawer over the editor so reading width isn't halved.
         compact
           ? "absolute inset-y-1.5 left-1.5 z-10 w-[min(16rem,calc(100%-1.5rem))] elevation-overlay ring-1 ring-zinc-700/80"
-          : "w-52 flex-shrink-0"
+          : "w-52 shrink-0"
       )}
     >
-      <div className="mx-1 mt-1 flex h-9 flex-shrink-0 items-center gap-1 rounded-sm bg-control/50 px-2">
+      <div className="mx-1 mt-1 flex h-9 shrink-0 items-center gap-1 rounded-sm bg-control/50 px-2">
         <ActionButton action="add" context="toolbar"
           type="button"
           onClick={() => beginCreate("")}
@@ -641,7 +660,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       <div className="flex-1 overflow-auto py-1">
         {creatingIn === "" && createInput(0)}
         {tree.length === 0 && creatingIn === null && (
-          <div className="px-2 py-3 text-compact text-content-muted">No files</div>
+          <EmptyState icon={Folder} title="No files" className="py-3" />
         )}
         {renderNodes(tree, 0)}
       </div>
@@ -659,7 +678,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpenUser(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="flex flex-shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
+          className="flex shrink-0 items-start justify-center rounded-sm bg-panel/50 pt-2 text-content-primary hover:text-content-strong hover:bg-control-hover active:bg-control-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </UiButton>
@@ -670,7 +689,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           type="button"
           aria-label="Close file tree"
           onClick={() => setTreeOpenUser(false)}
-          className="absolute inset-0 z-[5] bg-black/40"
+          className="absolute inset-0 z-5 bg-black/40"
         />
       )}
 
@@ -762,7 +781,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     control: (
                       <DropdownSelect
                         ariaLabel="Renderer for Preview (Auto = best content match)"
-                        leading={<Layers className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+                        leading={<Layers className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
                         label={rendererLabel}
                         value={bound?.id ?? ""}
                         options={[
@@ -885,15 +904,12 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                           allNotes={annotations.doc.notes}
                           currentPath={selected ?? undefined}
                           text={session.parsedText}
-                          activeAnnotationId={activeAnnotationId}
                           onSelectAnnotation={setActiveAnnotationId}
-                          onRemove={onRemoveNote}
                           onReveal={onRevealNote}
                           onSelectFile={(path) => {
                             setSelected(path);
                             showRaw(path, true);
                           }}
-                          onAddNote={(entry) => void annotations.add(entry)}
                         />
                       ),
                     }}
@@ -915,8 +931,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   <AnnotationComposer
                     pending={pendingNote}
                     onCancel={() => setPendingNote(null)}
-                    onSubmit={(entry) => {
-                      void annotations.add(entry);
+                    onSubmit={async (entry) => {
+                      await annotations.add(entry);
                       setPendingNote(null);
                     }}
                   />
@@ -997,11 +1013,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                 {compact ? basename(selected) : selected}
               </span>
             )}
-            {session.dirty && <span className="flex-shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
-            {session.saving && <span className="flex-shrink-0 text-minimal text-content-muted animate-pulse">Saving…</span>}
+            {session.dirty && <span className="shrink-0 text-minimal text-warning-400" title="Unsaved changes">●</span>}
+            {session.saving && <span className="shrink-0 text-minimal text-content-muted animate-pulse">Saving…</span>}
             {session.parseError && (
               <span
-                className="flex-shrink-0 text-minimal text-warning-400"
+                className="shrink-0 text-minimal text-warning-400"
                 title={`${session.parseError} — the preview is showing the last version that parsed`}
               >
                 syntax error

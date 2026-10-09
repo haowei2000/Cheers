@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_messages SET next_run_at=NOW()+($2::int8 * INTERVAL '1 second'),\n                     retry_attempt=retry_attempt+1,retry_scheduled_for=$3,lease_until=NULL,\n                     last_run_at=NOW(),last_error=$4,consecutive_failures=consecutive_failures+1,\n                     updated_at=NOW() WHERE task_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a6ccad90f7cfc0af1782c9600dac2d5b323a83eb0e45158ba896f52c2d9bb05f"
+}

@@ -22,7 +22,7 @@
     "textarea": 0
   },
   "violationCeilings": {
-    "nonStandardRadius": 73,
+    "nonStandardRadius": 5,
     "unregisteredFullRadius": 0,
     "restingBorder": 0,
     "hardcodedControlSize": 4,

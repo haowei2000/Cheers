@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id FROM users\n                 WHERE is_deleted = FALSE\n                   AND (LOWER(username) = $1 OR LOWER(email) = $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "afcf996954e3ea9945a2f5ca2f39f81ff49f42be9b2686a5a2e91b788eb6ee87"
+}

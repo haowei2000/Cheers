@@ -1,5 +1,25 @@
 # gitleaks config. Extends the default ruleset and allowlists known example /
-# placeholder values so `gitleaks git .` reports clean.
+# placeholder values.
+#
+# How CI uses this: the `secret-scan` job in .github/workflows/ci.yml scans only
+# the commits a pull request / push introduces
+# (`gitleaks git --log-opts="$BASE..$HEAD"`). That is the enforceable form.
+#
+# A full-history scan (`gitleaks git .`) is NOT clean, and all seven findings are
+# pre-existing false positives rather than secrets:
+#
+#   * deploy/production/deploy.sh — the `private-key` rule matches the literal
+#     PEM markers the script *validates against*
+#     (`grep -q '^-----BEGIN PRIVATE KEY-----$'`); no key material is embedded.
+#   * openclaw.sh, docs/OpenClaw接入AgentNexus指南.md — `curl-auth-header`
+#     matches in files deleted from the tree months ago; commits are the only
+#     place they remain.
+#
+# They are deliberately NOT allowlisted here: a path-level allowlist on
+# deploy.sh would also blind the scanner to a real key committed there later,
+# and a regex allowlist on the bare PEM marker would do the same. Enable a
+# full-history or scheduled scan only after allowlisting those two deleted
+# paths and narrowing the deploy.sh match by line.
 [extend]
 useDefault = true
 

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO scheduled_messages\n         (task_id,created_by,channel_id,title,content,mention_ids,schedule_kind,\n          run_at,interval_minutes,local_time,timezone,next_run_at,enabled,\n          source_extension_id,source_automation_id)\n         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Jsonb",
+        "Varchar",
+        "Timestamptz",
+        "Int4",
+        "Time",
+        "Varchar",
+        "Timestamptz",
+        "Bool",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8b3d0f2fe8809fc8d6d761f618a5d9bd4d4118cbcd5e6120ad5c20ea7e39a450"
+}

@@ -2,7 +2,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
 use serde_json::json;
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
@@ -106,16 +106,16 @@ pub async fn create_factor_transaction(
 ) -> Result<FactorTransaction, AppError> {
     let transaction_id = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::minutes(AUTH_TRANSACTION_TTL_MINUTES);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_transactions
          (transaction_id, user_id, kind, status, client_type, context_json, expires_at)
          VALUES ($1, $2, 'login', 'factor_required', $3, $4, $5)",
+        &transaction_id,
+        user_id,
+        client.as_str(),
+        json!({ "device_name": device_name, "primary_factor": primary_factor }),
+        expires_at,
     )
-    .bind(&transaction_id)
-    .bind(user_id)
-    .bind(client.as_str())
-    .bind(json!({ "device_name": device_name, "primary_factor": primary_factor }))
-    .bind(expires_at)
     .execute(db)
     .await?;
     Ok(FactorTransaction { transaction_id })
@@ -126,25 +126,25 @@ pub async fn factor_transaction_user(
     transaction_id: &str,
 ) -> Result<(String, ClientType, Option<String>, Option<String>), AppError> {
     let mut tx = db.begin().await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT user_id, client_type, context_json, failed_attempts, expires_at
          FROM auth_transactions
          WHERE transaction_id = $1 AND kind = 'login'
            AND status IN ('factor_required', 'verified') AND consumed_at IS NULL
          FOR UPDATE",
+        transaction_id,
     )
-    .bind(transaction_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::Unauthorized("invalid authentication transaction".into()))?;
-    let expires_at: DateTime<Utc> = row.try_get("expires_at")?;
-    let failed_attempts: i16 = row.try_get("failed_attempts").unwrap_or(0);
+    let expires_at: DateTime<Utc> = row.expires_at.clone();
+    let failed_attempts: i16 = row.failed_attempts.clone();
     if expires_at <= Utc::now() || failed_attempts >= MAX_FACTOR_ATTEMPTS {
-        sqlx::query(
+        sqlx::query!(
             "UPDATE auth_transactions SET status = 'expired', updated_at = NOW()
              WHERE transaction_id = $1",
+            transaction_id,
         )
-        .bind(transaction_id)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -152,9 +152,12 @@ pub async fn factor_transaction_user(
             "authentication transaction expired".into(),
         ));
     }
-    let user_id: String = row.try_get("user_id")?;
-    let client_raw: String = row.try_get("client_type")?;
-    let context: serde_json::Value = row.try_get("context_json").unwrap_or(json!({}));
+    let user_id: String = row
+        .user_id
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
+    let client_raw: String = row.client_type.clone();
+    let context: serde_json::Value = row.context_json.clone();
     let device_name = context
         .get("device_name")
         .and_then(serde_json::Value::as_str)
@@ -173,27 +176,27 @@ pub async fn factor_transaction_user(
 }
 
 pub async fn record_factor_failure(db: &PgPool, transaction_id: &str) -> Result<(), AppError> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_transactions
          SET failed_attempts = LEAST(failed_attempts + 1, 5),
              status = CASE WHEN failed_attempts + 1 >= 5 THEN 'failed' ELSE status END,
              updated_at = NOW()
          WHERE transaction_id = $1 AND consumed_at IS NULL",
+        transaction_id,
     )
-    .bind(transaction_id)
     .execute(db)
     .await?;
     Ok(())
 }
 
 pub async fn consume_factor_transaction(db: &PgPool, transaction_id: &str) -> Result<(), AppError> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE auth_transactions
          SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()
          WHERE transaction_id = $1 AND status = 'factor_required'
            AND consumed_at IS NULL AND expires_at > NOW() AND failed_attempts < 5",
+        transaction_id,
     )
-    .bind(transaction_id)
     .execute(db)
     .await?;
     if result.rows_affected() != 1 {
@@ -212,13 +215,13 @@ pub async fn trusted_device_is_valid(
     let Some(credential) = credential.filter(|value| !value.is_empty()) else {
         return Ok(false);
     };
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE trusted_devices SET last_used_at = NOW()
          WHERE user_id = $1 AND credential_hash = $2
            AND revoked_at IS NULL AND expires_at > NOW()",
+        user_id,
+        sha256_hex(credential),
     )
-    .bind(user_id)
-    .bind(sha256_hex(credential))
     .execute(db)
     .await?;
     Ok(result.rows_affected() == 1)
@@ -231,17 +234,17 @@ pub async fn issue_trusted_device(
     device_name: Option<&str>,
 ) -> Result<String, AppError> {
     let credential = random_secret()?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO trusted_devices
          (trusted_device_id, user_id, session_id, credential_hash, device_name, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6)",
+        Uuid::new_v4().to_string(),
+        user_id,
+        session_id,
+        sha256_hex(&credential),
+        device_name,
+        Utc::now() + Duration::days(TRUSTED_DEVICE_TTL_DAYS),
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(user_id)
-    .bind(session_id)
-    .bind(sha256_hex(&credential))
-    .bind(device_name)
-    .bind(Utc::now() + Duration::days(TRUSTED_DEVICE_TTL_DAYS))
     .execute(db)
     .await?;
     Ok(credential)
@@ -263,19 +266,19 @@ pub async fn finalize_login(
     let absolute_expires_at = now + Duration::days(SESSION_ABSOLUTE_TTL_DAYS);
     let refresh_expires_at = now + Duration::days(REFRESH_IDLE_TTL_DAYS);
     let mut tx = db.begin().await?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_sessions
          (session_id, user_id, client_type, device_name, token_family_id,
           csrf_token_hash, absolute_expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        &session_id,
+        &user.id,
+        client.as_str(),
+        device_name,
+        family_id,
+        sha256_hex(&csrf_token),
+        absolute_expires_at,
     )
-    .bind(&session_id)
-    .bind(&user.id)
-    .bind(client.as_str())
-    .bind(device_name)
-    .bind(family_id)
-    .bind(sha256_hex(&csrf_token))
-    .bind(absolute_expires_at)
     .execute(&mut *tx)
     .await?;
     insert_refresh_token(
@@ -314,15 +317,15 @@ async fn insert_refresh_token(
     raw_token: &str,
     expires_at: DateTime<Utc>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_refresh_tokens
          (refresh_token_id, session_id, token_hash, expires_at)
          VALUES ($1, $2, $3, $4)",
+        token_id,
+        session_id,
+        sha256_hex(raw_token),
+        expires_at,
     )
-    .bind(token_id)
-    .bind(session_id)
-    .bind(sha256_hex(raw_token))
-    .bind(expires_at)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -335,7 +338,7 @@ pub async fn rotate_refresh_token(
     csrf_token: Option<&str>,
 ) -> Result<RotatedSession, AppError> {
     let mut tx = db.begin().await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT rt.refresh_token_id, rt.session_id, rt.expires_at AS refresh_expires_at,
                 rt.consumed_at, rt.revoked_at AS token_revoked_at,
                 s.user_id, s.client_type, s.csrf_token_hash, s.absolute_expires_at,
@@ -344,16 +347,16 @@ pub async fn rotate_refresh_token(
          JOIN auth_sessions s ON s.session_id = rt.session_id
          WHERE rt.token_hash = $1
          FOR UPDATE OF rt, s",
+        sha256_hex(raw_token),
     )
-    .bind(sha256_hex(raw_token))
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::Unauthorized("invalid refresh token".into()))?;
 
-    let session_id: String = row.try_get("session_id")?;
-    let user_id: String = row.try_get("user_id")?;
-    let client: String = row.try_get("client_type")?;
-    let consumed_at: Option<DateTime<Utc>> = row.try_get("consumed_at").ok().flatten();
+    let session_id: String = row.session_id.clone();
+    let user_id: String = row.user_id.clone();
+    let client: String = row.client_type.clone();
+    let consumed_at: Option<DateTime<Utc>> = row.consumed_at.clone();
     let now = Utc::now();
     if consumed_at.is_some_and(|consumed_at| is_concurrent_web_refresh(&client, consumed_at, now)) {
         return Err(AppError::Conflict(
@@ -362,14 +365,14 @@ pub async fn rotate_refresh_token(
     }
     if consumed_at.is_some() {
         revoke_session_in_tx(&mut tx, &session_id, "refresh_token_reuse").await?;
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO auth_security_events
              (event_id, user_id, session_id, event_type)
              VALUES ($1, $2, $3, 'refresh_token_reuse')",
+            Uuid::new_v4().to_string(),
+            &user_id,
+            &session_id,
         )
-        .bind(Uuid::new_v4().to_string())
-        .bind(&user_id)
-        .bind(&session_id)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -378,10 +381,10 @@ pub async fn rotate_refresh_token(
         ));
     }
 
-    let refresh_expires_at: DateTime<Utc> = row.try_get("refresh_expires_at")?;
-    let absolute_expires_at: DateTime<Utc> = row.try_get("absolute_expires_at")?;
-    let token_revoked: Option<DateTime<Utc>> = row.try_get("token_revoked_at").ok().flatten();
-    let session_revoked: Option<DateTime<Utc>> = row.try_get("session_revoked_at").ok().flatten();
+    let refresh_expires_at: DateTime<Utc> = row.refresh_expires_at.clone();
+    let absolute_expires_at: DateTime<Utc> = row.absolute_expires_at.clone();
+    let token_revoked: Option<DateTime<Utc>> = row.token_revoked_at.clone();
+    let session_revoked: Option<DateTime<Utc>> = row.session_revoked_at.clone();
     if token_revoked.is_some()
         || session_revoked.is_some()
         || refresh_expires_at <= now
@@ -392,7 +395,7 @@ pub async fn rotate_refresh_token(
         ));
     }
 
-    let csrf_hash: Option<String> = row.try_get("csrf_token_hash").ok().flatten();
+    let csrf_hash: Option<String> = row.csrf_token_hash.clone();
     if client == "web" && csrf_hash.as_deref() != csrf_token.map(sha256_hex).as_deref() {
         return Err(AppError::Unauthorized("invalid CSRF token".into()));
     }
@@ -404,19 +407,21 @@ pub async fn rotate_refresh_token(
         absolute_expires_at,
     );
     insert_refresh_token(&mut tx, &new_id, &session_id, &new_token, next_expiry).await?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_refresh_tokens
          SET consumed_at = NOW(), replaced_by_id = $2
          WHERE refresh_token_id = $1 AND consumed_at IS NULL",
+        row.refresh_token_id.clone(),
+        &new_id,
     )
-    .bind(row.try_get::<String, _>("refresh_token_id")?)
-    .bind(&new_id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE auth_sessions SET last_seen_at = NOW() WHERE session_id = $1")
-        .bind(&session_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "UPDATE auth_sessions SET last_seen_at = NOW() WHERE session_id = $1",
+        &session_id,
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     let user = auth::load_auth_user(db, &user_id).await?;
@@ -445,26 +450,26 @@ async fn revoke_session_in_tx(
     session_id: &str,
     reason: &str,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, NOW()), revoke_reason = $2
          WHERE session_id = $1",
+        session_id,
+        reason,
     )
-    .bind(session_id)
-    .bind(reason)
     .execute(&mut **tx)
     .await?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_refresh_tokens SET revoked_at = COALESCE(revoked_at, NOW())
          WHERE session_id = $1",
+        session_id,
     )
-    .bind(session_id)
     .execute(&mut **tx)
     .await?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW())
          WHERE session_id = $1",
+        session_id,
     )
-    .bind(session_id)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -476,11 +481,11 @@ pub async fn revoke_session(
     session_id: &str,
 ) -> Result<bool, AppError> {
     let mut tx = db.begin().await?;
-    let owned = sqlx::query(
-        "SELECT 1 FROM auth_sessions WHERE session_id = $1 AND user_id = $2 FOR UPDATE",
+    let owned = sqlx::query!(
+        "SELECT 1 AS present FROM auth_sessions WHERE session_id = $1 AND user_id = $2 FOR UPDATE",
+        session_id,
+        user_id,
     )
-    .bind(session_id)
-    .bind(user_id)
     .fetch_optional(&mut *tx)
     .await?
     .is_some();
@@ -493,18 +498,20 @@ pub async fn revoke_session(
 
 pub async fn revoke_all_sessions(db: &PgPool, user_id: &str) -> Result<(), AppError> {
     let mut tx = db.begin().await?;
-    let rows = sqlx::query("SELECT session_id FROM auth_sessions WHERE user_id = $1 FOR UPDATE")
-        .bind(user_id)
-        .fetch_all(&mut *tx)
-        .await?;
+    let rows = sqlx::query!(
+        "SELECT session_id FROM auth_sessions WHERE user_id = $1 FOR UPDATE",
+        user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
     for row in rows {
-        let session_id: String = row.try_get("session_id")?;
+        let session_id: String = row.session_id.clone();
         revoke_session_in_tx(&mut tx, &session_id, "logout_all").await?;
     }
-    sqlx::query(
+    sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1",
+        user_id,
     )
-    .bind(user_id)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -520,15 +527,15 @@ pub async fn require_recent_auth(
     user_id: &str,
     session_id: &str,
 ) -> Result<(), AppError> {
-    let recent = sqlx::query(
-        "SELECT 1 FROM auth_sessions
+    let recent = sqlx::query!(
+        "SELECT 1 AS present FROM auth_sessions
          WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL
            AND absolute_expires_at > NOW()
            AND GREATEST(authenticated_at, COALESCE(step_up_at, authenticated_at))
                >= NOW() - INTERVAL '15 minutes'",
+        session_id,
+        user_id,
     )
-    .bind(session_id)
-    .bind(user_id)
     .fetch_optional(db)
     .await?
     .is_some();
@@ -555,7 +562,7 @@ pub async fn complete_step_up(
     factor: &str,
 ) -> Result<DateTime<Utc>, AppError> {
     let mut tx = db.begin().await?;
-    let context: Option<serde_json::Value> = sqlx::query_scalar(
+    let context: Option<serde_json::Value> = sqlx::query_scalar!(
         "UPDATE auth_transactions
          SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()
          WHERE transaction_id = $1 AND kind = 'step_up'
@@ -563,10 +570,10 @@ pub async fn complete_step_up(
            AND status IN ('method_required', 'factor_required', 'verified')
            AND consumed_at IS NULL AND expires_at > NOW()
          RETURNING context_json",
+        transaction_id,
+        user_id,
+        session_id,
     )
-    .bind(transaction_id)
-    .bind(user_id)
-    .bind(session_id)
     .fetch_optional(&mut *tx)
     .await?;
     if context.is_none() {
@@ -574,31 +581,31 @@ pub async fn complete_step_up(
             "authentication transaction is invalid or already used".into(),
         ));
     }
-    let stepped_up_at: DateTime<Utc> = sqlx::query_scalar(
-        "UPDATE auth_sessions
+    let stepped_up_at: DateTime<Utc> = sqlx::query_scalar!(
+        r#"UPDATE auth_sessions
          SET step_up_at = NOW(), last_seen_at = NOW()
          WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL
            AND absolute_expires_at > NOW()
-         RETURNING step_up_at",
+         RETURNING step_up_at AS "value!""#,
+        session_id,
+        user_id,
     )
-    .bind(session_id)
-    .bind(user_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::Unauthorized("session is no longer active".into()))?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_security_events
          (event_id, user_id, session_id, event_type, factor, metadata)
          VALUES ($1, $2, $3, 'step_up_succeeded', $4, $5)",
+        Uuid::new_v4().to_string(),
+        user_id,
+        session_id,
+        factor,
+        json!({
+            "action_class": context
+                .and_then(|value| value.get("action_class").cloned())
+        }),
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(user_id)
-    .bind(session_id)
-    .bind(factor)
-    .bind(json!({
-        "action_class": context
-            .and_then(|value| value.get("action_class").cloned())
-    }))
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -615,28 +622,28 @@ pub async fn record_direct_step_up(
     action_class: &str,
 ) -> Result<(), AppError> {
     let mut tx = db.begin().await?;
-    let updated = sqlx::query(
+    let updated = sqlx::query!(
         "UPDATE auth_sessions SET step_up_at = NOW(), last_seen_at = NOW()
          WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL
            AND absolute_expires_at > NOW()",
+        session_id,
+        user_id,
     )
-    .bind(session_id)
-    .bind(user_id)
     .execute(&mut *tx)
     .await?;
     if updated.rows_affected() != 1 {
         return Err(AppError::Unauthorized("session is no longer active".into()));
     }
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_security_events
          (event_id, user_id, session_id, event_type, factor, metadata)
          VALUES ($1, $2, $3, 'step_up_succeeded', $4, $5)",
+        Uuid::new_v4().to_string(),
+        user_id,
+        session_id,
+        factor,
+        json!({ "action_class": action_class, "proof_reused": true }),
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(user_id)
-    .bind(session_id)
-    .bind(factor)
-    .bind(json!({ "action_class": action_class, "proof_reused": true }))
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -651,24 +658,24 @@ pub async fn revoke_other_sessions_and_trusted_devices(
     current_session_id: &str,
 ) -> Result<(), AppError> {
     let mut tx = db.begin().await?;
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT session_id FROM auth_sessions
          WHERE user_id = $1 AND session_id <> $2 AND revoked_at IS NULL
          FOR UPDATE",
+        user_id,
+        current_session_id,
     )
-    .bind(user_id)
-    .bind(current_session_id)
     .fetch_all(&mut *tx)
     .await?;
     for row in rows {
-        let session_id: String = row.try_get("session_id")?;
+        let session_id: String = row.session_id.clone();
         revoke_session_in_tx(&mut tx, &session_id, "identity_changed").await?;
     }
-    sqlx::query(
+    sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW())
          WHERE user_id = $1",
+        user_id,
     )
-    .bind(user_id)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -693,25 +700,25 @@ pub async fn list_trusted_devices(
     user_id: &str,
     current_session_id: &str,
 ) -> Result<Vec<TrustedDeviceSummary>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT trusted_device_id, session_id, device_name, created_at,
                 last_used_at, expires_at
          FROM trusted_devices
          WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
          ORDER BY COALESCE(last_used_at, created_at) DESC",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await?;
     rows.into_iter()
         .map(|row| {
-            let session_id: Option<String> = row.try_get("session_id").ok().flatten();
+            let session_id: Option<String> = row.session_id.clone();
             Ok(TrustedDeviceSummary {
-                trusted_device_id: row.try_get("trusted_device_id")?,
-                device_name: row.try_get("device_name").ok().flatten(),
-                created_at: row.try_get("created_at")?,
-                last_used_at: row.try_get("last_used_at").ok().flatten(),
-                expires_at: row.try_get("expires_at")?,
+                trusted_device_id: row.trusted_device_id.clone(),
+                device_name: row.device_name.clone(),
+                created_at: row.created_at.clone(),
+                last_used_at: row.last_used_at.clone(),
+                expires_at: row.expires_at.clone(),
                 current: session_id.as_deref() == Some(current_session_id),
             })
         })
@@ -724,12 +731,12 @@ pub async fn revoke_trusted_device(
     user_id: &str,
     trusted_device_id: &str,
 ) -> Result<bool, AppError> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = NOW()
          WHERE user_id = $1 AND trusted_device_id = $2 AND revoked_at IS NULL",
+        user_id,
+        trusted_device_id,
     )
-    .bind(user_id)
-    .bind(trusted_device_id)
     .execute(db)
     .await?;
     Ok(result.rows_affected() == 1)
@@ -742,11 +749,11 @@ pub async fn revoke_trusted_device(
 /// factor that was just armed. Without this, arming 2FA silently does nothing
 /// on devices the user had already ticked "remember me" on.
 pub async fn revoke_all_trusted_devices(db: &PgPool, user_id: &str) -> Result<u64, AppError> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = NOW()
          WHERE user_id = $1 AND revoked_at IS NULL",
+        user_id,
     )
-    .bind(user_id)
     .execute(db)
     .await?;
     Ok(result.rows_affected())
@@ -757,27 +764,27 @@ pub async fn list_sessions(
     user_id: &str,
     current_session_id: &str,
 ) -> Result<Vec<SessionSummary>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT session_id, client_type, device_name, authenticated_at,
                 last_seen_at, absolute_expires_at
          FROM auth_sessions
          WHERE user_id = $1 AND revoked_at IS NULL AND absolute_expires_at > NOW()
          ORDER BY last_seen_at DESC",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await?;
     rows.into_iter()
         .map(|row| {
-            let session_id: String = row.try_get("session_id")?;
+            let session_id: String = row.session_id.clone();
             Ok(SessionSummary {
                 current: session_id == current_session_id,
                 session_id,
-                client: row.try_get("client_type")?,
-                device_name: row.try_get("device_name").ok().flatten(),
-                authenticated_at: row.try_get("authenticated_at")?,
-                last_seen_at: row.try_get("last_seen_at")?,
-                expires_at: row.try_get("absolute_expires_at")?,
+                client: row.client_type.clone(),
+                device_name: row.device_name.clone(),
+                authenticated_at: row.authenticated_at.clone(),
+                last_seen_at: row.last_seen_at.clone(),
+                expires_at: row.absolute_expires_at.clone(),
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()

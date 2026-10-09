@@ -49,7 +49,7 @@ export function TopicPaneResizer({
       aria-orientation="vertical"
       aria-label="Resize discussion panes"
       title="Drag to resize"
-      className="group relative w-1.5 flex-shrink-0 cursor-col-resize max-md:hidden"
+      className="group relative w-1.5 shrink-0 cursor-col-resize max-md:hidden"
       style={{ touchAction: "none" }}
     />
   );

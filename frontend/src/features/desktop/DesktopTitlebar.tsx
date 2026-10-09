@@ -169,7 +169,6 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
     <Dialog title="Search Cheers" onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-3">
         <SearchInput
-          autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search pages, workspaces, and channels…"
@@ -329,7 +328,7 @@ export function DesktopTitlebarChrome({
 
   return (
     <header
-      className="relative z-40 flex h-11 flex-shrink-0 select-none items-center border-b border-zinc-300/40 bg-panel text-content-primary dark:border-zinc-800/60"
+      className="relative z-40 flex h-11 shrink-0 select-none items-center border-b border-zinc-300/40 bg-panel text-content-primary dark:border-zinc-800/60"
       data-window-chrome={variant}
       data-window-active={resolvedWindowState.active ? "true" : "false"}
       data-window-fullscreen={resolvedWindowState.fullscreen ? "true" : "false"}
@@ -345,12 +344,12 @@ export function DesktopTitlebarChrome({
       )}
       <div
         {...dragRegion}
-        className={`relative z-10 h-full flex-shrink-0 ${
+        className={`relative z-10 h-full shrink-0 ${
           nativeControlsInset === 96 ? "w-24" : "w-2"
         }`}
         aria-hidden="true"
       />
-      <nav aria-label="Window navigation" className="relative z-10 flex flex-shrink-0 items-center gap-1">
+      <nav aria-label="Window navigation" className="relative z-10 flex shrink-0 items-center gap-1">
         {authenticated && activePath.startsWith("/chat") && onToggleSidebar && (
           <IconButton
             label={`${resolvedPanes?.sidebarOpen ? "Hide" : "Show"} channel sidebar (${shortcut})`}
@@ -370,7 +369,7 @@ export function DesktopTitlebarChrome({
       </nav>
       <div {...dragRegion} className="relative z-10 flex h-full min-w-0 flex-1 items-center justify-center px-3">
         <div {...dragRegion} className="flex min-w-0 items-center gap-2 text-regular">
-          <ContextIcon {...dragRegion} className="h-4 w-4 flex-shrink-0 text-content-muted" aria-hidden="true" />
+          <ContextIcon {...dragRegion} className="h-4 w-4 shrink-0 text-content-muted" aria-hidden="true" />
           <span {...dragRegion} className="truncate font-serif text-regular font-bold tracking-tight text-content-strong">
             {context.title}
           </span>
@@ -389,9 +388,9 @@ export function DesktopTitlebarChrome({
       <nav
         ref={actionsRef}
         aria-label="Context toolbar"
-        className="relative z-10 flex flex-shrink-0 items-center gap-1 pr-2"
+        className="relative z-10 flex shrink-0 items-center gap-1 pr-2"
       />
-      <div {...dragRegion} className="relative z-10 h-full w-2 flex-shrink-0" aria-hidden="true" />
+      <div {...dragRegion} className="relative z-10 h-full w-2 shrink-0" aria-hidden="true" />
     </header>
   );
 }

@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH topic_stats AS (\n            SELECT root.msg_id AS root_id,\n                   GREATEST(\n                       root.created_at,\n                       COALESCE(MAX(reply.created_at), root.created_at)\n                   ) AS last_activity_at,\n                   COUNT(reply.msg_id) FILTER (\n                       WHERE reply.is_deleted = FALSE\n                         AND reply.msg_type NOT IN ('permission', 'auth_required', 'elicitation')\n                   )::bigint AS reply_count\n            FROM messages root\n            LEFT JOIN messages reply\n              ON reply.channel_id = root.channel_id\n             AND reply.thread_root_msg_id = root.msg_id\n             AND reply.is_partial = FALSE\n             AND reply.is_secret = FALSE\n             AND reply.is_deleted = FALSE\n             AND reply.msg_type NOT IN ('permission', 'auth_required', 'elicitation')\n            WHERE root.channel_id = $1\n              AND root.thread_root_msg_id IS NULL\n              AND root.is_partial = FALSE\n              AND root.is_secret = FALSE\n              AND root.sender_type IN ('user', 'bot')\n              AND root.msg_type NOT IN ('permission', 'auth_required', 'elicitation')\n              AND (\n                  $2::text IS NULL\n                  OR EXISTS (\n                      SELECT 1\n                      FROM messages hit\n                      WHERE hit.channel_id = root.channel_id\n                        AND COALESCE(hit.thread_root_msg_id, hit.msg_id) = root.msg_id\n                        AND hit.is_partial = FALSE\n                        AND hit.is_secret = FALSE\n                        AND hit.is_deleted = FALSE\n                        AND hit.msg_type NOT IN ('permission', 'auth_required', 'elicitation')\n                        AND hit.content ILIKE '%' || $2 || '%'\n                  )\n              )\n            GROUP BY root.msg_id, root.created_at\n         )\n         SELECT root_id, last_activity_at, reply_count\n         FROM topic_stats\n         WHERE ($3::timestamptz IS NULL)\n            OR (last_activity_at, root_id) < ($3, $4)\n         ORDER BY last_activity_at DESC, root_id DESC\n         LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "root_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_activity_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "reply_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "662405510d1cf18ba688463abfa7b4de9e7ed4a7fc48292514993253cf5a037a"
+}

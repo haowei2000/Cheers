@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE voice_sessions SET status = 'active', updated_at = NOW()\n                 WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2b48c6e30761b0c4d53125e9c46c69d3fc9e67c1d928addb5b5f863047f62a2d"
+}

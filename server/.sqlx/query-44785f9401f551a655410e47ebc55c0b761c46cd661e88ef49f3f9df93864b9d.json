@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO voice_sessions\n            (voice_session_id, channel_id, provider, provider_room_id, status)\n         VALUES ($1, $2, 'livekit', $3, 'starting')\n         ON CONFLICT (channel_id) WHERE ended_at IS NULL\n         DO UPDATE SET updated_at = NOW()\n         RETURNING voice_session_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "voice_session_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "44785f9401f551a655410e47ebc55c0b761c46cd661e88ef49f3f9df93864b9d"
+}

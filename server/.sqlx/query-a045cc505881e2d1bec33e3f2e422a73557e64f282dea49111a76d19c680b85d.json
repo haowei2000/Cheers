@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM channel_invites WHERE user_id = $1 OR invited_by = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a045cc505881e2d1bec33e3f2e422a73557e64f282dea49111a76d19c680b85d"
+}

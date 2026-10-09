@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM github_app_installation_sessions\n             WHERE state_hash = $1 AND consumed_at IS NULL AND expires_at > NOW()\n        ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fb26beeb313f3217d5a03f4e3c40d4229c4a04534e3a000fc9bf23e242abe9ce"
+}

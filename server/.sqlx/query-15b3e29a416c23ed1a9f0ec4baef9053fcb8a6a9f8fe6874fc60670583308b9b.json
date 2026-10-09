@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts\n         SET visibility = $1, friend_policy = $2, invite_policy = $3\n         WHERE bot_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "15b3e29a416c23ed1a9f0ec4baef9053fcb8a6a9f8fe6874fc60670583308b9b"
+}

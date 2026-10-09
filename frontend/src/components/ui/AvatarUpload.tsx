@@ -75,13 +75,13 @@ export function AvatarUpload({
 
   return (
     <button
+      aria-label={`Change ${name}'s avatar`}
       type="button"
       onClick={() => inputRef.current?.click()}
       disabled={busy}
-      aria-label="Change avatar"
       data-design-system-exempt="identity"
       className={cn(
-        "group relative inline-flex flex-shrink-0 items-center justify-center rounded-full",
+        "group relative inline-flex shrink-0 items-center justify-center rounded-full",
         controlSquareClasses.comfortable,
       )}
       title="Change avatar"
@@ -95,6 +95,7 @@ export function AvatarUpload({
         )}
       </span>
       <input
+        aria-label="Choose avatar image"
         ref={inputRef}
         type="file"
         accept="image/png,image/jpeg,image/webp,image/gif"

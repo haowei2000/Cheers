@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "CREATE INDEX IF NOT EXISTS ix_channel_features_enabled ON channel_features(feature, channel_id) WHERE enabled = TRUE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "48958938d1866dd0004ab38db582a7aa8c3c5ae708719141ca2e56f7606a0a30"
+}

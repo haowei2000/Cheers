@@ -99,7 +99,6 @@ export function ForwardDialog({
     >
       <SearchInput
         aria-label="Search channels and direct messages"
-        autoFocus
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search channels and DMs…"
@@ -120,9 +119,9 @@ export function ForwardDialog({
               onClick={() => void forwardTo(c)}
               title={labelOf(c)}
               leading={c.type === "dm" ? (
-                <MessageCircle className="w-4 h-4 text-content-muted flex-shrink-0" />
+                <MessageCircle className="w-4 h-4 text-content-muted shrink-0" />
               ) : (
-                <Hash className="w-4 h-4 text-content-muted flex-shrink-0" />
+                <Hash className="w-4 h-4 text-content-muted shrink-0" />
               )}
               trailing={sending === c.channel_id ? <span className="text-compact text-content-muted">Sending…</span> : undefined}
               className="border-0"

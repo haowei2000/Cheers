@@ -187,9 +187,9 @@ function AudioBody({ file }: { file: FileInfo }) {
   if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading audio…</Centered>;
   return (
     <div className="flex flex-col gap-3 rounded-sm bg-zinc-950/40 p-4">
-      <audio controls src={src} className="w-full" />
+      <audio controls src={src} aria-label={`Audio preview: ${file.original_filename || file.file_id}`} className="w-full"><track kind="captions" /></audio>
       {file.summary && (
-        <p className="whitespace-pre-wrap break-words text-regular leading-reading text-content-muted">
+        <p className="whitespace-pre-wrap wrap-break-word text-regular leading-reading text-content-muted">
           {file.summary}
         </p>
       )}

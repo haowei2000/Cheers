@@ -1,4 +1,5 @@
 import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
+import { MenuOption } from "@/components/ui/menu-option";
 // Composer-side session target (docs/arch/SESSION_MODEL.md) — the successor to
 // the old native-<UiSelect> SessionSwitcher. A chip that shows where the next
 // message goes ("Auto" = mention routing → each bot's primary session, or one
@@ -15,7 +16,7 @@ import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
 // changes, so fetch-on-open is the freshness model.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { ArrowRight, Check, ChevronDown, Folder, Layers, LayoutDashboard, Plus } from "lucide-react";
+import { Check, ChevronDown, Folder, Layers, LayoutDashboard, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   getSessionControls,
@@ -28,7 +29,8 @@ import { IconButton } from "@/components/ui/icon-button";
 import { controlIconClasses } from "@/components/ui/control-size";
 import { PresenceDot } from "@/components/ui/presence-dot";
 import type { SendResourceReq } from "./workbench/fsClient";
-import { sessionTag, statusDotColor } from "./sessionLabel";
+import { cwdBasename, sessionTag, statusDotColor } from "./sessionLabel";
+import { formatWorkspaceDisplayPath } from "@/lib/recentWorkspaces";
 import { NewSessionDialog } from "./NewSessionDialog";
 import { whenPointerMeans } from "@/lib/hoverIntent";
 
@@ -206,6 +208,7 @@ export function SessionChip({
   const selected = value ? entries.find((s) => s.session_id === value) : undefined;
   const tagOf = (s: SessionEntry) =>
     sessionTag({ is_primary: s.is_primary, session_id: s.session_id, cwd: s.cwd, when: s.when });
+  const selectedDirectory = selected?.cwd ? cwdBasename(selected.cwd) : null;
 
   function select(next: string) {
     setOpen(false);
@@ -324,29 +327,44 @@ export function SessionChip({
         aria-haspopup="listbox"
         title={
           selected
-            ? `Messages will go directly to this session of @${selected.bot_name}, ignoring @mentions`
+            ? `Workspace: ${selected.cwd || "Bot default"}\nMessages go directly to @${selected.bot_name}, ignoring @mentions`
             : "Session target — Auto routes by @mention to each bot's primary session"
         }
-        aria-label={selected ? `Session target: ${selected.bot_name}, ${tagOf(selected)}` : "Session target: Auto"}
+        aria-label={selected ? `Workspace ${selectedDirectory ?? "Bot default"} on ${selected.bot_name}; session ${tagOf(selected)}` : "Workspace and session target: Auto"}
       >
         {selected ? (
-          <ArrowRight className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />
+          <Folder className="w-3.5 h-3.5 text-accent-400 shrink-0" />
         ) : (
-          <Layers className={cn("w-3.5 h-3.5 flex-shrink-0", open ? "text-accent-400" : "text-content-muted")} />
+          <Layers className={cn("w-3.5 h-3.5 shrink-0", open ? "text-accent-400" : "text-content-muted")} />
         )}
-        <span>{selected ? "Session" : "Auto"}</span>
-        <ChevronDown className={cn("w-3.5 h-3.5 flex-shrink-0 transition-transform", open && "rotate-180")} />
+        <span className="max-w-28 truncate">{selected ? selectedDirectory ?? "Default" : "Auto"}</span>
+        <ChevronDown className={cn("w-3.5 h-3.5 shrink-0 transition-transform", open && "rotate-180")} />
       </ComposerToolbarButton>
 
       {open && (
-        <PopoverPanel className="w-72 max-w-[calc(100vw-2rem)] max-h-72 overflow-y-auto p-1">
+        <PopoverPanel className="w-80 max-w-[calc(100vw-2rem)] max-h-[min(70vh,28rem)] overflow-y-auto p-1">
+          <MenuOption
+            label="Switch to workspace…"
+            leading={<Plus className="h-4 w-4" />}
+            trailing={creatableBots.length === 0 ? <span className="text-minimal text-content-muted">No permission</span> : undefined}
+            controlSize="compact"
+            disabled={creatableBots.length === 0}
+            onClick={() => {
+              setOpen(false);
+              setNewOpen(true);
+            }}
+            className="bg-accent-500/10 font-medium text-accent-200 hover:bg-accent-500/15"
+          />
+          <div className="px-3 pb-1 pt-2 text-minimal uppercase tracking-label text-content-muted">
+            Existing sessions · switch back without losing work
+          </div>
           {(() => {
             const autoIdx = rowIndex++;
             return (
               <NavigationItem
                 title="Auto · @mention → primary"
-                leading={<Layers className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />}
-                trailing={!value ? <Check className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" /> : undefined}
+                leading={<Layers className="w-3.5 h-3.5 text-content-muted shrink-0" />}
+                trailing={!value ? <Check className="w-3.5 h-3.5 text-accent-400 shrink-0" /> : undefined}
                 selected={!value}
                 role="option"
                 aria-selected={!value}
@@ -372,12 +390,15 @@ export function SessionChip({
                 return (
                   <NavigationItem
                     key={s.session_id}
-                    title={<span title={`${tagOf(s)} · ${s.cwd || "default"}`}>
-                      {tagOf(s)} · {s.cwd || "default"}
-                    </span>}
+                    title={(
+                      <span className="flex min-w-0 flex-col items-start gap-1" title={s.cwd || "Bot default"}>
+                        <span className="truncate">{s.cwd ? cwdBasename(s.cwd) : "Bot default"}{s.is_primary ? " · primary" : ""}</span>
+                        {s.cwd && <span className="truncate text-minimal text-content-muted">{formatWorkspaceDisplayPath(s.cwd)}</span>}
+                      </span>
+                    )}
                     leading={<PresenceDot contentSize="regular" className={statusDotColor(s.status)} />}
                     status={<span className="text-compact text-content-muted">{s.status}</span>}
-                    trailing={isSel ? <Check className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" /> : undefined}
+                    trailing={isSel ? <Check className="w-3.5 h-3.5 text-accent-400 shrink-0" /> : undefined}
                     selected={isSel}
                     role="option"
                     aria-selected={isSel}
@@ -406,7 +427,7 @@ export function SessionChip({
               (() => {
                 const idx = rowIndex++;
                 return (
-                  <IconButton
+                <IconButton
                     label="Create session"
                     controlSize="regular"
                     type="button"
@@ -447,6 +468,7 @@ export function SessionChip({
         <NewSessionDialog
           channelId={channelId}
           bots={creatableBots}
+          initialBotId={selected?.bot_id}
           onClose={() => setNewOpen(false)}
           onCreated={(created) => {
             // Refresh, then auto-target the new session — the user's next message

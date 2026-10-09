@@ -16,7 +16,7 @@ export function ConversationViewport({
       <div
         data-message-scroll-boundary=""
         className={`flex h-full min-h-0 w-full min-w-0 flex-col ${
-          conversationMode === "discuss" ? "" : "md:mx-auto md:max-w-[52rem]"
+          conversationMode === "discuss" ? "" : "md:mx-auto md:max-w-208"
         }`}
       >
         {children}

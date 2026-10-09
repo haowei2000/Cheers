@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT totp_secret_encrypted, backup_codes, totp_enabled\n         FROM users WHERE user_id = $1 AND is_deleted = FALSE\n         FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "totp_secret_encrypted",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "backup_codes",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "totp_enabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "026bf4c78d1e55c7d450e2e7cfd58c2aa1af4887f8c24645c056f56bdef73073"
+}

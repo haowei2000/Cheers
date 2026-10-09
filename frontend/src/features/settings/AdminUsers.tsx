@@ -260,7 +260,6 @@ function CreateUserItem({ onCreated, onCancel }: { onCreated: () => void; onCanc
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             autoComplete="username"
-            autoFocus
           />
         </Field>
         <Field label="Display name" htmlFor="admin-new-display-name">

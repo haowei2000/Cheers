@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_channel_invites\n                    (channel_id, bot_id, owner_user_id, invited_by, role)\n                 VALUES ($1, $2, $3, $4, 'member')\n                 ON CONFLICT (channel_id, bot_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "db6e0d7686f9aa05eba33faec30673c2aedc4bc4ab335583dbf79aa67df4241a"
+}

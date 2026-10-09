@@ -1,0 +1,126 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT segment_id, voice_session_id, channel_id, participant_session_id, user_id,\n            provider_segment_id, provider_event_id, track_id, channel_seq, text,\n            started_at_ms, ended_at_ms, language,\n            confidence::double precision AS confidence,\n            supersedes_segment_id, finalized_at, created_at, deleted_at\n     FROM voice_transcript_segments\n         WHERE channel_id = $1 AND channel_seq > $2 AND deleted_at IS NULL\n         ORDER BY channel_seq ASC LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "segment_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "voice_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "participant_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "provider_segment_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "provider_event_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "track_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "channel_seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "started_at_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "ended_at_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "confidence",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 14,
+        "name": "supersedes_segment_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "finalized_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "703fa2ea909c64d6be5fa3cba6d950672b12fd8690962ab6a6d99749b8cb0c55"
+}

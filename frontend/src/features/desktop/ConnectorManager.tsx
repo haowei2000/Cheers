@@ -688,7 +688,6 @@ export function ConnectorManager() {
               value={pairingCode}
               onChange={(e) => setPairingCode(e.target.value)}
               placeholder="agbpair_…"
-              autoFocus
               spellCheck={false}
               controlSize="regular"
               className="font-code"
@@ -1063,7 +1062,7 @@ function OnboardForm(props: {
       {p.onboardingError && (
         <div className="rounded-sm bg-rose-950/35 p-3 text-compact text-removed-200">
           <p className="font-medium">Setup needs attention</p>
-          <p className="mt-1 break-words text-removed-200/80">{p.onboardingError}</p>
+          <p className="mt-1 wrap-break-word text-removed-200/80">{p.onboardingError}</p>
           <p className="mt-1 text-removed-200/70">
             You can fix the agent or configuration and retry. The saved host remains on this page.
           </p>

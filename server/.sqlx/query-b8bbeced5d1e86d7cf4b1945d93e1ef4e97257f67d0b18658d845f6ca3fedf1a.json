@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT il.workspace_id, il.channel_id, w.name AS workspace_name,\n                w.avatar_url AS workspace_avatar_url, c.name AS \"channel_name?\",\n                COALESCE(u.display_name, u.username) AS inviter,\n                (il.expires_at IS NOT NULL AND il.expires_at <= NOW()) AS expired,\n                (il.max_uses IS NOT NULL AND il.use_count >= il.max_uses) AS exhausted,\n                (SELECT COUNT(*) FROM workspace_memberships wm\n                  WHERE wm.workspace_id = il.workspace_id AND wm.status = 'active') AS member_count\n         FROM invite_links il\n         JOIN workspaces w ON w.workspace_id = il.workspace_id\n         LEFT JOIN channels c ON c.channel_id = il.channel_id\n         LEFT JOIN users u ON u.user_id = il.created_by\n         WHERE il.token = $1 AND NOT il.revoked",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "workspace_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "workspace_avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "channel_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "inviter",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "expired",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "exhausted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "member_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b8bbeced5d1e86d7cf4b1945d93e1ef4e97257f67d0b18658d845f6ca3fedf1a"
+}

@@ -58,7 +58,7 @@ export function LaneResizer({
       aria-orientation="vertical"
       aria-label="Resize work lane"
       title="Drag to resize"
-      className="group relative w-1.5 flex-shrink-0 cursor-col-resize max-md:hidden"
+      className="group relative w-1.5 shrink-0 cursor-col-resize max-md:hidden"
       style={{ touchAction: "none" }}
     >
       {/* The 6px-wide invisible target keeps resizing discoverable through its

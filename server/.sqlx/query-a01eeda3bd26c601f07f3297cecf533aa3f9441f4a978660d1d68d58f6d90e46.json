@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.totp_enabled,\n                u.email_2fa_enabled AND u.email IS NOT NULL AND btrim(u.email) <> ''\n                    AS email_armed,\n                u.password_2fa_enabled AND u.password_hash IS NOT NULL AS password_armed,\n                EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)\n                    AS has_passkey\n         FROM users u WHERE u.user_id = $1 AND u.is_deleted = FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "totp_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "email_armed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "password_armed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "has_passkey",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a01eeda3bd26c601f07f3297cecf533aa3f9441f4a978660d1d68d58f6d90e46"
+}

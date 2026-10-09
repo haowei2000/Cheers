@@ -13,7 +13,12 @@
       ],
       "lanes": {
         "gateway": [
+          ".cargo/config.toml",
+          "scripts/check-sqlx-queries.py",
+          "scripts/tests/test_sqlx_queries.py",
           "server/**",
+          ".cargo/config.toml",
+          "scripts/sqlx-offline.sh",
           "fixtures/workbench/**",
           "packages/cheers-acp-connector-rs/bridge-protocol/**"
         ],
@@ -59,6 +64,7 @@
       "lanes": {
         "gateway": [
           "server/**",
+          ".cargo/config.toml",
           "packages/cheers-acp-connector-rs/bridge-protocol/**"
         ],
         "frontend": [

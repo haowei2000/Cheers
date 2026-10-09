@@ -17,7 +17,7 @@
 //! `request_permission` per `operation_kind`); the two compose.
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 use crate::errors::AppError;
 
@@ -405,13 +405,15 @@ pub async fn matched_groups(
 /// The bot's owning user (`bot_accounts.created_by`), if any. Public so the
 /// owner API can label the effective-matrix "you (bot owner)" column.
 pub async fn bot_owner_id(db: &PgPool, bot_id: &str) -> Option<String> {
-    sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id)
-        .fetch_optional(db)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|r| r.try_get::<Option<String>, _>("created_by").ok().flatten())
+    sqlx::query!(
+        "SELECT created_by FROM bot_accounts WHERE bot_id = $1",
+        bot_id,
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.created_by.clone())
 }
 
 async fn is_friend(db: &PgPool, a: &str, b: &str) -> bool {
@@ -423,42 +425,41 @@ async fn is_friend(db: &PgPool, a: &str, b: &str) -> bool {
     } else {
         format!("{b}:{a}")
     };
-    sqlx::query(
-        "SELECT EXISTS(SELECT 1 FROM friendships WHERE pair_key = $1 AND status = 'accepted') AS ok",
-    )
-    .bind(pair)
-    .fetch_one(db)
+    sqlx::query!(
+        "SELECT EXISTS(SELECT 1 AS present FROM friendships WHERE pair_key = $1 AND status = 'accepted') AS ok",
+        pair,
+    ).fetch_one(db)
     .await
     .ok()
-    .and_then(|r| r.try_get::<bool, _>("ok").ok())
+    .and_then(|r| r.ok.clone())
     .unwrap_or(false)
 }
 
 async fn is_channel_member(db: &PgPool, channel_id: &str, user_id: &str) -> bool {
-    sqlx::query(
-        "SELECT EXISTS(SELECT 1 FROM channel_memberships
+    sqlx::query!(
+        "SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user') AS ok",
+        channel_id,
+        user_id,
     )
-    .bind(channel_id)
-    .bind(user_id)
     .fetch_one(db)
     .await
     .ok()
-    .and_then(|r| r.try_get::<bool, _>("ok").ok())
+    .and_then(|r| r.ok.clone())
     .unwrap_or(false)
 }
 
 async fn is_workspace_member(db: &PgPool, workspace_id: &str, user_id: &str) -> bool {
-    sqlx::query(
-        "SELECT EXISTS(SELECT 1 FROM workspace_memberships
+    sqlx::query!(
+        "SELECT EXISTS(SELECT 1 AS present FROM workspace_memberships
             WHERE workspace_id = $1 AND user_id = $2 AND status = 'active') AS ok",
+        workspace_id,
+        user_id,
     )
-    .bind(workspace_id)
-    .bind(user_id)
     .fetch_one(db)
     .await
     .ok()
-    .and_then(|r| r.try_get::<bool, _>("ok").ok())
+    .and_then(|r| r.ok.clone())
     .unwrap_or(false)
 }
 
@@ -467,28 +468,23 @@ async fn is_workspace_member(db: &PgPool, workspace_id: &str, user_id: &str) -> 
 /// enforcement path (resolve / effective_matrix / gates) goes through — so an
 /// expired grant simply stops matching and the membership default takes over.
 pub async fn load_rules(db: &PgPool, bot_id: &str) -> Result<Vec<Rule>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT channel_id, subject_kind, subject_id, event_class, capability, decision
          FROM bot_event_access
          WHERE bot_id = $1 AND (expires_at IS NULL OR expires_at > NOW())",
+        bot_id,
     )
-    .bind(bot_id)
     .fetch_all(db)
     .await?;
     Ok(rows
         .into_iter()
         .map(|r| Rule {
-            channel_id: r.try_get("channel_id").unwrap_or_default(),
-            subject_kind: r
-                .try_get("subject_kind")
-                .unwrap_or_else(|_| SUBJECT_ROLE.into()),
-            subject_id: r
-                .try_get("subject_id")
-                .unwrap_or_else(|_| ANY_SUBJECT.into()),
-            event_class: r.try_get("event_class").unwrap_or_default(),
-            capability: r.try_get("capability").unwrap_or_default(),
-            allow: r
-                .try_get::<String, _>("decision")
+            channel_id: r.channel_id.clone(),
+            subject_kind: r.subject_kind.clone(),
+            subject_id: r.subject_id.clone(),
+            event_class: r.event_class.clone(),
+            capability: r.capability.clone(),
+            allow: Some(r.decision.clone())
                 .map(|d| d == "allow")
                 .unwrap_or(false),
         })
@@ -598,37 +594,34 @@ pub fn effective_matrix(rules: &[Rule], owner_user_id: Option<&str>) -> Vec<Valu
 
 /// List a bot's access rules as JSON (for the owner API), newest-touched first.
 pub async fn list_rules_json(db: &PgPool, bot_id: &str) -> Result<Vec<Value>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT channel_id, subject_kind, subject_id, event_class, capability, decision,
                 updated_by, updated_at, expires_at,
                 (expires_at IS NOT NULL AND expires_at <= NOW()) AS expired
          FROM bot_event_access WHERE bot_id = $1
          ORDER BY updated_at DESC",
+        bot_id,
     )
-    .bind(bot_id)
     .fetch_all(db)
     .await?;
     Ok(rows
         .into_iter()
         .map(|r| {
             json!({
-                "channel_id": r.try_get::<String, _>("channel_id").unwrap_or_default(),
-                "subject_kind": r.try_get::<String, _>("subject_kind").unwrap_or_default(),
-                "subject_id": r.try_get::<String, _>("subject_id").unwrap_or_default(),
-                "event_class": r.try_get::<String, _>("event_class").unwrap_or_default(),
-                "capability": r.try_get::<String, _>("capability").unwrap_or_default(),
-                "decision": r.try_get::<String, _>("decision").unwrap_or_default(),
-                "updated_by": r.try_get::<Option<String>, _>("updated_by").ok().flatten(),
-                "updated_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
+                "channel_id": r.channel_id.clone(),
+                "subject_kind": r.subject_kind.clone(),
+                "subject_id": r.subject_id.clone(),
+                "event_class": r.event_class.clone(),
+                "capability": r.capability.clone(),
+                "decision": r.decision.clone(),
+                "updated_by": r.updated_by.clone(),
+                "updated_at": Some(r.updated_at.clone())
                     .map(|t| t.to_rfc3339()).unwrap_or_default(),
                 // Time-box: null = permanent. `expired` rules no longer match at
                 // resolution (load_rules filters them) but stay listed until deleted.
-                "expires_at": r
-                    .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("expires_at")
-                    .ok()
-                    .flatten()
+                "expires_at": r.expires_at.clone()
                     .map(|t| t.to_rfc3339()),
-                "expired": r.try_get::<bool, _>("expired").unwrap_or(false),
+                "expired": r.expired.clone().unwrap_or(false),
             })
         })
         .collect())
@@ -650,7 +643,7 @@ pub async fn upsert_rule(
     updated_by: &str,
     expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO bot_event_access
             (bot_id, channel_id, subject_kind, subject_id, event_class, capability,
              decision, updated_by, updated_at, expires_at)
@@ -659,16 +652,16 @@ pub async fn upsert_rule(
          DO UPDATE SET decision = EXCLUDED.decision,
                        updated_by = EXCLUDED.updated_by, updated_at = NOW(),
                        expires_at = EXCLUDED.expires_at",
+        bot_id,
+        channel_id,
+        subject_kind,
+        subject_id,
+        event_class,
+        capability.as_str(),
+        if allow { "allow" } else { "deny" },
+        updated_by,
+        expires_at,
     )
-    .bind(bot_id)
-    .bind(channel_id)
-    .bind(subject_kind)
-    .bind(subject_id)
-    .bind(event_class)
-    .bind(capability.as_str())
-    .bind(if allow { "allow" } else { "deny" })
-    .bind(updated_by)
-    .bind(expires_at)
     .execute(db)
     .await?;
     Ok(())
@@ -685,17 +678,17 @@ pub async fn delete_rule(
     event_class: &str,
     capability: Capability,
 ) -> Result<bool, AppError> {
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "DELETE FROM bot_event_access
          WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = $3
            AND subject_id = $4 AND event_class = $5 AND capability = $6",
+        bot_id,
+        channel_id,
+        subject_kind,
+        subject_id,
+        event_class,
+        capability.as_str(),
     )
-    .bind(bot_id)
-    .bind(channel_id)
-    .bind(subject_kind)
-    .bind(subject_id)
-    .bind(event_class)
-    .bind(capability.as_str())
     .execute(db)
     .await?;
     Ok(res.rows_affected() > 0)

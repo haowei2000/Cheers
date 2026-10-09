@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channel_annotations(id,channel_id,target,label,note,legacy_id,created_at) VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,NOW())) ON CONFLICT(channel_id,legacy_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4290fc7107fb38561429b794d00c78e344d0b48b436782ad4fa24f3b01034a2a"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id FROM auth_external_identities\n             WHERE provider = $1 AND issuer = $2 AND provider_config_id = 'web'\n               AND subject = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "50a1a120b2915c19a4b89e39b626a92b70be8e7bb241e0e21c2371915acf7cab"
+}

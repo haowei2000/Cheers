@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use aws_sdk_s3::Client as S3Client;
 use serde_json::json;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::config::Config;
@@ -60,7 +60,7 @@ async fn transcribe_batch(
         }
     };
 
-    let rows = match sqlx::query(
+    let rows = match sqlx::query!(
         r#"SELECT file_id, object_key, original_filename, channel_id
            FROM file_records
            WHERE status = 'uploaded'
@@ -71,9 +71,9 @@ async fn transcribe_batch(
              AND content_type ILIKE 'audio/%'
            ORDER BY conversion_attempts ASC, transcribe_requested_at ASC
            LIMIT $2"#,
+        MAX_ATTEMPTS,
+        BATCH,
     )
-    .bind(MAX_ATTEMPTS)
-    .bind(BATCH)
     .fetch_all(db)
     .await
     {
@@ -86,20 +86,13 @@ async fn transcribe_batch(
 
     let mut transcribed = 0usize;
     for row in &rows {
-        let file_id: String = row.try_get("file_id").unwrap_or_default();
+        let file_id: String = row.file_id.clone();
         let filename: String = row
-            .try_get::<Option<String>, _>("original_filename")
-            .ok()
-            .flatten()
+            .original_filename
+            .clone()
             .unwrap_or_else(|| format!("{file_id}.bin"));
-        let object_key: Option<String> = row
-            .try_get::<Option<String>, _>("object_key")
-            .ok()
-            .flatten();
-        let channel_id: Option<String> = row
-            .try_get::<Option<String>, _>("channel_id")
-            .ok()
-            .flatten();
+        let object_key: Option<String> = row.object_key.clone();
+        let channel_id: Option<String> = row.channel_id.clone();
         let Some(object_key) = object_key else {
             record_failure(db, &file_id, "missing object_key").await;
             continue;
@@ -182,14 +175,14 @@ async fn transcribe_one(
     .await?;
 
     let summary = snippet(&transcript, SUMMARY_CHARS);
-    sqlx::query(
+    sqlx::query!(
         "UPDATE file_records
          SET md_path = $1, summary_3lines = $2, converted_at = NOW(), last_error = NULL
          WHERE file_id = $3",
+        &transcript_key,
+        &summary,
+        file_id,
     )
-    .bind(&transcript_key)
-    .bind(&summary)
-    .bind(file_id)
     .execute(db)
     .await?;
     Ok(summary)
@@ -234,14 +227,14 @@ fn snippet(text: &str, max_chars: usize) -> String {
 /// so the caller can tell a terminal failure from one that will be retried.
 async fn record_failure(db: &PgPool, file_id: &str, err: &str) -> i32 {
     let truncated: String = err.chars().take(500).collect();
-    match sqlx::query_scalar::<_, i32>(
+    match sqlx::query_scalar!(
         "UPDATE file_records
          SET conversion_attempts = conversion_attempts + 1, last_error = $1
          WHERE file_id = $2
          RETURNING conversion_attempts",
+        &truncated,
+        file_id,
     )
-    .bind(&truncated)
-    .bind(file_id)
     .fetch_one(db)
     .await
     {

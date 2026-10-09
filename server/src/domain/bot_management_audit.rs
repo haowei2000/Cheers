@@ -12,17 +12,17 @@ pub async fn record(
     actor_id: Option<&str>,
     detail: Value,
 ) {
-    if let Err(error) = sqlx::query(
+    if let Err(error) = sqlx::query!(
         "INSERT INTO bot_management_audit
          (id, event_type, bot_id, host_id, actor_id, detail)
          VALUES ($1, $2, $3, $4, $5, $6)",
+        Uuid::new_v4().to_string(),
+        event_type,
+        bot_id,
+        host_id,
+        actor_id,
+        detail,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(event_type)
-    .bind(bot_id)
-    .bind(host_id)
-    .bind(actor_id)
-    .bind(detail)
     .execute(db)
     .await
     {

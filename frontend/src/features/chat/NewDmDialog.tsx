@@ -83,7 +83,6 @@ export function NewDmDialog({
             ref={inputRef}
             containerClassName="flex-1"
             aria-label="Search users"
-            autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search users…"
@@ -112,7 +111,7 @@ export function NewDmDialog({
               disabled={busy}
               onClick={() => void open({ target_user_id: u.user_id }, u.display_name || u.username)}
               title={u.display_name || u.username}
-              leading={<User className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />}
+              leading={<User className="w-3.5 h-3.5 text-content-muted shrink-0" />}
               className="border-0"
             />
           ))}
@@ -125,7 +124,7 @@ export function NewDmDialog({
               disabled={busy}
               onClick={() => void open({ target_bot_id: b.bot_id }, b.display_name || b.username)}
               title={b.display_name || b.username}
-              leading={<Bot className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />}
+              leading={<Bot className="w-3.5 h-3.5 text-accent-400 shrink-0" />}
               status={<span className="text-minimal text-accent-300">BOT</span>}
               className="border-0"
             />

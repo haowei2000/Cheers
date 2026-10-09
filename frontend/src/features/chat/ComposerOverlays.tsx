@@ -33,7 +33,7 @@ export function ComposerMentionPicker({
           leading={candidate.type === "group" ? (
             <span
               data-design-system-exempt="identity"
-              className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-700 text-content-muted"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-content-muted"
             >
               <Users className="h-3.5 w-3.5" />
             </span>

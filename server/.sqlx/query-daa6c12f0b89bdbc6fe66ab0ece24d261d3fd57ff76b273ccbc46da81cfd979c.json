@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT il.link_id, il.token, il.workspace_id, il.channel_id,\n        c.name AS \"channel_name?\",\n        COALESCE(u.display_name, u.username) AS created_by_name,\n        il.created_at::text AS created_at, il.expires_at::text AS expires_at,\n        il.max_uses, il.use_count,\n        (il.expires_at IS NOT NULL AND il.expires_at <= NOW()) AS expired,\n        (il.max_uses IS NOT NULL AND il.use_count >= il.max_uses) AS exhausted FROM invite_links il\n         LEFT JOIN channels c ON c.channel_id = il.channel_id\n         LEFT JOIN users u ON u.user_id = il.created_by\n         WHERE il.workspace_id = $1 AND NOT il.revoked\n         ORDER BY il.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "link_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "token",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "channel_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_by_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "expires_at",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "max_uses",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "use_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "expired",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "exhausted",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "daa6c12f0b89bdbc6fe66ab0ece24d261d3fd57ff76b273ccbc46da81cfd979c"
+}

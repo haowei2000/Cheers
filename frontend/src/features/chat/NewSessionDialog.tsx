@@ -10,6 +10,7 @@ import { createChannelBotSession } from "@/api/sessionControl";
 import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { bustBotControls } from "./sessionControlsCache";
 import { isComposing } from "@/lib/ime";
 import { isTauri } from "@/lib/serverConfig";
@@ -44,6 +45,7 @@ export function NewSessionDialog({
   const [dirs, setDirs] = useState("");
   const [busy, setBusy] = useState(false);
   const [recents, setRecents] = useState<RecentWorkspace[]>(() => getRecentWorkspaces());
+  const visibleRecents = recents.filter((workspace) => !workspace.botId || workspace.botId === botId);
 
   useEffect(() => {
     const onRecentChange = () => setRecents(getRecentWorkspaces());
@@ -115,10 +117,11 @@ export function NewSessionDialog({
     <Dialog title="New session" onClose={onClose} maxWidth="max-w-md">
       <div className="space-y-3">
         <div className="space-y-1">
-          <span className="text-compact font-medium text-content-muted uppercase tracking-label">Bot</span>
+          <span id="new-session-bot-label" className="text-compact font-medium text-content-muted uppercase tracking-label">Bot</span>
           <DropdownSelect
             ariaLabel="Bot"
-            leading={<Bot className="h-3.5 w-3.5 flex-shrink-0 text-content-muted" aria-hidden="true" />}
+            ariaLabelledBy="new-session-bot-label"
+            leading={<Bot className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
             label={bots.find((b) => b.id === botId)?.label ?? "Select a bot"}
             value={botId}
             options={bots.map((b) => ({ value: b.id, label: b.label }))}
@@ -131,12 +134,12 @@ export function NewSessionDialog({
           />
         </div>
 
-        {recents.length > 0 && (
+        {visibleRecents.length > 0 && (
           <div className="space-y-1">
             <div className="flex items-center justify-between text-compact font-medium text-content-muted uppercase tracking-label">
-              <span>Recent projects</span>
+              <span>Recent projects on this Bot</span>
               <span className="text-minimal font-normal lowercase text-content-muted">
-                {recents.length} saved
+                {visibleRecents.length} saved
               </span>
             </div>
             <div
@@ -144,7 +147,7 @@ export function NewSessionDialog({
               role="listbox"
               aria-label="Recent projects"
             >
-              {recents.slice(0, 5).map((w) => {
+              {visibleRecents.map((w) => {
                 const isSelected = cwd === w.path;
                 return (
                   <UiButton
@@ -159,9 +162,6 @@ export function NewSessionDialog({
                     disabled={busy}
                     onClick={() => {
                       setCwd(w.path);
-                      if (w.botId && bots.some((b) => b.id === w.botId)) {
-                        setBotId(w.botId);
-                      }
                     }}
                     className="flex items-center justify-between gap-2 rounded-sm text-left hover:bg-control"
                     title={w.path}
@@ -183,13 +183,12 @@ export function NewSessionDialog({
           </div>
         )}
 
-        <div className="space-y-1">
-          <label htmlFor="new-session-cwd" className="text-compact font-medium text-content-muted uppercase tracking-label">
-            Working directory (optional)
-          </label>
+        <Field label="Working directory (optional)">
+          <span id="new-session-cwd-label" className="sr-only">Working directory (optional)</span>
           <div className="flex items-center gap-2">
             <UiInput
               id="new-session-cwd"
+              aria-labelledby="new-session-cwd-label"
               type="text"
               value={cwd}
               disabled={busy}
@@ -210,7 +209,7 @@ export function NewSessionDialog({
                 type="button"
                 disabled={busy}
                 onClick={() => void handlePickFolder()}
-                title="Browse folder on this Mac"
+                title="Choose a folder on this Mac; enter a path on the Bot's machine for remote workspaces"
                 aria-label="Browse folder on this Mac"
                 className="shrink-0"
               >
@@ -220,14 +219,17 @@ export function NewSessionDialog({
           </div>
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
           <datalist id="ws-allowed-roots">
-            {meta?.allowed_roots.map((r) => <option key={r} value={r} />)}
+            {meta?.allowed_roots.map((r) => (
+              // eslint-disable-next-line jsx-a11y/control-has-associated-label -- Option labels the suggestion shown by the labelled working-directory input.
+              <option key={r} value={r} label={r} />
+            ))}
           </datalist>
           {meta && meta.allowed_roots.length > 0 && (
             <div className="space-y-1 pt-1 text-minimal text-content-muted">
               <div>
                 {meta.backend_may_set_cwd
-                  ? "Allowed roots:"
-                  : "This connector does not let the platform set a working directory. Allowed roots:"}
+                  ? "Bot machine · allowed roots:"
+                  : "Bot machine · this connector does not let the platform set a working directory. Allowed roots:"}
               </div>
               <div className="flex flex-wrap gap-1" role="group" aria-label="Allowed roots">
                 {meta.allowed_roots.map((r) => {
@@ -260,12 +262,9 @@ export function NewSessionDialog({
               </div>
             </div>
           )}
-        </div>
+        </Field>
 
-        <div className="space-y-1">
-          <label htmlFor="new-session-extra-roots" className="text-compact font-medium text-content-muted uppercase tracking-label">
-            Extra roots (optional)
-          </label>
+        <Field label="Extra roots (optional)" htmlFor="new-session-extra-roots">
           <UiTextarea
             id="new-session-extra-roots"
             value={dirs}
@@ -277,7 +276,7 @@ export function NewSessionDialog({
             className="font-code text-compact"
           />
           <span className="block text-minimal text-content-muted">One absolute path per line.</span>
-        </div>
+        </Field>
 
         <div className="flex justify-end gap-2 pt-1">
           <Button action="cancel" variant="ghost" controlSize="compact" disabled={busy} onClick={onClose}>

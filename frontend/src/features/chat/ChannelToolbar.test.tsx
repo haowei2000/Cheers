@@ -18,10 +18,6 @@ const defaultProps = {
   onToggleWorkbench: () => {},
   boards: [],
   onOpenBoard: () => {},
-  layoutOverridden: false,
-  layoutSaving: false,
-  onSaveLayout: () => {},
-  onResetLayout: () => {},
 };
 
 describe("ChannelToolbar", () => {
@@ -37,6 +33,13 @@ describe("ChannelToolbar", () => {
 
     expect(markup).toContain('aria-label="Panels"');
     expect(markup).toContain('data-selected="true"');
+  });
+
+  it("omits layout actions section from panels popover", () => {
+    const markup = renderToStaticMarkup(<ChannelToolbar {...defaultProps} />);
+
+    expect(markup).not.toContain("Save layout for channel");
+    expect(markup).not.toContain("Reset to channel layout");
   });
 
   it("renders channel settings button in non-DM channels", () => {

@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH candidates AS (\n             SELECT u.user_id,\n                    u.username,\n                    u.display_name,\n                    u.avatar_url,\n                    u.bio,\n                    FALSE AS is_bot,\n                    'public' AS visibility,\n                    NULL::text AS created_by\n             FROM users u\n             WHERE u.is_deleted = FALSE AND u.user_id <> $2\n               AND (\n                   (u.user_id = $1 AND $1 <> '')\n                   OR u.username ILIKE $3\n                   OR u.display_name ILIKE $3\n               )\n             UNION ALL\n             SELECT b.bot_id AS user_id,\n                    b.username,\n                    b.display_name,\n                    b.avatar_url,\n                    b.description AS bio,\n                    TRUE AS is_bot,\n                    COALESCE(b.visibility, 'public') AS visibility,\n                    b.created_by\n             FROM bot_accounts b\n             WHERE b.is_disabled = FALSE\n               AND (\n                   (b.bot_id = $1 AND $1 <> '')\n                   OR b.username ILIKE $3\n                   OR b.display_name ILIKE $3\n               )\n         )\n         SELECT c.user_id,\n                c.username,\n                c.display_name,\n                c.avatar_url,\n                c.bio,\n                c.is_bot,\n                f.friendship_id AS \"friendship_id?\",\n                f.user_id AS \"friendship_requester_id?\",\n                f.status AS \"friendship_status?\"\n         FROM candidates c\n         LEFT JOIN friendships f\n                ON f.pair_key = CASE WHEN c.user_id <= $2 THEN c.user_id || ':' || $2 ELSE $2 || ':' || c.user_id END\n         WHERE (\n             c.is_bot = FALSE\n             OR c.created_by = $2\n             OR c.visibility = 'public'\n             OR (c.visibility = 'friends' AND f.status = 'accepted')\n         )\n         ORDER BY\n             CASE WHEN c.user_id = $1 AND $1 <> '' THEN 0\n                  WHEN LOWER(c.username) = LOWER($4) THEN 1\n                  WHEN LOWER(c.username) LIKE LOWER($4) || '%' THEN 2\n                  ELSE 3 END,\n             c.username\n         LIMIT 20",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "bio",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_bot",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "friendship_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "friendship_requester_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "friendship_status?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f87ba1a96de0d0e103fd84db402fe10bdbe729889eed984ea014d9acc9284b3c"
+}

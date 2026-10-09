@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM acp_capability_delegations\n            WHERE bot_id = $1\n              AND revoked = FALSE\n              AND status = 'active'\n              AND (expires_at IS NULL OR expires_at > NOW())\n              AND (max_uses IS NULL OR use_count < max_uses)\n        ) AS ok",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ddf29dfa54aa68aef629ef6e8a075f4a0142d8a1463fa6746dd9a24fa41a7b3d"
+}

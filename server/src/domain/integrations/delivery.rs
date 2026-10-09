@@ -32,7 +32,7 @@
 //! triggering. An integration therefore cannot say anything in a channel that
 //! the person who connected it could not.
 
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{bindings, catalog, mapper};
@@ -93,7 +93,7 @@ pub struct DrainReport {
 /// `FOR UPDATE SKIP LOCKED` is what lets a second gateway replica drain the same
 /// queue without both claiming one event.
 pub async fn claim(db: &PgPool) -> Result<Vec<ClaimedEvent>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "UPDATE integration_webhook_events AS e
             SET process_attempts = e.process_attempts + 1
           WHERE (e.integration_id, e.installation_id, e.event_id) IN (
@@ -107,21 +107,21 @@ pub async fn claim(db: &PgPool) -> Result<Vec<ClaimedEvent>, AppError> {
           )
       RETURNING e.integration_id, e.installation_id, e.event_id, e.event_type,
                 e.payload, e.process_attempts",
+        MAX_ATTEMPTS,
+        BATCH,
     )
-    .bind(MAX_ATTEMPTS)
-    .bind(BATCH)
     .fetch_all(db)
     .await?;
 
     rows.into_iter()
         .map(|row| {
             Ok(ClaimedEvent {
-                integration_id: row.try_get("integration_id")?,
-                installation_id: row.try_get("installation_id")?,
-                event_id: row.try_get("event_id")?,
-                event_type: row.try_get("event_type")?,
-                payload: row.try_get("payload")?,
-                attempt: row.try_get("process_attempts")?,
+                integration_id: row.integration_id.clone(),
+                installation_id: row.installation_id.clone(),
+                event_id: row.event_id.clone(),
+                event_type: row.event_type.clone(),
+                payload: row.payload.clone(),
+                attempt: row.process_attempts.clone(),
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()
@@ -133,30 +133,30 @@ async fn mark_processed(
     event: &ClaimedEvent,
     posted_msg_id: Option<&str>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE integration_webhook_events
             SET processed_at = NOW(), last_error = NULL, posted_msg_id = $4
           WHERE integration_id = $1 AND installation_id = $2 AND event_id = $3",
+        &event.integration_id,
+        &event.installation_id,
+        &event.event_id,
+        posted_msg_id,
     )
-    .bind(&event.integration_id)
-    .bind(&event.installation_id)
-    .bind(&event.event_id)
-    .bind(posted_msg_id)
     .execute(db)
     .await?;
     Ok(())
 }
 
 async fn mark_failed(db: &PgPool, event: &ClaimedEvent, error: &str) -> Result<(), AppError> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE integration_webhook_events
             SET last_error = $4
           WHERE integration_id = $1 AND installation_id = $2 AND event_id = $3",
+        &event.integration_id,
+        &event.installation_id,
+        &event.event_id,
+        error.chars().take(500).collect::<String>(),
     )
-    .bind(&event.integration_id)
-    .bind(&event.installation_id)
-    .bind(&event.event_id)
-    .bind(error.chars().take(500).collect::<String>())
     .execute(db)
     .await?;
     Ok(())

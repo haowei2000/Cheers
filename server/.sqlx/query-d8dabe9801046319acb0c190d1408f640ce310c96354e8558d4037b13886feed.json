@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channels\n            (channel_id, workspace_id, name, type, kind, conversation_mode, purpose,\n             allow_member_invites, allow_bot_adds)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n         RETURNING channel_id, workspace_id, name, avatar_url, type, kind,\n                   conversation_mode, purpose, auto_assist, allow_member_invites, allow_bot_adds",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "conversation_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "purpose",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "auto_assist",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "allow_member_invites",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "allow_bot_adds",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d8dabe9801046319acb0c190d1408f640ce310c96354e8558d4037b13886feed"
+}

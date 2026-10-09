@@ -14,15 +14,12 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
-    api::middleware::Claims,
-    app_state::AppState,
-    domain::messages::{hydrate_message_rows, MESSAGE_LIST_SELECT},
-    errors::AppError,
-    infra::db::models::MessageDto,
+    api::middleware::Claims, app_state::AppState, domain::messages::hydrate_message_rows,
+    errors::AppError, infra::db::models::MessageDto,
 };
 
 const DEFAULT_LIMIT: i64 = 30;
@@ -123,33 +120,29 @@ async fn ensure_discuss_member(
     channel_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT c.conversation_mode,
                 EXISTS(
-                    SELECT 1 FROM channel_memberships cm
+                    SELECT 1 AS present FROM channel_memberships cm
                     WHERE cm.channel_id = c.channel_id
                       AND cm.member_id = $2
                       AND cm.member_type = 'user'
                 ) AS is_member
          FROM channels c
          WHERE c.channel_id = $1",
+        channel_id.to_string(),
+        user_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
     .fetch_optional(&state.db)
     .await?;
 
     let Some(row) = row else {
         return Err(AppError::NotFound);
     };
-    if !row.try_get::<bool, _>("is_member").unwrap_or(false) {
+    if !row.is_member.clone().unwrap_or(false) {
         return Err(AppError::Forbidden("not a channel member".into()));
     }
-    if row
-        .try_get::<String, _>("conversation_mode")
-        .unwrap_or_else(|_| "chat".into())
-        != "discuss"
-    {
+    if row.conversation_mode.clone() != "discuss" {
         return Err(AppError::BadRequest(
             "channel is not in discuss mode".into(),
         ));
@@ -184,7 +177,7 @@ pub async fn list_discussions(
     let cursor_at = cursor.as_ref().map(|value| value.at);
     let cursor_id = cursor.as_ref().map(|value| value.id.clone());
 
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "WITH topic_stats AS (
             SELECT root.msg_id AS root_id,
                    GREATEST(
@@ -231,12 +224,12 @@ pub async fn list_discussions(
             OR (last_activity_at, root_id) < ($3, $4)
          ORDER BY last_activity_at DESC, root_id DESC
          LIMIT $5",
+        channel_id.to_string(),
+        search,
+        cursor_at,
+        cursor_id,
+        limit + 1,
     )
-    .bind(channel_id.to_string())
-    .bind(search)
-    .bind(cursor_at)
-    .bind(cursor_id)
-    .bind(limit + 1)
     .fetch_all(&state.db)
     .await?;
 
@@ -244,7 +237,7 @@ pub async fn list_discussions(
     let page_rows = rows.iter().take(limit as usize).collect::<Vec<_>>();
     let root_ids = page_rows
         .iter()
-        .filter_map(|row| row.try_get::<String, _>("root_id").ok())
+        .map(|row| row.root_id.clone())
         .collect::<Vec<_>>();
 
     if root_ids.is_empty() {
@@ -257,17 +250,38 @@ pub async fn list_discussions(
         }));
     }
 
-    let root_rows = sqlx::query(&format!("{MESSAGE_LIST_SELECT} WHERE m.msg_id = ANY($1)"))
-        .bind(&root_ids)
-        .fetch_all(&state.db)
-        .await?;
+    let root_rows = sqlx::query_as!(
+        crate::infra::db::query_rows::MessageRow,
+        r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE WHERE m.msg_id = ANY($1)"###,
+        &root_ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
     let roots = hydrate_message_rows(&state.db, &root_rows).await?;
     let roots_by_id = roots
         .into_iter()
         .map(|message| (message.msg_id.clone(), message))
         .collect::<HashMap<_, _>>();
 
-    let preview_rows = sqlx::query(
+    let preview_rows = sqlx::query!(
         "SELECT DISTINCT ON (m.thread_root_msg_id)
                 m.thread_root_msg_id AS root_id, m.msg_id, m.sender_id,
                 m.sender_type,
@@ -284,30 +298,30 @@ pub async fn list_discussions(
            AND m.is_deleted = FALSE
            AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
          ORDER BY m.thread_root_msg_id, m.channel_seq DESC NULLS LAST, m.created_at DESC",
+        channel_id.to_string(),
+        &root_ids,
     )
-    .bind(channel_id.to_string())
-    .bind(&root_ids)
     .fetch_all(&state.db)
     .await?;
     let previews = preview_rows
         .into_iter()
         .filter_map(|row| {
-            let root_id = row.try_get::<String, _>("root_id").ok()?;
+            let root_id = row.root_id.clone()?;
             Some((
                 root_id,
                 DiscussionReplyPreview {
-                    msg_id: row.try_get("msg_id").ok()?,
-                    sender_id: row.try_get("sender_id").ok()?,
-                    sender_type: row.try_get("sender_type").ok()?,
-                    sender_name: row.try_get("sender_name").ok()?,
-                    content: row.try_get("content").unwrap_or_default(),
-                    created_at: row.try_get("created_at").ok()?,
+                    msg_id: Some(row.msg_id.clone())?,
+                    sender_id: Some(row.sender_id.clone())?,
+                    sender_type: Some(row.sender_type.clone())?,
+                    sender_name: row.sender_name.clone()?,
+                    content: row.content.clone(),
+                    created_at: Some(row.created_at.clone())?,
                 },
             ))
         })
         .collect::<HashMap<_, _>>();
 
-    let participant_rows = sqlx::query(
+    let participant_rows = sqlx::query!(
         "WITH ranked AS (
             SELECT COALESCE(m.thread_root_msg_id, m.msg_id) AS root_id,
                    m.sender_id, m.sender_type,
@@ -333,33 +347,35 @@ pub async fn list_discussions(
                 COUNT(*) OVER (PARTITION BY root_id)::bigint AS participant_count
          FROM ranked
          ORDER BY root_id, last_seen DESC",
+        channel_id.to_string(),
+        &root_ids,
     )
-    .bind(channel_id.to_string())
-    .bind(&root_ids)
     .fetch_all(&state.db)
     .await?;
     let mut participants: HashMap<String, (Vec<DiscussionParticipant>, i64)> = HashMap::new();
     for row in participant_rows {
-        let root_id: String = row.try_get("root_id")?;
-        let entry = participants.entry(root_id).or_insert_with(|| {
-            (
-                Vec::new(),
-                row.try_get::<i64, _>("participant_count").unwrap_or(0),
-            )
-        });
+        let root_id: String = row
+            .root_id
+            .clone()
+            .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
+        let entry = participants
+            .entry(root_id)
+            .or_insert_with(|| (Vec::new(), row.participant_count.clone().unwrap_or(0)));
         if entry.0.len() < 3 {
             entry.0.push(DiscussionParticipant {
-                member_id: row.try_get("sender_id")?,
-                member_type: row.try_get("sender_type")?,
-                name: row.try_get("name")?,
-                avatar_url: row.try_get("avatar_url").ok(),
+                member_id: row.sender_id.clone(),
+                member_type: row.sender_type.clone(),
+                name: row.name.clone().ok_or_else(|| {
+                    sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError))
+                })?,
+                avatar_url: row.avatar_url.clone(),
             });
         }
     }
 
     let mut discussions = Vec::with_capacity(root_ids.len());
     for row in &page_rows {
-        let root_id: String = row.try_get("root_id")?;
+        let root_id: String = row.root_id.clone();
         let Some(root) = roots_by_id.get(&root_id).cloned() else {
             continue;
         };
@@ -368,8 +384,11 @@ pub async fn list_discussions(
             .unwrap_or_else(|| (Vec::new(), 0));
         discussions.push(DiscussionSummary {
             root,
-            reply_count: row.try_get("reply_count").unwrap_or(0),
-            last_activity_at: row.try_get("last_activity_at")?,
+            reply_count: row.reply_count.clone().unwrap_or(0),
+            last_activity_at: row
+                .last_activity_at
+                .clone()
+                .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?,
             last_reply: previews.get(&root_id).cloned(),
             participants: participant_list,
             participant_count,
@@ -379,8 +398,8 @@ pub async fn list_discussions(
     let next_cursor = if has_more {
         page_rows.last().and_then(|row| {
             encode_cursor(&DiscussionCursor {
-                at: row.try_get("last_activity_at").ok()?,
-                id: row.try_get("root_id").ok()?,
+                at: row.last_activity_at.clone()?,
+                id: row.root_id.clone(),
             })
         })
     } else {
@@ -412,39 +431,78 @@ pub async fn get_discussion(
     ensure_discuss_member(&state, channel_id, user_id).await?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
 
-    let root_rows = sqlx::query(&format!(
-        "{MESSAGE_LIST_SELECT}
+    let root_rows = sqlx::query_as!(
+        crate::infra::db::query_rows::MessageRow,
+        r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
          WHERE m.channel_id = $1
            AND m.msg_id = $2
            AND m.thread_root_msg_id IS NULL
            AND m.is_partial = FALSE
            AND m.is_secret = FALSE
            AND m.sender_type IN ('user', 'bot')
-           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')"
-    ))
-    .bind(channel_id.to_string())
-    .bind(root_msg_id.to_string())
+           AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')"###,
+        channel_id.to_string(),
+        root_msg_id.to_string(),
+    )
     .fetch_all(&state.db)
     .await?;
     let mut roots = hydrate_message_rows(&state.db, &root_rows).await?;
     let root = roots.pop().ok_or(AppError::NotFound)?;
 
     let before_seq = if let Some(before) = query.before.as_deref() {
-        sqlx::query_scalar::<_, i64>(
+        sqlx::query_scalar!(
             "SELECT channel_seq FROM messages
              WHERE msg_id = $1 AND channel_id = $2 AND thread_root_msg_id = $3",
+            before,
+            channel_id.to_string(),
+            root_msg_id.to_string(),
         )
-        .bind(before)
-        .bind(channel_id.to_string())
-        .bind(root_msg_id.to_string())
         .fetch_optional(&state.db)
         .await?
+        .flatten()
     } else {
         None
     };
 
-    let mut reply_rows = sqlx::query(&format!(
-        "{MESSAGE_LIST_SELECT}
+    let mut reply_rows = sqlx::query_as!(
+        crate::infra::db::query_rows::MessageRow,
+        r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
          WHERE m.channel_id = $1
            AND m.thread_root_msg_id = $2
            AND m.is_partial = FALSE
@@ -453,12 +511,12 @@ pub async fn get_discussion(
            AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')
            AND ($3::bigint IS NULL OR m.channel_seq < $3)
          ORDER BY m.channel_seq DESC NULLS LAST, m.created_at DESC
-         LIMIT $4"
-    ))
-    .bind(channel_id.to_string())
-    .bind(root_msg_id.to_string())
-    .bind(before_seq)
-    .bind(limit + 1)
+         LIMIT $4"###,
+        channel_id.to_string(),
+        root_msg_id.to_string(),
+        before_seq,
+        limit + 1,
+    )
     .fetch_all(&state.db)
     .await?;
     let has_more_before = reply_rows.len() > limit as usize;

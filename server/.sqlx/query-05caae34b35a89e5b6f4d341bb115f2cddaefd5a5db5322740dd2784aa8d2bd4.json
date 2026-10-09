@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channel_features (channel_id, feature, config, enabled)\n             VALUES ($1, $2, '{}'::jsonb, TRUE)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "05caae34b35a89e5b6f4d341bb115f2cddaefd5a5db5322740dd2784aa8d2bd4"
+}

@@ -4,9 +4,9 @@ import toast from "react-hot-toast";
 import { forgotPassword } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import {
   PublicPageShell,
-  publicLabelClass,
   publicLinkClass,
   publicPanelClass,
 } from "@/components/public/PublicPageShell";
@@ -57,17 +57,16 @@ export default function ForgotPasswordPage() {
           ) : (
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-2">
-                <label className={publicLabelClass}>
-                  Email
-                </label>
+                <Field label="Email" htmlFor="forgot-email">
                 <Input
+                  id="forgot-email"
                   type="email"
                   placeholder="you@example.com"
                   autoComplete="email"
-                  autoFocus
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
+                </Field>
               </div>
               <Button action="send" controlWidth="fill" type="submit" className="mt-2" loading={loading} disabled={!email.trim()}>
                 Send reset code

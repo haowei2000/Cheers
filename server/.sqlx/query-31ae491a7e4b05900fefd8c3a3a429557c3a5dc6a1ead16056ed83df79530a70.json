@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_session_plans\n            (channel_id, bot_id, session_id, entries, total, completed, updated_at)\n         VALUES ($1, $2, $3, $4::text::jsonb, $5, $6, now())\n         ON CONFLICT (channel_id, bot_id, session_id)\n         DO UPDATE SET\n            entries    = $4::text::jsonb,\n            total      = $5,\n            completed  = $6,\n            updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31ae491a7e4b05900fefd8c3a3a429557c3a5dc6a1ead16056ed83df79530a70"
+}

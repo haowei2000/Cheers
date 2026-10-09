@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n                SELECT 1 AS present FROM channel_memberships\n                WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'\n            ) AS is_member",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_member",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a5cc5a7ad75adc82a1f3bd03e76752701e376c1dd45e8dc6c4a53d4cb70ea2c9"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)\n         VALUES ($1, $2, $3, NULL, 'dispatch', 'cheers', $4::text::jsonb)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3abecf1e94bbb2697270f65b9c69c9a1cfae4319e2149aff4bb426e82b978090"
+}

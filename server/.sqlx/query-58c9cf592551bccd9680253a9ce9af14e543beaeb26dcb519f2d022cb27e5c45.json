@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM friendships\n         WHERE friendship_id = $1\n           AND status = 'pending'\n           AND (\n               user_id = $2\n               OR friend_id = $2\n               OR friend_id IN (SELECT bot_id FROM bot_accounts WHERE created_by = $2)\n           )\n         RETURNING user_id, friend_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "friend_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "58c9cf592551bccd9680253a9ce9af14e543beaeb26dcb519f2d022cb27e5c45"
+}

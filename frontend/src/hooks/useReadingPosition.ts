@@ -3,7 +3,7 @@ import { useLayoutEffect, type RefObject } from "react";
 /** Keep the first visible message at the same offset when the reading column
  * changes size. A hidden narrow-screen conversation keeps its last anchor. */
 export function useReadingPosition(
-  ref: RefObject<HTMLElement>,
+  ref: RefObject<HTMLElement | null>,
   resetKey: unknown,
 ) {
   useLayoutEffect(() => {

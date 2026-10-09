@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.bot_id, COALESCE(b.display_name, b.username) AS bot_name,\n                    b.username, b.created_by, b.is_disabled, b.status_text, b.status_emoji\n             FROM bot_accounts b\n             WHERE $2 OR b.created_by = $1 OR EXISTS (\n               SELECT 1 AS present FROM channel_memberships bcm\n               JOIN channel_memberships me ON me.channel_id = bcm.channel_id\n               WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'\n                 AND me.member_id = $1 AND me.member_type = 'user'\n             )\n             ORDER BY bot_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "status_text",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "9264faceac4af77dd4c2a64d532c8902ddb7bf38eaa96f4b846ee7f530867a38"
+}

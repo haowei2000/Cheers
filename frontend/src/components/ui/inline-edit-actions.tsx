@@ -21,7 +21,7 @@ export function InlineEditActions({
   onCancel: () => void;
 }) {
   return (
-    <span role="group" aria-label={`${label} editing actions`} className="inline-flex flex-shrink-0 items-center gap-1">
+    <span role="group" aria-label={`${label} editing actions`} className="inline-flex shrink-0 items-center gap-1">
       {editing ? (
         <>
           <ActionButton

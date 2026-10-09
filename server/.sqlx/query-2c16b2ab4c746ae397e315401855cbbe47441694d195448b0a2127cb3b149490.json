@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH due AS (\n           SELECT task_id FROM scheduled_messages\n           WHERE enabled=TRUE AND next_run_at IS NOT NULL AND next_run_at<=NOW()\n             AND (lease_until IS NULL OR lease_until<NOW())\n           ORDER BY next_run_at FOR UPDATE SKIP LOCKED LIMIT 20\n         )\n         UPDATE scheduled_messages s SET lease_until=NOW()+INTERVAL '2 minutes'\n         FROM due WHERE s.task_id=due.task_id\n         RETURNING s.task_id,s.created_by,s.channel_id,s.content,s.mention_ids,\n                   s.schedule_kind,s.interval_minutes,s.local_time,s.timezone,\n                   COALESCE(s.retry_scheduled_for,s.next_run_at) AS scheduled_for,s.retry_attempt",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "task_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "mention_ids",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "schedule_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "interval_minutes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "local_time",
+        "type_info": "Time"
+      },
+      {
+        "ordinal": 8,
+        "name": "timezone",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "scheduled_for",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "retry_attempt",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      false
+    ]
+  },
+  "hash": "2c16b2ab4c746ae397e315401855cbbe47441694d195448b0a2127cb3b149490"
+}

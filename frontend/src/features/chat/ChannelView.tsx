@@ -1,4 +1,4 @@
-import type { SharedWorkspaceLayout } from "./workbench/sharedLayout";
+import { AnnotationProvider } from "@/features/annotations/AnnotationProvider";
 import { PanelWorkspace } from "./workbench/PanelWorkspace";
 import { Button as UiButton } from "@/components/ui/button";
 import {
@@ -25,6 +25,7 @@ import {
   useContextPickStore,
   toBundle,
   messageContextItem,
+  workbenchFileContextItem,
   type ContextItem,
 } from "./context/contextPick";
 import { ContextPickBar, ContextPickerButton } from "./context/ContextPickBar";
@@ -56,7 +57,11 @@ import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { LaneBoundsContext } from "@/hooks/laneBounds";
 import { SharedLayoutContext } from "@/hooks/sharedLayout";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import type { Rect, SpawnKind } from "@/features/chat/workbench/laneSnap";
+import { SPAWN_KINDS, type SpawnKind } from "@/features/chat/workbench/laneSnap";
+import {
+  parseLocalWorkspacePreference,
+  workspacePreferenceKey,
+} from "./workbench/panelWorkspaceLayout";
 import { panelsFor } from "@/features/chat/panels/registry";
 import { useExtensionPanels } from "@/features/chat/panels/useExtensionPanels";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
@@ -67,6 +72,7 @@ import { ChannelChrome } from "./ChannelChrome";
 import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext";
 import { usesMacKeyboardShortcuts } from "@/features/desktop/desktopPlatform";
 import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
+import { VoiceToolbarHostProvider } from "./VoiceRoomToolbar";
 import { quoteSelectedText } from "@/components/ui/context-actions";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
@@ -543,22 +549,6 @@ export function ChannelView({
   // windows as full-screen sheets, so there is no geometry to share there.
   const isMobile = useIsMobile();
   const layoutChannelId = channel?.channel_id ?? "";
-  const [workspaceSnapshot, setWorkspaceSnapshot] = useState<{
-    channelId: string;
-    layout: SharedWorkspaceLayout;
-    overridden: boolean;
-    floatingPanels: Partial<Record<SpawnKind, Rect>>;
-  } | null>(null);
-  const currentWorkspaceSnapshot =
-    workspaceSnapshot?.channelId === layoutChannelId ? workspaceSnapshot : null;
-  const handleWorkspaceLayoutChange = useCallback(
-    (snapshot: {
-      layout: SharedWorkspaceLayout;
-      overridden: boolean;
-      floatingPanels: Partial<Record<SpawnKind, Rect>>;
-    }) => setWorkspaceSnapshot({ channelId: layoutChannelId, ...snapshot }),
-    [layoutChannelId],
-  );
   const channelLayout = useChannelLayout({
     channelId: layoutChannelId,
     sendResourceReq,
@@ -575,20 +565,79 @@ export function ChannelView({
     }),
     [setFilesOpen, setWsOpen, setVbOpen, setWbOpen]
   );
-  // Adopt the channel's open windows once per channel. Only ONCE: re-applying would
-  // reopen a window the viewer had just closed every time the file changed, which is
-  // the "moves under your cursor" failure the override rule exists to avoid.
-  const adoptedLayoutRef = useRef<string | null>(null);
+  // Track which channel's layout preferences have been restored into React state.
+  const restoredLayoutChannelRef = useRef<string | null>(null);
+
+  // Restore open windows for the current channel: preference from localStorage first,
+  // falling back to shared layout from .workbench.json.
   useEffect(() => {
-    if (isMobile || !layoutChannelId || adoptedLayoutRef.current === layoutChannelId) return;
-    const declared = Object.entries(channelLayout.sharedOpen);
-    if (declared.length === 0) return;
-    adoptedLayoutRef.current = layoutChannelId;
-    for (const [kind, open] of declared) setWindowOpen[kind as SpawnKind](open);
+    if (isMobile || !layoutChannelId) return;
+
+    let restoredOpen: Partial<Record<SpawnKind, boolean>> | undefined;
+    try {
+      const raw = localStorage.getItem(workspacePreferenceKey(layoutChannelId));
+      if (raw) {
+        const parsed = parseLocalWorkspacePreference(JSON.parse(raw));
+        if (parsed?.open && Object.keys(parsed.open).length > 0) {
+          restoredOpen = parsed.open;
+        }
+      }
+    } catch {
+      /* optional local preference */
+    }
+
+    if (restoredOpen) {
+      if (restoredLayoutChannelRef.current !== layoutChannelId) {
+        for (const kind of SPAWN_KINDS) {
+          if (typeof restoredOpen[kind] === "boolean") {
+            setWindowOpen[kind](restoredOpen[kind]!);
+          }
+        }
+        restoredLayoutChannelRef.current = layoutChannelId;
+      }
+    } else {
+      const declared = Object.entries(channelLayout.sharedOpen);
+      if (declared.length > 0) {
+        if (restoredLayoutChannelRef.current !== layoutChannelId) {
+          for (const [kind, open] of declared) {
+            setWindowOpen[kind as SpawnKind](open);
+          }
+          restoredLayoutChannelRef.current = layoutChannelId;
+        }
+      } else {
+        restoredLayoutChannelRef.current = layoutChannelId;
+      }
+    }
   }, [layoutChannelId, isMobile, channelLayout.sharedOpen, setWindowOpen]);
+
   useEffect(() => {
-    adoptedLayoutRef.current = null;
+    restoredLayoutChannelRef.current = null;
   }, [layoutChannelId]);
+
+  // Persist the current channel's open windows by default whenever they change.
+  useEffect(() => {
+    if (isMobile || !layoutChannelId || restoredLayoutChannelRef.current !== layoutChannelId) return;
+    try {
+      const key = workspacePreferenceKey(layoutChannelId);
+      const raw = localStorage.getItem(key);
+      const existing = raw ? JSON.parse(raw) : {};
+      const currentOpen: Record<SpawnKind, boolean> = {
+        files: filesOpen,
+        workspace: wsOpen,
+        viewboard: vbOpen,
+        workbench: wbOpen,
+      };
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          ...existing,
+          open: currentOpen,
+        })
+      );
+    } catch {
+      /* optional local preference */
+    }
+  }, [layoutChannelId, isMobile, filesOpen, wsOpen, vbOpen, wbOpen]);
   useEffect(() => {
     if (!channel || channelSettingsRequestId !== channel.channel_id) return;
     setSettingsOpen(true);
@@ -1439,7 +1488,7 @@ export function ChannelView({
       onClick={onToggleSidebar}
       title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
       aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 flex-shrink-0 transition-colors"
+      content="icon" controlSize="compact" className="max-md:hidden flex items-center justify-center rounded-sm text-content-primary hover:text-content-strong hover:bg-zinc-800 shrink-0 transition-colors"
     >
       {sidebarOpen ? (
         <PanelLeftClose className="w-4 h-4" aria-hidden="true" />
@@ -1466,7 +1515,6 @@ export function ChannelView({
     ],
     [filesOpen, vbOpen, wbOpen, wsOpen],
   );
-
   if (!channel) {
     return (
       <ChannelSelectionState
@@ -1491,6 +1539,7 @@ export function ChannelView({
   const channelTitle = isDm
     ? channel.peer_name || channel.name || "Direct Message"
     : channel.name;
+  const isVoiceChannel = hasChannelFeature(channel, CHANNEL_FEATURE_VOICE);
 
   const channelToolbar = (
     <ChannelToolbar
@@ -1504,17 +1553,6 @@ export function ChannelView({
       workbenchOpen={wbOpen}
       boards={laneBoards}
       onOpenBoard={openBoard}
-      layoutOverridden={channelLayout.overridden || currentWorkspaceSnapshot?.overridden === true}
-      layoutSaving={channelLayout.saving}
-      onSaveLayout={() =>
-        void channelLayout.saveLayout({
-          files: filesOpen,
-          workspace: wsOpen,
-          viewboard: vbOpen,
-          workbench: wbOpen,
-        }, currentWorkspaceSnapshot?.layout, currentWorkspaceSnapshot?.floatingPanels)
-      }
-      onResetLayout={channelLayout.resetLayout}
       onManage={() => setSettingsOpen(true)}
       currentUserId={user?.user_id}
       onMentionMember={(member) => mentionMember(member.member_id)}
@@ -1537,24 +1575,44 @@ export function ChannelView({
     />
   );
   return (
+    <AnnotationProvider key={channel.channel_id} channelId={channel.channel_id} userId={user?.user_id} canWrite={channel.my_role !== "readonly"} canManage={channel.my_role === "owner" || channel.my_role === "admin"}
+      onCompose={(text, item) => {
+        const target = item.target;
+        const source = target.kind === "file" ? workbenchFileContextItem(target.path) : messageContextItem({ msg_id: target.msg_id, channel_seq: target.snapshot.channel_seq ?? messagesRef.current.find(m => m.msg_id === target.msg_id)?.channel_seq });
+        if (source) useContextPickStore.getState().add(channel.channel_id, source);
+        composeMessage(text);
+      }}
+      onReveal={async (item) => {
+        if (item.target.kind === "file") {
+          const anchor = item.target.anchor;
+          if (anchor.kind === "uri") openLocator(anchor.uri);
+          else { setWbTarget(item.target.path); setWbOpen(true); }
+        } else {
+          await jumpToMessage(item.target.msg_id);
+        }
+      }}>
     <ProfileCardProvider
       members={memberById}
       currentUserId={user?.user_id}
       onMention={(member) => mentionMember(member.member_id)}
     >
       {/* Instruments share a responsive workspace with the conversation. */}
+      <VoiceToolbarHostProvider>
       <div className="flex flex-col h-full">
-        <ChannelChrome
-          channelId={channel.channel_id}
-          title={channelTitle}
-          purpose={channel.purpose}
-          isDm={isDm}
-          sidebarToggle={sidebarToggle}
-          onBack={onBack}
-          actions={channelToolbar}
-        />
-
         <PanelWorkspace
+          header={(navigation) => (
+            <ChannelChrome
+              channelId={channel.channel_id}
+              title={channelTitle}
+              purpose={channel.purpose}
+              isDm={isDm}
+              sidebarToggle={sidebarToggle}
+              onBack={onBack}
+              actions={channelToolbar}
+              panelNavigation={navigation}
+              isVoiceChannel={isVoiceChannel}
+            />
+          )}
           channelId={channel.channel_id}
           openPanels={workspacePanels}
           onLaneElement={setLaneEl}
@@ -1562,7 +1620,6 @@ export function ChannelView({
           activationRequest={panelRequest}
           sharedLayout={channelLayout.workspace}
           sharedGeometryFor={channelLayout.geomFor}
-          onLayoutChange={handleWorkspaceLayoutChange}
           panels={(
             <LaneBoundsContext.Provider
               value={anyWorkOpen ? getLaneBounds : null}
@@ -1645,7 +1702,7 @@ export function ChannelView({
           <ConversationViewport
             conversationMode={channel.conversation_mode ?? "chat"}
           >
-              {hasChannelFeature(channel, CHANNEL_FEATURE_VOICE) && (
+              {isVoiceChannel && (
                 <Suspense
                   fallback={
                     <div className="mx-4 mb-3 h-[74px] rounded-sm bg-zinc-900/50 animate-pulse" />
@@ -1674,7 +1731,7 @@ export function ChannelView({
                 <Banner
                   severity={rtStatus === "offline" ? "error" : "warning"}
                   icon={WifiOff}
-                  className="mx-4 mt-2 flex-shrink-0"
+                  className="mx-4 mt-2 shrink-0"
                   action={{ label: "Retry now", onClick: reconnectNow }}
                 >
                   {rtStatus === "offline"
@@ -1900,6 +1957,8 @@ export function ChannelView({
           <ErrorDialog message={refError} onClose={() => setRefError(null)} />
         )}
       </div>
+      </VoiceToolbarHostProvider>
     </ProfileCardProvider>
+    </AnnotationProvider>
   );
 }

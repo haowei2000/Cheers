@@ -18,6 +18,7 @@ import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { WorkbenchItem } from "@/components/ui/item";
+import { EmptyState } from "@/components/ui/empty-state";
 import { registerPanel, type PanelContext } from "@/features/chat/panels/registry";
 import { usePanelTickRefetch, PanelShell } from "@/features/chat/panels/definePanel";
 
@@ -191,8 +192,8 @@ function MemberChip({ id, member }: { id?: string | null; member?: MemberItem })
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-2">
-      <span className="text-minimal uppercase tracking-label text-content-muted w-14 flex-shrink-0 pt-px">{label}</span>
-      <span className="min-w-0 flex-1 text-compact text-content-muted break-words">{children}</span>
+      <span className="text-minimal uppercase tracking-label text-content-muted w-14 shrink-0 pt-px">{label}</span>
+      <span className="min-w-0 flex-1 text-compact text-content-muted wrap-break-word">{children}</span>
     </div>
   );
 }
@@ -234,11 +235,11 @@ function AuditRow({
       <WorkbenchItem
         presentationLevel="medium"
         title={content || toolTitle || "Permission decision"}
-        leading={<span className={`inline-flex h-7 w-7 flex-shrink-0 items-center justify-center ${t.text}`} title={t.raw || undefined}>
+        leading={<span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center ${t.text}`} title={t.raw || undefined}>
           <t.Icon className="h-4 w-4" aria-label={t.label} />
         </span>}
         subtitle={<span className="flex min-w-0 items-center gap-2 overflow-hidden">
-          <span className={`flex-shrink-0 font-medium ${t.text}`}>{t.label}</span>
+          <span className={`shrink-0 font-medium ${t.text}`}>{t.label}</span>
           {e.actor_id && <MemberChip id={e.actor_id} member={approver} />}
           {target && <><span className="text-content-muted">·</span><MemberChip id={e.target_user_id} member={target} /></>}
         </span>}
@@ -348,10 +349,7 @@ function AuditBody({ ctx }: { ctx: PanelContext }) {
       {events == null ? (
         <div className="px-3 py-6 text-compact text-content-muted">Loading…</div>
       ) : events.length === 0 ? (
-        <div className="px-3 py-6 text-compact text-content-muted flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4" />
-          No permission decisions yet
-        </div>
+        <EmptyState icon={ShieldCheck} title="No permission decisions yet" className="py-6" />
       ) : (
         <ul className="px-2 py-2" aria-label="Permission audit log">
           {events.map((e, i) => {

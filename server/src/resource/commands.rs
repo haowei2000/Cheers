@@ -1,7 +1,7 @@
 //! `channel.commands.read` — ⑦ command palette read side. Returns each bot's
 //! latest advertised command set in the channel (from `bot_available_commands`).
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{authorize_channel_read, Principal, ResourceResult};
@@ -25,7 +25,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     // reported at `session/new` — is the fallback for channel bots that never
     // re-advertised inside this channel. Without the fallback the palette stays
     // empty until an agent happens to update its commands mid-turn.
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT cm.member_id AS bot_id,
                 COALESCE(
                     bac.commands,
@@ -37,8 +37,8 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
                 ON bac.channel_id = cm.channel_id AND bac.bot_id = cm.member_id
          WHERE cm.channel_id = $1 AND cm.member_type = 'bot'
          ORDER BY cm.member_id ASC",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_all(db)
     .await
     .map_err(super::db_err(
@@ -48,13 +48,12 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     let bots: Vec<Value> = rows
         .into_iter()
         .map(|row| {
-            let bot_id = row.try_get::<String, _>("bot_id").unwrap_or_default();
+            let bot_id = row.bot_id.clone();
             // `commands` is a JSONB array of AvailableCommand; project each to the
             // read shape, skipping any entry missing a name.
             let commands: Vec<Value> = row
-                .try_get::<Option<Value>, _>("commands")
-                .ok()
-                .flatten()
+                .commands
+                .clone()
                 .and_then(|v| v.as_array().cloned())
                 .unwrap_or_default()
                 .into_iter()

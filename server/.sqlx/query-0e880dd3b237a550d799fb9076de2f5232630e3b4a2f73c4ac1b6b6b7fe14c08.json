@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webauthn_credentials\n                 SET public_key = $3, last_used_at = NOW(), updated_at = NOW(),\n                     backup_eligible = $4, backup_state = $5\n                 WHERE user_id = $1 AND credential_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bytea",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0e880dd3b237a550d799fb9076de2f5232630e3b4a2f73c4ac1b6b6b7fe14c08"
+}

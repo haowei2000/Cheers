@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages\n         SET content_data = COALESCE(content_data, '{}'::jsonb) || $2::text::jsonb\n         WHERE msg_id = $1\n           AND (content_data->>'resolved' IS NULL OR content_data->>'resolved' = 'false')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "21c42bf0753f7df4a74eb53522ad6dff1cb1cf983b64b6caa2726b2d343a23d9"
+}

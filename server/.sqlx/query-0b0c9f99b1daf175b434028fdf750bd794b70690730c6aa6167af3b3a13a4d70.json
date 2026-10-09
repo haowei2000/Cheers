@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW())\n         WHERE user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0b0c9f99b1daf175b434028fdf750bd794b70690730c6aa6167af3b3a13a4d70"
+}

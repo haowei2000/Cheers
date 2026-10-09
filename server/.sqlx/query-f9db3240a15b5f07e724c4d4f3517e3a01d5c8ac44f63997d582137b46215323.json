@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO integration_installations\n             (installation_id, integration_id, workspace_id, external_account, config, installed_by)\n         VALUES ($1, 'github', $2, $3, $4, $5)\n         ON CONFLICT (integration_id, workspace_id, external_account) DO UPDATE\n             SET config = EXCLUDED.config, installed_by = EXCLUDED.installed_by,\n                 disabled_at = NULL, updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Jsonb",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f9db3240a15b5f07e724c4d4f3517e3a01d5c8ac44f63997d582137b46215323"
+}

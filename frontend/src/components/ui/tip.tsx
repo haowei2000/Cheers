@@ -72,6 +72,7 @@ export function Tip({
 
   return (
     <span
+      role="presentation"
       ref={rootRef}
       className={cn("relative inline-flex", className)}
       data-managed-tooltip="true"

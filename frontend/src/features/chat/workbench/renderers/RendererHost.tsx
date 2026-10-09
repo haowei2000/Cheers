@@ -132,16 +132,16 @@ export function RendererFallbackView({
     <div className="flex flex-col h-full w-full overflow-hidden" data-testid="renderer-fallback">
       <div
         role="alert"
-        className="flex items-center justify-between px-3 py-2 bg-panel/90 border-b border-control/40 text-compact text-warning-400 flex-shrink-0"
+        className="flex items-center justify-between px-3 py-2 bg-panel/90 border-b border-control/40 text-compact text-warning-400 shrink-0"
       >
         <div className="flex items-center gap-2 truncate min-w-0">
-          <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+          <TriangleAlert className="w-4 h-4 shrink-0" />
           <span className="truncate">
             {rendererTitle} failed: {reason}. Degraded to Raw mode.
           </span>
         </div>
         {onRetry && (
-          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+          <div className="flex items-center gap-2 shrink-0 ml-2">
             <UiButton
               action="retry"
               variant="plain"

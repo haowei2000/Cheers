@@ -32,6 +32,13 @@ struct RosterEntry {
     fetched_at: Instant,
 }
 
+/// Process-wide bot-roster cache.
+///
+/// Both lock sites recover from poisoning with `PoisonError::into_inner` rather
+/// than `.unwrap()`. A panic anywhere else used to poison this mutex and turn
+/// every later presence read into a panic on the worker thread; the data is a
+/// plain `HashMap` of cloned rows, which a panic cannot leave structurally
+/// invalid, and the entries are TTL-checked on read, so recovery is safe.
 fn roster_cache() -> &'static Mutex<HashMap<Uuid, RosterEntry>> {
     static CACHE: OnceLock<Mutex<HashMap<Uuid, RosterEntry>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -41,23 +48,27 @@ fn roster_cache() -> &'static Mutex<HashMap<Uuid, RosterEntry>> {
 /// 查询失败时与原行为一致——返回空且不写入缓存（下次调用重试）。
 async fn channel_bot_members(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     {
-        let cache = roster_cache().lock().unwrap();
+        let cache = roster_cache()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(entry) = cache.get(&channel_id) {
             if entry.fetched_at.elapsed() < BOT_ROSTER_TTL {
                 return entry.members.clone();
             }
         }
     }
-    let fetched: Result<Vec<String>, _> = sqlx::query_scalar(
+    let fetched: Result<Vec<String>, _> = sqlx::query_scalar!(
         "SELECT member_id FROM channel_memberships
          WHERE channel_id = $1 AND member_type = 'bot'",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_all(db)
     .await;
     match fetched {
         Ok(member_ids) => {
-            let mut cache = roster_cache().lock().unwrap();
+            let mut cache = roster_cache()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             cache.insert(
                 channel_id,
                 RosterEntry {
@@ -121,11 +132,11 @@ pub async fn channel_online_bots(
 
 /// bot 桥接上线/下线时：向它所属的每个频道广播一次 presence。
 pub async fn broadcast_bot_presence(state: &AppState, bot_id: Uuid) {
-    let channel_ids: Vec<String> = sqlx::query_scalar(
+    let channel_ids: Vec<String> = sqlx::query_scalar!(
         "SELECT channel_id FROM channel_memberships
          WHERE member_id = $1 AND member_type = 'bot'",
+        bot_id.to_string(),
     )
-    .bind(bot_id.to_string())
     .fetch_all(&state.db)
     .await
     .unwrap_or_default();

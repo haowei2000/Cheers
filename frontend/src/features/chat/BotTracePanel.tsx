@@ -1,3 +1,4 @@
+import { EventAnnotationButton } from "@/features/annotations/AnnotationProvider";
 import { Button as UiButton } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { useEffect, useMemo, useState } from "react";
@@ -57,6 +58,7 @@ interface Props {
   streaming?: boolean;
   /** Deep-link: expand and focus the approval with this request_id. */
   focusRequestId?: string | null;
+  focusEventId?: string | null;
   /** Controlled disclosure state when Agent steps live inside message Details. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
@@ -271,7 +273,7 @@ function DetailValue({ value }: { value: unknown }) {
       : value
     : formatJson(value);
   return (
-    <pre className="whitespace-pre-wrap break-words font-code">
+    <pre className="whitespace-pre-wrap wrap-break-word font-code">
       {rendered}
     </pre>
   );
@@ -485,7 +487,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
             )}
           </div>
           {presentation.command && (
-            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-code text-content-secondary">{presentation.command}</pre>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap wrap-break-word font-code text-content-secondary">{presentation.command}</pre>
           )}
           {!presentation.command && presentation.target && (
             <div className="mt-2 break-all font-code text-content-secondary">{presentation.target}</div>
@@ -511,7 +513,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
                     : formatJson(entry);
                 const status = typeof item?.status === "string" ? item.status : null;
                 return (
-                  <li key={`${index}-${content}`} className="break-words">
+                  <li key={`${index}-${content}`} className="wrap-break-word">
                     <span className="text-content-secondary">{content}</span>
                     {status && (
                       <span className="ml-2 text-content-muted">
@@ -691,7 +693,8 @@ function TraceItem({
   }, [active, onToggle]);
 
   return (
-    <div className="w-full min-w-0">
+    <div className="w-full min-w-0" id={`trace-source-${event.msg_id}-${event.event_id ?? event.id}`}>
+      <div className="flex items-center gap-2">
       <ControlTrigger controlWidth="fill"
         aria-controls={active ? `trace-event-${event.id}` : undefined}
         type="button"
@@ -723,6 +726,8 @@ function TraceItem({
           )}
         />
       </ControlTrigger>
+      <EventAnnotationButton event={event} />
+      </div>
       {active && (
         <section
           id={`trace-event-${event.id}`}
@@ -791,6 +796,7 @@ export function BotTracePanel({
   currentUserId,
   streaming = false,
   focusRequestId = null,
+  focusEventId = null,
   expanded: controlledExpanded,
   onExpandedChange,
   showToggle = true,
@@ -908,6 +914,18 @@ export function BotTracePanel({
     if (match) setActiveEventId(match.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequestId, timeline]);
+
+  useEffect(() => {
+    if (!focusEventId) return;
+    updateExpanded(true);
+    setShowAll(true);
+    const match = timeline.find(e => e.id === focusEventId || e.event_id === focusEventId);
+    if (match) {
+      setActiveEventId(match.id);
+      requestAnimationFrame(() => document.getElementById(`trace-source-${match.msg_id}-${match.event_id ?? match.id}`)?.scrollIntoView({ block: "nearest" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEventId, timeline]);
 
   // After the turn finishes, drop the "latest only" filter so history is full by default.
   useEffect(() => {

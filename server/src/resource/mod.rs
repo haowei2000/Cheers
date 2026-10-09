@@ -17,7 +17,7 @@ pub mod usage;
 pub mod voice;
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -360,22 +360,20 @@ pub async fn authorize_channel_read(
     principal: &Principal,
     channel_id: Uuid,
 ) -> Result<ChannelMembership, (String, String)> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT role
          FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = $3",
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
+        principal.member_type(),
     )
-    .bind(channel_id.to_string())
-    .bind(principal.principal_id.to_string())
-    .bind(principal.member_type())
     .fetch_optional(db)
     .await
     .map_err(db_err("authorize_channel_read: select membership role"))?;
 
     row.map(|row| ChannelMembership {
-        role: row
-            .try_get::<String, _>("role")
-            .unwrap_or_else(|_| "member".to_string()),
+        role: row.role.clone(),
     })
     .ok_or_else(not_member)
 }

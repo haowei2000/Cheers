@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.msg_id, m.channel_id, c.name AS channel_name, m.sender_id,\n                m.content_data, m.created_at\n         FROM messages m\n         JOIN channels c ON c.channel_id = m.channel_id\n         JOIN channel_memberships cm\n           ON cm.channel_id = m.channel_id\n          AND cm.member_id = $2 AND cm.member_type = 'user'\n         WHERE c.workspace_id = $1\n           AND m.msg_type = 'permission'\n           AND (m.content_data->>'resolved' IS NULL\n                OR m.content_data->>'resolved' = 'false')\n         ORDER BY m.created_at DESC\n         LIMIT 100",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "content_data",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "3872b1934667c3bebfde96aec7db094e1f59a8e1dc93b6dd3baeb431b456dc63"
+}

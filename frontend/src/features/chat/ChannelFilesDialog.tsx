@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import { listChannelFiles } from "@/api/files";
@@ -48,6 +47,11 @@ export function ChannelFilesDialog({
       spawnKind="files"
       defaultPosClassName="top-2 left-2"
       bodyClassName="overflow-hidden p-0 space-y-0"
+      emptyState={files?.length === 0 ? {
+        icon: Paperclip,
+        title: "No files in this channel yet",
+        hint: "Upload with the paperclip in the composer.",
+      } : undefined}
       collapsedSummary={(expand) => (
         <GlanceRow
           Icon={Paperclip}
@@ -67,18 +71,12 @@ export function ChannelFilesDialog({
     >
       {files === null ? (
         <SurfaceSpinner />
-      ) : files.length === 0 ? (
-        <EmptyState
-          icon={Paperclip}
-          title="No files in this channel yet"
-          hint="Upload with the paperclip in the composer."
-        />
       ) : (
         <FileGrid
           files={files}
           focusFileId={focusFileId}
           channelId={channelId}
-          className="h-full overflow-y-auto px-4 pb-4 pt-[var(--floating-panel-safe-top)]"
+          className="h-full overflow-y-auto px-4 pb-4 pt-(--floating-panel-safe-top)"
         />
       )}
     </FloatingPanel>

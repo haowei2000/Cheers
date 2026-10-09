@@ -5,7 +5,7 @@
 //! `channel_operations` record. Operations are inert for dispatch and discovered
 //! by bots via `channel.activity.read`.
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 use yamlpath::{Component as YamlComponent, Document as YamlDocument, FeatureKind, Route};
 
@@ -23,16 +23,16 @@ pub async fn handle_ls(db: &PgPool, principal: &Principal, params: &Value) -> Re
     let (channel_id, path) = extract_channel_path(params, true)?;
     authorize_channel_read(db, principal, channel_id).await?;
 
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT path, version, is_dir, LENGTH(content)::bigint AS size_bytes,
                 created_at, updated_at
          FROM context_files
          WHERE channel_id = $1
            AND ($2 = '' OR path = $2 OR left(path, char_length($2) + 1) = $2 || '/')
          ORDER BY is_dir DESC, path ASC",
+        channel_id.to_string(),
+        &path,
     )
-    .bind(channel_id.to_string())
-    .bind(&path)
     .fetch_all(db)
     .await
     .map_err(super::db_err("fs.ls: select context_files"))?;
@@ -41,12 +41,12 @@ pub async fn handle_ls(db: &PgPool, principal: &Principal, params: &Value) -> Re
         .into_iter()
         .map(|row| {
             json!({
-                "path": row.try_get::<String, _>("path").unwrap_or_default(),
-                "version": row.try_get::<i64, _>("version").unwrap_or(0),
-                "is_dir": row.try_get::<bool, _>("is_dir").unwrap_or(false),
-                "size_bytes": row.try_get::<i64, _>("size_bytes").unwrap_or(0),
-                "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok(),
-                "updated_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at").ok(),
+                "path": row.path.clone(),
+                "version": row.version.clone(),
+                "is_dir": row.is_dir.clone(),
+                "size_bytes": row.size_bytes.clone().unwrap_or(0),
+                "created_at": Some(row.created_at.clone()),
+                "updated_at": Some(row.updated_at.clone()),
             })
         })
         .collect();
@@ -63,19 +63,19 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     let (channel_id, path) = extract_channel_path(params, false)?;
     authorize_channel_read(db, principal, channel_id).await?;
 
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT path, content, version, is_dir, created_at, updated_at
          FROM context_files
          WHERE channel_id = $1 AND path = $2",
+        channel_id.to_string(),
+        &path,
     )
-    .bind(channel_id.to_string())
-    .bind(&path)
     .fetch_optional(db)
     .await
     .map_err(super::db_err("fs.read: select context_file"))?
     .ok_or_else(|| super::not_found("file"))?;
 
-    let full = row.try_get::<String, _>("content").unwrap_or_default();
+    let full = row.content.clone();
     // Optional 1-indexed inclusive line window (docs/design/RESOURCE_CONTEXT.md —
     // passage picking). When present, return just that slice + the clamped range
     // so a picked paragraph rides as a scoped ref, not the whole file.
@@ -99,16 +99,16 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
 
     Ok(json!({
         "channel_id": channel_id,
-        "path": row.try_get::<String, _>("path").unwrap_or(path),
+        "path": row.path.clone(),
         "content": content,
         "data": data,
-        "version": row.try_get::<i64, _>("version").unwrap_or(0),
-        "is_dir": row.try_get::<bool, _>("is_dir").unwrap_or(false),
+        "version": row.version.clone(),
+        "is_dir": row.is_dir.clone(),
         // Present only for a ranged read: the actual (clamped) line window returned.
         "start_line": range.map(|(s, _)| s),
         "end_line": range.map(|(_, e)| e),
-        "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok(),
-        "updated_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at").ok(),
+        "created_at": Some(row.created_at.clone()),
+        "updated_at": Some(row.updated_at.clone()),
     }))
 }
 
@@ -646,22 +646,31 @@ pub async fn handle_patch(db: &PgPool, principal: &Principal, params: &Value) ->
         .begin()
         .await
         .map_err(super::db_err("fs.patch: begin tx"))?;
-    let row = sqlx::query("SELECT content, version, is_dir FROM context_files WHERE channel_id = $1 AND path = $2 FOR UPDATE")
-        .bind(channel_id.to_string()).bind(&path).fetch_optional(&mut *tx).await
-        .map_err(super::db_err("fs.patch: select file"))?.ok_or_else(|| super::not_found("file"))?;
-    if row.try_get::<bool, _>("is_dir").unwrap_or(false) {
+    let row = sqlx::query!(
+            "SELECT content, version, is_dir FROM context_files WHERE channel_id = $1 AND path = $2 FOR UPDATE",
+            channel_id.to_string(),
+            &path,
+        ).fetch_optional(&mut *tx)
+    .await
+    .map_err(super::db_err("fs.patch: select file"))?
+    .ok_or_else(|| super::not_found("file"))?;
+    if row.is_dir.clone() {
         return Err(patch_error("path is a directory"));
     }
-    let current = row.try_get::<i64, _>("version").unwrap_or(0);
+    let current = row.version.clone();
     if current != expected {
         return Err(version_conflict(current));
     }
-    let content = row.try_get::<String, _>("content").unwrap_or_default();
+    let content = row.content.clone();
     let next = apply_structured_ops(&path, &content, ops)?;
     enforce_file_size(&next)?;
-    let version = sqlx::query("UPDATE context_files SET content = $3, version = version + 1, updated_at = NOW() WHERE channel_id = $1 AND path = $2 RETURNING version")
-        .bind(channel_id.to_string()).bind(&path).bind(next).fetch_one(&mut *tx).await
-        .map_err(super::db_err("fs.patch: update file"))?.try_get::<i64, _>("version").unwrap_or(current + 1);
+    let version = sqlx::query!(
+        "UPDATE context_files SET content = $3, version = version + 1, updated_at = NOW() WHERE channel_id = $1 AND path = $2 RETURNING version",
+        channel_id.to_string(),
+        &path,
+        next,
+    ).fetch_one(&mut *tx).await
+        .map_err(super::db_err("fs.patch: update file"))?.version.clone();
     let seq = insert_operation(
         &mut tx,
         channel_id,
@@ -693,14 +702,14 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         .begin()
         .await
         .map_err(super::db_err("fs.write: begin tx"))?;
-    let existing = sqlx::query(
+    let existing = sqlx::query!(
         "SELECT version
          FROM context_files
          WHERE channel_id = $1 AND path = $2
          FOR UPDATE",
+        channel_id.to_string(),
+        &path,
     )
-    .bind(channel_id.to_string())
-    .bind(&path)
     .fetch_optional(&mut *tx)
     .await
     .map_err(super::db_err(
@@ -708,13 +717,13 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
     ))?;
 
     let version = if let Some(row) = existing {
-        let current = row.try_get::<i64, _>("version").unwrap_or(0);
+        let current = row.version.clone();
         if let Some(expected) = if_version {
             if expected != current {
                 return Err(version_conflict(current));
             }
         }
-        sqlx::query(
+        sqlx::query!(
             "UPDATE context_files
              SET content = $3,
                  is_dir = $4,
@@ -722,16 +731,16 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
                  updated_at = NOW()
              WHERE channel_id = $1 AND path = $2
              RETURNING version",
+            channel_id.to_string(),
+            &path,
+            content,
+            is_dir,
         )
-        .bind(channel_id.to_string())
-        .bind(&path)
-        .bind(content)
-        .bind(is_dir)
         .fetch_one(&mut *tx)
         .await
         .map_err(super::db_err("fs.write: update existing file"))?
-        .try_get::<i64, _>("version")
-        .unwrap_or(current + 1)
+        .version
+        .clone()
     } else {
         if let Some(expected) = if_version {
             if expected != 0 {
@@ -739,24 +748,24 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
             }
         }
         enforce_channel_file_count(&mut tx, channel_id).await?;
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO context_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
              ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7)
              RETURNING version",
+            Uuid::new_v4().to_string(),
+            channel_id.to_string(),
+            &path,
+            content,
+            is_dir,
+            principal.principal_id.to_string(),
+            principal.member_type(),
         )
-        .bind(Uuid::new_v4().to_string())
-        .bind(channel_id.to_string())
-        .bind(&path)
-        .bind(content)
-        .bind(is_dir)
-        .bind(principal.principal_id.to_string())
-        .bind(principal.member_type())
         .fetch_one(&mut *tx)
         .await
         .map_err(super::db_err("fs.write: insert new file"))?
-        .try_get::<i64, _>("version")
-        .unwrap_or(1)
+        .version
+        .clone()
     };
 
     let seq = insert_operation(
@@ -804,32 +813,32 @@ pub async fn handle_edit(db: &PgPool, principal: &Principal, params: &Value) -> 
         .begin()
         .await
         .map_err(super::db_err("fs.edit: begin tx"))?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT content, version, is_dir
          FROM context_files
          WHERE channel_id = $1 AND path = $2
          FOR UPDATE",
+        channel_id.to_string(),
+        &path,
     )
-    .bind(channel_id.to_string())
-    .bind(&path)
     .fetch_optional(&mut *tx)
     .await
     .map_err(super::db_err("fs.edit: select file (FOR UPDATE)"))?
     .ok_or_else(|| super::not_found("file"))?;
-    if row.try_get::<bool, _>("is_dir").unwrap_or(false) {
+    if row.is_dir.clone() {
         return Err(super::resource_error(
             "INVALID_PARAMS",
             "path is a directory",
         ));
     }
 
-    let current_version = row.try_get::<i64, _>("version").unwrap_or(0);
+    let current_version = row.version.clone();
     if let Some(expected) = if_version {
         if expected != current_version {
             return Err(version_conflict(current_version));
         }
     }
-    let content = row.try_get::<String, _>("content").unwrap_or_default();
+    let content = row.content.clone();
     let occurrences = content.matches(old).count();
     if occurrences != 1 {
         return Err(super::resource_error(
@@ -884,48 +893,48 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
             return key.replay_claimed(db).await;
         }
     }
-    let existing = sqlx::query(
+    let existing = sqlx::query!(
         "SELECT content, version, is_dir
          FROM context_files
          WHERE channel_id = $1 AND path = $2
          FOR UPDATE",
+        channel_id.to_string(),
+        &path,
     )
-    .bind(channel_id.to_string())
-    .bind(&path)
     .fetch_optional(&mut *tx)
     .await
     .map_err(super::db_err("fs.append: select existing (FOR UPDATE)"))?;
 
     let version = if let Some(row) = existing {
-        if row.try_get::<bool, _>("is_dir").unwrap_or(false) {
+        if row.is_dir.clone() {
             return Err(super::resource_error(
                 "INVALID_PARAMS",
                 "path is a directory",
             ));
         }
-        let mut content = row.try_get::<String, _>("content").unwrap_or_default();
+        let mut content = row.content.clone();
         content.push_str(append);
         update_content(&mut tx, channel_id, &path, &content).await?
     } else {
         enforce_channel_file_count(&mut tx, channel_id).await?;
         enforce_file_size(append)?;
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO context_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
              ) VALUES ($1, $2, $3, $4, 1, FALSE, $5, $6)
              RETURNING version",
+            Uuid::new_v4().to_string(),
+            channel_id.to_string(),
+            &path,
+            append,
+            principal.principal_id.to_string(),
+            principal.member_type(),
         )
-        .bind(Uuid::new_v4().to_string())
-        .bind(channel_id.to_string())
-        .bind(&path)
-        .bind(append)
-        .bind(principal.principal_id.to_string())
-        .bind(principal.member_type())
         .fetch_one(&mut *tx)
         .await
         .map_err(super::db_err("fs.append: insert new file"))?
-        .try_get::<i64, _>("version")
-        .unwrap_or(1)
+        .version
+        .clone()
     };
 
     let seq = insert_operation(
@@ -963,15 +972,15 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
         .unwrap_or(false);
 
     let mut tx = db.begin().await.map_err(super::db_err("fs.rm: begin tx"))?;
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT path
          FROM context_files
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')
          FOR UPDATE",
+        channel_id.to_string(),
+        &path,
     )
-    .bind(channel_id.to_string())
-    .bind(&path)
     .fetch_all(&mut *tx)
     .await
     .map_err(super::db_err("fs.rm: select subtree (FOR UPDATE)"))?;
@@ -985,13 +994,13 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
         ));
     }
 
-    let deleted = sqlx::query(
+    let deleted = sqlx::query!(
         "DELETE FROM context_files
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+        channel_id.to_string(),
+        &path,
     )
-    .bind(channel_id.to_string())
-    .bind(&path)
     .execute(&mut *tx)
     .await
     .map_err(super::db_err("fs.rm: delete subtree"))?
@@ -1046,35 +1055,37 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     }
 
     let mut tx = db.begin().await.map_err(super::db_err("fs.mv: begin tx"))?;
-    let source_count: i64 = sqlx::query(
+    let source_count: i64 = sqlx::query!(
         "SELECT COUNT(*) AS count
          FROM context_files
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+        channel_id.to_string(),
+        &from,
     )
-    .bind(channel_id.to_string())
-    .bind(&from)
     .fetch_one(&mut *tx)
     .await
     .map_err(super::db_err("fs.mv: count source subtree"))?
-    .try_get("count")
+    .count
+    .clone()
     .unwrap_or(0);
     if source_count == 0 {
         return Err(super::not_found("file"));
     }
 
-    let target_count: i64 = sqlx::query(
+    let target_count: i64 = sqlx::query!(
         "SELECT COUNT(*) AS count
          FROM context_files
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+        channel_id.to_string(),
+        &to,
     )
-    .bind(channel_id.to_string())
-    .bind(&to)
     .fetch_one(&mut *tx)
     .await
     .map_err(super::db_err("fs.mv: count target subtree"))?
-    .try_get("count")
+    .count
+    .clone()
     .unwrap_or(0);
     if target_count > 0 {
         return Err(super::resource_error(
@@ -1083,7 +1094,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
         ));
     }
 
-    let moved = sqlx::query(
+    let moved = sqlx::query!(
         "UPDATE context_files
          SET path = CASE
                  WHEN path = $2 THEN $3
@@ -1093,10 +1104,10 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
              updated_at = NOW()
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+        channel_id.to_string(),
+        &from,
+        &to,
     )
-    .bind(channel_id.to_string())
-    .bind(&from)
-    .bind(&to)
     .execute(&mut *tx)
     .await
     .map_err(super::db_err("fs.mv: update paths"))?
@@ -1164,11 +1175,13 @@ async fn enforce_channel_file_count(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     channel_id: Uuid,
 ) -> Result<(), (String, String)> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM context_files WHERE channel_id = $1")
-        .bind(channel_id.to_string())
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(super::db_err("enforce_channel_file_count: count files"))?;
+    let count: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "value!" FROM context_files WHERE channel_id = $1"#,
+        channel_id.to_string(),
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(super::db_err("enforce_channel_file_count: count files"))?;
     if count >= MAX_CHANNEL_FILES {
         return Err(super::resource_error(
             "CHANNEL_QUOTA_EXCEEDED",
@@ -1185,22 +1198,22 @@ async fn update_content(
     content: &str,
 ) -> Result<i64, (String, String)> {
     enforce_file_size(content)?;
-    sqlx::query(
+    Ok(sqlx::query!(
         "UPDATE context_files
          SET content = $3,
              version = version + 1,
              updated_at = NOW()
          WHERE channel_id = $1 AND path = $2
          RETURNING version",
+        channel_id.to_string(),
+        path,
+        content,
     )
-    .bind(channel_id.to_string())
-    .bind(path)
-    .bind(content)
     .fetch_one(&mut **tx)
     .await
     .map_err(super::db_err("update_content: update file content"))?
-    .try_get::<i64, _>("version")
-    .map_err(super::db_err("update_content: read version column"))
+    .version
+    .clone())
 }
 
 /// Append ONE `channel_operations` audit row for an out-of-band write (e.g. a human
@@ -1241,19 +1254,19 @@ async fn insert_operation(
     let seq = channel_seq::allocate(tx, channel_id)
         .await
         .map_err(super::db_err("insert_operation: allocate channel_seq"))?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO channel_operations (
             id, channel_id, channel_seq, op_type, actor_type, actor_id, target_ref, payload
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        Uuid::new_v4().to_string(),
+        channel_id.to_string(),
+        seq,
+        op_type,
+        principal.member_type(),
+        principal.principal_id.to_string(),
+        target_ref,
+        payload,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(channel_id.to_string())
-    .bind(seq)
-    .bind(op_type)
-    .bind(principal.member_type())
-    .bind(principal.principal_id.to_string())
-    .bind(target_ref)
-    .bind(payload)
     .execute(&mut **tx)
     .await
     .map_err(super::db_err("insert_operation: insert channel_operation"))?;
@@ -1294,7 +1307,7 @@ fn looks_like_file_id(path: &str) -> bool {
         })
 }
 
-fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (String, String)> {
+pub(crate) fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (String, String)> {
     let path = raw.trim().trim_matches('/').to_string();
     if path.is_empty() {
         if allow_empty {

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT consent_version FROM voice_participant_sessions\n                            WHERE user_id = $1 AND voice_session_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consent_version",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a708117af0ab84be5bba798ef2a735e4d63d83fc2c42c59fe03a3eead3a3eeff"
+}

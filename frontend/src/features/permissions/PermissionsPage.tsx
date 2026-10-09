@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { IconButton } from "@/components/ui/icon-button";
 import { TabOption } from "@/components/ui/tab-option";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import {
@@ -67,7 +68,7 @@ export default function PermissionsPage() {
       })
       .catch(() => toast.error("Failed to load bots"))
       .finally(() => setLoadingBots(false));
-  }, []);
+  }, [selectedBotId, setSearchParams]);
 
   const selectBot = (id: string) => {
     setSelectedBotId(id);
@@ -140,7 +141,7 @@ export default function PermissionsPage() {
                       }
                     }}
                     className={cn(
-                      "flex items-center gap-2 px-3 py-1 rounded-md text-compact transition-colors shrink-0 cursor-pointer",
+                      "flex items-center gap-2 px-3 py-1 rounded-sm text-compact transition-colors shrink-0 cursor-pointer",
                       isSelected
                         ? "bg-zinc-800 text-content-strong font-medium shadow-sm"
                         : "bg-surface-elevated/40 text-content-primary hover:text-content-strong hover:bg-zinc-800/60"
@@ -157,7 +158,7 @@ export default function PermissionsPage() {
             {selectedBot && (
               <div className="space-y-6">
                 {/* Active Bot identity strip */}
-                <div className="flex items-center justify-between p-4 rounded-lg bg-surface-elevated/50">
+                <div className="flex items-center justify-between p-4 rounded-sm bg-surface-elevated/50">
                   <div className="flex items-center gap-3 min-w-0">
                     <Avatar
                       name={selectedBot.display_name || selectedBot.username}
@@ -278,7 +279,7 @@ function SocialPermissionsTab({ botId }: { botId: string }) {
   return (
     <div className="space-y-6">
       {/* Visibility */}
-      <div className="p-5 rounded-lg bg-surface-elevated/40 space-y-4">
+      <div className="p-5 rounded-sm bg-surface-elevated/40 space-y-4">
         <div>
           <h3 className="text-regular font-bold text-content-strong flex items-center gap-2">
             <Globe className="h-4 w-4 text-accent-400" />
@@ -312,7 +313,7 @@ function SocialPermissionsTab({ botId }: { botId: string }) {
       </div>
 
       {/* Friend Request Policy */}
-      <div className="p-5 rounded-lg bg-surface-elevated/40 space-y-4">
+      <div className="p-5 rounded-sm bg-surface-elevated/40 space-y-4">
         <div>
           <h3 className="text-regular font-bold text-content-strong flex items-center gap-2">
             <UserCheck className="h-4 w-4 text-accent-400" />
@@ -347,7 +348,7 @@ function SocialPermissionsTab({ botId }: { botId: string }) {
       </div>
 
       {/* Channel Invite Policy */}
-      <div className="p-5 rounded-lg bg-surface-elevated/40 space-y-4">
+      <div className="p-5 rounded-sm bg-surface-elevated/40 space-y-4">
         <div>
           <h3 className="text-regular font-bold text-content-strong flex items-center gap-2">
             <UserPlus className="h-4 w-4 text-accent-400" />
@@ -410,20 +411,17 @@ function PolicyOptionCard({
   recommended?: boolean;
 }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <ControlTrigger
+      controlWidth="fill"
+      controlSize="comfortable"
+      selected={selected}
+      aria-pressed={selected}
+      aria-label={title}
       onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
       className={cn(
-        "cursor-pointer rounded-lg p-4 transition-all relative flex flex-col justify-between",
+        "h-auto items-stretch whitespace-normal rounded-sm text-left transition-all relative flex flex-col justify-between",
         selected
-          ? "bg-zinc-800 text-content-strong ring-1 ring-accent-400/80 shadow-sm"
+          ? "bg-zinc-800 text-content-strong ring-1 ring-accent-400/80 shadow-sm hover:bg-zinc-800"
           : "bg-surface-elevated/60 text-content-primary hover:bg-zinc-800/50 hover:text-content-strong"
       )}
     >
@@ -431,7 +429,7 @@ function PolicyOptionCard({
         <div className="flex items-center justify-between gap-2">
           <span className="font-bold text-compact text-content-strong">{title}</span>
           {recommended && (
-            <span className="text-minimal px-2 py-1 rounded bg-accent-500/10 text-accent-400">
+            <span className="text-minimal px-2 py-1 rounded-sm bg-accent-500/10 text-accent-400">
               Recommended
             </span>
           )}
@@ -443,7 +441,7 @@ function PolicyOptionCard({
       <div className="mt-3 flex justify-end">
         <div
           className={cn(
-            "w-5 h-5 rounded flex items-center justify-center transition-colors",
+            "w-5 h-5 rounded-sm flex items-center justify-center transition-colors",
             selected
               ? "bg-accent-400 text-canvas shadow-sm"
               : "bg-surface-elevated/80"
@@ -452,7 +450,7 @@ function PolicyOptionCard({
           {selected && <Check className="w-4 h-4 stroke-[2.5]" />}
         </div>
       </div>
-    </div>
+    </ControlTrigger>
   );
 }
 
@@ -495,7 +493,7 @@ function OperationalPermissionsTab({ botId }: { botId: string }) {
   return (
     <div className="space-y-8">
       {/* Section 1: Execution Posture & Native Security */}
-      <div className="p-5 rounded-lg bg-surface-elevated/40 space-y-4">
+      <div className="p-5 rounded-sm bg-surface-elevated/40 space-y-4">
         <div>
           <h3 className="text-regular font-bold text-content-strong flex items-center gap-2">
             <Radio className="h-4 w-4 text-accent-400" />
@@ -509,7 +507,7 @@ function OperationalPermissionsTab({ botId }: { botId: string }) {
       </div>
 
       {/* Section 2: Approver Delegations */}
-      <div className="p-5 rounded-lg bg-surface-elevated/40 space-y-4">
+      <div className="p-5 rounded-sm bg-surface-elevated/40 space-y-4">
         <div className="flex items-baseline justify-between gap-4">
           <div>
             <h3 className="text-regular font-bold text-content-strong flex items-center gap-2">
@@ -528,7 +526,7 @@ function OperationalPermissionsTab({ botId }: { botId: string }) {
           <EmptyState
             title="暂无额外的委派记录"
             hint="当前仅有你（所有者）可以审批此 Bot 的敏感工具调用。"
-            className="p-6 rounded-md bg-surface-elevated/20"
+            className="p-6 rounded-sm bg-surface-elevated/20"
           />
         ) : (
           <div className="space-y-2">
@@ -538,7 +536,7 @@ function OperationalPermissionsTab({ botId }: { botId: string }) {
               return (
                 <div
                   key={key}
-                  className="flex items-center justify-between p-3 rounded-md bg-surface-elevated/60 text-compact"
+                  className="flex items-center justify-between p-3 rounded-sm bg-surface-elevated/60 text-compact"
                 >
                   <div className="min-w-0 flex items-center gap-3">
                     <Avatar name={app.display_name || app.username || app.user_id} size="small" />
@@ -581,7 +579,7 @@ function OperationalPermissionsTab({ botId }: { botId: string }) {
       </div>
 
       {/* Section 3: Fine-grained Event Access Control */}
-      <div className="p-5 rounded-lg bg-surface-elevated/40 space-y-4">
+      <div className="p-5 rounded-sm bg-surface-elevated/40 space-y-4">
         <div>
           <h3 className="text-regular font-bold text-content-strong flex items-center gap-2">
             <Lock className="h-4 w-4 text-accent-400" />

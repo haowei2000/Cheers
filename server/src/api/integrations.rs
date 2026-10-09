@@ -28,7 +28,6 @@ use axum::{
     Json,
 };
 use serde_json::{json, Value};
-use sqlx::Row;
 
 use crate::{
     app_state::AppState,
@@ -89,17 +88,17 @@ pub async fn receive(
     let event_type = field(&descriptor.event_type, &headers, &payload)
         .ok_or_else(|| AppError::BadRequest("webhook is missing its event type".into()))?;
 
-    let admitted = sqlx::query(
+    let admitted = sqlx::query!(
         "INSERT INTO integration_webhook_events
              (integration_id, installation_id, event_id, event_type, payload)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (integration_id, installation_id, event_id) DO NOTHING",
+        &integration_id,
+        &installation_id,
+        &event_id,
+        &event_type,
+        &payload,
     )
-    .bind(&integration_id)
-    .bind(&installation_id)
-    .bind(&event_id)
-    .bind(&event_type)
-    .bind(&payload)
     .execute(&state.db)
     .await?
     .rows_affected()
@@ -154,12 +153,12 @@ pub async fn receive_github(
     {
         return Err(rejected());
     }
-    let installations = sqlx::query(
+    let installations = sqlx::query!(
         "SELECT installation_id FROM integration_installations
           WHERE integration_id = 'github' AND external_account = $1
             AND disabled_at IS NULL",
+        &external_id,
     )
-    .bind(&external_id)
     .fetch_all(&state.db)
     .await?;
     if installations.is_empty() {
@@ -171,17 +170,17 @@ pub async fn receive_github(
         .ok_or_else(|| AppError::BadRequest("webhook is missing its event type".into()))?;
     let mut admitted = false;
     for installation in installations {
-        let installation_id: String = installation.try_get("installation_id")?;
-        admitted |= sqlx::query(
+        let installation_id: String = installation.installation_id.clone();
+        admitted |= sqlx::query!(
             "INSERT INTO integration_webhook_events
                  (integration_id, installation_id, event_id, event_type, payload)
              VALUES ('github', $1, $2, $3, $4)
              ON CONFLICT (integration_id, installation_id, event_id) DO NOTHING",
+            &installation_id,
+            &event_id,
+            &event_type,
+            &payload,
         )
-        .bind(&installation_id)
-        .bind(&event_id)
-        .bind(&event_type)
-        .bind(&payload)
         .execute(&state.db)
         .await?
         .rows_affected()
@@ -214,19 +213,19 @@ async fn load_installation(
     integration_id: &str,
     installation_id: &str,
 ) -> Result<Installation, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT webhook_secret_enc
            FROM integration_installations
           WHERE installation_id = $1 AND integration_id = $2 AND disabled_at IS NULL",
+        installation_id,
+        integration_id,
     )
-    .bind(installation_id)
-    .bind(integration_id)
     .fetch_optional(&state.db)
     .await?;
 
     match row {
         Some(row) => Ok(Installation {
-            webhook_secret_enc: row.try_get("webhook_secret_enc")?,
+            webhook_secret_enc: row.webhook_secret_enc.clone(),
         }),
         None => {
             // Covers unknown, wrong-integration, and disabled alike.

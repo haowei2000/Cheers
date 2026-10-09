@@ -100,11 +100,13 @@ pub async fn upload_user_avatar(
 ) -> Result<Json<Value>, AppError> {
     let ct = content_type_header(&headers).to_string();
     let url = store_avatar(&state, "user", &claims.sub, &ct, body).await?;
-    sqlx::query("UPDATE users SET avatar_url = $1 WHERE user_id = $2 AND is_deleted = FALSE")
-        .bind(&url)
-        .bind(&claims.sub)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "UPDATE users SET avatar_url = $1 WHERE user_id = $2 AND is_deleted = FALSE",
+        &url,
+        &claims.sub,
+    )
+    .execute(&state.db)
+    .await?;
     // New avatar → refresh the member's card live in every channel they're in.
     crate::api::users::broadcast_member_update(&state, &claims.sub).await;
     Ok(Json(json!({ "avatar_url": url })))
@@ -121,11 +123,13 @@ pub async fn upload_bot_avatar(
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let ct = content_type_header(&headers).to_string();
     let url = store_avatar(&state, "bot", &bot_id, &ct, body).await?;
-    sqlx::query("UPDATE bot_accounts SET avatar_url = $1 WHERE bot_id = $2")
-        .bind(&url)
-        .bind(&bot_id)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "UPDATE bot_accounts SET avatar_url = $1 WHERE bot_id = $2",
+        &url,
+        &bot_id,
+    )
+    .execute(&state.db)
+    .await?;
     Ok(Json(json!({ "avatar_url": url })))
 }
 
@@ -157,11 +161,13 @@ pub async fn upload_channel_avatar(
         .await?;
     let ct = content_type_header(&headers).to_string();
     let url = store_avatar(&state, "channel", &channel_id, &ct, body).await?;
-    let changed = sqlx::query("UPDATE channels SET avatar_url = $1 WHERE channel_id = $2")
-        .bind(&url)
-        .bind(&channel_id)
-        .execute(&state.db)
-        .await?;
+    let changed = sqlx::query!(
+        "UPDATE channels SET avatar_url = $1 WHERE channel_id = $2",
+        &url,
+        &channel_id,
+    )
+    .execute(&state.db)
+    .await?;
     if changed.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }

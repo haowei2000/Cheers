@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mcp_oauth_authorization_codes\n         (code_id,code_hash,host_id,client_id,redirect_uri,scope,resource,code_challenge,created_by,expires_at,channel_id)\n         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ae6293872c5e94d003435e2790b32203d4252d88ae07a3ed49d926628d46f3a0"
+}

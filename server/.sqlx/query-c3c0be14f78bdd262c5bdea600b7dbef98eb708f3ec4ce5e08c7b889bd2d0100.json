@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mm.member_id, m.channel_id, m.content\n             FROM message_mentions mm\n             JOIN messages m ON m.msg_id = mm.msg_id\n             WHERE mm.msg_id = $1 AND mm.member_type = 'user'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "content",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c3c0be14f78bdd262c5bdea600b7dbef98eb708f3ec4ce5e08c7b889bd2d0100"
+}

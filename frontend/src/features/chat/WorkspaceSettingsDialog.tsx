@@ -225,7 +225,7 @@ export function WorkspaceSettingsDialog({
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <label htmlFor="workspace-settings-name" className="min-w-0 flex-1 text-compact font-medium text-content-muted uppercase tracking-label">Name</label>
+            <span id="workspace-settings-name-label" className="min-w-0 flex-1 text-compact font-medium text-content-muted uppercase tracking-label">Name</span>
             {canManage && (
               <InlineEditActions
                 label="workspace name"
@@ -241,7 +241,7 @@ export function WorkspaceSettingsDialog({
           {editingName ? (
             <UiInput
               id="workspace-settings-name"
-              autoFocus
+              aria-labelledby="workspace-settings-name-label"
               value={name}
               onChange={(e) => setName(e.target.value)}
               controlSize="regular"

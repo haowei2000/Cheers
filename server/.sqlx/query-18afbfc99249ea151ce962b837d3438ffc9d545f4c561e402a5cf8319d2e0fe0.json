@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE connector_hosts SET last_seen_at = NOW(), updated_at = NOW()\n         WHERE host_id = $1 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "18afbfc99249ea151ce962b837d3438ffc9d545f4c561e402a5cf8319d2e0fe0"
+}

@@ -379,7 +379,7 @@ export function DiscussionView({
     <section
       className={cn(
         "flex min-h-0 flex-col border-zinc-800 bg-zinc-950/40 md:border-r",
-        isWide ? "flex-shrink-0" : "flex-1",
+        isWide ? "shrink-0" : "flex-1",
       )}
       style={isWide ? { width: topicWidth } : undefined}
     >
@@ -471,7 +471,7 @@ export function DiscussionView({
       ) : detail ? (
         <>
           <header className="z-10 bg-panel px-4 py-3">
-            <div className="mx-auto max-w-[52rem]">
+            <div className="mx-auto max-w-208">
               <div className="flex items-center gap-3">
                 <Avatar
                   name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}

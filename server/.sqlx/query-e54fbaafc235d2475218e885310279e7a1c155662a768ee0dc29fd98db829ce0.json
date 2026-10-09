@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO context_files (\n                file_id, channel_id, path, content, version, is_dir, created_by, creator_type\n             ) VALUES ($1, $2, $3, $4, 1, FALSE, $5, $6)\n             RETURNING version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e54fbaafc235d2475218e885310279e7a1c155662a768ee0dc29fd98db829ce0"
+}

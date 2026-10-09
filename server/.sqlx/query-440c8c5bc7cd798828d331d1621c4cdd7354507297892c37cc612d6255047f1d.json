@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM channel_invites\n         WHERE user_id = $1\n           AND channel_id IN (SELECT channel_id FROM channels WHERE workspace_id = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "440c8c5bc7cd798828d331d1621c4cdd7354507297892c37cc612d6255047f1d"
+}

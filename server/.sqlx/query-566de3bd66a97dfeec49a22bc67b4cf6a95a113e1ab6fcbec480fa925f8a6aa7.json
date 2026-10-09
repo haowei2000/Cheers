@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id, bot_id, SUM(max_cost) AS cost\n         FROM (\n             SELECT channel_id, bot_id, session_id, MAX(cost_usd) AS max_cost\n             FROM bot_usage_events\n             WHERE channel_id = ANY($1)\n               AND created_at >= date_trunc('day', now() AT TIME ZONE 'utc')\n             GROUP BY channel_id, bot_id, session_id\n         ) per_session\n         GROUP BY channel_id, bot_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "cost",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "566de3bd66a97dfeec49a22bc67b4cf6a95a113e1ab6fcbec480fa925f8a6aa7"
+}

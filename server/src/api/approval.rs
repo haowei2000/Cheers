@@ -9,7 +9,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use std::collections::HashMap;
@@ -36,17 +36,17 @@ fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
 
 /// The caller's channel role for the event-policy `SEE` matrix (default `member`).
 async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
-    sqlx::query(
+    sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id.to_string(),
+        uid.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(uid.to_string())
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .and_then(|r| Some(r.role.clone()))
     .unwrap_or_else(|| "member".to_string())
 }
 
@@ -54,7 +54,7 @@ async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
 /// bot's event policy denies this user `SEE` for the row's class. A row's class is
 /// `permission_request` for `kind="approval"`, else `tool_call` (the execution-detail
 /// class). Rows with no `bot_id` (system traces) pass. Platform admins bypass.
-async fn filter_traces_by_see(
+pub(crate) async fn filter_traces_by_see(
     state: &AppState,
     channel_id: Uuid,
     uid: Uuid,
@@ -119,17 +119,18 @@ async fn ensure_member(
     if matches!(role, "system_admin" | "admin") {
         return Ok(());
     }
-    let ok = sqlx::query(
+    let ok = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
+            SELECT 1 AS present FROM channel_memberships
             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
         ) AS ok",
+        channel_id.to_string(),
+        uid.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(uid.to_string())
     .fetch_one(&state.db)
     .await?
-    .try_get::<bool, _>("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     if ok {
         Ok(())
@@ -580,7 +581,7 @@ pub async fn list_approvers(
     } else {
         require_bot_owner(&state, bot_id, uid, &claims.role).await?;
         let owner = approval::bot_owner(&state.db, bot_id).await?;
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             "SELECT ad.channel_id, c.name AS channel_name, ad.user_id, u.username, u.display_name,
                     ad.operation_kind, ad.granted_by, ad.granted_at
              FROM approval_delegations ad
@@ -588,22 +589,22 @@ pub async fn list_approvers(
              JOIN users u ON u.user_id = ad.user_id
              WHERE ad.bot_id = $1 AND ad.revoked_at IS NULL
              ORDER BY ad.granted_at DESC",
+            bot_id.to_string(),
         )
-        .bind(bot_id.to_string())
         .fetch_all(&state.db)
         .await?;
         let delegates: Vec<Value> = rows
             .into_iter()
             .map(|r| {
                 json!({
-                    "channel_id": r.try_get::<String, _>("channel_id").unwrap_or_default(),
-                    "channel_name": r.try_get::<String, _>("channel_name").unwrap_or_default(),
-                    "user_id": r.try_get::<String, _>("user_id").unwrap_or_default(),
-                    "username": r.try_get::<String, _>("username").unwrap_or_default(),
-                    "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-                    "operation_kind": r.try_get::<String, _>("operation_kind").unwrap_or_else(|_| "*".into()),
-                    "granted_by": r.try_get::<String, _>("granted_by").unwrap_or_default(),
-                    "granted_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("granted_at")
+                    "channel_id": r.channel_id.clone(),
+                    "channel_name": r.channel_name.clone(),
+                    "user_id": r.user_id.clone(),
+                    "username": r.username.clone(),
+                    "display_name": r.display_name.clone(),
+                    "operation_kind": r.operation_kind.clone(),
+                    "granted_by": r.granted_by.clone(),
+                    "granted_at": Some(r.granted_at.clone())
                         .map(|t| t.to_rfc3339()).unwrap_or_default(),
                 })
             })
@@ -1064,14 +1065,14 @@ pub async fn resolve_elicitation(
             } else {
                 "unconfigured"
             };
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE connector_hosts
                  SET mcp_connection_state = $1, mcp_state_updated_at = NOW()
                  WHERE host_id = $2 AND revoked_at IS NULL
                    AND mcp_connection_state <> 'connected'",
+                next_state,
+                host_id,
             )
-            .bind(next_state)
-            .bind(host_id)
             .execute(&state.db)
             .await?;
         }

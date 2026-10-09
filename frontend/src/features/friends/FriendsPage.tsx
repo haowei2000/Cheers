@@ -17,6 +17,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { ItemList, ItemRow, ItemSection, NavigationItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
+import { ControlTrigger } from "@/components/ui/control-trigger";
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { UnreadBadge } from "@/components/ui/unread-badge";
@@ -632,15 +633,17 @@ function Row({
       kind="identity"
       title={
         <div className="flex items-center gap-2">
-          <span
+          <ControlTrigger
+            controlWidth="content"
             className={cn(
-              "font-medium text-content-strong",
-              onTitleClick && "cursor-pointer hover:underline"
+              "h-auto justify-start rounded-none text-left font-medium text-content-strong hover:bg-transparent hover:ring-0 hover:underline",
+              !onTitleClick && "cursor-default hover:no-underline"
             )}
+            disabled={!onTitleClick}
             onClick={onTitleClick}
           >
             {name}
-          </span>
+          </ControlTrigger>
           {isBot && (
             <Badge tone="neutral">
               Bot
@@ -657,12 +660,14 @@ function Row({
         ) : undefined
       }
       leading={
-        <div
-          className={cn(onTitleClick && "cursor-pointer")}
+        <ControlTrigger
+          controlWidth="content"
+          className={cn("h-auto rounded-none hover:bg-transparent hover:ring-0", !onTitleClick && "cursor-default")}
+          disabled={!onTitleClick}
           onClick={onTitleClick}
         >
           <Avatar name={name} src={avatar ?? undefined} id={id} size="regular" />
-        </div>
+        </ControlTrigger>
       }
       actions={<>{children}</>}
       className="gap-3 hover:bg-zinc-900/60"

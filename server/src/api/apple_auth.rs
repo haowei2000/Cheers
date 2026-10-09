@@ -9,7 +9,7 @@ use jsonwebtoken::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -59,12 +59,12 @@ pub async fn challenge(
     let nonce = crypto::generate_auth_nonce();
     let nonce_hash = crypto::sha256_hex(&nonce);
     let expires_at = Utc::now() + Duration::minutes(10);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO apple_auth_challenges (challenge_id, nonce_hash, expires_at) VALUES ($1, $2, $3)",
+        &challenge_id,
+        nonce_hash,
+        expires_at,
     )
-    .bind(&challenge_id)
-    .bind(nonce_hash)
-    .bind(expires_at)
     .execute(&state.db)
     .await?;
     Ok(Json(AppleChallengeResponse {
@@ -161,15 +161,15 @@ fn client_secret(config: &AppleAuthConfig, client_id: &str) -> Result<String, Ap
 }
 
 async fn consume_challenge(state: &AppState, id: &str) -> Result<String, AppError> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE apple_auth_challenges SET consumed_at = NOW()
          WHERE challenge_id = $1 AND consumed_at IS NULL AND expires_at > NOW()
          RETURNING nonce_hash",
+        id,
     )
-    .bind(id)
     .fetch_optional(&state.db)
     .await?
-    .and_then(|r| r.try_get("nonce_hash").ok())
+    .and_then(|r| Some(r.nonce_hash.clone()))
     .ok_or_else(|| {
         AppError::Unauthorized(
             "Apple authentication challenge is invalid, expired, or already used".into(),
@@ -273,18 +273,18 @@ pub(crate) async fn verify_recent_for_user(
     request: &AppleAuthorizationRequest,
 ) -> Result<(), AppError> {
     let (apple, tokens) = verify_authorization(state, request).await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT identity_id FROM auth_external_identities
          WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default'
            AND subject = $2 AND user_id = $3",
+        APPLE_ISSUER,
+        &apple.sub,
+        user_id,
     )
-    .bind(APPLE_ISSUER)
-    .bind(&apple.sub)
-    .bind(user_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Unauthorized("Apple account is not linked to this user".into()))?;
-    let identity_id: String = row.try_get("identity_id")?;
+    let identity_id: String = row.identity_id.clone();
     persist_refresh_token(state, &identity_id, tokens.refresh_token.as_deref()).await?;
     Ok(())
 }
@@ -328,12 +328,12 @@ async fn ensure_native_identity_for_existing(
     name: Option<&str>,
     is_private_email: Option<Value>,
 ) -> Result<Option<(String, String)>, AppError> {
-    let owners = sqlx::query(
+    let owners = sqlx::query!(
         "SELECT DISTINCT user_id FROM auth_external_identities
          WHERE provider = 'apple' AND issuer = $1 AND subject = $2",
+        APPLE_ISSUER,
+        subject,
     )
-    .bind(APPLE_ISSUER)
-    .bind(subject)
     .fetch_all(&state.db)
     .await?;
     if owners.len() > 1 {
@@ -344,51 +344,51 @@ async fn ensure_native_identity_for_existing(
     let Some(owner) = owners.first() else {
         return Ok(None);
     };
-    let user_id: String = owner.try_get("user_id")?;
+    let user_id: String = owner.user_id.clone();
     if expected_user_id.is_some_and(|expected| expected != user_id) {
         return Err(AppError::Conflict(
             "this Apple account is already linked".into(),
         ));
     }
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_external_identities
          (identity_id, provider, issuer, provider_config_id, subject, user_id,
           corp_id, display_name, email, profile)
          VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7,
                  jsonb_build_object('is_private_email', $8::boolean))
          ON CONFLICT (provider, issuer, provider_config_id, subject) DO NOTHING",
+        Uuid::new_v4().to_string(),
+        APPLE_ISSUER,
+        subject,
+        &user_id,
+        &require_config(state)?.team_id,
+        name,
+        email,
+        is_private_email.as_ref().and_then(|value| {
+            value
+                .as_bool()
+                .or_else(|| value.as_str().map(|text| text == "true"))
+        }),
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(APPLE_ISSUER)
-    .bind(subject)
-    .bind(&user_id)
-    .bind(&require_config(state)?.team_id)
-    .bind(name)
-    .bind(email)
-    .bind(is_private_email.as_ref().and_then(|value| {
-        value
-            .as_bool()
-            .or_else(|| value.as_str().map(|text| text == "true"))
-    }))
     .execute(&state.db)
     .await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT identity_id, user_id FROM auth_external_identities
          WHERE provider = 'apple' AND issuer = $1
            AND provider_config_id = 'default' AND subject = $2",
+        APPLE_ISSUER,
+        subject,
     )
-    .bind(APPLE_ISSUER)
-    .bind(subject)
     .fetch_one(&state.db)
     .await?;
-    let native_owner: String = row.try_get("user_id")?;
+    let native_owner: String = row.user_id.clone();
     if native_owner != user_id {
         return Err(AppError::Conflict(
             "Apple identity is already linked to another account".into(),
         ));
     }
-    Ok(Some((row.try_get("identity_id")?, user_id)))
+    Ok(Some((row.identity_id.clone(), user_id)))
 }
 
 async fn persist_refresh_token(
@@ -405,15 +405,15 @@ async fn persist_refresh_token(
     );
     let encrypted = crypto::encrypt_secret(&key, refresh_token)
         .map_err(|e| AppError::Internal(format!("encrypt Apple refresh token: {e}")))?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO apple_auth_credentials (identity_id, refresh_token_encrypted, client_id, last_validated_at)
          VALUES ($1, $2, $3, NOW())
          ON CONFLICT (identity_id) DO UPDATE SET refresh_token_encrypted = EXCLUDED.refresh_token_encrypted,
              client_id = EXCLUDED.client_id, last_validated_at = NOW(), revoked_at = NULL, updated_at = NOW()",
+        identity_id,
+        encrypted,
+        &require_config(state)?.client_id,
     )
-    .bind(identity_id)
-    .bind(encrypted)
-    .bind(&require_config(state)?.client_id)
     .execute(&state.db)
     .await?;
     Ok(())
@@ -558,11 +558,13 @@ pub async fn authorize(
     crate::api::auth::ensure_may_register(&state, request.invite_token.as_deref()).await?;
     let email = verified_email(&apple);
     if let Some(email) = email.as_deref() {
-        if sqlx::query("SELECT 1 FROM users WHERE lower(email) = $1 LIMIT 1")
-            .bind(email)
-            .fetch_optional(&state.db)
-            .await?
-            .is_some()
+        if sqlx::query!(
+            "SELECT 1 AS present FROM users WHERE lower(email) = $1 LIMIT 1",
+            email,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .is_some()
         {
             return Err(AppError::Conflict(
                 "account_link_required: sign in with your password, then link Apple in Settings"
@@ -575,29 +577,29 @@ pub async fn authorize(
     let username = format!("apple_{}", &Uuid::new_v4().simple().to_string()[..12]);
     let name = display_name(&request);
     let mut tx = state.db.begin().await?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO users (user_id, username, email, password_hash, display_name, role)
          VALUES ($1, $2, $3, NULL, $4, 'member')",
+        &user_id,
+        &username,
+        email.as_deref(),
+        name.as_deref(),
     )
-    .bind(&user_id)
-    .bind(&username)
-    .bind(&email)
-    .bind(&name)
     .execute(&mut *tx)
     .await?;
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_external_identities
          (identity_id, provider, issuer, provider_config_id, subject, user_id, corp_id, display_name, email, profile)
          VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7, $8)",
+        &identity_id,
+        APPLE_ISSUER,
+        &apple.sub,
+        &user_id,
+        &require_config(&state)?.team_id,
+        name.as_deref(),
+        email.as_deref(),
+        json!({"is_private_email": apple.is_private_email}),
     )
-    .bind(&identity_id)
-    .bind(APPLE_ISSUER)
-    .bind(&apple.sub)
-    .bind(&user_id)
-    .bind(&require_config(&state)?.team_id)
-    .bind(&name)
-    .bind(&email)
-    .bind(json!({"is_private_email": apple.is_private_email}))
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -634,19 +636,19 @@ pub async fn link(
     }
     let identity_id = Uuid::new_v4().to_string();
     let email = verified_email(&apple);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_external_identities
          (identity_id, provider, issuer, provider_config_id, subject, user_id, corp_id, display_name, email, profile)
          VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7, $8)",
+        &identity_id,
+        APPLE_ISSUER,
+        &apple.sub,
+        &claims.sub,
+        &require_config(&state)?.team_id,
+        display_name(&request),
+        email,
+        json!({"is_private_email": apple.is_private_email}),
     )
-    .bind(&identity_id)
-    .bind(APPLE_ISSUER)
-    .bind(&apple.sub)
-    .bind(&claims.sub)
-    .bind(&require_config(&state)?.team_id)
-    .bind(display_name(&request))
-    .bind(email)
-    .bind(json!({"is_private_email": apple.is_private_email}))
     .execute(&state.db)
     .await?;
     persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
@@ -657,14 +659,15 @@ pub async fn status(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT password_hash IS NOT NULL AS has_password,
-         EXISTS(SELECT 1 FROM auth_external_identities i WHERE i.user_id = users.user_id AND i.provider = 'apple') AS apple_linked
+         EXISTS(SELECT 1 AS present FROM auth_external_identities i WHERE i.user_id = users.user_id AND i.provider = 'apple') AS apple_linked
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-    ).bind(&claims.sub).fetch_optional(&state.db).await?.ok_or(AppError::NotFound)?;
+        &claims.sub,
+    ).fetch_optional(&state.db).await?.ok_or(AppError::NotFound)?;
     Ok(Json(json!({
-        "apple_linked": row.try_get::<bool,_>("apple_linked").unwrap_or(false),
-        "has_password": row.try_get::<bool,_>("has_password").unwrap_or(false),
+        "apple_linked": row.apple_linked.clone().unwrap_or(false),
+        "has_password": row.has_password.clone().unwrap_or(false),
     })))
 }
 
@@ -672,18 +675,17 @@ pub async fn unlink(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
-    let has_alternative: bool = sqlx::query(
-        "SELECT
+    let has_alternative: bool = sqlx::query!(
+            "SELECT
            (password_hash IS NOT NULL AND NOT password_2fa_enabled)
-           OR EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = users.user_id)
-           OR EXISTS(SELECT 1 FROM auth_external_identities i
+           OR EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = users.user_id)
+           OR EXISTS(SELECT 1 AS present FROM auth_external_identities i
                      WHERE i.user_id = users.user_id AND i.provider <> 'apple') AS ok
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-    )
-    .bind(&claims.sub)
-    .fetch_optional(&state.db)
+            &claims.sub,
+        ).fetch_optional(&state.db)
     .await?
-    .and_then(|r| r.try_get("ok").ok())
+    .and_then(|r| r.ok.clone())
     .unwrap_or(false);
     if !has_alternative {
         return Err(AppError::Conflict(
@@ -691,20 +693,22 @@ pub async fn unlink(
         ));
     }
     revoke_for_user(&state, &claims.sub).await?;
-    sqlx::query("DELETE FROM auth_external_identities WHERE provider = 'apple' AND user_id = $1")
-        .bind(&claims.sub)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM auth_external_identities WHERE provider = 'apple' AND user_id = $1",
+        &claims.sub,
+    )
+    .execute(&state.db)
+    .await?;
     Ok(Json(json!({"linked": false})))
 }
 
 pub async fn revoke_for_user(state: &AppState, user_id: &str) -> Result<(), AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT c.refresh_token_encrypted, c.client_id FROM apple_auth_credentials c
          JOIN auth_external_identities i ON i.identity_id = c.identity_id
          WHERE i.provider = 'apple' AND i.user_id = $1 AND c.revoked_at IS NULL",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(&state.db)
     .await?;
     if rows.is_empty() {
@@ -716,10 +720,10 @@ pub async fn revoke_for_user(state: &AppState, user_id: &str) -> Result<(), AppE
     );
     let config = require_config(state)?;
     for row in rows {
-        let encrypted: String = row.try_get("refresh_token_encrypted")?;
+        let encrypted: String = row.refresh_token_encrypted.clone();
         let token = crypto::decrypt_secret(&key, &encrypted)
             .map_err(|e| AppError::Internal(format!("decrypt Apple refresh token: {e}")))?;
-        let stored_client: Option<String> = row.try_get("client_id").ok().flatten();
+        let stored_client: Option<String> = row.client_id.clone();
         let client_id = stored_client.as_deref().unwrap_or(&config.client_id);
         let response = reqwest::Client::new()
             .post(APPLE_REVOKE_URL)
@@ -740,10 +744,11 @@ pub async fn revoke_for_user(state: &AppState, user_id: &str) -> Result<(), AppE
             ));
         }
     }
-    sqlx::query(
+    sqlx::query!(
         "UPDATE apple_auth_credentials SET revoked_at = NOW(), updated_at = NOW()
          WHERE identity_id IN (SELECT identity_id FROM auth_external_identities WHERE provider = 'apple' AND user_id = $1)",
-    ).bind(user_id).execute(&state.db).await?;
+        user_id,
+    ).execute(&state.db).await?;
     Ok(())
 }
 
@@ -809,56 +814,73 @@ pub async fn events(
     .claims
     .events;
 
-    let identity = sqlx::query(
+    let identity = sqlx::query!(
         "SELECT identity_id, user_id FROM auth_external_identities
          WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default' AND subject = $2",
-    ).bind(APPLE_ISSUER).bind(&event.sub).fetch_optional(&state.db).await?;
+        APPLE_ISSUER,
+        &event.sub,
+    ).fetch_optional(&state.db).await?;
     let Some(identity) = identity else {
         return Ok(Json(json!({"processed": true})));
     };
-    let identity_id: String = identity.try_get("identity_id")?;
-    let user_id: String = identity.try_get("user_id")?;
+    let identity_id: String = identity.identity_id.clone();
+    let user_id: String = identity.user_id.clone();
     match event.event_type.as_str() {
         "account-delete" => {
-            sqlx::query("UPDATE apple_auth_credentials SET revoked_at = NOW(), updated_at = NOW() WHERE identity_id = $1")
-                .bind(&identity_id).execute(&state.db).await?;
+            sqlx::query!(
+                "UPDATE apple_auth_credentials SET revoked_at = NOW(), updated_at = NOW() WHERE identity_id = $1",
+                &identity_id,
+            )
+            .execute(&state.db)
+            .await?;
             crate::api::compliance::delete_user_data(&state, &user_id).await?;
         }
         "consent-revoked" => {
-            sqlx::query("UPDATE apple_auth_credentials SET revoked_at = NOW(), updated_at = NOW() WHERE identity_id = $1")
-                .bind(&identity_id).execute(&state.db).await?;
-            sqlx::query("DELETE FROM auth_external_identities WHERE identity_id = $1")
-                .bind(&identity_id)
-                .execute(&state.db)
-                .await?;
+            sqlx::query!(
+                "UPDATE apple_auth_credentials SET revoked_at = NOW(), updated_at = NOW() WHERE identity_id = $1",
+                &identity_id,
+            )
+            .execute(&state.db)
+            .await?;
+            sqlx::query!(
+                "DELETE FROM auth_external_identities WHERE identity_id = $1",
+                &identity_id,
+            )
+            .execute(&state.db)
+            .await?;
             // Provider revocation is external and cannot be refused. If it
             // removes the last non-password primary method, immediately stop
             // treating that same password as the second step so the account
             // retains one usable sign-in path.
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE users u SET password_2fa_enabled = FALSE
                  WHERE u.user_id = $1 AND u.password_2fa_enabled
-                   AND NOT EXISTS(SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.user_id)
-                   AND NOT EXISTS(SELECT 1 FROM auth_external_identities i WHERE i.user_id = u.user_id)",
+                   AND NOT EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)
+                   AND NOT EXISTS(SELECT 1 AS present FROM auth_external_identities i WHERE i.user_id = u.user_id)",
+                &user_id,
             )
-            .bind(&user_id)
             .execute(&state.db)
             .await?;
             two_factor::clear_recovery_codes_if_unprotected(&state.db, &user_id).await?;
-            sqlx::query("UPDATE users SET token_version = token_version + 1 WHERE user_id = $1")
-                .bind(&user_id)
-                .execute(&state.db)
-                .await?;
+            sqlx::query!(
+                "UPDATE users SET token_version = token_version + 1 WHERE user_id = $1",
+                &user_id,
+            )
+            .execute(&state.db)
+            .await?;
             if let Ok(id) = user_id.parse::<Uuid>() {
                 state.fanout.kick_user(id);
             }
         }
         "email-disabled" | "email-enabled" => {
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE auth_external_identities SET email = COALESCE($2, email),
-                 profile = COALESCE(profile, '{}'::jsonb) || jsonb_build_object('relay_status', $3), updated_at = NOW()
+                 profile = COALESCE(profile, '{}'::jsonb) || jsonb_build_object('relay_status', $3::text), updated_at = NOW()
                  WHERE identity_id = $1",
-            ).bind(&identity_id).bind(event.email).bind(&event.event_type).execute(&state.db).await?;
+                &identity_id,
+                event.email,
+                &event.event_type,
+            ).execute(&state.db).await?;
         }
         _ => tracing::info!(event_type = %event.event_type, "ignored unknown verified Apple event"),
     }

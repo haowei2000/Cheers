@@ -114,7 +114,7 @@ export function WorkspaceRail({
 
   return (
     <ControlSizeProvider size="comfortable">
-    <div className="w-14 h-full bg-rail border-r border-control/80 flex flex-col items-center py-3 gap-2 flex-shrink-0 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+    <div className="w-14 h-full bg-rail border-r border-control/80 flex flex-col items-center py-3 gap-2 shrink-0 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       {/* Personal workspace — the user's home (DMs + private space), the most important
           one, so it takes the prominent top slot. Selectable; falls back to a static brand
           mark until it's loaded. */}
@@ -143,7 +143,7 @@ export function WorkspaceRail({
 
       {/* The personal workspace and team list are grouped by a small visual
           pause instead of a hard rule. */}
-      <div className="h-2 flex-shrink-0" aria-hidden />
+      <div className="h-2 shrink-0" aria-hidden />
 
       {/* Team workspaces (personal is the top slot, never listed here) */}
       <div className="flex flex-col items-center gap-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">

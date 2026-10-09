@@ -13,6 +13,7 @@ import { useMemo } from "react";
 import { CircleDot, Circle, CheckCircle2, ClipboardList } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
+import { EmptyState } from "@/components/ui/empty-state";
 import { type PanelContext } from "@/features/chat/panels/registry";
 import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
 import { useMembersIndex, memberLabel, type MembersIndex } from "../useMembersIndex";
@@ -51,10 +52,10 @@ function groupFor(status?: string | null): string {
 
 function StatusIcon({ group }: { group: string }) {
   if (group === "in_progress")
-    return <CircleDot className="w-3.5 h-3.5 flex-shrink-0 text-warning-400" />;
+    return <CircleDot className="w-3.5 h-3.5 shrink-0 text-warning-400" />;
   if (group === "completed")
-    return <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-success-500" />;
-  return <Circle className="w-3.5 h-3.5 flex-shrink-0 text-content-muted" />;
+    return <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-success-500" />;
+  return <Circle className="w-3.5 h-3.5 shrink-0 text-content-muted" />;
 }
 
 function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
@@ -92,7 +93,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
             </span>
           ) : null}
           <div className="flex-1" />
-          <span className="text-compact text-content-muted tabular-nums flex-shrink-0">
+          <span className="text-compact text-content-muted tabular-nums shrink-0">
             {completed}/{total}
           </span>
         </div>
@@ -138,15 +139,7 @@ function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: PanelContext }) 
   const members = useMembersIndex(ctx.channelId);
   const plans = data.plans ?? [];
   if (plans.length === 0) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-2 text-content-muted">
-        <ClipboardList className="w-5 h-5" />
-        <span className="text-compact text-content-muted">No plan yet</span>
-        <span className="text-compact text-content-muted">
-          A plan appears here when an agent shares one.
-        </span>
-      </div>
-    );
+    return <EmptyState icon={ClipboardList} title="No plan yet" hint="A plan appears here when an agent shares one." className="h-full" />;
   }
   return (
     <div className="p-3">

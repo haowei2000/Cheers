@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE file_records\n         SET conversion_attempts = conversion_attempts + 1, last_error = $1\n         WHERE file_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "09d398a5e36d3637f6b28c5bbd770ed1818959d819bb788eee74b2e821f59085"
+}

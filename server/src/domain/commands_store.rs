@@ -29,19 +29,19 @@ pub async fn record(
     let commands_json =
         serde_json::to_string(&commands.commands).unwrap_or_else(|_| "[]".to_string());
 
-    if let Err(err) = sqlx::query(
+    if let Err(err) = sqlx::query!(
         "INSERT INTO bot_available_commands
             (channel_id, bot_id, session_id, commands, updated_at)
-         VALUES ($1, $2, $3, $4::jsonb, now())
+         VALUES ($1, $2, $3, $4::text::jsonb, now())
          ON CONFLICT (channel_id, bot_id)
          DO UPDATE SET session_id = EXCLUDED.session_id,
                        commands   = EXCLUDED.commands,
                        updated_at = now()",
+        channel_id.to_string(),
+        bot_id.to_string(),
+        session_id.map(|s| s.to_string()),
+        commands_json,
     )
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(session_id.map(|s| s.to_string()))
-    .bind(commands_json)
     .execute(db)
     .await
     {

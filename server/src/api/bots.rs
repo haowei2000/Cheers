@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -90,56 +90,20 @@ fn validate_bot_username(raw: &str) -> Result<String, AppError> {
     Ok(value.to_string())
 }
 
-#[cfg(test)]
-mod username_tests {
-    use super::validate_bot_username;
-
-    #[test]
-    fn accepts_addressable_names_and_trims() {
-        assert_eq!(
-            validate_bot_username("  research-assistant  ").unwrap(),
-            "research-assistant"
-        );
-        assert_eq!(validate_bot_username("Bot_2").unwrap(), "Bot_2");
-    }
-
-    /// Each of these previously reached Postgres: the long one as a 500 from a
-    /// VARCHAR(64) overflow, the rest as a stored name that no longer matches
-    /// its own `@mention` or connector account id.
-    #[test]
-    fn rejects_names_that_break_addressing() {
-        for bad in [
-            "",
-            "   ",
-            "my bot",
-            "@helper",
-            "-leading",
-            "_leading",
-            "bot!",
-            "b\u{00e9}ta",
-        ] {
-            assert!(validate_bot_username(bad).is_err(), "should reject {bad:?}");
-        }
-        assert!(validate_bot_username(&"x".repeat(65)).is_err());
-        assert!(validate_bot_username(&"x".repeat(64)).is_ok());
-    }
-}
-
 pub(crate) fn is_admin(claims: &Claims) -> bool {
     matches!(claims.role.as_str(), "system_admin" | "admin")
 }
 
 /// Fetch a bot's `created_by` owner; NotFound if the bot doesn't exist.
 async fn bot_owner(state: &AppState, bot_id: &str) -> Result<Option<String>, AppError> {
-    let row = sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    Ok(row
-        .try_get::<Option<String>, _>("created_by")
-        .ok()
-        .flatten())
+    let row = sqlx::query!(
+        "SELECT created_by FROM bot_accounts WHERE bot_id = $1",
+        bot_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    Ok(row.created_by.clone())
 }
 
 /// Authorize a privileged bot op (issue token, edit/delete): admin or the bot's
@@ -184,25 +148,26 @@ async fn ensure_bot_visible(
         bot_owner(state, bot_id).await?; // existence → correct 404
         return Ok(());
     }
-    let visible: bool = sqlx::query(
+    let visible: bool = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM bot_accounts b
+            SELECT 1 AS present FROM bot_accounts b
             WHERE b.bot_id = $1 AND (
                 b.created_by = $2
                 OR EXISTS (
-                    SELECT 1 FROM channel_memberships bcm
+                    SELECT 1 AS present FROM channel_memberships bcm
                     JOIN channel_memberships ucm ON ucm.channel_id = bcm.channel_id
                     WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'
                       AND ucm.member_id = $2 AND ucm.member_type = 'user'
                 )
             )
         ) AS ok",
+        bot_id,
+        &claims.sub,
     )
-    .bind(bot_id)
-    .bind(&claims.sub)
     .fetch_one(&state.db)
     .await?
-    .try_get("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     if visible {
         Ok(())
@@ -219,7 +184,7 @@ pub async fn list_bots(
     // with (admins see all). binding_config (connector wiring) is redacted for
     // non-owners even when the bot is visible via a shared channel.
     let admin = is_admin(&claims);
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT bot_id, username, display_name, description, avatar_url, is_disabled, scope,
                 binding_type, bridge_provider, model_id, template_id, intro, binding_config,
                 created_by, status_text, status_emoji, status_updated_at,
@@ -233,33 +198,31 @@ pub async fn list_bots(
          WHERE $1
             OR b.created_by = $2
             OR EXISTS (
-                SELECT 1 FROM channel_memberships bcm
+                SELECT 1 AS present FROM channel_memberships bcm
                 JOIN channel_memberships ucm ON ucm.channel_id = bcm.channel_id
                 WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'
                   AND ucm.member_id = $2 AND ucm.member_type = 'user'
             )
          ORDER BY username",
+        admin,
+        &claims.sub,
     )
-    .bind(admin)
-    .bind(&claims.sub)
     .fetch_all(&state.db)
     .await?;
     let mut bots = Vec::with_capacity(rows.len());
     for r in rows {
-        let created_by = r.try_get::<Option<String>, _>("created_by").ok().flatten();
+        let created_by = r.created_by.clone();
         let is_owner = created_by.as_deref() == Some(claims.sub.as_str());
         let can_manage = admin || is_owner;
         let binding_config = if can_manage {
-            r.try_get::<Value, _>("binding_config").ok()
+            r.binding_config.clone()
         } else {
             None
         };
         // The auto-update prompt/config is only meaningful to a manager, and the
         // prompt may embed private instructions — redact for channel-mates.
         let status_update_prompt = if can_manage {
-            r.try_get::<Option<String>, _>("status_update_prompt")
-                .ok()
-                .flatten()
+            r.status_update_prompt.clone()
         } else {
             None
         };
@@ -268,48 +231,42 @@ pub async fn list_bots(
         // and never flipped, so it can't tell a connected bot from a dead one. All
         // bots dispatch through the WS bridge (see gateway::dispatcher), so the
         // registry is authoritative for every binding type.
-        let bot_id = r.try_get::<String, _>("bot_id").unwrap_or_default();
+        let bot_id = r.bot_id.clone();
         let is_online = match Uuid::parse_str(&bot_id) {
             Ok(id) => state.bot_locator.is_online(id).await,
             Err(_) => false,
         };
         bots.push(json!({
             "bot_id": bot_id,
-            "username": r.try_get::<String, _>("username").unwrap_or_default(),
-            "display_name": r.try_get::<String, _>("display_name").ok(),
-            "description": r.try_get::<String, _>("description").ok(),
-            "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
-            "is_disabled": r.try_get::<bool, _>("is_disabled").unwrap_or(false),
+            "username": r.username.clone(),
+            "display_name": r.display_name.clone(),
+            "description": r.description.clone(),
+            "avatar_url": r.avatar_url.clone(),
+            "is_disabled": r.is_disabled.clone(),
             "can_manage": can_manage,
             "is_online": is_online,
-            "status_text": r.try_get::<Option<String>, _>("status_text").ok().flatten(),
-            "status_emoji": r.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
-            "status_updated_at": r
-                .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
-                .ok()
-                .flatten()
+            "status_text": r.status_text.clone(),
+            "status_emoji": r.status_emoji.clone(),
+            "status_updated_at": r.status_updated_at.clone()
                 .map(|t| t.to_rfc3339()),
-            "status_auto_update": r.try_get::<bool, _>("status_auto_update").unwrap_or(false),
-            "status_update_interval_minutes": r
-                .try_get::<Option<i32>, _>("status_update_interval_minutes")
-                .ok()
-                .flatten(),
+            "status_auto_update": r.status_auto_update.clone(),
+            "status_update_interval_minutes": r.status_update_interval_minutes.clone(),
             "status_update_prompt": status_update_prompt,
-            "scope": r.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
-            "binding_type": r.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
-            "bridge_provider": r.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
-            "model_id": r.try_get::<String, _>("model_id").ok(),
-            "template_id": r.try_get::<String, _>("template_id").ok(),
-            "intro": r.try_get::<String, _>("intro").ok(),
+            "scope": r.scope.clone(),
+            "binding_type": r.binding_type.clone(),
+            "bridge_provider": r.bridge_provider.clone(),
+            "model_id": r.model_id.clone(),
+            "template_id": r.template_id.clone(),
+            "intro": r.intro.clone(),
             "binding_config": binding_config,
-            "external_processor": r.try_get::<bool, _>("external_processor").unwrap_or(false),
-            "processor_name": r.try_get::<Option<String>, _>("processor_name").ok().flatten(),
-            "processor_privacy_url": r.try_get::<Option<String>, _>("processor_privacy_url").ok().flatten(),
-            "processor_data_use": r.try_get::<Option<String>, _>("processor_data_use").ok().flatten(),
-            "processor_policy_version": r.try_get::<String, _>("processor_policy_version").unwrap_or_else(|_| "1".into()),
-            "visibility": r.try_get::<String, _>("visibility").unwrap_or_else(|_| "public".into()),
-            "friend_policy": r.try_get::<String, _>("friend_policy").unwrap_or_else(|_| "open".into()),
-            "invite_policy": r.try_get::<String, _>("invite_policy").unwrap_or_else(|_| "require_approval".into()),
+            "external_processor": r.external_processor.clone(),
+            "processor_name": r.processor_name.clone(),
+            "processor_privacy_url": r.processor_privacy_url.clone(),
+            "processor_data_use": r.processor_data_use.clone(),
+            "processor_policy_version": r.processor_policy_version.clone(),
+            "visibility": r.visibility.clone().unwrap_or_else(|| "public".into()),
+            "friend_policy": r.friend_policy.clone().unwrap_or_else(|| "open".into()),
+            "invite_policy": r.invite_policy.clone().unwrap_or_else(|| "require_approval".into()),
         }));
     }
     Ok(Json(bots))
@@ -355,11 +312,12 @@ pub async fn create_bot(
     .await?;
     // Resource-abuse bound (audit H1): cap how many bots a non-admin can own.
     if !is_admin(&claims) {
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM bot_accounts WHERE created_by = $1")
-                .bind(&claims.sub)
-                .fetch_one(&state.db)
-                .await?;
+        let count: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "value!" FROM bot_accounts WHERE created_by = $1"#,
+            &claims.sub,
+        )
+        .fetch_one(&state.db)
+        .await?;
         if count >= MAX_BOTS_PER_USER {
             return Err(AppError::Forbidden(format!(
                 "bot limit reached ({MAX_BOTS_PER_USER} per user)"
@@ -373,7 +331,7 @@ pub async fn create_bot(
     let scope = body.scope.unwrap_or_else(|| "friend".into());
     let binding_type = body.binding_type.unwrap_or_else(|| "agent_bridge".into());
     let bridge_provider = body.bridge_provider.unwrap_or_else(|| "generic".into());
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "INSERT INTO bot_accounts
          (bot_id, username, display_name, description, avatar_url, model_id, template_id,
              custom_system_prompt, scope, intro, binding_type, bridge_provider,
@@ -383,27 +341,26 @@ pub async fn create_bot(
          RETURNING bot_id, username, display_name, description, avatar_url, is_disabled, scope,
                    binding_type, bridge_provider, model_id, template_id, intro, binding_config,
                    external_processor, processor_name, processor_privacy_url, processor_data_use, processor_policy_version",
-    )
-    .bind(&bot_id)
-    .bind(&username)
-    .bind(body.display_name)
-    .bind(body.description)
-    .bind(body.avatar_url)
-    .bind(body.model_id)
-    .bind(body.template_id)
-    .bind(body.custom_system_prompt)
-    .bind(scope)
-    .bind(body.intro)
-    .bind(binding_type)
-    .bind(bridge_provider)
-    .bind(binding_config)
-    .bind(&claims.sub)
-    .bind(body.external_processor)
-    .bind(body.processor_name)
-    .bind(body.processor_privacy_url)
-    .bind(body.processor_data_use)
-    .bind(body.processor_policy_version.unwrap_or_else(|| "1".into()))
-    .fetch_one(&state.db)
+        &bot_id,
+        &username,
+        body.display_name,
+        body.description,
+        body.avatar_url,
+        body.model_id,
+        body.template_id,
+        body.custom_system_prompt,
+        scope,
+        body.intro,
+        binding_type,
+        bridge_provider,
+        binding_config,
+        &claims.sub,
+        body.external_processor,
+        body.processor_name,
+        body.processor_privacy_url,
+        body.processor_data_use,
+        body.processor_policy_version.unwrap_or_else(|| "1".into()),
+    ).fetch_one(&state.db)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(de) if de.is_unique_violation() => AppError::Conflict(format!(
@@ -421,25 +378,25 @@ pub async fn create_bot(
     )
     .await;
     Ok(Json(json!({
-        "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
-        "username": row.try_get::<String, _>("username").unwrap_or_default(),
-        "display_name": row.try_get::<String, _>("display_name").ok(),
-        "description": row.try_get::<String, _>("description").ok(),
-        "avatar_url": row.try_get::<String, _>("avatar_url").ok(),
-        "is_disabled": row.try_get::<bool, _>("is_disabled").unwrap_or(false),
+        "bot_id": row.bot_id.clone(),
+        "username": row.username.clone(),
+        "display_name": row.display_name.clone(),
+        "description": row.description.clone(),
+        "avatar_url": row.avatar_url.clone(),
+        "is_disabled": row.is_disabled.clone(),
         "can_manage": true,
-        "scope": row.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
-        "binding_type": row.try_get::<String, _>("binding_type").unwrap_or_else(|_| "agent_bridge".into()),
-        "bridge_provider": row.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
-        "model_id": row.try_get::<String, _>("model_id").ok(),
-        "template_id": row.try_get::<String, _>("template_id").ok(),
-        "intro": row.try_get::<String, _>("intro").ok(),
-        "binding_config": row.try_get::<Value, _>("binding_config").ok(),
-        "external_processor": row.try_get::<bool, _>("external_processor").unwrap_or(false),
-        "processor_name": row.try_get::<Option<String>, _>("processor_name").ok().flatten(),
-        "processor_privacy_url": row.try_get::<Option<String>, _>("processor_privacy_url").ok().flatten(),
-        "processor_data_use": row.try_get::<Option<String>, _>("processor_data_use").ok().flatten(),
-        "processor_policy_version": row.try_get::<String, _>("processor_policy_version").unwrap_or_else(|_| "1".into()),
+        "scope": row.scope.clone(),
+        "binding_type": row.binding_type.clone(),
+        "bridge_provider": row.bridge_provider.clone(),
+        "model_id": row.model_id.clone(),
+        "template_id": row.template_id.clone(),
+        "intro": row.intro.clone(),
+        "binding_config": row.binding_config.clone(),
+        "external_processor": row.external_processor.clone(),
+        "processor_name": row.processor_name.clone(),
+        "processor_privacy_url": row.processor_privacy_url.clone(),
+        "processor_data_use": row.processor_data_use.clone(),
+        "processor_policy_version": row.processor_policy_version.clone(),
     })))
 }
 
@@ -494,17 +451,17 @@ pub async fn get_bot_status(
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_visible(&state, &claims, &bot_id).await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT bot_id, is_disabled, binding_type, created_by,
                 status_text, status_emoji, status_updated_at,
                 binding_config->'connector_control'->>'connector_version' AS connector_version
          FROM bot_accounts WHERE bot_id = $1",
+        &bot_id,
     )
-    .bind(&bot_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let is_disabled: bool = row.try_get("is_disabled").unwrap_or(false);
+    let is_disabled: bool = row.is_disabled.clone();
 
     // bridge_connected is the LIVE truth from the connection registry (a control
     // + data WS are bound right now), distinct from the persisted `status` flag.
@@ -516,18 +473,15 @@ pub async fn get_bot_status(
 
     // Pending-host count is owner/admin-only: it reveals live pairing
     // secrets' existence, which a channel-mate (visible-but-not-owner) shouldn't see.
-    let owner = row
-        .try_get::<Option<String>, _>("created_by")
-        .ok()
-        .flatten();
+    let owner = row.created_by.clone();
     let is_owner_or_admin = is_admin(&claims) || owner.as_deref() == Some(claims.sub.as_str());
     let live_codes: Option<i64> = if is_owner_or_admin {
         Some(
-            sqlx::query_scalar(
-                "SELECT COUNT(*) FROM enrollment_codes
-                 WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()",
+            sqlx::query_scalar!(
+                r#"SELECT COUNT(*) AS "value!" FROM enrollment_codes
+                 WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()"#,
+                &bot_id,
             )
-            .bind(&bot_id)
             .fetch_one(&state.db)
             .await?,
         )
@@ -538,19 +492,14 @@ pub async fn get_bot_status(
     // Recent control-bridge history: when the connector last attached/detached.
     // Complements the live flag with a minimal timeline anchor (full history via
     // GET /bots/:bot_id/connection-events).
-    let (last_connected_at, last_disconnected_at) = sqlx::query_as::<
-        _,
-        (
-            Option<chrono::DateTime<chrono::Utc>>,
-            Option<chrono::DateTime<chrono::Utc>>,
-        ),
-    >(
-        "SELECT MAX(created_at) FILTER (WHERE event = 'connected'),
-                MAX(created_at) FILTER (WHERE event = 'disconnected')
+    let (last_connected_at, last_disconnected_at) = sqlx::query!(
+        "SELECT MAX(created_at) FILTER (WHERE event = 'connected') AS last_connected_at,
+                MAX(created_at) FILTER (WHERE event = 'disconnected') AS last_disconnected_at
          FROM bot_connection_events
          WHERE bot_id = $1 AND stream = 'control'",
+        &bot_id,
     )
-    .bind(&bot_id)
+    .map(|row| (row.last_connected_at, row.last_disconnected_at))
     .fetch_one(&state.db)
     .await?;
 
@@ -558,10 +507,7 @@ pub async fn get_bot_status(
     // `ready` vs. the release this gateway serves. `update_available` only turns
     // true on a strict semver-triple increase, so a pinned-back gateway doesn't
     // nag newer connectors to "update" downward.
-    let connector_version = row
-        .try_get::<Option<String>, _>("connector_version")
-        .ok()
-        .flatten();
+    let connector_version = row.connector_version.clone();
     let latest_version = state.config.connector_release_version.clone();
     let update_available = match (connector_version.as_deref(), latest_version.as_deref()) {
         (Some(cur), Some(latest)) => version_is_newer(latest, cur),
@@ -569,9 +515,9 @@ pub async fn get_bot_status(
     };
 
     Ok(Json(json!({
-        "bot_id": row.try_get::<String, _>("bot_id").unwrap_or(bot_id),
+        "bot_id": row.bot_id.clone(),
         "is_disabled": is_disabled,
-        "binding_type": row.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
+        "binding_type": row.binding_type.clone(),
         // `connection_status`/`is_online` are LIVE (bridge bound right now); `is_disabled`
         // is the separate admin enable flag. Don't conflate them — a bot can be enabled
         // yet have no live connector.
@@ -584,12 +530,9 @@ pub async fn get_bot_status(
         "connector_version": connector_version,
         "latest_connector_version": latest_version,
         "update_available": update_available,
-        "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
-        "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
-        "status_updated_at": row
-            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
-            .ok()
-            .flatten()
+        "status_text": row.status_text.clone(),
+        "status_emoji": row.status_emoji.clone(),
+        "status_updated_at": row.status_updated_at.clone()
             .map(|t| t.to_rfc3339()),
     })))
 }
@@ -611,27 +554,26 @@ pub async fn list_connection_events(
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_visible(&state, &claims, &bot_id).await?;
     let limit = params.limit.unwrap_or(50).clamp(1, 200);
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT stream, event, reason, connection_id, created_at
          FROM bot_connection_events
          WHERE bot_id = $1
          ORDER BY created_at DESC, id DESC
          LIMIT $2",
+        &bot_id,
+        limit,
     )
-    .bind(&bot_id)
-    .bind(limit)
     .fetch_all(&state.db)
     .await?;
     let events: Vec<Value> = rows
         .into_iter()
         .map(|r| {
             json!({
-                "stream": r.try_get::<String, _>("stream").unwrap_or_default(),
-                "event": r.try_get::<String, _>("event").unwrap_or_default(),
-                "reason": r.try_get::<Option<String>, _>("reason").ok().flatten(),
-                "connection_id": r.try_get::<Option<String>, _>("connection_id").ok().flatten(),
-                "created_at": r
-                    .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                "stream": r.stream.clone(),
+                "event": r.event.clone(),
+                "reason": r.reason.clone(),
+                "connection_id": r.connection_id.clone(),
+                "created_at": Some(r.created_at.clone())
                     .map(|t| t.to_rfc3339())
                     .unwrap_or_default(),
             })
@@ -667,11 +609,13 @@ async fn set_bot_disabled(
     disabled: bool,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(state, claims, bot_id).await?;
-    let res = sqlx::query("UPDATE bot_accounts SET is_disabled = $2 WHERE bot_id = $1")
-        .bind(bot_id)
-        .bind(disabled)
-        .execute(&state.db)
-        .await?;
+    let res = sqlx::query!(
+        "UPDATE bot_accounts SET is_disabled = $2 WHERE bot_id = $1",
+        bot_id,
+        disabled,
+    )
+    .execute(&state.db)
+    .await?;
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
@@ -714,12 +658,13 @@ pub async fn delete_bot(
     }
     let mut tx = state.db.begin().await?;
     // channel_memberships.member_id has no FK (generic user|bot id) → delete by hand.
-    sqlx::query("DELETE FROM channel_memberships WHERE member_id = $1 AND member_type = 'bot'")
-        .bind(&bot_id)
-        .execute(&mut *tx)
-        .await?;
-    let res = sqlx::query("DELETE FROM bot_accounts WHERE bot_id = $1")
-        .bind(&bot_id)
+    sqlx::query!(
+        "DELETE FROM channel_memberships WHERE member_id = $1 AND member_type = 'bot'",
+        &bot_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    let res = sqlx::query!("DELETE FROM bot_accounts WHERE bot_id = $1", &bot_id,)
         .execute(&mut *tx)
         .await?;
     if res.rows_affected() == 0 {
@@ -744,12 +689,15 @@ pub async fn test_bot(
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_visible(&state, &claims, &bot_id).await?;
-    let exists = sqlx::query("SELECT EXISTS(SELECT 1 FROM bot_accounts WHERE bot_id = $1) AS ok")
-        .bind(&bot_id)
-        .fetch_one(&state.db)
-        .await?
-        .try_get::<bool, _>("ok")
-        .unwrap_or(false);
+    let exists = sqlx::query!(
+        "SELECT EXISTS(SELECT 1 AS present FROM bot_accounts WHERE bot_id = $1) AS ok",
+        &bot_id,
+    )
+    .fetch_one(&state.db)
+    .await?
+    .ok
+    .clone()
+    .unwrap_or(false);
     if !exists {
         return Err(AppError::NotFound);
     }
@@ -766,14 +714,14 @@ pub async fn mint_bot_token(state: &AppState, bot_id: &str) -> Result<(String, S
     let token_hash = hash_bot_token(&token);
     let token_prefix = token[..token.len().min(12)].to_string();
 
-    let updated = sqlx::query(
+    let updated = sqlx::query!(
         "UPDATE bot_accounts
          SET bot_token_hash = $1, bot_token_prefix = $2, bot_token_rotated_at = NOW()
          WHERE bot_id = $3",
+        &token_hash,
+        &token_prefix,
+        bot_id,
     )
-    .bind(&token_hash)
-    .bind(&token_prefix)
-    .bind(bot_id)
     .execute(&state.db)
     .await?;
 
@@ -922,10 +870,10 @@ pub async fn update_bot_profile(
     if auto_update_provided && auto_update {
         let has_prompt = status_prompt.value.is_some()
             || (!status_prompt.provided
-                && sqlx::query_scalar::<_, Option<String>>(
+                && sqlx::query_scalar!(
                     "SELECT status_update_prompt FROM bot_accounts WHERE bot_id = $1",
+                    &bot_id,
                 )
-                .bind(&bot_id)
                 .fetch_optional(&state.db)
                 .await?
                 .flatten()
@@ -939,7 +887,7 @@ pub async fn update_bot_profile(
 
     let touched_status = status_text.provided || status_emoji.provided;
 
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "UPDATE bot_accounts SET
             display_name = CASE WHEN $2 THEN $3 ELSE display_name END,
             description  = CASE WHEN $4 THEN $5 ELSE description END,
@@ -956,35 +904,35 @@ pub async fn update_bot_profile(
             processor_data_use = CASE WHEN $25 THEN $26 ELSE processor_data_use END,
             processor_policy_version = CASE WHEN $27 THEN $28 ELSE processor_policy_version END
          WHERE bot_id = $1",
+        &bot_id,
+        display_name.provided,
+        display_name.value.as_deref(),
+        description.provided,
+        description.value.as_deref(),
+        intro.provided,
+        intro.value.as_deref(),
+        status_text.provided,
+        status_text.value.as_deref(),
+        status_emoji.provided,
+        status_emoji.value.as_deref(),
+        touched_status,
+        auto_update_provided,
+        auto_update,
+        status_prompt.provided,
+        status_prompt.value.as_deref(),
+        interval_provided,
+        interval,
+        external_processor_provided,
+        external_processor,
+        processor_name.provided,
+        processor_name.value.as_deref(),
+        processor_privacy_url.provided,
+        processor_privacy_url.value.as_deref(),
+        processor_data_use.provided,
+        processor_data_use.value.as_deref(),
+        processor_policy_version.provided,
+        processor_policy_version.value.as_deref(),
     )
-    .bind(&bot_id)
-    .bind(display_name.provided)
-    .bind(&display_name.value)
-    .bind(description.provided)
-    .bind(&description.value)
-    .bind(intro.provided)
-    .bind(&intro.value)
-    .bind(status_text.provided)
-    .bind(&status_text.value)
-    .bind(status_emoji.provided)
-    .bind(&status_emoji.value)
-    .bind(touched_status)
-    .bind(auto_update_provided)
-    .bind(auto_update)
-    .bind(status_prompt.provided)
-    .bind(&status_prompt.value)
-    .bind(interval_provided)
-    .bind(interval)
-    .bind(external_processor_provided)
-    .bind(external_processor)
-    .bind(processor_name.provided)
-    .bind(&processor_name.value)
-    .bind(processor_privacy_url.provided)
-    .bind(&processor_privacy_url.value)
-    .bind(processor_data_use.provided)
-    .bind(&processor_data_use.value)
-    .bind(processor_policy_version.provided)
-    .bind(&processor_policy_version.value)
     .execute(&state.db)
     .await?;
     if res.rows_affected() == 0 {
@@ -1036,13 +984,13 @@ pub async fn bot_self_status(
     let token_hash = hash_host_credential(token);
     // Require the currently active, non-revoked host. Matching the path
     // bot_id prevents a credential from editing another bot's profile.
-    let matched: Option<String> = sqlx::query_scalar(
+    let matched: Option<String> = sqlx::query_scalar!(
         "SELECT host_id FROM connector_hosts
          WHERE credential_hash = $1 AND bot_id = $2
            AND status = 'active' AND revoked_at IS NULL",
+        &token_hash,
+        &bot_id,
     )
-    .bind(&token_hash)
-    .bind(&bot_id)
     .fetch_optional(&state.db)
     .await?;
     if matched.is_none() {
@@ -1164,7 +1112,7 @@ pub(crate) async fn persist_bot_self_status(
             "description too long (≤1000 chars)".into(),
         ));
     }
-    sqlx::query(
+    sqlx::query!(
         "UPDATE bot_accounts SET
             status_text = $2,
             status_emoji = $3,
@@ -1172,12 +1120,12 @@ pub(crate) async fn persist_bot_self_status(
             status_updated_at = NOW(),
             status_last_auto_update_at = NOW()
          WHERE bot_id = $1",
+        bot_id,
+        status_text.as_deref(),
+        status_emoji.as_deref(),
+        description_provided,
+        description.as_deref(),
     )
-    .bind(bot_id)
-    .bind(status_text)
-    .bind(status_emoji)
-    .bind(description_provided)
-    .bind(description)
     .execute(db)
     .await
     .map(|_| ())
@@ -1189,11 +1137,11 @@ pub(crate) async fn persist_bot_self_status(
 /// [`crate::api::users::broadcast_member_update`]. Best-effort; a bot's `bio` on the
 /// member card is its `description`. Never fails the caller.
 pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
-    let row = match sqlx::query(
+    let row = match sqlx::query!(
         "SELECT display_name, avatar_url, description, status_text, status_emoji, status_updated_at
          FROM bot_accounts WHERE bot_id = $1",
+        bot_id,
     )
-    .bind(bot_id)
     .fetch_optional(&state.db)
     .await
     {
@@ -1203,24 +1151,21 @@ pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
     let profile = json!({
         "member_id": bot_id,
         "member_type": "bot",
-        "display_name": row.try_get::<Option<String>, _>("display_name").ok().flatten(),
-        "avatar_url": row.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-        "bio": row.try_get::<Option<String>, _>("description").ok().flatten(),
-        "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
-        "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+        "display_name": row.display_name.clone(),
+        "avatar_url": row.avatar_url.clone(),
+        "bio": row.description.clone(),
+        "status_text": row.status_text.clone(),
+        "status_emoji": row.status_emoji.clone(),
         // RFC3339 so the hovercard can render "updated x ago" (audit item 5).
-        "status_updated_at": row
-            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
-            .ok()
-            .flatten()
+        "status_updated_at": row.status_updated_at.clone()
             .map(|t| t.to_rfc3339()),
     });
 
-    let channels: Vec<String> = sqlx::query_scalar(
-        "SELECT channel_id::text FROM channel_memberships
-         WHERE member_id = $1 AND member_type = 'bot'",
+    let channels: Vec<String> = sqlx::query_scalar!(
+        r#"SELECT channel_id::text AS "value!" FROM channel_memberships
+         WHERE member_id = $1 AND member_type = 'bot'"#,
+        bot_id,
     )
-    .bind(bot_id)
     .fetch_all(&state.db)
     .await
     .unwrap_or_default();
@@ -1273,12 +1218,13 @@ pub async fn refresh_bot_status(
 
     // The prompt that makes the agent produce its status; default so the button works
     // before a custom `status_update_prompt` is configured.
-    let configured: Option<String> =
-        sqlx::query_scalar("SELECT status_update_prompt FROM bot_accounts WHERE bot_id = $1")
-            .bind(&bot_id)
-            .fetch_optional(&state.db)
-            .await?
-            .flatten();
+    let configured: Option<String> = sqlx::query_scalar!(
+        "SELECT status_update_prompt FROM bot_accounts WHERE bot_id = $1",
+        &bot_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
     let prompt = configured
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -1299,17 +1245,17 @@ pub async fn refresh_bot_status(
     // still returns Ok) — which would make this endpoint report a false success while
     // the agent never runs. Check the same gate `send_message` uses up front and fail
     // loudly instead. Fail-open on a rules error, matching create_message/cancel_message.
-    let caller_role: String = sqlx::query(
+    let caller_role: String = sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id.to_string(),
+        &claims.sub,
     )
-    .bind(channel_id.to_string())
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .and_then(|r| Some(r.role.clone()))
     .unwrap_or_else(|| "member".to_string());
     let may_prompt = crate::domain::acp_policy::allows(
         &state.db,
@@ -1370,22 +1316,22 @@ pub async fn get_bot_social_policy(
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT bot_id, COALESCE(visibility, 'public') AS visibility,
                 COALESCE(friend_policy, 'open') AS friend_policy,
                 COALESCE(invite_policy, 'require_approval') AS invite_policy
          FROM bot_accounts WHERE bot_id = $1",
+        &bot_id,
     )
-    .bind(&bot_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
     Ok(Json(json!({
         "bot_id": bot_id,
-        "visibility": row.try_get::<String, _>("visibility").unwrap_or_else(|_| "public".into()),
-        "friend_policy": row.try_get::<String, _>("friend_policy").unwrap_or_else(|_| "open".into()),
-        "invite_policy": row.try_get::<String, _>("invite_policy").unwrap_or_else(|_| "require_approval".into()),
+        "visibility": row.visibility.clone().unwrap_or_else(|| "public".into()),
+        "friend_policy": row.friend_policy.clone().unwrap_or_else(|| "open".into()),
+        "invite_policy": row.invite_policy.clone().unwrap_or_else(|| "require_approval".into()),
     })))
 }
 
@@ -1410,15 +1356,15 @@ pub async fn update_bot_social_policy(
         return Err(AppError::BadRequest("invalid invite_policy option".into()));
     }
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE bot_accounts
          SET visibility = $1, friend_policy = $2, invite_policy = $3
          WHERE bot_id = $4",
+        visibility,
+        friend_policy,
+        invite_policy,
+        &bot_id,
     )
-    .bind(visibility)
-    .bind(friend_policy)
-    .bind(invite_policy)
-    .bind(&bot_id)
     .execute(&state.db)
     .await?;
 
@@ -1464,5 +1410,43 @@ mod tests {
         assert!(!version_is_newer("0.1.25", "0.1.26"));
         assert!(!version_is_newer("latest", "0.1.26"));
         assert!(!version_is_newer("0.1.27", "unknown"));
+    }
+}
+
+// Kept at the end of the file: clippy's `items_after_test_module` rejects
+// production items that follow a `#[cfg(test)] mod`, and this module used to sit
+// in the middle of the username helpers.
+#[cfg(test)]
+mod username_tests {
+    use super::validate_bot_username;
+
+    #[test]
+    fn accepts_addressable_names_and_trims() {
+        assert_eq!(
+            validate_bot_username("  research-assistant  ").unwrap(),
+            "research-assistant"
+        );
+        assert_eq!(validate_bot_username("Bot_2").unwrap(), "Bot_2");
+    }
+
+    /// Each of these previously reached Postgres: the long one as a 500 from a
+    /// VARCHAR(64) overflow, the rest as a stored name that no longer matches
+    /// its own `@mention` or connector account id.
+    #[test]
+    fn rejects_names_that_break_addressing() {
+        for bad in [
+            "",
+            "   ",
+            "my bot",
+            "@helper",
+            "-leading",
+            "_leading",
+            "bot!",
+            "b\u{00e9}ta",
+        ] {
+            assert!(validate_bot_username(bad).is_err(), "should reject {bad:?}");
+        }
+        assert!(validate_bot_username(&"x".repeat(65)).is_err());
+        assert!(validate_bot_username(&"x".repeat(64)).is_ok());
     }
 }

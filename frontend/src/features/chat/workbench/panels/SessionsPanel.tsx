@@ -24,6 +24,7 @@ import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
 import { Layers, CircleDot, X, Bot as BotIcon, Info, Folder, ArrowUp, Save } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   getSessionControls,
   closeChannelBotSession,
@@ -41,7 +42,7 @@ import { cn } from "@/lib/cn";
 import { OperationsItem } from "@/components/ui/item";
 import { Badge } from "@/components/ui/badge";
 import { type PanelContext } from "@/features/chat/panels/registry";
-import { registerDataPanel, channelSessionParams } from "@/features/chat/panels/definePanel";
+import { registerDataPanel } from "@/features/chat/panels/definePanel";
 
 interface SessionRow {
   session_id: string;
@@ -264,9 +265,11 @@ function SessionCard({
           {(canMode || canCfg) && (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {canMode && (
-                <label className="inline-flex items-center gap-1">
-                  <span className="text-minimal text-content-muted">mode</span>
+                <div className="inline-flex items-center gap-1">
+                  <span id={`${s.session_id}-mode-label`} className="text-minimal text-content-muted">mode</span>
                   <UiSelect
+                    id={`${s.session_id}-mode`}
+                    aria-labelledby={`${s.session_id}-mode-label`}
                     value={controls!.allowed_modes.includes(mode) ? mode : ""}
                     disabled={actionBusy}
                     onChange={(e) =>
@@ -284,15 +287,17 @@ function SessionCard({
                       </option>
                     ))}
                   </UiSelect>
-                </label>
+                </div>
               )}
               {canCfg &&
                 controls!.config_options.map((opt) => {
                   const cur = cfgValues[opt.id] ?? opt.currentValue ?? "";
                   return (
-                    <label key={opt.id} className="inline-flex items-center gap-1">
-                      <span className="text-minimal text-content-muted">{opt.name}</span>
+                    <div key={opt.id} className="inline-flex items-center gap-1">
+                      <span id={`${s.session_id}-${opt.id}-label`} className="text-minimal text-content-muted">{opt.name}</span>
                       <UiSelect
+                        id={`${s.session_id}-${opt.id}`}
+                        aria-labelledby={`${s.session_id}-${opt.id}-label`}
                         value={opt.options.some((o) => o.value === cur) ? cur : ""}
                         disabled={actionBusy}
                         onChange={(e) =>
@@ -312,7 +317,7 @@ function SessionCard({
                           </option>
                         ))}
                       </UiSelect>
-                    </label>
+                    </div>
                   );
                 })}
             </div>
@@ -541,7 +546,7 @@ function SessionsBody({
   ctx: PanelContext;
   refetch: () => void;
 }) {
-  const sessions = data.sessions ?? [];
+  const sessions = useMemo(() => data.sessions ?? [], [data.sessions]);
   const selected = ctx.scopeSessionId || "";
 
   // The bot universe = bots with sessions on the board ∪ bot members of the channel
@@ -657,10 +662,7 @@ function SessionsBody({
       </div>
 
       {sessions.length === 0 ? (
-        <div className="px-3 py-6 text-compact text-content-muted flex items-center gap-2">
-          <Layers className="w-4 h-4" />
-          No sessions yet
-        </div>
+        <EmptyState icon={Layers} title="No sessions yet" hint="Create a session to start work in this channel." className="py-6" />
       ) : (
         groups.map((g) => (
           <BotGroup

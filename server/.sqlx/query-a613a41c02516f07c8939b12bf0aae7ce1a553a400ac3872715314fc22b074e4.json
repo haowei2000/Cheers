@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO cheers_sessions (\n            session_id, bot_id, provider, provider_account_id, provider_agent_id,\n            provider_session_key, provider_session_id, current_scope_type, current_scope_id,\n            status, metadata, last_used_at, created_at, updated_at\n        ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $11::jsonb, $10, $10, $10)\n        ON CONFLICT (provider, provider_account_id, provider_session_key)\n        DO UPDATE SET updated_at = EXCLUDED.updated_at\n        RETURNING session_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a613a41c02516f07c8939b12bf0aae7ce1a553a400ac3872715314fc22b074e4"
+}

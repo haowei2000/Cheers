@@ -1,5 +1,5 @@
 use jsonwebtoken::{encode, Algorithm, Header};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{api::middleware::Claims, config::Config, errors::AppError};
@@ -46,23 +46,23 @@ pub struct AuthUser {
 }
 
 pub async fn load_auth_user(db: &PgPool, user_id: &str) -> Result<AuthUser, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT user_id, username, display_name, role, token_version, is_suspended
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(db)
     .await?
     .ok_or(AppError::NotFound)?;
-    if row.try_get::<bool, _>("is_suspended").unwrap_or(false) {
+    if row.is_suspended.clone() {
         return Err(AppError::Forbidden("account suspended".into()));
     }
     Ok(AuthUser {
-        id: row.try_get("user_id")?,
-        username: row.try_get("username")?,
-        display_name: row.try_get("display_name").ok(),
-        role: row.try_get("role").unwrap_or_else(|_| "member".into()),
-        token_version: row.try_get("token_version").unwrap_or(0),
+        id: row.user_id.clone(),
+        username: row.username.clone(),
+        display_name: row.display_name.clone(),
+        role: row.role.clone(),
+        token_version: row.token_version.clone(),
     })
 }
 
@@ -72,19 +72,19 @@ pub async fn authenticate(
     login: &str, // username 或 email
     password: &str,
 ) -> Result<AuthUser, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT user_id, username, password_hash, display_name, role, token_version, is_suspended
          FROM users
          WHERE (username = $1 OR email = $1) AND is_deleted = FALSE
          LIMIT 1",
+        login,
     )
-    .bind(login)
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
     .ok_or_else(|| AppError::Unauthorized("invalid credentials".into()))?;
 
-    let hashed: Option<String> = row.try_get("password_hash").map_err(AppError::Db)?;
+    let hashed: Option<String> = row.password_hash.clone();
     let hashed = hashed
         .ok_or_else(|| AppError::Unauthorized("use Sign in with Apple for this account".into()))?;
 
@@ -98,15 +98,15 @@ pub async fn authenticate(
         return Err(AppError::Unauthorized("invalid credentials".into()));
     }
 
-    if row.try_get::<bool, _>("is_suspended").unwrap_or(false) {
+    if row.is_suspended.clone() {
         return Err(AppError::Forbidden("account suspended".into()));
     }
 
     Ok(AuthUser {
-        id: row.try_get("user_id").map_err(AppError::Db)?,
-        username: row.try_get("username").map_err(AppError::Db)?,
-        display_name: row.try_get("display_name").ok(),
-        role: row.try_get("role").unwrap_or_else(|_| "user".to_string()),
-        token_version: row.try_get::<i32, _>("token_version").unwrap_or(0),
+        id: row.user_id.clone(),
+        username: row.username.clone(),
+        display_name: row.display_name.clone(),
+        role: row.role.clone(),
+        token_version: row.token_version.clone(),
     })
 }

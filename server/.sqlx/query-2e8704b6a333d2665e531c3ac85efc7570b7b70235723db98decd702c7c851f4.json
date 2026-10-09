@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.friend_id\n                 FROM friendships f\n                 JOIN bot_accounts b ON b.bot_id = f.friend_id\n                 WHERE f.user_id = $1 AND b.created_by = $2 AND f.status = 'pending'\n                 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "friend_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2e8704b6a333d2665e531c3ac85efc7570b7b70235723db98decd702c7c851f4"
+}

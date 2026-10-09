@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { formatOf, candidatesFor } from "../renderers/registry";
 import { artifactCsp, buildArtifactHtml } from "./ArtifactLens";
 import { compileArtifactTsx } from "./artifactCompiler";
+import { runInNewContext } from "node:vm";
+import { version as reactVersion } from "react";
+import reactRuntime from "virtual:artifact-react-runtime";
 
 describe("ArtifactLens format & registry matching", () => {
   it("recognizes HTML and TSX canvas files", () => {
@@ -15,6 +18,14 @@ describe("ArtifactLens format & registry matching", () => {
 });
 
 describe("isolated artifact document", () => {
+  it("bundles matching React globals without a module loader or network", () => {
+    const window: { React?: { version: string; useState: unknown }; ReactDOM?: { createRoot: unknown } } = {};
+    runInNewContext(reactRuntime, { window });
+    expect(window.React?.version).toBe(reactVersion);
+    expect(window.React?.useState).toBeTypeOf("function");
+    expect(window.ReactDOM?.createRoot).toBeTypeOf("function");
+  });
+
   it("places a default-deny policy before authored HTML", () => {
     const html = buildArtifactHtml('<script>window.authored = true</script><main data-cheers-canvas>Hi</main>', "html");
     expect(html).toContain("<!doctype html>");

@@ -5,7 +5,6 @@ import toast from "react-hot-toast";
 import { Trash2, LogOut, Mic, MicOff, Loader2 } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ActionButton } from "@/components/ui/action-button";
 import { Avatar } from "@/components/ui/avatar";
 import { EntityItem, OperationsItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
@@ -336,7 +335,7 @@ export function ChannelSettingsDialog({
         <div className="rounded-sm bg-zinc-900/60 p-3">
           <div className="flex items-start gap-3">
             {/* Avatar / Icon: click to edit */}
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               {channel.type !== "dm" && canManage ? (
                 <AvatarUpload
                   name={savedMeta.name}
@@ -363,7 +362,6 @@ export function ChannelSettingsDialog({
                   <div className="flex min-w-0 flex-1 items-center gap-1">
                     <UiInput
                       id="channel-settings-name"
-                      autoFocus
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       onKeyDown={(e) => {
@@ -420,7 +418,7 @@ export function ChannelSettingsDialog({
 
                 {/* Right controls: Channel type + Voice (non-DM) */}
                 {channel.type !== "dm" && (
-                  <div className="flex flex-shrink-0 items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-1">
                     <UiSelect
                       value={conversationMode}
                       disabled={!canManage || savingMeta}
@@ -466,7 +464,6 @@ export function ChannelSettingsDialog({
                 <div className="flex min-w-0 items-center gap-1">
                   <UiInput
                     id="channel-settings-purpose"
-                    autoFocus
                     value={purpose}
                     placeholder="(Optional) what this channel is for…"
                     onChange={(e) => setPurpose(e.target.value)}
@@ -678,12 +675,11 @@ export function ChannelSettingsDialog({
               <p className="text-compact text-content-muted mt-1">Deletes its messages and members too. This cannot be undone.</p>
             </div>
             {confirmingDelete ? (
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 <Button
                   action="cancel"
                   variant="secondary"
                   controlSize="compact"
-                  autoFocus
                   disabled={deleting}
                   onClick={() => setConfirmingDelete(false)}
                 />
@@ -706,8 +702,8 @@ export function ChannelSettingsDialog({
               <p className="text-compact text-content-muted mt-1">Remove yourself from this channel.</p>
             </div>
             {confirmingLeave ? (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Button action="cancel" variant="ghost" controlSize="compact" autoFocus onClick={() => setConfirmingLeave(false)} />
+              <div className="flex items-center gap-2 shrink-0">
+                <Button action="cancel" variant="ghost" controlSize="compact" onClick={() => setConfirmingLeave(false)} />
                 <Button action="leave" aria-label="Leave channel" variant="secondary" controlSize="compact" onClick={() => void leave()} />
               </div>
             ) : (

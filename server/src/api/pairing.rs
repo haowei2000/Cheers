@@ -22,7 +22,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -136,16 +136,20 @@ pub async fn create_host(
     // serializes a single owner's concurrent mints (the realistic race: double
     // submit / retry); it's released on commit or on rollback when `tx` drops.
     let mut tx = state.db.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)")
-        .bind(&claims.sub)
-        .execute(&mut *tx)
-        .await?;
-
-    let live_for_bot: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM enrollment_codes
-         WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()",
+    sqlx::Executor::execute(
+        &mut *tx,
+        sqlx::query!(
+            "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+            &claims.sub,
+        ),
     )
-    .bind(&bot_id)
+    .await?;
+
+    let live_for_bot: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "value!" FROM enrollment_codes
+         WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()"#,
+        &bot_id,
+    )
     .fetch_one(&mut *tx)
     .await?;
     if live_for_bot >= MAX_LIVE_PAIRINGS_PER_BOT {
@@ -155,11 +159,11 @@ pub async fn create_host(
     }
 
     // Per-owner global cap (uses the partial index ix_enrollment_codes_live).
-    let live_for_owner: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM enrollment_codes
-         WHERE created_by = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()",
+    let live_for_owner: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "value!" FROM enrollment_codes
+         WHERE created_by = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()"#,
+        &claims.sub,
     )
-    .bind(&claims.sub)
     .fetch_one(&mut *tx)
     .await?;
     if live_for_owner >= MAX_LIVE_PAIRINGS_PER_OWNER {
@@ -168,34 +172,34 @@ pub async fn create_host(
         )));
     }
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO connector_hosts
            (host_id, bot_id, device_name, agent_type, status)
          VALUES ($1, $2, $3, $4, 'pending')",
+        &host_id,
+        &bot_id,
+        &device_name,
+        &agent_type,
     )
-    .bind(&host_id)
-    .bind(&bot_id)
-    .bind(&device_name)
-    .bind(&agent_type)
     .execute(&mut *tx)
     .await?;
 
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "INSERT INTO enrollment_codes
             (code_id, bot_id, code_hash, created_by, agent_type, host_id, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW() + make_interval(secs => $7))
          RETURNING expires_at",
+        &pairing_id,
+        &bot_id,
+        &code_hash,
+        &claims.sub,
+        &agent_type,
+        &host_id,
+        PAIRING_TTL_SECS,
     )
-    .bind(&pairing_id)
-    .bind(&bot_id)
-    .bind(&code_hash)
-    .bind(&claims.sub)
-    .bind(&agent_type)
-    .bind(&host_id)
-    .bind(PAIRING_TTL_SECS)
     .fetch_one(&mut *tx)
     .await?;
-    let expires_at: chrono::DateTime<chrono::Utc> = row.try_get("expires_at")?;
+    let expires_at: chrono::DateTime<chrono::Utc> = row.expires_at.clone();
     tx.commit().await?;
 
     crate::domain::bot_management_audit::record(
@@ -298,12 +302,12 @@ pub async fn redeem_host_pairing(
     // Atomic single-redemption: the WHERE clause guarantees exactly one caller
     // can flip redeemed_at; a replay sees zero rows. Same predicate as the table
     // comment in migration 0024.
-    let claimed = sqlx::query(
+    let claimed = sqlx::query!(
         "UPDATE enrollment_codes SET redeemed_at = NOW()
          WHERE code_hash = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()
          RETURNING bot_id, agent_type, host_id, created_by",
+        &code_hash,
     )
-    .bind(&code_hash)
     .fetch_optional(&mut *tx)
     .await?;
 
@@ -311,58 +315,53 @@ pub async fn redeem_host_pairing(
         limiter.record_failure(&rl_key);
         return Err(opaque());
     };
-    let bot_id: String = row.try_get("bot_id").map_err(|_| opaque())?;
-    let host_id: String = row
-        .try_get::<Option<String>, _>("host_id")
-        .ok()
-        .flatten()
-        .ok_or_else(opaque)?;
-    let created_by: Option<String> = row.try_get("created_by").ok();
-    let agent_type = normalize_agent_type(
-        row.try_get::<Option<String>, _>("agent_type")
-            .ok()
-            .flatten()
-            .as_deref(),
-    );
+    let bot_id: String = row.bot_id.clone();
+    let host_id: String = row.host_id.clone().ok_or_else(opaque)?;
+    let created_by: Option<String> = Some(row.created_by.clone());
+    let agent_type = normalize_agent_type(row.agent_type.clone().as_deref());
 
     // Fetch the bot's name for the TOML account id. If the bot vanished between
     // claim and here (CASCADE would have deleted the code, so this is rare), the
     // code is already spent — fail opaque rather than leak.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)")
-        .bind(&bot_id)
-        .execute(&mut *tx)
-        .await?;
-    let bot_row = sqlx::query("SELECT username FROM bot_accounts WHERE bot_id = $1")
-        .bind(&bot_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(opaque)?;
-    let username: String = bot_row
-        .try_get("username")
-        .unwrap_or_else(|_| bot_id.clone());
+    sqlx::Executor::execute(
+        &mut *tx,
+        sqlx::query!(
+            "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+            &bot_id,
+        ),
+    )
+    .await?;
+    let bot_row = sqlx::query!(
+        "SELECT username FROM bot_accounts WHERE bot_id = $1",
+        &bot_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(opaque)?;
+    let username: String = bot_row.username.clone();
     let account_id = connector_config::sanitize_account_id(&username);
 
     // Active/passive v1: pairing is an owner-authorized takeover. Preserve
     // old hosts for audit/reactivation, but only the new one may connect.
-    sqlx::query(
+    sqlx::query!(
         "UPDATE connector_hosts SET status = 'standby', updated_at = NOW()
          WHERE bot_id = $1 AND status = 'active' AND revoked_at IS NULL",
+        &bot_id,
     )
-    .bind(&bot_id)
     .execute(&mut *tx)
     .await?;
-    let activated = sqlx::query(
+    let activated = sqlx::query!(
         "UPDATE connector_hosts
          SET device_name = $1, credential_hash = $2, credential_prefix = $3,
              status = 'active', credential_rotated_at = NOW(), updated_at = NOW()
          WHERE host_id = $4 AND bot_id = $5
            AND status = 'pending' AND revoked_at IS NULL",
+        &device_name,
+        &credential_hash,
+        &credential_prefix,
+        &host_id,
+        &bot_id,
     )
-    .bind(&device_name)
-    .bind(&credential_hash)
-    .bind(&credential_prefix)
-    .bind(&host_id)
-    .bind(&bot_id)
     .execute(&mut *tx)
     .await?;
     if activated.rows_affected() != 1 {
@@ -434,16 +433,16 @@ pub async fn get_connector_config(
     Query(q): Query<ConnectorConfigQuery>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT username, status_auto_update, status_update_prompt,
                 status_update_interval_minutes
          FROM bot_accounts WHERE bot_id = $1",
+        &bot_id,
     )
-    .bind(&bot_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    let username: String = row.try_get("username").unwrap_or_else(|_| bot_id.clone());
+    let username: String = row.username.clone();
     let account_id = connector_config::sanitize_account_id(&username);
     let agent_type = normalize_agent_type(q.agent_type.as_deref());
 
@@ -473,12 +472,9 @@ pub async fn get_connector_config(
         // /api/v1/bots/{bot_id}/self-status (Bearer = host credential). The gateway owns
         // the config; the connector owns the timer + the write-back.
         "status_schedule": {
-            "enabled": row.try_get::<bool, _>("status_auto_update").unwrap_or(false),
-            "prompt": row.try_get::<Option<String>, _>("status_update_prompt").ok().flatten(),
-            "interval_minutes": row
-                .try_get::<Option<i32>, _>("status_update_interval_minutes")
-                .ok()
-                .flatten(),
+            "enabled": row.status_auto_update.clone(),
+            "prompt": row.status_update_prompt.clone(),
+            "interval_minutes": row.status_update_interval_minutes.clone(),
             "self_status_path": format!("/api/v1/bots/{bot_id}/self-status"),
         },
         "note": "Redeem a host pairing code, then write the returned credential to <config_dir>/<credential_file> (chmod 600).",
@@ -592,9 +588,10 @@ mod connector_asset_tests {
         use crate::api::pairing::{connector_version_below_floor, MIN_CONNECTOR_VERSION};
 
         /// The prod incident (#538): 0.1.36 cannot parse the config schema
-        /// 0.1.37 introduced. The published 0.1.40 artifact is the same failure
-        /// one rename later — it rejects the `host_credential_*` keys first
-        /// released in 0.1.41. Both must be refused, along with anything
+        /// 0.1.37 introduced. Each later rename is the same failure one step on:
+        /// 0.1.40 rejects the `host_credential_*` keys first released in 0.1.41,
+        /// and 0.1.41–0.1.48 reject `permission.auto_allow_cheers_mcp` first
+        /// released in 0.1.49. All must be refused, along with anything
         /// unparsable.
         #[test]
         fn floor_rejects_older_and_malformed_versions() {
@@ -602,6 +599,8 @@ mod connector_asset_tests {
             assert!(connector_version_below_floor("0.1.40"));
             assert!(connector_version_below_floor("0.1.36"));
             assert!(connector_version_below_floor("0.1.0"));
+            assert!(connector_version_below_floor("0.1.41"));
+            assert!(connector_version_below_floor("0.1.48"));
             assert!(connector_version_below_floor("latest"));
             assert!(connector_version_below_floor(""));
         }
@@ -609,8 +608,9 @@ mod connector_asset_tests {
         #[test]
         fn floor_accepts_current_and_newer_versions() {
             assert!(!connector_version_below_floor(MIN_CONNECTOR_VERSION));
-            assert!(!connector_version_below_floor("0.1.42"));
-            assert!(!connector_version_below_floor("v0.1.41"));
+            assert!(!connector_version_below_floor("0.1.49"));
+            assert!(!connector_version_below_floor("0.1.50"));
+            assert!(!connector_version_below_floor("v0.1.49"));
         }
 
         /// Every placeholder the serve-time substitution rewrites must exist in
@@ -652,15 +652,21 @@ mod connector_asset_tests {
 static DOWNLOAD_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
 
 /// Minimum connector release that can parse the config this gateway's
-/// install.sh generates (the `host_credential_*` keys arrived in 0.1.41,
-/// renaming the `installation_credential_*` pair 0.1.37 introduced; the
-/// connector's `[bridge]` table is `deny_unknown_fields`, so an older binary
-/// does not ignore the new key — it refuses the whole config).
+/// install.sh generates. Every step below is a `deny_unknown_fields` break, so
+/// an older binary does not ignore the new key — it refuses the whole config:
+///
+/// - 0.1.37 introduced `installation_credential_*`;
+/// - 0.1.41 renamed that to `host_credential_*` (#538 shipped 0.1.36 here and
+///   crash-looped);
+/// - 0.1.49 added `[accounts.*.policy.permission] auto_allow_cheers_mcp`, which
+///   `domain::connector_config` emits unconditionally
+///   (`connector_config.rs:478`) — so 0.1.41–0.1.48 reject the current config.
+///
 /// Bump it in the same change that adds a config field older binaries reject;
 /// the download proxy refuses anything below it (#539) so a forgotten
 /// `CHEERS_CONNECTOR_RELEASE_VERSION` bump fails loudly at the server instead
 /// of crash-looping on user machines.
-pub const MIN_CONNECTOR_VERSION: &str = "0.1.41";
+pub const MIN_CONNECTOR_VERSION: &str = "0.1.49";
 
 /// True when `v` must not be distributed: strictly older than
 /// [`MIN_CONNECTOR_VERSION`], or not a semver triple at all — a garbled pin

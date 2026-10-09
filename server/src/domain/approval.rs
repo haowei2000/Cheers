@@ -9,17 +9,19 @@
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Resolve the bot's owner (the implicit, always-valid approver).
 pub async fn bot_owner(db: &PgPool, bot_id: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
-    let row = sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id.to_string())
-        .fetch_optional(db)
-        .await?;
+    let row = sqlx::query!(
+        "SELECT created_by FROM bot_accounts WHERE bot_id = $1",
+        bot_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await?;
     Ok(row
-        .and_then(|r| r.try_get::<Option<String>, _>("created_by").ok().flatten())
+        .and_then(|r| r.created_by.clone())
         .and_then(|s| s.parse::<Uuid>().ok()))
 }
 
@@ -36,21 +38,21 @@ pub async fn is_approver(
     if bot_owner(db, bot_id).await? == Some(user_id) {
         return Ok(true);
     }
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM approval_delegations
+            SELECT 1 AS present FROM approval_delegations
             WHERE bot_id = $1 AND channel_id = $2 AND user_id = $3
               AND (operation_kind = $4 OR operation_kind = '*')
               AND revoked_at IS NULL
         ) AS ok",
+        bot_id.to_string(),
+        channel_id.to_string(),
+        user_id.to_string(),
+        kind,
     )
-    .bind(bot_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(user_id.to_string())
-    .bind(kind)
     .fetch_one(db)
     .await?;
-    Ok(row.try_get::<bool, _>("ok").unwrap_or(false))
+    Ok(row.ok.clone().unwrap_or(false))
 }
 
 /// Grant (or re-activate) approver rights for one `operation_kind` (`"*"` = any).
@@ -63,20 +65,20 @@ pub async fn grant_approver(
     operation_kind: &str,
     granted_by: Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO approval_delegations
             (id, bot_id, channel_id, user_id, operation_kind, granted_by)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (bot_id, channel_id, user_id, operation_kind)
          DO UPDATE SET revoked_at = NULL, revoked_by = NULL,
                        granted_by = EXCLUDED.granted_by, granted_at = NOW()",
+        Uuid::new_v4().to_string(),
+        bot_id.to_string(),
+        channel_id.to_string(),
+        target_user.to_string(),
+        operation_kind,
+        granted_by.to_string(),
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(bot_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(target_user.to_string())
-    .bind(operation_kind)
-    .bind(granted_by.to_string())
     .execute(db)
     .await?;
     Ok(())
@@ -92,17 +94,17 @@ pub async fn revoke_approver(
     operation_kind: &str,
     revoked_by: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "UPDATE approval_delegations
          SET revoked_at = NOW(), revoked_by = $5
          WHERE bot_id = $1 AND channel_id = $2 AND user_id = $3
            AND operation_kind = $4 AND revoked_at IS NULL",
+        bot_id.to_string(),
+        channel_id.to_string(),
+        target_user.to_string(),
+        operation_kind,
+        revoked_by.to_string(),
     )
-    .bind(bot_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(target_user.to_string())
-    .bind(operation_kind)
-    .bind(revoked_by.to_string())
     .execute(db)
     .await?;
     Ok(res.rows_affected() > 0)
@@ -114,25 +116,24 @@ pub async fn list_approvers(
     bot_id: Uuid,
     channel_id: Uuid,
 ) -> Result<Vec<Value>, sqlx::Error> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT user_id, operation_kind, granted_by, granted_at
          FROM approval_delegations
          WHERE bot_id = $1 AND channel_id = $2 AND revoked_at IS NULL
          ORDER BY granted_at DESC",
+        bot_id.to_string(),
+        channel_id.to_string(),
     )
-    .bind(bot_id.to_string())
-    .bind(channel_id.to_string())
     .fetch_all(db)
     .await?;
     Ok(rows
         .into_iter()
         .map(|r| {
             json!({
-                "user_id": r.try_get::<String, _>("user_id").unwrap_or_default(),
-                "operation_kind": r.try_get::<String, _>("operation_kind")
-                    .unwrap_or_else(|_| "*".into()),
-                "granted_by": r.try_get::<String, _>("granted_by").unwrap_or_default(),
-                "granted_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("granted_at")
+                "user_id": r.user_id.clone(),
+                "operation_kind": r.operation_kind.clone(),
+                "granted_by": r.granted_by.clone(),
+                "granted_at": Some(r.granted_at.clone())
                     .map(|t| t.to_rfc3339()).unwrap_or_default(),
             })
         })
@@ -158,23 +159,23 @@ pub struct AuditEvent {
 /// Append an audit event. Best-effort callers should log on error but never let
 /// an audit-write failure block the user-visible action.
 pub async fn record_audit(db: &PgPool, ev: AuditEvent) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO approval_audit
             (id, event_type, bot_id, channel_id, request_id, msg_id,
              actor_id, target_user_id, decision, option_id, detail)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        Uuid::new_v4().to_string(),
+        ev.event_type,
+        ev.bot_id.map(|v| v.to_string()),
+        ev.channel_id.to_string(),
+        ev.request_id,
+        ev.msg_id.map(|v| v.to_string()),
+        ev.actor_id.map(|v| v.to_string()),
+        ev.target_user_id.map(|v| v.to_string()),
+        ev.decision,
+        ev.option_id,
+        ev.detail,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(ev.event_type)
-    .bind(ev.bot_id.map(|v| v.to_string()))
-    .bind(ev.channel_id.to_string())
-    .bind(ev.request_id)
-    .bind(ev.msg_id.map(|v| v.to_string()))
-    .bind(ev.actor_id.map(|v| v.to_string()))
-    .bind(ev.target_user_id.map(|v| v.to_string()))
-    .bind(ev.decision)
-    .bind(ev.option_id)
-    .bind(ev.detail)
     .execute(db)
     .await?;
     Ok(())
@@ -197,16 +198,16 @@ pub async fn list_audit(
     const MERGEABLE: [&str; 3] = ["requested", "resolved", "timeout"];
     // Over-fetch: a resolved/timed-out request writes two rows that collapse
     // into one below, so ask for headroom to still return `limit` entries.
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT event_type, bot_id, request_id, msg_id, actor_id, target_user_id,
                 decision, option_id, detail, created_at
          FROM approval_audit
          WHERE channel_id = $1
          ORDER BY created_at DESC
          LIMIT $2",
+        channel_id.to_string(),
+        limit.saturating_mul(2),
     )
-    .bind(channel_id.to_string())
-    .bind(limit.saturating_mul(2))
     .fetch_all(db)
     .await?;
 
@@ -214,11 +215,10 @@ pub async fn list_audit(
     let mut index_by_request: HashMap<String, usize> = HashMap::new();
 
     for r in rows {
-        let event_type: String = r.try_get("event_type").unwrap_or_default();
-        let request_id: Option<String> =
-            r.try_get::<Option<String>, _>("request_id").ok().flatten();
-        let bot_id: Option<String> = r.try_get::<Option<String>, _>("bot_id").ok().flatten();
-        let detail: Option<Value> = r.try_get::<Option<Value>, _>("detail").ok().flatten();
+        let event_type: String = r.event_type.clone();
+        let request_id: Option<String> = r.request_id.clone();
+        let bot_id: Option<String> = r.bot_id.clone();
+        let detail: Option<Value> = r.detail.clone();
 
         if MERGEABLE.contains(&event_type.as_str()) {
             if let Some(rid) = &request_id {
@@ -256,13 +256,13 @@ pub async fn list_audit(
             "event_type": event_type,
             "bot_id": bot_id,
             "request_id": request_id,
-            "msg_id": r.try_get::<Option<String>, _>("msg_id").ok().flatten(),
-            "actor_id": r.try_get::<Option<String>, _>("actor_id").ok().flatten(),
-            "target_user_id": r.try_get::<Option<String>, _>("target_user_id").ok().flatten(),
-            "decision": r.try_get::<Option<String>, _>("decision").ok().flatten(),
-            "option_id": r.try_get::<Option<String>, _>("option_id").ok().flatten(),
+            "msg_id": r.msg_id.clone(),
+            "actor_id": r.actor_id.clone(),
+            "target_user_id": r.target_user_id.clone(),
+            "decision": r.decision.clone(),
+            "option_id": r.option_id.clone(),
             "detail": detail_out,
-            "created_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+            "created_at": Some(r.created_at.clone())
                 .map(|t| t.to_rfc3339()).unwrap_or_default(),
         }));
     }
@@ -280,30 +280,17 @@ pub struct PendingPermission {
     pub content_data: Value,
 }
 
-fn row_to_pending(r: sqlx::postgres::PgRow) -> Option<PendingPermission> {
-    let msg_id = r
-        .try_get::<String, _>("msg_id")
-        .ok()
-        .and_then(|s| s.parse::<Uuid>().ok())?;
-    let channel_id = r
-        .try_get::<String, _>("channel_id")
-        .ok()
-        .and_then(|s| s.parse::<Uuid>().ok())?;
-    let bot_id = r
-        .try_get::<String, _>("sender_id")
-        .ok()
-        .and_then(|s| s.parse::<Uuid>().ok())?;
+fn row_to_pending(r: crate::infra::db::query_rows::PermissionRow) -> Option<PendingPermission> {
+    let msg_id = Some(r.msg_id.clone()).and_then(|s| s.parse::<Uuid>().ok())?;
+    let channel_id = Some(r.channel_id.clone()).and_then(|s| s.parse::<Uuid>().ok())?;
+    let bot_id = Some(r.sender_id.clone()).and_then(|s| s.parse::<Uuid>().ok())?;
     Some(PendingPermission {
         msg_id,
         channel_id,
         bot_id,
-        channel_seq: r.try_get::<Option<i64>, _>("channel_seq").ok().flatten(),
-        content: r.try_get::<String, _>("content").unwrap_or_default(),
-        content_data: r
-            .try_get::<Option<Value>, _>("content_data")
-            .ok()
-            .flatten()
-            .unwrap_or(Value::Null),
+        channel_seq: r.channel_seq.clone(),
+        content: r.content.clone(),
+        content_data: r.content_data.clone().unwrap_or(Value::Null),
     })
 }
 
@@ -313,15 +300,16 @@ pub async fn find_pending(
     channel_id: Uuid,
     request_id: &str,
 ) -> Result<Option<PendingPermission>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
+    let row = sqlx::query_as!(
+        crate::infra::db::query_rows::PermissionRow,
+        r###"SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
          FROM messages
          WHERE channel_id = $1 AND msg_type = 'permission'
            AND content_data->>'request_id' = $2
-         LIMIT 1",
+         LIMIT 1"###,
+        channel_id.to_string(),
+        request_id,
     )
-    .bind(channel_id.to_string())
-    .bind(request_id)
     .fetch_optional(db)
     .await?;
     Ok(row.and_then(row_to_pending))
@@ -337,16 +325,17 @@ pub async fn find_expired_pending(
     db: &PgPool,
     ttl_secs: u64,
 ) -> Result<Vec<PendingPermission>, sqlx::Error> {
-    let rows = sqlx::query(
-        "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::PermissionRow,
+        r###"SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
          FROM messages
          WHERE msg_type = 'permission'
            AND created_at < NOW() - make_interval(secs => $1)
            AND (content_data->>'resolved' IS NULL OR content_data->>'resolved' = 'false')
          ORDER BY created_at ASC
-         LIMIT 200",
+         LIMIT 200"###,
+        ttl_secs as f64,
     )
-    .bind(ttl_secs as f64)
     .fetch_all(db)
     .await?;
     Ok(rows.into_iter().filter_map(row_to_pending).collect())
@@ -368,14 +357,15 @@ pub async fn find_pending_by_request_id_of_type(
     request_id: &str,
     msg_type: &str,
 ) -> Result<Option<PendingPermission>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
+    let row = sqlx::query_as!(
+        crate::infra::db::query_rows::PermissionRow,
+        r###"SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
          FROM messages
          WHERE msg_type = $2 AND content_data->>'request_id' = $1
-         LIMIT 1",
+         LIMIT 1"###,
+        request_id,
+        msg_type,
     )
-    .bind(request_id)
-    .bind(msg_type)
     .fetch_optional(db)
     .await?;
     Ok(row.and_then(row_to_pending))
@@ -388,16 +378,17 @@ pub async fn find_pending_of_type(
     request_id: &str,
     msg_type: &str,
 ) -> Result<Option<PendingPermission>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
+    let row = sqlx::query_as!(
+        crate::infra::db::query_rows::PermissionRow,
+        r###"SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
          FROM messages
          WHERE channel_id = $1 AND msg_type = $3
            AND content_data->>'request_id' = $2
-         LIMIT 1",
+         LIMIT 1"###,
+        channel_id.to_string(),
+        request_id,
+        msg_type,
     )
-    .bind(channel_id.to_string())
-    .bind(request_id)
-    .bind(msg_type)
     .fetch_optional(db)
     .await?;
     Ok(row.and_then(row_to_pending))
@@ -409,13 +400,13 @@ pub async fn patch_content_data(
     msg_id: Uuid,
     patch: Value,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE messages
-         SET content_data = COALESCE(content_data, '{}'::jsonb) || $2::jsonb
+         SET content_data = COALESCE(content_data, '{}'::jsonb) || $2::text::jsonb
          WHERE msg_id = $1",
+        msg_id.to_string(),
+        patch.to_string(),
     )
-    .bind(msg_id.to_string())
-    .bind(patch.to_string())
     .execute(db)
     .await?;
     Ok(())
@@ -432,14 +423,14 @@ pub async fn patch_content_data_if_unresolved(
     msg_id: Uuid,
     patch: Value,
 ) -> Result<bool, sqlx::Error> {
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "UPDATE messages
-         SET content_data = COALESCE(content_data, '{}'::jsonb) || $2::jsonb
+         SET content_data = COALESCE(content_data, '{}'::jsonb) || $2::text::jsonb
          WHERE msg_id = $1
            AND (content_data->>'resolved' IS NULL OR content_data->>'resolved' = 'false')",
+        msg_id.to_string(),
+        patch.to_string(),
     )
-    .bind(msg_id.to_string())
-    .bind(patch.to_string())
     .execute(db)
     .await?;
     Ok(res.rows_affected() > 0)

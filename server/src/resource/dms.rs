@@ -24,15 +24,15 @@ pub async fn handle_open(db: &PgPool, principal: &Principal, params: &Value) -> 
         .and_then(Value::as_str)
         .and_then(|value| Uuid::parse_str(value).ok())
         .ok_or_else(|| resource_error("INVALID_PARAMS", "target_user_id must be a uuid"))?;
-    let eligible: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
-            SELECT 1 FROM users u
+    let eligible: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM users u
             JOIN bot_accounts b ON b.bot_id = $1
             WHERE u.user_id = $2 AND u.is_deleted = FALSE AND b.is_disabled = FALSE
               AND (
                   b.created_by = u.user_id
                   OR EXISTS (
-                      SELECT 1 FROM channel_memberships bm
+                      SELECT 1 AS present FROM channel_memberships bm
                       JOIN channel_memberships um ON um.channel_id = bm.channel_id
                       JOIN channels c ON c.channel_id = bm.channel_id
                       WHERE bm.member_id = b.bot_id AND bm.member_type = 'bot'
@@ -40,10 +40,10 @@ pub async fn handle_open(db: &PgPool, principal: &Principal, params: &Value) -> 
                         AND c.type <> 'dm' AND c.archived_at IS NULL
                   )
               )
-         )",
+         ) AS "value!" "#,
+        principal.principal_id.to_string(),
+        target_user_id.to_string(),
     )
-    .bind(principal.principal_id.to_string())
-    .bind(target_user_id.to_string())
     .fetch_one(db)
     .await
     .map_err(super::db_err("dm.open eligibility"))?;

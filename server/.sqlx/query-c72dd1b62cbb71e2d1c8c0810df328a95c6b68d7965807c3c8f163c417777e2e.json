@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests\n         SET superseded_at = NOW(), resolution_note = $3, updated_at = NOW()\n         WHERE claim_id = $1 AND channel_id = $2 AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c72dd1b62cbb71e2d1c8c0810df328a95c6b68d7965807c3c8f163c417777e2e"
+}

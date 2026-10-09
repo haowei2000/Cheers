@@ -93,7 +93,7 @@ function SessionExpiredTakeover() {
       role="alertdialog"
       aria-modal="true"
       aria-label="Session expired"
-      className="fixed inset-0 z-[10000] bg-zinc-950 flex items-center justify-center"
+      className="fixed inset-0 z-10000 bg-zinc-950 flex items-center justify-center"
     >
       <ErrorState
         icon={Lock}

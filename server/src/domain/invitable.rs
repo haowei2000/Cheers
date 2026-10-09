@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -76,15 +76,15 @@ async fn search_users(
     channel_id: &str,
     pattern: &str,
 ) -> Result<Vec<InvitableItem>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT u.user_id, u.username, u.display_name, u.avatar_url,
                 COALESCE(wm.status, 'none') AS workspace_status,
                 (EXISTS(
-                    SELECT 1 FROM channel_memberships cm
+                    SELECT 1 AS present FROM channel_memberships cm
                     WHERE cm.channel_id = $1 AND cm.member_id = u.user_id
                       AND cm.member_type = 'user'
                 ) OR EXISTS(
-                    SELECT 1 FROM channel_invites ci
+                    SELECT 1 AS present FROM channel_invites ci
                     WHERE ci.channel_id = $1 AND ci.user_id = u.user_id
                 )) AS already_member
          FROM users u
@@ -98,7 +98,7 @@ async fn search_users(
                 OR (c.type = 'private' AND (
                     wm.status = 'pending'
                     OR EXISTS (
-                        SELECT 1 FROM friendships f
+                        SELECT 1 AS present FROM friendships f
                         WHERE f.status = 'accepted'
                           AND ((f.user_id = $3 AND f.friend_id = u.user_id)
                             OR (f.user_id = u.user_id AND f.friend_id = $3))
@@ -107,11 +107,11 @@ async fn search_users(
            )
          ORDER BY u.username
          LIMIT $4",
+        channel_id,
+        pattern,
+        caller_user_id,
+        PER_KIND_LIMIT,
     )
-    .bind(channel_id)
-    .bind(pattern)
-    .bind(caller_user_id)
-    .bind(PER_KIND_LIMIT)
     .fetch_all(db)
     .await
     .map_err(AppError::Db)?;
@@ -120,16 +120,17 @@ async fn search_users(
         .into_iter()
         .map(|row| {
             let workspace_status: String = row
-                .try_get("workspace_status")
-                .unwrap_or_else(|_| "none".into());
+                .workspace_status
+                .clone()
+                .unwrap_or_else(|| "none".into());
             InvitableItem {
-                member_id: row.try_get("user_id").unwrap_or_default(),
+                member_id: row.user_id.clone(),
                 member_type: "user",
-                username: row.try_get("username").ok(),
-                display_name: row.try_get("display_name").ok(),
-                avatar_url: row.try_get("avatar_url").ok().flatten(),
+                username: Some(row.username.clone()),
+                display_name: row.display_name.clone(),
+                avatar_url: row.avatar_url.clone(),
                 is_online: None,
-                already_member: row.try_get("already_member").unwrap_or(false),
+                already_member: row.already_member.clone().unwrap_or(false),
                 requires_workspace_acceptance: workspace_status != "active",
                 workspace_status: Some(workspace_status),
             }
@@ -146,14 +147,14 @@ async fn search_bots(
     channel_id: &str,
     pattern: &str,
 ) -> Result<Vec<InvitableItem>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT b.bot_id, b.username, b.display_name, b.avatar_url, b.created_by,
                 (EXISTS(
-                    SELECT 1 FROM channel_memberships cm
+                    SELECT 1 AS present FROM channel_memberships cm
                     WHERE cm.channel_id = $1 AND cm.member_id = b.bot_id
                       AND cm.member_type = 'bot'
                 ) OR EXISTS(
-                    SELECT 1 FROM bot_channel_invites bci
+                    SELECT 1 AS present FROM bot_channel_invites bci
                     WHERE bci.channel_id = $1 AND bci.bot_id = b.bot_id
                 )) AS already_member
          FROM bot_accounts b
@@ -161,10 +162,10 @@ async fn search_bots(
            AND (b.username ILIKE $2 OR b.display_name ILIKE $2)
          ORDER BY b.username
          LIMIT $3",
+        channel_id,
+        pattern,
+        BOT_CANDIDATE_POOL,
     )
-    .bind(channel_id)
-    .bind(pattern)
-    .bind(BOT_CANDIDATE_POOL)
     .fetch_all(db)
     .await
     .map_err(AppError::Db)?;
@@ -175,8 +176,8 @@ async fn search_bots(
         if items.len() as i64 >= PER_KIND_LIMIT {
             break;
         }
-        let bot_id: String = row.try_get("bot_id").unwrap_or_default();
-        let owner: Option<String> = row.try_get("created_by").ok().flatten();
+        let bot_id: String = row.bot_id.clone();
+        let owner: Option<String> = row.created_by.clone();
         let invitable = caller_is_admin
             || owner.as_deref() == Some(caller.user_id)
             || acp_policy::allows(
@@ -200,11 +201,11 @@ async fn search_bots(
         items.push(InvitableItem {
             member_id: bot_id,
             member_type: "bot",
-            username: row.try_get("username").ok(),
-            display_name: row.try_get("display_name").ok().flatten(),
-            avatar_url: row.try_get("avatar_url").ok().flatten(),
+            username: Some(row.username.clone()),
+            display_name: row.display_name.clone(),
+            avatar_url: row.avatar_url.clone(),
             is_online: Some(is_online),
-            already_member: row.try_get("already_member").unwrap_or(false),
+            already_member: row.already_member.clone().unwrap_or(false),
             workspace_status: None,
             requires_workspace_acceptance: false,
         });

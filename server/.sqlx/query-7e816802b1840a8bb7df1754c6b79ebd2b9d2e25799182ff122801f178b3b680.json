@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channels SET next_seq = next_seq + 1 WHERE channel_id = $1 RETURNING next_seq",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "next_seq",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7e816802b1840a8bb7df1754c6b79ebd2b9d2e25799182ff122801f178b3b680"
+}

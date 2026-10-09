@@ -18,7 +18,7 @@ use jsonwebtoken::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Digest;
-use sqlx::Row;
+
 use url::Url;
 use uuid::Uuid;
 
@@ -278,23 +278,23 @@ pub async fn start(
     )
     .map_err(|e| AppError::Internal(format!("encrypt OAuth verifier: {e}")))?;
     let expires_at = Utc::now() + Duration::minutes(10);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_transactions
          (transaction_id, kind, status, provider, client_type, redirect_uri,
           state_hash, nonce_hash, pkce_verifier_hash, oauth_code_verifier_encrypted,
           context_json, expires_at)
          VALUES ($1, 'oauth', 'pending', $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        &transaction_id,
+        provider,
+        client.as_str(),
+        &provider_redirect_uri,
+        crypto::sha256_hex(&state_secret),
+        crypto::sha256_hex(&nonce),
+        crypto::sha256_hex(&verifier),
+        encrypted_verifier,
+        context,
+        expires_at,
     )
-    .bind(&transaction_id)
-    .bind(provider)
-    .bind(client.as_str())
-    .bind(&provider_redirect_uri)
-    .bind(crypto::sha256_hex(&state_secret))
-    .bind(crypto::sha256_hex(&nonce))
-    .bind(crypto::sha256_hex(&verifier))
-    .bind(encrypted_verifier)
-    .bind(context)
-    .bind(expires_at)
     .execute(&state.db)
     .await?;
 
@@ -350,12 +350,12 @@ pub async fn link_start(
         ));
     }
     auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
-    let linked: Option<String> = sqlx::query_scalar(
+    let linked: Option<String> = sqlx::query_scalar!(
         "SELECT identity_id FROM auth_external_identities
          WHERE user_id = $1 AND provider = $2 LIMIT 1",
+        &claims.sub,
+        provider,
     )
-    .bind(&claims.sub)
-    .bind(provider)
     .fetch_optional(&state.db)
     .await?;
     if linked.is_some() {
@@ -410,23 +410,23 @@ pub async fn link_start(
     )
     .map_err(|e| AppError::Internal(format!("encrypt OAuth verifier: {e}")))?;
     let expires_at = Utc::now() + Duration::minutes(10);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_transactions
          (transaction_id, kind, status, provider, client_type, redirect_uri,
           state_hash, nonce_hash, pkce_verifier_hash, oauth_code_verifier_encrypted,
           context_json, expires_at)
          VALUES ($1, 'oauth', 'pending', $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        &transaction_id,
+        provider,
+        client.as_str(),
+        &provider_redirect_uri,
+        crypto::sha256_hex(&state_secret),
+        crypto::sha256_hex(&nonce),
+        crypto::sha256_hex(&verifier),
+        encrypted_verifier,
+        context,
+        expires_at,
     )
-    .bind(&transaction_id)
-    .bind(provider)
-    .bind(client.as_str())
-    .bind(&provider_redirect_uri)
-    .bind(crypto::sha256_hex(&state_secret))
-    .bind(crypto::sha256_hex(&nonce))
-    .bind(crypto::sha256_hex(&verifier))
-    .bind(encrypted_verifier)
-    .bind(context)
-    .bind(expires_at)
     .execute(&state.db)
     .await?;
 
@@ -489,30 +489,32 @@ async fn complete_callback(
     // Claim the provider callback in one statement. A standalone SELECT FOR
     // UPDATE would release its lock before the token exchange because it is not
     // inside an explicit transaction, allowing the same state to race twice.
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "UPDATE auth_transactions
          SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()
          WHERE state_hash = $1 AND kind = 'oauth' AND provider = $2
            AND status = 'pending' AND expires_at > NOW() AND consumed_at IS NULL
          RETURNING transaction_id, client_type, redirect_uri, context_json,
                    oauth_code_verifier_encrypted, expires_at",
+        crypto::sha256_hex(&state_secret),
+        provider,
     )
-    .bind(crypto::sha256_hex(&state_secret))
-    .bind(provider)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::Unauthorized("OAuth state is invalid or expired".into()))?;
-    let transaction_id: String = row.try_get("transaction_id")?;
-    let client =
-        auth_sessions::ClientType::parse(Some(row.try_get::<String, _>("client_type")?.as_str()))?;
+    let transaction_id: String = row.transaction_id.clone();
+    let client = auth_sessions::ClientType::parse(Some(row.client_type.clone().as_str()))?;
     tracing::info!(
         %transaction_id,
         %provider,
         client = client.as_str(),
         "OAuth provider callback claimed"
     );
-    let return_uri: String = row.try_get("redirect_uri")?;
-    let context: Value = row.try_get("context_json")?;
+    let return_uri: String = row
+        .redirect_uri
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
+    let context: Value = row.context_json.clone();
     if let Some(error) = provider_error {
         tracing::warn!(
             %transaction_id,
@@ -521,8 +523,10 @@ async fn complete_callback(
             provider_error = %error_code(&error),
             "OAuth provider returned an error"
         );
-        let _ = sqlx::query("UPDATE auth_transactions SET status = 'failed', updated_at = NOW() WHERE transaction_id = $1 AND status = 'consumed'")
-            .bind(&transaction_id).execute(&state.db).await;
+        let _ = sqlx::query!(
+            "UPDATE auth_transactions SET status = 'failed', updated_at = NOW() WHERE transaction_id = $1 AND status = 'consumed'",
+            &transaction_id,
+        ).execute(&state.db).await;
         return Ok(oauth_return_redirect(
             context["return_uri"].as_str().unwrap_or(&return_uri),
             "error",
@@ -532,7 +536,10 @@ async fn complete_callback(
     }
     let code =
         code.ok_or_else(|| AppError::Unauthorized("OAuth authorization code is missing".into()))?;
-    let encrypted_verifier: String = row.try_get("oauth_code_verifier_encrypted")?;
+    let encrypted_verifier: String = row
+        .oauth_code_verifier_encrypted
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
     let verifier = crypto::decrypt_secret(
         &crypto::derive_master_key(
             state.config.secret_store_key.as_deref(),
@@ -573,13 +580,13 @@ async fn complete_callback(
                 persist_apple_refresh_token(state, &subject, link_user_id, token).await?;
             }
         }
-        let _ = sqlx::query(
+        let _ = sqlx::query!(
             "UPDATE auth_transactions
              SET user_id = $2, status = 'verified', consumed_at = NULL, updated_at = NOW()
              WHERE transaction_id = $1 AND status = 'consumed'",
+            &transaction_id,
+            link_user_id,
         )
-        .bind(&transaction_id)
-        .bind(link_user_id)
         .execute(&state.db)
         .await;
         tracing::info!(
@@ -607,15 +614,15 @@ async fn complete_callback(
         }
     }
     let handoff = random_url_secret()?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE auth_transactions
          SET user_id = $2, status = 'verified', handoff_code_hash = $3,
              consumed_at = NULL, updated_at = NOW()
          WHERE transaction_id = $1 AND status = 'consumed' AND consumed_at IS NOT NULL",
+        &transaction_id,
+        &user_id,
+        crypto::sha256_hex(&handoff),
     )
-    .bind(&transaction_id)
-    .bind(&user_id)
-    .bind(crypto::sha256_hex(&handoff))
     .execute(&state.db)
     .await?;
     tracing::info!(
@@ -637,13 +644,13 @@ async fn link_provider_to_user(
     user_id: &str,
 ) -> Result<(), AppError> {
     let issuer = provider_issuer(provider);
-    let existing = sqlx::query(
+    let existing = sqlx::query!(
         "SELECT DISTINCT user_id FROM auth_external_identities
          WHERE provider = $1 AND issuer = $2 AND subject = $3",
+        provider,
+        issuer,
+        subject,
     )
-    .bind(provider)
-    .bind(issuer)
-    .bind(subject)
     .fetch_all(&state.db)
     .await?;
     if existing.len() > 1 {
@@ -652,7 +659,7 @@ async fn link_provider_to_user(
         ));
     }
     if let Some(row) = existing.first() {
-        let owner: String = row.try_get("user_id")?;
+        let owner: String = row.user_id.clone();
         if owner != user_id {
             return Err(AppError::Conflict(
                 "provider identity is already linked to another account".into(),
@@ -660,19 +667,19 @@ async fn link_provider_to_user(
         }
         return Ok(());
     }
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO auth_external_identities
          (identity_id, provider, issuer, provider_config_id, subject, user_id,
           corp_id, display_name, email, profile)
          VALUES ($1, $2, $3, 'web', $4, $5, $2, $6, $7, '{}'::jsonb)",
+        Uuid::new_v4().to_string(),
+        provider,
+        issuer,
+        subject,
+        user_id,
+        name,
+        email,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(provider)
-    .bind(issuer)
-    .bind(subject)
-    .bind(user_id)
-    .bind(name)
-    .bind(email)
     .execute(&state.db)
     .await?;
     Ok(())
@@ -990,13 +997,13 @@ async fn resolve_identity(
     invite_token: Option<&str>,
 ) -> Result<String, AppError> {
     let issuer = provider_issuer(provider);
-    let existing = sqlx::query(
+    let existing = sqlx::query!(
         "SELECT DISTINCT user_id FROM auth_external_identities
          WHERE provider = $1 AND issuer = $2 AND subject = $3",
+        provider,
+        issuer,
+        subject,
     )
-    .bind(provider)
-    .bind(issuer)
-    .bind(subject)
     .fetch_all(&state.db)
     .await?;
     if existing.len() > 1 {
@@ -1005,35 +1012,35 @@ async fn resolve_identity(
         ));
     }
     if let Some(row) = existing.first() {
-        let user_id: String = row.try_get("user_id")?;
+        let user_id: String = row.user_id.clone();
         // Apple uses separate native and Web client IDs, but account ownership
         // is resolved only from the verified issuer + sub. Record the Web
         // configuration on the same user so its refresh credential retains the
         // correct revocation client ID.
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO auth_external_identities
              (identity_id, provider, issuer, provider_config_id, subject, user_id,
               corp_id, display_name, email, profile)
              VALUES ($1, $2, $3, 'web', $4, $5, $2, $6, $7, '{}'::jsonb)
              ON CONFLICT (provider, issuer, provider_config_id, subject) DO NOTHING",
+            Uuid::new_v4().to_string(),
+            provider,
+            issuer,
+            subject,
+            &user_id,
+            name,
+            email,
         )
-        .bind(Uuid::new_v4().to_string())
-        .bind(provider)
-        .bind(issuer)
-        .bind(subject)
-        .bind(&user_id)
-        .bind(name)
-        .bind(email)
         .execute(&state.db)
         .await?;
-        let web_owner: String = sqlx::query_scalar(
+        let web_owner: String = sqlx::query_scalar!(
             "SELECT user_id FROM auth_external_identities
              WHERE provider = $1 AND issuer = $2 AND provider_config_id = 'web'
                AND subject = $3",
+            provider,
+            issuer,
+            subject,
         )
-        .bind(provider)
-        .bind(issuer)
-        .bind(subject)
         .fetch_one(&state.db)
         .await?;
         if web_owner != user_id {
@@ -1045,11 +1052,10 @@ async fn resolve_identity(
     }
     auth::ensure_may_register(state, invite_token).await?;
     if let Some(email) = email.map(str::trim).filter(|v| !v.is_empty()) {
-        if sqlx::query(
-            "SELECT 1 FROM users WHERE lower(email) = lower($1) AND is_deleted = FALSE LIMIT 1",
-        )
-        .bind(email)
-        .fetch_optional(&state.db)
+        if sqlx::query!(
+                "SELECT 1 AS present FROM users WHERE lower(email) = lower($1) AND is_deleted = FALSE LIMIT 1",
+                email,
+            ).fetch_optional(&state.db)
         .await?
         .is_some()
         {
@@ -1064,10 +1070,25 @@ async fn resolve_identity(
         &Uuid::new_v4().simple().to_string()[..12]
     );
     let mut tx = state.db.begin().await?;
-    sqlx::query("INSERT INTO users (user_id, username, email, password_hash, display_name, role) VALUES ($1, $2, $3, NULL, $4, 'member')")
-        .bind(&user_id).bind(&username).bind(email).bind(name).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO auth_external_identities (identity_id, provider, issuer, provider_config_id, subject, user_id, corp_id, display_name, email, profile) VALUES ($1, $2, $3, 'web', $4, $5, $6, $7, $8, $9)")
-        .bind(&identity_id).bind(provider).bind(issuer).bind(subject).bind(&user_id).bind(provider).bind(name).bind(email).bind(json!({})).execute(&mut *tx).await?;
+    sqlx::query!(
+        "INSERT INTO users (user_id, username, email, password_hash, display_name, role) VALUES ($1, $2, $3, NULL, $4, 'member')",
+        &user_id,
+        &username,
+        email,
+        name,
+    ).execute(&mut *tx).await?;
+    sqlx::query!(
+        "INSERT INTO auth_external_identities (identity_id, provider, issuer, provider_config_id, subject, user_id, corp_id, display_name, email, profile) VALUES ($1, $2, $3, 'web', $4, $5, $6, $7, $8, $9)",
+        &identity_id,
+        provider,
+        issuer,
+        subject,
+        &user_id,
+        provider,
+        name,
+        email,
+        json!({}),
+    ).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(user_id)
 }
@@ -1097,8 +1118,12 @@ async fn persist_apple_refresh_token(
     user_id: &str,
     token: &str,
 ) -> Result<(), AppError> {
-    let identity_id: String = sqlx::query_scalar("SELECT identity_id FROM auth_external_identities WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'web' AND subject = $2 AND user_id = $3")
-        .bind(APPLE_ISSUER).bind(subject).bind(user_id).fetch_one(&state.db).await?;
+    let identity_id: String = sqlx::query_scalar!(
+        "SELECT identity_id FROM auth_external_identities WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'web' AND subject = $2 AND user_id = $3",
+        APPLE_ISSUER,
+        subject,
+        user_id,
+    ).fetch_one(&state.db).await?;
     let key = crypto::derive_master_key(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
@@ -1106,8 +1131,12 @@ async fn persist_apple_refresh_token(
     let encrypted = crypto::encrypt_secret(&key, token)
         .map_err(|e| AppError::Internal(format!("encrypt Apple refresh token: {e}")))?;
     let (_, client_id, _) = apple_web_config(state)?;
-    sqlx::query("INSERT INTO apple_auth_credentials (identity_id, refresh_token_encrypted, client_id, last_validated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (identity_id) DO UPDATE SET refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, client_id = EXCLUDED.client_id, last_validated_at = NOW(), revoked_at = NULL, updated_at = NOW()")
-        .bind(identity_id).bind(encrypted).bind(client_id).execute(&state.db).await?;
+    sqlx::query!(
+        "INSERT INTO apple_auth_credentials (identity_id, refresh_token_encrypted, client_id, last_validated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (identity_id) DO UPDATE SET refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, client_id = EXCLUDED.client_id, last_validated_at = NOW(), revoked_at = NULL, updated_at = NOW()",
+        identity_id,
+        encrypted,
+        client_id,
+    ).execute(&state.db).await?;
     Ok(())
 }
 
@@ -1122,10 +1151,11 @@ pub async fn handoff(
         .map(|value| auth_sessions::ClientType::parse(Some(value)))
         .transpose()?;
     let mut tx = state.db.begin().await?;
-    let row = sqlx::query("UPDATE auth_transactions SET status = 'consumed', consumed_at = NOW(), updated_at = NOW() WHERE handoff_code_hash = $1 AND status = 'verified' AND consumed_at IS NULL AND expires_at > NOW() AND ($2::VARCHAR IS NULL OR client_type = $2) RETURNING transaction_id, user_id, client_type, context_json")
-        .bind(crypto::sha256_hex(&body.code))
-        .bind(requested_client.map(|client| client.as_str()))
-        .fetch_optional(&mut *tx).await?;
+    let row = sqlx::query!(
+        "UPDATE auth_transactions SET status = 'consumed', consumed_at = NOW(), updated_at = NOW() WHERE handoff_code_hash = $1 AND status = 'verified' AND consumed_at IS NULL AND expires_at > NOW() AND ($2::VARCHAR IS NULL OR client_type = $2) RETURNING transaction_id, user_id, client_type, context_json",
+        crypto::sha256_hex(&body.code),
+        requested_client.map(|client| client.as_str()),
+    ).fetch_optional(&mut *tx).await?;
     let Some(row) = row else {
         tracing::warn!(
             requested_client = requested_client.map(|client| client.as_str()),
@@ -1136,9 +1166,12 @@ pub async fn handoff(
         ));
     };
     tx.commit().await?;
-    let transaction_id: String = row.try_get("transaction_id")?;
-    let user_id: String = row.try_get("user_id")?;
-    let stored_client: String = row.try_get("client_type")?;
+    let transaction_id: String = row.transaction_id.clone();
+    let user_id: String = row
+        .user_id
+        .clone()
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
+    let stored_client: String = row.client_type.clone();
     let client = requested_client.unwrap_or(auth_sessions::ClientType::parse(Some(
         stored_client.as_str(),
     ))?);
@@ -1147,7 +1180,7 @@ pub async fn handoff(
         client = client.as_str(),
         "OAuth handoff accepted"
     );
-    let context: Value = row.try_get("context_json")?;
+    let context: Value = row.context_json.clone();
     let user = auth_domain::load_auth_user(&state.db, &user_id).await?;
     let presented =
         crate::api::auth::presented_trusted_device(&headers, body.trusted_device.as_deref());

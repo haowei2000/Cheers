@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d.push_token\n         FROM user_devices d\n         JOIN users u ON u.user_id = d.user_id\n         WHERE d.user_id = $1\n           AND u.is_suspended = FALSE\n           AND u.is_deleted = FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "push_token",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7bd22d5e48148288fed36f5f629bde19ce6062fa54e7c8293f591ebb34b11ecb"
+}

@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,\n                ARRAY(SELECT cf.feature FROM channel_features cf\n                      WHERE cf.channel_id = c.channel_id AND cf.enabled = TRUE\n                      ORDER BY cf.feature) AS features,\n                c.conversation_mode, c.purpose, c.auto_assist,\n                c.allow_member_invites, c.allow_bot_adds,\n                COALESCE((\n                    -- Bounded unread scan: cap at the newest 100 unread messages so a\n                    -- huge backlog can't force an unbounded count (min(actual, 100),\n                    -- i.e. 99+ semantics).\n                    SELECT count(*) FROM messages msg\n                    WHERE msg.msg_id IN (\n                        SELECT m2.msg_id FROM messages m2\n                        WHERE m2.channel_id = c.channel_id\n                          AND m2.is_partial = FALSE\n                          AND m2.sender_id <> $1\n                          AND m2.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)\n                        ORDER BY m2.created_at DESC\n                        LIMIT 100\n                    )\n                ), 0) AS unread_count,\n                COALESCE(\n                  (SELECT COALESCE(u.display_name, u.username) FROM channel_memberships m\n                     JOIN users u ON u.user_id = m.member_id\n                     WHERE m.channel_id = c.channel_id AND m.member_type = 'user'\n                       AND m.member_id <> $1 LIMIT 1),\n                  (SELECT COALESCE(b.display_name, b.username) FROM channel_memberships m\n                     JOIN bot_accounts b ON b.bot_id = m.member_id\n                     WHERE m.channel_id = c.channel_id AND m.member_type = 'bot' LIMIT 1),\n                  'Direct Message'\n                ) AS peer_name\n         FROM channels c\n         JOIN channel_memberships cm\n           ON cm.channel_id = c.channel_id AND cm.member_id = $1 AND cm.member_type = 'user'\n         WHERE c.type = 'dm'\n         ORDER BY c.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "features",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "conversation_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "purpose",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "auto_assist",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "allow_member_invites",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "allow_bot_adds",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "unread_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "peer_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null,
+      false,
+      true,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "bf39ae25eecccc738f84b259c2b4d926392e364b0f4da6a28a336e28dafb96ae"
+}

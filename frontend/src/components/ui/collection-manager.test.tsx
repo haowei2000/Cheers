@@ -111,4 +111,26 @@ describe("CollectionManager pattern", () => {
     expect(markup).toContain("Close search");
     expect(markup).toContain("Add member");
   });
+
+  it("can leave its title and actions to the enclosing panel chrome", () => {
+    const markup = renderToStaticMarkup(
+      <CollectionManager
+        label="Annotations"
+        count={0}
+        query=""
+        onQueryChange={() => undefined}
+        addLabel="Add annotation"
+        onAdd={() => undefined}
+        showHeader={false}
+        showSearch={false}
+        showAdd={false}
+      >
+        <div>Annotation rows</div>
+      </CollectionManager>,
+    );
+
+    expect(markup).toContain("Annotation rows");
+    expect(markup).not.toContain("Annotations");
+    expect(markup).not.toContain("Search items");
+  });
 });

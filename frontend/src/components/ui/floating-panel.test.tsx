@@ -85,6 +85,23 @@ describe("FloatingPanel visibility", () => {
     expect(rootClasses(markup)).not.toContain("hidden");
     expect(markup).toContain("body");
   });
+
+  it("renders an empty panel through the shared EmptyState component", () => {
+    const markup = render(
+      <FloatingPanel
+        title="Files"
+        onClose={() => {}}
+        storageKey="t.empty"
+        emptyState={{ title: "No files yet", hint: "Upload a file to get started." }}
+      >
+        <div>stale child content</div>
+      </FloatingPanel>,
+    );
+
+    expect(markup).toContain("No files yet");
+    expect(markup).toContain("Upload a file to get started.");
+    expect(markup).not.toContain("stale child content");
+  });
 });
 
 describe("FloatingPanel managed full screen", () => {
@@ -249,6 +266,7 @@ describe("FloatingPanel window chrome", () => {
         title="Remote workspace"
         onClose={() => {}}
         storageKey="t.chrome"
+        chromeTitle="Annotations · 0"
         primaryNavigation={{
           ariaLabel: "Workspace views",
           items: [
@@ -264,6 +282,7 @@ describe("FloatingPanel window chrome", () => {
     );
 
     expect(markup).toContain('data-floating-panel-title=""');
+    expect(markup).toContain("Annotations · 0");
     expect(markup).toContain('data-floating-panel-navigation=""');
     expect(markup).toContain('data-floating-panel-actions=""');
     expect(markup).toContain("Files");
@@ -313,7 +332,7 @@ describe("FloatingPanel window chrome", () => {
     // The band is now MEASURED rather than a fixed 3rem, because a wrapping chrome row
     // has no constant height (frontend/DESIGN.md, "Panel button groups").
     expect(markup.slice(0, contentIndex)).not.toContain("top-12");
-    expect(markup.slice(contentIndex)).toContain("md:top-[var(--floating-panel-chrome-top)]");
+    expect(markup.slice(contentIndex)).toContain("md:top-(--floating-panel-chrome-top)");
     expect(markup).toContain("--floating-panel-chrome-top");
     expect(markup).toContain("--floating-panel-safe-top");
     expect(markup).toContain("--floating-panel-safe-top:3.5rem");
@@ -365,7 +384,7 @@ describe("FloatingPanel window chrome", () => {
     expect(markup.slice(0, contentIndex)).toContain("left-2 right-2 top-2");
     expect(chrome).toContain("ml-auto");
     // The body starts below the chrome band rather than underneath it.
-    expect(content).toContain("md:top-[var(--floating-panel-chrome-top)]");
+    expect(content).toContain("md:top-(--floating-panel-chrome-top)");
     expect(content).not.toContain("md:inset-0");
 
     // Just the top-LEFT island: from where it opens to where the actions island starts.

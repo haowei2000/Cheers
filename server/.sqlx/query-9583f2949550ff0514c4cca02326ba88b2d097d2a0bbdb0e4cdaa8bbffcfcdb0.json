@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO acp_capability_reject_logs (\n            bot_id, provider_account_id, delegation_id, decision_scope_type, decision_scope_id,\n            frame_type, action, request_id, request_session_id, resolved_session_id, resolved_session_status,\n            resolved_session_scope_type, resolved_session_scope_id, session_locator_source, session_locator_value,\n            resource, decision_reason\n         )\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9583f2949550ff0514c4cca02326ba88b2d097d2a0bbdb0e4cdaa8bbffcfcdb0"
+}

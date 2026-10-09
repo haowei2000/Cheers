@@ -7,7 +7,7 @@
 use axum::{extract::State, Extension, Json};
 use serde::Serialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -185,24 +185,24 @@ pub async fn load_notifications(
     db: &sqlx::PgPool,
     user_id: &str,
 ) -> Result<Vec<NotificationDto>, AppError> {
-    let friend_rows = sqlx::query(
+    let friend_rows = sqlx::query!(
         "SELECT f.friendship_id, f.user_id AS actor_id,
                 COALESCE(u.display_name, u.username) AS actor_name,
                 f.message,
                 f.created_at::text AS created_at,
-                b.bot_id,
+                b.bot_id AS \"bot_id?\",
                 b.display_name AS bot_name
          FROM friendships f
          JOIN users u ON u.user_id = f.user_id
          LEFT JOIN bot_accounts b ON b.bot_id = f.friend_id
          WHERE (f.friend_id = $1 OR (b.created_by = $1 AND b.friend_policy = 'require_approval'))
            AND f.status = 'pending'",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await?;
 
-    let workspace_rows = sqlx::query(
+    let workspace_rows = sqlx::query!(
         "SELECT w.workspace_id, w.name AS title, wm.role, wm.invited_by AS actor_id,
                 COALESCE(iu.display_name, iu.username) AS actor_name,
                 wm.invited_at::text AS created_at
@@ -210,14 +210,14 @@ pub async fn load_notifications(
          JOIN workspaces w ON w.workspace_id = wm.workspace_id
          LEFT JOIN users iu ON iu.user_id = wm.invited_by
          WHERE wm.user_id = $1 AND wm.status = 'pending'",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await?;
 
     // Queued two-stage invitations are intentionally hidden until the target
     // has accepted the workspace invitation.
-    let channel_rows = sqlx::query(
+    let channel_rows = sqlx::query!(
         "SELECT c.channel_id, c.workspace_id, c.name AS title, ci.role,
                 ci.invited_by AS actor_id,
                 COALESCE(iu.display_name, iu.username) AS actor_name,
@@ -229,12 +229,12 @@ pub async fn load_notifications(
           AND wm.user_id = ci.user_id AND wm.status = 'active'
          LEFT JOIN users iu ON iu.user_id = ci.invited_by
          WHERE ci.user_id = $1",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await?;
 
-    let bot_rows = sqlx::query(
+    let bot_rows = sqlx::query!(
         "SELECT bci.channel_id, c.workspace_id, c.name AS title, bci.bot_id,
                 COALESCE(b.display_name, b.username) AS bot_name, bci.role,
                 bci.invited_by AS actor_id,
@@ -245,8 +245,8 @@ pub async fn load_notifications(
          JOIN bot_accounts b ON b.bot_id = bci.bot_id
          LEFT JOIN users iu ON iu.user_id = bci.invited_by
          WHERE bci.owner_user_id = $1",
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(db)
     .await?;
 
@@ -254,11 +254,11 @@ pub async fn load_notifications(
         friend_rows.len() + workspace_rows.len() + channel_rows.len() + bot_rows.len(),
     );
     for row in friend_rows {
-        let friendship_id: String = row.try_get("friendship_id").unwrap_or_default();
-        let actor_id: String = row.try_get("actor_id").unwrap_or_default();
-        let actor_name: Option<String> = row.try_get("actor_name").ok();
-        let bot_name: Option<String> = row.try_get("bot_name").ok().flatten();
-        let bot_id: Option<String> = row.try_get("bot_id").ok().flatten();
+        let friendship_id: String = row.friendship_id.clone();
+        let actor_id: String = row.actor_id.clone();
+        let actor_name: Option<String> = row.actor_name.clone();
+        let bot_name: Option<String> = row.bot_name.clone();
+        let bot_id: Option<String> = row.bot_id.clone();
         let title = if let Some(ref bname) = bot_name {
             format!(
                 "{} 申请添加 Bot [{}] 为好友",
@@ -274,7 +274,7 @@ pub async fn load_notifications(
             title,
             actor_id: Some(actor_id.clone()),
             actor_name,
-            created_at: row.try_get("created_at").ok(),
+            created_at: row.created_at.clone(),
             friendship_id: Some(friendship_id),
             workspace_id: None,
             channel_id: None,
@@ -284,70 +284,70 @@ pub async fn load_notifications(
             role: None,
             requested_cwd: None,
             requested_additional_dirs: Vec::new(),
-            message: row.try_get("message").ok().flatten(),
+            message: row.message.clone(),
         });
     }
     for row in workspace_rows {
-        let workspace_id: String = row.try_get("workspace_id").unwrap_or_default();
+        let workspace_id: String = row.workspace_id.clone();
         items.push(NotificationDto {
             id: format!("workspace:{workspace_id}"),
             kind: "workspace_invite".into(),
-            title: row.try_get("title").unwrap_or_default(),
-            actor_id: row.try_get("actor_id").ok(),
-            actor_name: row.try_get("actor_name").ok(),
-            created_at: row.try_get("created_at").ok(),
+            title: row.title.clone(),
+            actor_id: row.actor_id.clone(),
+            actor_name: row.actor_name.clone(),
+            created_at: row.created_at.clone(),
             friendship_id: None,
             workspace_id: Some(workspace_id),
             channel_id: None,
             requester_user_id: None,
             bot_id: None,
             bot_name: None,
-            role: row.try_get("role").ok(),
+            role: Some(row.role.clone()),
             requested_cwd: None,
             requested_additional_dirs: Vec::new(),
             message: None,
         });
     }
     for row in channel_rows {
-        let channel_id: String = row.try_get("channel_id").unwrap_or_default();
+        let channel_id: String = row.channel_id.clone();
         items.push(NotificationDto {
             id: format!("channel:{channel_id}"),
             kind: "channel_invite".into(),
-            title: row.try_get("title").unwrap_or_default(),
-            actor_id: row.try_get("actor_id").ok(),
-            actor_name: row.try_get("actor_name").ok(),
-            created_at: row.try_get("created_at").ok(),
+            title: row.title.clone(),
+            actor_id: row.actor_id.clone(),
+            actor_name: row.actor_name.clone(),
+            created_at: row.created_at.clone(),
             friendship_id: None,
-            workspace_id: row.try_get("workspace_id").ok(),
+            workspace_id: Some(row.workspace_id.clone()),
             channel_id: Some(channel_id),
             requester_user_id: None,
             bot_id: None,
             bot_name: None,
-            role: row.try_get("role").ok(),
+            role: Some(row.role.clone()),
             requested_cwd: None,
             requested_additional_dirs: Vec::new(),
             message: None,
         });
     }
     for row in bot_rows {
-        let channel_id: String = row.try_get("channel_id").unwrap_or_default();
-        let bot_id: String = row.try_get("bot_id").unwrap_or_default();
-        let dirs: Value = row.try_get("additional_dirs").unwrap_or_else(|_| json!([]));
+        let channel_id: String = row.channel_id.clone();
+        let bot_id: String = row.bot_id.clone();
+        let dirs: Value = row.additional_dirs.clone();
         items.push(NotificationDto {
             id: format!("bot-channel:{channel_id}:{bot_id}"),
             kind: "bot_channel_invite".into(),
-            title: row.try_get("title").unwrap_or_default(),
-            actor_id: row.try_get("actor_id").ok(),
-            actor_name: row.try_get("actor_name").ok(),
-            created_at: row.try_get("created_at").ok(),
+            title: row.title.clone(),
+            actor_id: Some(row.actor_id.clone()),
+            actor_name: row.actor_name.clone(),
+            created_at: row.created_at.clone(),
             friendship_id: None,
-            workspace_id: row.try_get("workspace_id").ok(),
+            workspace_id: Some(row.workspace_id.clone()),
             channel_id: Some(channel_id),
             requester_user_id: None,
             bot_id: Some(bot_id),
-            bot_name: row.try_get("bot_name").ok(),
-            role: row.try_get("role").ok(),
-            requested_cwd: row.try_get("cwd").ok(),
+            bot_name: row.bot_name.clone(),
+            role: Some(row.role.clone()),
+            requested_cwd: row.cwd.clone(),
             requested_additional_dirs: dirs
                 .as_array()
                 .map(|values| {

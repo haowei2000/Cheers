@@ -1,18 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyPatchOps } from "./patchOps";
 import {
-  addAnnotationOps,
   anchorOf,
   anchorKey,
-  annotationId,
   annotationsFor,
   notesOnTarget,
   parseAnnotations,
-  removeAnnotationOps,
   resolveAnnotation,
-  seedAnnotations,
   sourcePathKey,
-  type AnnotationDoc,
 } from "./annotations";
 
 const raw = () => ({
@@ -97,54 +91,6 @@ describe("anchoring", () => {
     expect(resolveAnnotation(doc.notes[0], '// heading\n<section data-cheers-id="revenue-card"/>'))
       .toEqual({ start: 2, end: 2 });
     expect(resolveAnnotation(doc.notes[0], '<section data-cheers-id="other"/>')).toBeNull();
-  });
-});
-
-describe("writing", () => {
-  const entry = { path: "dev/plan.yaml", anchor: { kind: "path" as const, sourcePath: ["columns", 1] }, label: "In progress", note: "  needs an owner  " };
-
-  it("appends, trims, and names the note after what it annotates", () => {
-    const ops = addAnnotationOps(parsed(), entry);
-    expect(ops).toEqual([{
-      op: "insert",
-      path: ["notes"],
-      index: 3,
-      value: { id: "plan-note-3", path: "dev/plan.yaml", anchor: { path: ["columns", 1] }, label: "In progress", note: "needs an owner" },
-    }]);
-  });
-
-  it("creates the notes key when the file has none", () => {
-    const ops = addAnnotationOps(parsed({ annotations: 1 }), entry);
-    expect(ops[0]).toEqual({ op: "set", path: ["notes"], value: [] });
-    expect(ops).toHaveLength(2);
-  });
-
-  it("refuses an empty note", () => {
-    expect(addAnnotationOps(parsed(), { ...entry, note: "   " })).toEqual([]);
-  });
-
-  it("seeds a whole document when there is no file to patch", () => {
-    // fs.patch cannot address a file that does not exist, so the first note is a write.
-    expect(seedAnnotations({ notes: [], seeded: false }, entry)).toEqual({
-      annotations: 1,
-      notes: [{ id: "plan-note", path: "dev/plan.yaml", anchor: { path: ["columns", 1] }, label: "In progress", note: "needs an owner" }],
-    });
-  });
-
-  it("removes by id and leaves a readable document", () => {
-    const before = raw();
-    const doc: AnnotationDoc = parseAnnotations(before);
-    const after = applyPatchOps(before, removeAnnotationOps(doc, "plan-note-2"));
-    expect(parseAnnotations(after).notes.map((n) => n.id)).toEqual(["plan-note", "todo-note"]);
-  });
-
-  it("does nothing for a note that is not there", () => {
-    expect(removeAnnotationOps(parsed(), "ghost")).toEqual([]);
-  });
-
-  it("disambiguates ids without making them unreadable", () => {
-    expect(annotationId(parsed(), "dev/issues.yaml")).toBe("issues-note");
-    expect(annotationId(parsed(), "dev/plan.yaml")).toBe("plan-note-3");
   });
 });
 

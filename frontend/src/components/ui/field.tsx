@@ -32,13 +32,18 @@ export function Field({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <label
-        htmlFor={htmlFor}
-        className="block text-label uppercase"
-      >
-        {labelContent}
-      </label>
-      {children}
+      {htmlFor ? (
+        <div className="space-y-2">
+          {/* eslint-disable-next-line jsx-a11y/label-has-for -- Custom Input children expose the matching id through this field API. */}
+          <label htmlFor={htmlFor} className="block text-label uppercase">{labelContent}</label>
+          {children}
+        </div>
+      ) : (
+        <>
+          <span className="block text-label uppercase">{labelContent}</span>
+          {children}
+        </>
+      )}
       {hint && <p className="text-caption">{hint}</p>}
     </div>
   );

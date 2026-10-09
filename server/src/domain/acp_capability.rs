@@ -6,7 +6,7 @@ use base64::{
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{PublicKey, Signature, Verifier};
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::domain::sessions;
@@ -456,60 +456,69 @@ async fn resolve_active_session(
     provider_account_id: &str,
     locator: SessionLocator,
 ) -> Result<SessionContext, CapabilityError> {
-    let (query, value) = match locator {
-        SessionLocator::SessionId(session_id) => (
+    struct SessionRow {
+        session_id: String,
+        status: String,
+        current_scope_type: Option<String>,
+        current_scope_id: Option<String>,
+    }
+    let row = match locator {
+        SessionLocator::SessionId(session_id) => sqlx::query_as!(
+            SessionRow,
             "SELECT session_id, status, current_scope_type, current_scope_id
              FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND session_id = $4
              LIMIT 1",
+            bot_id.to_string(),
+            CAPABILITY_SESSION_PROVIDER,
+            provider_account_id,
             session_id.to_string(),
-        ),
-        SessionLocator::ProviderSessionKey(provider_session_key) => (
+        ).fetch_optional(db).await,
+        SessionLocator::ProviderSessionKey(provider_session_key) => sqlx::query_as!(
+            SessionRow,
             "SELECT session_id, status, current_scope_type, current_scope_id
              FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND provider_session_key = $4
              LIMIT 1",
+            bot_id.to_string(),
+            CAPABILITY_SESSION_PROVIDER,
+            provider_account_id,
             provider_session_key,
-        ),
-        SessionLocator::ProviderSessionId(provider_session_id) => (
+        ).fetch_optional(db).await,
+        SessionLocator::ProviderSessionId(provider_session_id) => sqlx::query_as!(
+            SessionRow,
             "SELECT session_id, status, current_scope_type, current_scope_id
              FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND provider_session_id = $4
              ORDER BY updated_at DESC
              LIMIT 1",
+            bot_id.to_string(),
+            CAPABILITY_SESSION_PROVIDER,
+            provider_account_id,
             provider_session_id,
-        ),
-    };
-
-    let row = sqlx::query(query)
-        .bind(bot_id.to_string())
-        .bind(CAPABILITY_SESSION_PROVIDER)
-        .bind(provider_account_id)
-        .bind(&value)
-        .fetch_optional(db)
-        .await
+        ).fetch_optional(db).await,
+    }
         .map_err(|e| {
             tracing::error!(error = %e, ctx = "session lookup: select capability session", "acp_capability db error");
             CapabilityError::Denied("session lookup failed".into())
         })?
         .ok_or_else(|| CapabilityError::Denied("session not found".into()))?;
 
-    let status: String = row
-        .try_get("status")
-        .unwrap_or_else(|_| sessions::SESSION_STATUS_IDLE.to_string());
+    let status = row.status;
     if !is_session_active(&status) {
         return Err(CapabilityError::Denied("session is not active".into()));
     }
 
     let session_id: Uuid = row
-        .try_get("session_id")
+        .session_id
+        .parse()
         .map_err(|_| CapabilityError::Denied("invalid session".into()))?;
 
     Ok(SessionContext {
         session_id,
         status,
-        current_scope_type: row.try_get("current_scope_type").ok(),
-        current_scope_id: row.try_get("current_scope_id").ok(),
+        current_scope_type: row.current_scope_type,
+        current_scope_id: row.current_scope_id,
     })
 }
 
@@ -713,15 +722,14 @@ async fn load_delegation(
     bot_id: &Uuid,
     delegation_id: &str,
 ) -> Result<DelegationRecord, CapabilityError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT delegation_id, scope_type, scope_id, session_id, allowed_actions, allowed_resources,
                 max_uses, use_count, expires_at, public_key, algorithm, delegated_to, status, revoked
          FROM acp_capability_delegations
          WHERE bot_id = $1 AND delegation_id = $2",
-    )
-    .bind(bot_id.to_string())
-    .bind(delegation_id)
-    .fetch_optional(db)
+        bot_id.to_string(),
+        delegation_id,
+    ).fetch_optional(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, ctx = "load_delegation: select delegation", "acp_capability db error");
@@ -731,36 +739,22 @@ async fn load_delegation(
 
     Ok(DelegationRecord {
         delegation_id: row
-            .try_get("delegation_id")
-            .map_err(|_| CapabilityError::Denied("invalid delegation".into()))?,
-        scope_type: row
-            .try_get("scope_type")
-            .unwrap_or_else(|_| "global".to_string()),
-        scope_id: row.try_get("scope_id").ok(),
-        session_id: row.try_get("session_id").ok(),
-        allowed_actions: row.try_get("allowed_actions").unwrap_or_default(),
-        allowed_resources: row.try_get("allowed_resources").unwrap_or_default(),
-        max_uses: row
-            .try_get::<Option<i32>, _>("max_uses")
-            .ok()
-            .flatten()
-            .map(|value| value as i64),
-        use_count: row
-            .try_get::<i32, _>("use_count")
-            .map_err(|_| CapabilityError::Denied("invalid delegation".into()))?
-            as i64,
-        expires_at: row
-            .try_get::<Option<DateTime<Utc>>, _>("expires_at")
-            .map_err(|_| CapabilityError::Denied("invalid delegation".into()))?,
-        public_key: row.try_get("public_key").unwrap_or_default(),
-        algorithm: row
-            .try_get("algorithm")
-            .unwrap_or_else(|_| CAPABILITY_SUPPORTED_ALGORITHM.to_string()),
-        delegated_to: row.try_get("delegated_to").ok(),
-        status: row
-            .try_get("status")
-            .unwrap_or_else(|_| "active".to_string()),
-        revoked: row.try_get("revoked").unwrap_or(false),
+            .delegation_id
+            .parse()
+            .map_err(|_| CapabilityError::Denied("invalid delegation id".into()))?,
+        scope_type: row.scope_type.clone(),
+        scope_id: row.scope_id.clone(),
+        session_id: row.session_id.clone(),
+        allowed_actions: row.allowed_actions.clone(),
+        allowed_resources: row.allowed_resources.clone(),
+        max_uses: row.max_uses.clone().map(|value| value as i64),
+        use_count: row.use_count.clone() as i64,
+        expires_at: row.expires_at.clone(),
+        public_key: row.public_key.clone(),
+        algorithm: row.algorithm.clone(),
+        delegated_to: row.delegated_to.clone(),
+        status: row.status.clone(),
+        revoked: row.revoked.clone(),
     })
 }
 
@@ -795,7 +789,7 @@ async fn consume_nonce_and_bump(
     // suppresses it on replay); the UPDATE gates on EXISTS(ins) so a replayed nonce
     // never bumps use_count. CTE side effects still apply when the UPDATE matches zero
     // rows, so an exhausted delegation still burns the nonce — same as the old order.
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "WITH ins AS (
             INSERT INTO acp_capability_nonce_log
                 (delegation_id, nonce, request_id, frame_type, frame_resource, used_at, created_at)
@@ -808,30 +802,29 @@ async fn consume_nonce_and_bump(
             SET use_count = use_count + 1, updated_at = NOW()
             WHERE delegation_id = $1
               AND (max_uses IS NULL OR use_count < max_uses)
-              AND EXISTS (SELECT 1 FROM ins)
+              AND EXISTS (SELECT 1 AS present FROM ins)
             RETURNING use_count
          )
          SELECT
-            EXISTS(SELECT 1 FROM ins) AS nonce_inserted,
+            EXISTS(SELECT 1 AS present FROM ins) AS nonce_inserted,
             (SELECT use_count FROM upd) AS new_use_count",
-    )
-    .bind(delegation_id.to_string())
-    .bind(&envelope.nonce)
-    .bind(&envelope.request_id)
-    .bind(frame_type)
-    .bind(resource)
-    .fetch_one(db)
+        delegation_id.to_string(),
+        &envelope.nonce,
+        envelope.request_id.as_deref(),
+        frame_type,
+        resource,
+    ).fetch_one(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, ctx = "consume_nonce_and_bump: nonce+bump CTE", "acp_capability db error");
         CapabilityError::Denied("db error".into())
     })?;
 
-    let nonce_inserted: bool = row.try_get("nonce_inserted").unwrap_or(false);
+    let nonce_inserted: bool = row.nonce_inserted.clone().unwrap_or(false);
     if !nonce_inserted {
         return Err(CapabilityError::Denied("nonce replay detected".into()));
     }
-    let new_use_count: Option<i64> = row.try_get("new_use_count").ok().flatten();
+    let new_use_count: Option<i64> = row.new_use_count.map(i64::from);
     if new_use_count.is_none() {
         return Err(CapabilityError::Denied("delegation exhausted".into()));
     }
@@ -868,7 +861,7 @@ pub async fn log_capability_reject(
     let session_locator_source = context.and_then(|ctx| ctx.session_locator_source.as_deref());
     let session_locator_value = context.and_then(|ctx| ctx.session_locator_value.as_deref());
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO acp_capability_reject_logs (
             bot_id, provider_account_id, delegation_id, decision_scope_type, decision_scope_id,
             frame_type, action, request_id, request_session_id, resolved_session_id, resolved_session_status,
@@ -876,24 +869,24 @@ pub async fn log_capability_reject(
             resource, decision_reason
          )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+        bot_id.to_string(),
+        provider_account_id,
+        delegation_id,
+        decision_scope_type,
+        decision_scope_id,
+        frame_type,
+        action,
+        request_id,
+        request_session_id,
+        resolved_session_id,
+        resolved_session_status,
+        resolved_session_scope_type,
+        resolved_session_scope_id,
+        session_locator_source,
+        session_locator_value,
+        resource,
+        reason,
     )
-    .bind(bot_id.to_string())
-    .bind(provider_account_id)
-    .bind(delegation_id)
-    .bind(decision_scope_type)
-    .bind(decision_scope_id)
-    .bind(frame_type)
-    .bind(action)
-    .bind(request_id)
-    .bind(request_session_id)
-    .bind(resolved_session_id)
-    .bind(resolved_session_status)
-    .bind(resolved_session_scope_type)
-    .bind(resolved_session_scope_id)
-    .bind(session_locator_source)
-    .bind(session_locator_value)
-    .bind(resource)
-    .bind(reason)
     .execute(db)
     .await
     .map(|_| ())

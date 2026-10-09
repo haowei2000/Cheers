@@ -21,7 +21,7 @@ export function LaneZones() {
 
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-[45] max-md:hidden"
+      className="pointer-events-none absolute inset-0 z-45 max-md:hidden"
       aria-hidden
     >
       {zones.map((z) => {
@@ -32,7 +32,7 @@ export function LaneZones() {
             className={
               hot
                 ? "absolute rounded-sm border-2 border-indigo-400/80 bg-indigo-500/20 transition-colors"
-                : "absolute rounded-sm  border-dashed border-zinc-500/40 bg-zinc-100/[0.03] transition-colors"
+                : "absolute rounded-sm  border-dashed border-zinc-500/40 bg-zinc-100/3 transition-colors"
             }
             style={{ left: z.x, top: z.y, width: z.w, height: z.h }}
           />

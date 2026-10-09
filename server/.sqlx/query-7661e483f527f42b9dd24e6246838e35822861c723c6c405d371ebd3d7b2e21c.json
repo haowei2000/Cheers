@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM approval_delegations WHERE user_id = $1 OR granted_by = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7661e483f527f42b9dd24e6246838e35822861c723c6c405d371ebd3d7b2e21c"
+}

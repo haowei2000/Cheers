@@ -4,9 +4,9 @@ import toast from "react-hot-toast";
 import { resetPassword } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import {
   PublicPageShell,
-  publicLabelClass,
   publicLinkClass,
   publicPanelClass,
 } from "@/components/public/PublicPageShell";
@@ -42,54 +42,52 @@ export default function ResetPasswordPage() {
     }
   }
 
-  const labelCls = publicLabelClass;
   return (
     <PublicPageShell title="Set a new password" description="Enter the code we emailed you.">
         <form
           onSubmit={submit}
           className={publicPanelClass}
         >
-          <div className="space-y-2">
-            <label className={labelCls}>Email</label>
+          <Field label="Email" htmlFor="reset-email">
             <Input
+              id="reset-email"
               type="email"
               placeholder="you@example.com"
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <label className={labelCls}>Reset code</label>
+          </Field>
+          <Field label="Reset code" htmlFor="reset-code">
             <Input
+              id="reset-code"
               type="text"
               placeholder="8-character code"
-              autoFocus
               className="font-code tracking-overline uppercase"
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <label className={labelCls}>New password</label>
+          </Field>
+          <Field label="New password" htmlFor="reset-password">
             <Input
+              id="reset-password"
               type="password"
               placeholder="min 12 characters"
               autoComplete="new-password"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <label className={labelCls}>Confirm new password</label>
+          </Field>
+          <Field label="Confirm new password" htmlFor="reset-confirm-password">
             <Input
+              id="reset-confirm-password"
               type="password"
               placeholder="repeat new password"
               autoComplete="new-password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
             />
-          </div>
+          </Field>
           <Button action="send" controlWidth="fill"
             type="submit"
             className="mt-2"

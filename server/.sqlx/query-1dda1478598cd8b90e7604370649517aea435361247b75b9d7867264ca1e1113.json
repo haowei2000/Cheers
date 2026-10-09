@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO integration_webhook_events\n             (integration_id, installation_id, event_id, event_type, payload)\n         VALUES ($1, $2, $3, $4, $5)\n         ON CONFLICT (integration_id, installation_id, event_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1dda1478598cd8b90e7604370649517aea435361247b75b9d7867264ca1e1113"
+}

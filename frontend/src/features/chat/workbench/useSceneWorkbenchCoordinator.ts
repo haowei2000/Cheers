@@ -1,3 +1,6 @@
+import type { SavedAnnotation } from "@/api/annotations";
+import toast from "react-hot-toast";
+import { useAnnotationSurface } from "@/features/annotations/AnnotationProvider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useContextPickStore,
@@ -8,7 +11,7 @@ import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import { useFileSession } from "./jsonFile";
 import { filterCollaborators } from "./collab";
-import { useAnnotations } from "./annotations";
+import { useAnnotations, resolveAnnotation } from "./annotations";
 import { inspectableIdLineRange } from "./contextSource";
 import type { PendingAnnotation } from "./AnnotationComposer";
 import type { LensContextTarget } from "./lens/registry";
@@ -44,6 +47,9 @@ export function useSceneWorkbenchCoordinator({
   const [contents, setContents] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
+  const refreshId = useRef(0);
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
   const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const reconciled = useMemo(
     () => reconcileSceneItems(sceneState, templates, legacyEnvironment),
@@ -59,26 +65,28 @@ export function useSceneWorkbenchCoordinator({
   const picked = usePendingContext(ctx.channelId);
   const pickedIds = useMemo(() => new Set(picked.map((item) => item.id)), [picked]);
 
+  // Presence updates replace ctx, but they do not require another filesystem listing.
   const refresh = useCallback(async () => {
+    const requestId = ++refreshId.current;
+    const fs = ctx.fs;
     setLoading(true);
+    setStatus(null);
     try {
-      const listing = await ctx.fs.ls("");
+      const listing = await fs.ls("");
+      if (requestId !== refreshId.current || ctxRef.current.fs !== fs) return;
       setEntries(listing.entries);
-      setStatus(null);
-      void readDiscoverableFiles(listing.entries, ctx, (values) =>
+      void readDiscoverableFiles(listing.entries, ctxRef.current, (values) =>
         setContents((previous) => ({ ...previous, ...values }))
       );
     } catch (error) {
+      if (requestId !== refreshId.current) return;
       setStatus(error instanceof Error ? error.message : "Couldn’t load Workbench items");
     } finally {
-      setLoading(false);
+      if (requestId === refreshId.current) setLoading(false);
     }
-  }, [ctx]);
+  }, [ctx.fs]);
 
   useEffect(() => void refresh(), [refresh]);
-  useEffect(() => {
-    if (ctx.filesTick !== undefined) void refresh();
-  }, [ctx.filesTick, refresh]);
 
   const existing = useMemo(
     () => new Set(entries.filter((entry) => !entry.is_dir).map((entry) => entry.path)),
@@ -156,18 +164,21 @@ export function useSceneWorkbenchCoordinator({
     void sessionRef.current.reload(true);
   }, [filesTick, refresh, selectedPath]);
 
-  // Presence focus broadcast
+  // Keep focus reporting independent of ctx identity; presence updates replace ctx.
+  // Depending on ctx here would clear and rebroadcast focus on every presence update.
+  const sendPresenceFocus = ctx.sendPresenceFocus;
+  const channelId = ctx.channelId;
   useEffect(() => {
-    if (!ctx.sendPresenceFocus) return;
+    if (!sendPresenceFocus) return;
     if (selectedPath) {
-      ctx.sendPresenceFocus(ctx.channelId, { bot_id: "", path: selectedPath });
+      sendPresenceFocus(channelId, { bot_id: "", path: selectedPath });
     } else {
-      ctx.sendPresenceFocus(ctx.channelId, null);
+      sendPresenceFocus(channelId, null);
     }
     return () => {
-      ctx.sendPresenceFocus?.(ctx.channelId, null);
+      sendPresenceFocus(channelId, null);
     };
-  }, [ctx.sendPresenceFocus, ctx.channelId, selectedPath]);
+  }, [sendPresenceFocus, channelId, selectedPath]);
 
   const collaborators = useMemo(
     () => filterCollaborators(ctx.workspaceFocus, selectedPath, ctx.currentUserId, ctx.memberNames),
@@ -175,14 +186,14 @@ export function useSceneWorkbenchCoordinator({
   );
 
   // Annotations
-  const annotations = useAnnotations(ctx.fs, selectedPath ?? "");
+  const annotations = useAnnotations(selectedPath ?? "", ctx.channelId);
   const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
   const onAnnotate = useCallback(
     (target: LensContextTarget, at: { x: number; y: number }) =>
       selectedPath && setPendingNote({ target, path: selectedPath, at }),
     [selectedPath]
   );
-  const onRemoveNote = useCallback((id: string) => void annotations.remove(id), [annotations]);
+  const onRemoveNote = useCallback((id: string) => void annotations.remove(id).catch(error => toast.error(error instanceof Error ? error.message : "Could not delete annotation.")), [annotations]);
   const [isInspectorActive, setIsInspectorActive] = useState(false);
   const [revealLine, setRevealLine] = useState<number | undefined>();
 
@@ -209,7 +220,7 @@ export function useSceneWorkbenchCoordinator({
     revealedCard.current = key;
     showRaw(selectedPath, true);
     setRevealLine(range.start);
-  }, [ctx.openInspectableId, ctx.openTarget, selectedPath, session.path, session.version, session.parsedText, showRaw]);
+  }, [ctx.openInspectableId, ctx.openTarget, selectedPath, session.path, session.version, session.parsedText, session.status, showRaw]);
 
   // Keep discovery map in sync with active session
   useEffect(() => {
@@ -223,6 +234,22 @@ export function useSceneWorkbenchCoordinator({
     setPendingNote(null);
     setActiveAnnotationId(null);
   }, [selectedPath]);
+  const annotationSurface = useAnnotationSurface();
+  const lastAnnotationReveal = useRef<SavedAnnotation | null>(null);
+  useEffect(() => {
+    const item = annotationSurface?.revealed;
+    if (item?.target.kind !== "file" || item.target.path !== selectedPath) return;
+    if (lastAnnotationReveal.current === item) return;
+    setActiveAnnotationId(item.id);
+    if (session.version === null && !session.status) return;
+    lastAnnotationReveal.current = item;
+    const note = annotations.doc.notes.find(n => n.id === item.id);
+    const range = note ? resolveAnnotation(note, session.parsedText) : null;
+    if (range) {
+      showRaw(selectedPath!, true);
+      setRevealLine(range.start);
+    }
+  }, [annotationSurface?.revealed, selectedPath, annotations.doc, session.parsedText, session.version, session.status, showRaw]);
 
   const selectPath = useCallback((path: string, sceneId = activeScene) => {
     setSelectedByScene((previous) => ({ ...previous, [sceneId]: path }));
@@ -272,6 +299,7 @@ export function useSceneWorkbenchCoordinator({
   }, [activeScene, onAddTab, storagePrefix]);
 
   return {
+    contents,
     entries,
     loading,
     status,

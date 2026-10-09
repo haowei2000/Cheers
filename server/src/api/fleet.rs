@@ -17,7 +17,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use std::collections::HashMap;
@@ -51,17 +51,17 @@ fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
 
 /// The caller's channel role for the event-policy matrix (default `member`).
 async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
-    sqlx::query(
+    sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id.to_string(),
+        uid.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(uid.to_string())
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .and_then(|r| Some(r.role.clone()))
     .unwrap_or_else(|| "member".to_string())
 }
 
@@ -229,7 +229,7 @@ pub async fn list_hosts_all(
     // clears it with its code (up to a day). Listing it as a device is noise, and
     // replacing a code in the setup wizard leaves one behind every time. The
     // management audit log keeps the trail.
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT i.host_id, i.bot_id,
                 COALESCE(b.display_name, b.username) AS bot_name,
                 b.username AS bot_username, i.device_name, i.agent_type,
@@ -242,44 +242,41 @@ pub async fn list_hosts_all(
          WHERE ($1 OR b.created_by = $2)
            AND NOT (i.status = 'pending' AND i.revoked_at IS NOT NULL)
          ORDER BY i.created_at DESC",
+        admin,
+        &claims.sub,
     )
-    .bind(admin)
-    .bind(&claims.sub)
     .fetch_all(&state.db)
     .await?;
 
     let mut hosts = Vec::with_capacity(rows.len());
     for row in rows {
-        let bot_id: String = row.try_get("bot_id").unwrap_or_default();
-        let status: String = row.try_get("status").unwrap_or_else(|_| "standby".into());
-        let revoked_at = row
-            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("revoked_at")
-            .ok()
-            .flatten();
+        let bot_id: String = row.bot_id.clone();
+        let status: String = row.status.clone();
+        let revoked_at = row.revoked_at.clone();
         let online = match Uuid::parse_str(&bot_id) {
             Ok(id) => state.bot_locator.is_online(id).await,
             Err(_) => false,
         } && status == "active"
             && revoked_at.is_none();
         hosts.push(json!({
-            "host_id": row.try_get::<String, _>("host_id").unwrap_or_default(),
+            "host_id": row.host_id.clone(),
             "bot_id": bot_id,
-            "bot_name": row.try_get::<String, _>("bot_name").unwrap_or_default(),
-            "bot_username": row.try_get::<String, _>("bot_username").unwrap_or_default(),
-            "device_name": row.try_get::<String, _>("device_name").unwrap_or_default(),
-            "agent_type": row.try_get::<String, _>("agent_type").unwrap_or_else(|_| "generic".into()),
-            "credential_prefix": row.try_get::<String, _>("credential_prefix").unwrap_or_default(),
+            "bot_name": row.bot_name.clone().unwrap_or_default(),
+            "bot_username": row.bot_username.clone(),
+            "device_name": row.device_name.clone(),
+            "agent_type": row.agent_type.clone(),
+            "credential_prefix": row.credential_prefix.clone().unwrap_or_default(),
             "status": status,
             "online": online,
-            "connector_version": row.try_get::<Option<String>, _>("connector_version").ok().flatten(),
-            "last_seen_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_seen_at").ok().flatten(),
-            "connected_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("connected_at").ok().flatten(),
-            "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok(),
+            "connector_version": row.connector_version.clone(),
+            "last_seen_at": row.last_seen_at.clone(),
+            "connected_at": row.connected_at.clone(),
+            "created_at": Some(row.created_at.clone()),
             "revoked_at": revoked_at,
-            "mcp_connection_state": row.try_get::<String, _>("mcp_connection_state").unwrap_or_else(|_| "unconfigured".into()),
-            "mcp_state_updated_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("mcp_state_updated_at").ok().flatten(),
-            "mcp_connected_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("mcp_connected_at").ok().flatten(),
-            "mcp_last_seen_at": row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("mcp_last_seen_at").ok().flatten(),
+            "mcp_connection_state": row.mcp_connection_state.clone(),
+            "mcp_state_updated_at": Some(row.mcp_state_updated_at.clone()),
+            "mcp_connected_at": row.mcp_connected_at.clone(),
+            "mcp_last_seen_at": row.mcp_last_seen_at.clone(),
         }));
     }
     Ok(Json(json!({ "hosts": hosts })))
@@ -292,7 +289,7 @@ pub async fn list_audit_all(
     Query(query): Query<FleetAuditQuery>,
 ) -> Result<Json<Value>, AppError> {
     let limit = query.limit.unwrap_or(100).clamp(1, 250);
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT source, event_id, event_type, bot_id, host_id, actor_id,
                 detail, created_at
          FROM (
@@ -300,7 +297,7 @@ pub async fn list_audit_all(
                   a.bot_id, a.host_id, a.actor_id, a.detail, a.created_at
            FROM bot_management_audit a
            WHERE ($1 OR a.actor_id = $2 OR EXISTS (
-             SELECT 1 FROM bot_accounts b WHERE b.bot_id = a.bot_id AND b.created_by = $2
+             SELECT 1 AS present FROM bot_accounts b WHERE b.bot_id = a.bot_id AND b.created_by = $2
            ))
            UNION ALL
            SELECT 'connection', e.id::text, 'connection.' || e.event, e.bot_id,
@@ -328,14 +325,14 @@ pub async fn list_audit_all(
            AND ($6::text IS NULL OR event_type = $6)
          ORDER BY created_at DESC, event_id DESC
          LIMIT $7",
+        is_admin(&claims),
+        &claims.sub,
+        query.cursor,
+        query.bot_id,
+        query.host_id,
+        query.event_type,
+        limit + 1,
     )
-    .bind(is_admin(&claims))
-    .bind(&claims.sub)
-    .bind(query.cursor)
-    .bind(query.bot_id)
-    .bind(query.host_id)
-    .bind(query.event_type)
-    .bind(limit + 1)
     .fetch_all(&state.db)
     .await?;
 
@@ -343,16 +340,18 @@ pub async fn list_audit_all(
     let events: Vec<Value> = rows
         .into_iter()
         .take(limit as usize)
-        .map(|row| json!({
-            "id": row.try_get::<String, _>("event_id").unwrap_or_default(),
-            "source": row.try_get::<String, _>("source").unwrap_or_default(),
-            "event_type": row.try_get::<String, _>("event_type").unwrap_or_default(),
-            "bot_id": row.try_get::<Option<String>, _>("bot_id").ok().flatten(),
-            "host_id": row.try_get::<Option<String>, _>("host_id").ok().flatten(),
-            "actor_id": row.try_get::<Option<String>, _>("actor_id").ok().flatten(),
-            "detail": row.try_get::<Value, _>("detail").unwrap_or(Value::Null),
-            "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").map(|v| v.to_rfc3339()).unwrap_or_default(),
-        }))
+        .map(|row| {
+            json!({
+                "id": row.event_id.clone().unwrap_or_default(),
+                "source": row.source.clone().unwrap_or_default(),
+                "event_type": row.event_type.clone().unwrap_or_default(),
+                "bot_id": row.bot_id.clone(),
+                "host_id": row.host_id.clone(),
+                "actor_id": row.actor_id.clone(),
+                "detail": row.detail.clone().unwrap_or(Value::Null),
+                "created_at": row.created_at.clone().map(|v| v.to_rfc3339()).unwrap_or_default(),
+            })
+        })
         .collect();
     let next_cursor = if has_more {
         events
@@ -442,38 +441,33 @@ async fn build_fleet(
     // The personal cockpit is bot-centric: include owned bots even before they
     // join a channel and collapse every bot×channel row into one bot summary.
     if workspace_id.is_none() {
-        let catalog = sqlx::query(
+        let catalog = sqlx::query!(
             "SELECT b.bot_id, COALESCE(b.display_name, b.username) AS bot_name,
                     b.username, b.created_by, b.is_disabled, b.status_text, b.status_emoji
              FROM bot_accounts b
              WHERE $2 OR b.created_by = $1 OR EXISTS (
-               SELECT 1 FROM channel_memberships bcm
+               SELECT 1 AS present FROM channel_memberships bcm
                JOIN channel_memberships me ON me.channel_id = bcm.channel_id
                WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'
                  AND me.member_id = $1 AND me.member_type = 'user'
              )
              ORDER BY bot_name",
+            uid.to_string(),
+            admin,
         )
-        .bind(uid.to_string())
-        .bind(admin)
         .fetch_all(&state.db)
         .await?;
-        let host_counts: HashMap<String, i64> = sqlx::query(
+        let host_counts: HashMap<String, i64> = sqlx::query!(
             "SELECT i.bot_id, COUNT(*) FILTER (WHERE i.revoked_at IS NULL) AS count
              FROM connector_hosts i JOIN bot_accounts b ON b.bot_id = i.bot_id
              WHERE $2 OR b.created_by = $1 GROUP BY i.bot_id",
+            uid.to_string(),
+            admin,
         )
-        .bind(uid.to_string())
-        .bind(admin)
         .fetch_all(&state.db)
         .await?
         .into_iter()
-        .filter_map(|row| {
-            Some((
-                row.try_get("bot_id").ok()?,
-                row.try_get("count").unwrap_or(0),
-            ))
-        })
+        .filter_map(|row| Some((Some(row.bot_id.clone())?, row.count.clone().unwrap_or(0))))
         .collect();
 
         let mut bot_rows: HashMap<Uuid, Vec<&crate::domain::fleet::FleetBotRow>> = HashMap::new();
@@ -485,7 +479,7 @@ async fn build_fleet(
         let mut working_count = 0_i64;
         let mut offline_count = 0_i64;
         for row in catalog {
-            let bot_id_s: String = row.try_get("bot_id").unwrap_or_default();
+            let bot_id_s: String = row.bot_id.clone();
             let Ok(bot_id) = Uuid::parse_str(&bot_id_s) else {
                 continue;
             };
@@ -518,25 +512,20 @@ async fn build_fleet(
             } else {
                 online_count += 1;
             }
-            let can_manage = admin
-                || row
-                    .try_get::<Option<String>, _>("created_by")
-                    .ok()
-                    .flatten()
-                    .as_deref()
-                    == Some(uid.to_string().as_str());
+            let can_manage =
+                admin || row.created_by.clone().as_deref() == Some(uid.to_string().as_str());
             summaries.push(json!({
                 "bot_id": bot_id_s,
-                "bot_name": row.try_get::<String, _>("bot_name").unwrap_or_default(),
-                "username": row.try_get::<String, _>("username").unwrap_or_default(),
+                "bot_name": row.bot_name.clone().unwrap_or_default(),
+                "username": row.username.clone(),
                 "can_manage": can_manage,
                 "relationship": if can_manage { "mine" } else { "shared" },
-                "is_disabled": row.try_get::<bool, _>("is_disabled").unwrap_or(false),
+                "is_disabled": row.is_disabled.clone(),
                 "online": is_online,
                 "busy_sessions": busy,
                 "idle_sessions": idle,
-                "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
-                "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+                "status_text": row.status_text.clone(),
+                "status_emoji": row.status_emoji.clone(),
                 "cost_today_usd": cost,
                 "pending_count": pending,
                 "host_count": host_counts.get(&bot_id_s).copied().unwrap_or(0),

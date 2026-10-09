@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (\n            EXISTS(SELECT 1 AS present FROM friendships\n                   WHERE status = 'accepted'\n                     AND ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)))\n            OR EXISTS(SELECT 1 AS present FROM channel_memberships ma\n                      JOIN channel_memberships mb ON ma.channel_id = mb.channel_id\n                      WHERE ma.member_type = 'user' AND mb.member_type = 'user'\n                        AND ma.member_id = $1 AND mb.member_id = $2)\n         ) AS ok",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cc6f8cc8e9b4822aeb2dd5a1f2e81ec5f1bbe4bfabdb7dff176de8c5dd982bb1"
+}

@@ -1,9 +1,12 @@
+import { AnnotationPreviewProvider } from "@/features/annotations/previewSupport";
 import { ContextActionsProvider } from "@/components/ui/context-actions";
 import { ThemeProvider } from "@/components/ui/theme";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { createRoot, type Root } from "react-dom/client";
 import { Folder, LayoutGrid } from "lucide-react";
 import "@/index.css";
+import { PanelWorkspace } from "./PanelWorkspace";
+import { ChannelChrome } from "../ChannelChrome";
 import { SceneWorkbench } from "./SceneWorkbench";
 import type { WorkbenchContext } from "./context";
 import type { TemplateManifest } from "./manifest";
@@ -141,9 +144,17 @@ function Preview() {
   return (
     <ThemeProvider>
       <ContextActionsProvider>
-      <main className="relative h-full overflow-hidden bg-canvas text-content-primary">
+      <AnnotationPreviewProvider>
+      <main className="relative flex h-screen flex-col overflow-hidden bg-canvas text-content-primary">
+        <PanelWorkspace
+          channelId="panel-layout-preview"
+          openPanels={[{ id: "workbench", label: "Workbench" }]}
+          onLaneElement={() => undefined}
+          header={(navigation) => <ChannelChrome title="Product planning" isDm={false} panelNavigation={navigation} actions={null} />}
+          panels={(
         <FloatingPanel
           title="Workbench"
+          spawnKind="workbench"
           icon={LayoutGrid}
           onClose={() => undefined}
           storageKey="cheers.preview.adaptive-workbench"
@@ -168,10 +179,21 @@ function Preview() {
             onShowRaw={() => undefined}
           />
         </FloatingPanel>
+          )}
+        >
+          <div className="flex flex-1 items-center justify-center p-8 text-content-muted">Conversation</div>
+        </PanelWorkspace>
       </main>
+      </AnnotationPreviewProvider>
       </ContextActionsProvider>
     </ThemeProvider>
   );
+}
+
+// Preview-only theme override; do not change the user's persisted appearance.
+const previewTheme = new URLSearchParams(window.location.search).get("theme");
+if (previewTheme === "light" || previewTheme === "dark") {
+  document.documentElement.dataset.themePreference = previewTheme;
 }
 
 const previewGlobal = globalThis as typeof globalThis & { __sceneWorkbenchPreviewRoot?: Root };

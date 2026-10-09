@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bci.role, bci.invited_by, bci.cwd, bci.additional_dirs,\n                b.is_disabled\n         FROM bot_channel_invites bci\n         JOIN bot_accounts b ON b.bot_id = bci.bot_id\n         WHERE bci.channel_id = $1 AND bci.bot_id = $2\n           AND bci.owner_user_id = $3 AND b.created_by = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "invited_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "cwd",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "additional_dirs",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_disabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "d55f51ad50cb05c48e05b9c9060e08b9216fbf3e8458149e3e8ee03a2bbd3edc"
+}

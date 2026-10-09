@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT content FROM context_files WHERE channel_id=$1 AND path='annotations.yaml' AND NOT is_dir",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "332474cf3efc9839220d50601b590367145d7fdf84cdf5b78b8dbee49b76e215"
+}

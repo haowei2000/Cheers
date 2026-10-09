@@ -102,7 +102,7 @@ function NodeBody({ node }: { node: CanvasNode }) {
   const detail = node.source.kind === "fs" ? node.source.path : node.source.verb;
   return (
     <div className="flex min-h-0 flex-1 items-start gap-2 px-3 pb-3">
-      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary">
         {node.source.kind === "fs" ? <FileText className="h-4 w-4" /> : <Database className="h-4 w-4" />}
       </span>
       <span className="min-w-0 flex-1">
@@ -504,12 +504,14 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
     (selectedId && document_.nodes.some((node) => node.id === selectedId) ? selectedId : null) ??
     document_.nodes[0]?.id;
 
+  /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- The diagram is a keyboard-operable application surface with pointer gestures and dedicated focusable nodes. */
   return (
     <div className="relative flex h-full min-h-0">
       <div
         ref={viewportRef}
-        role="application"
+        role="region"
         aria-label="Canvas"
+        aria-roledescription="interactive diagram"
         tabIndex={0}
         // `select-none`: on this surface a left drag MOVES a node, so it can never also be
         // a text selection — and without this the browser painted one anyway, which then
@@ -615,9 +617,9 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 onFocus={() => setFocusedId(node.id)}
                 onDoubleClick={() => openSource(node)}
               >
-                <div className="flex flex-shrink-0 items-center gap-2 px-3 py-2">
+                <div className="flex shrink-0 items-center gap-2 px-3 py-2">
                   <span className="min-w-0 flex-1 truncate text-compact font-medium text-content-primary">{nodeTitle(node)}</span>
-                  {node.rect && <span className="flex-shrink-0 text-minimal text-content-muted">pinned</span>}
+                  {node.rect && <span className="shrink-0 text-minimal text-content-muted">pinned</span>}
                 </div>
                 <NodeBody node={node} />
                 {selected && !readOnly &&
@@ -719,4 +721,5 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       </div>
     </div>
   );
+  /* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
 }

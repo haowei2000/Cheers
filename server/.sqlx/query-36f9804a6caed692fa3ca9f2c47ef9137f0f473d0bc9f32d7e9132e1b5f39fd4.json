@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth_external_identities\n         (identity_id, provider, issuer, provider_config_id, subject, user_id,\n          corp_id, display_name, email, profile)\n         VALUES ($1, $2, $3, 'web', $4, $5, $2, $6, $7, '{}'::jsonb)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36f9804a6caed692fa3ca9f2c47ef9137f0f473d0bc9f32d7e9132e1b5f39fd4"
+}

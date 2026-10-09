@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_message_runs SET status='succeeded',message_id=$2,\n                 finished_at=NOW() WHERE run_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f772e6305550e18952608672ced01803a693b1cd8da7d9f9414150eb5e1a024"
+}

@@ -23,7 +23,7 @@ use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -107,7 +107,7 @@ pub async fn start_github_installation(
     }
 
     // Keep this one-time table bounded without needing a separate cleanup job.
-    sqlx::query(
+    sqlx::query!(
         "DELETE FROM github_app_installation_sessions
           WHERE expires_at < NOW() OR consumed_at < NOW() - INTERVAL '1 day'",
     )
@@ -119,15 +119,15 @@ pub async fn start_github_installation(
         .map_err(|error| AppError::Internal(format!("secure random generation failed: {error}")))?;
     let secret = URL_SAFE_NO_PAD.encode(bytes);
     let expires_at = Utc::now() + Duration::minutes(INSTALL_STATE_TTL_MINUTES);
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO github_app_installation_sessions
              (state_hash, workspace_id, user_id, expires_at)
          VALUES ($1, $2, $3, $4)",
+        state_hash(&secret),
+        &body.workspace_id,
+        &claims.sub,
+        expires_at,
     )
-    .bind(state_hash(&secret))
-    .bind(&body.workspace_id)
-    .bind(&claims.sub)
-    .bind(expires_at)
     .execute(&state.db)
     .await?;
 
@@ -169,13 +169,13 @@ pub async fn github_installation_callback(
     let code = query
         .code
         .ok_or_else(|| AppError::BadRequest("missing GitHub installer authorization".into()))?;
-    let valid_state = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(
-            SELECT 1 FROM github_app_installation_sessions
+    let valid_state = sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM github_app_installation_sessions
              WHERE state_hash = $1 AND consumed_at IS NULL AND expires_at > NOW()
-        )",
+        ) AS "value!" "#,
+        state_hash(&state_secret),
     )
-    .bind(state_hash(&state_secret))
     .fetch_one(&state.db)
     .await?;
     if !valid_state {
@@ -208,31 +208,31 @@ pub async fn github_installation_callback(
         })?;
 
     let mut tx = state.db.begin().await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "UPDATE github_app_installation_sessions
             SET consumed_at = NOW()
           WHERE state_hash = $1 AND consumed_at IS NULL AND expires_at > NOW()
       RETURNING workspace_id, user_id",
+        state_hash(&state_secret),
     )
-    .bind(state_hash(&state_secret))
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::BadRequest("installation state expired or already used".into()))?;
-    let workspace_id: String = row.try_get("workspace_id")?;
-    let user_id: String = row.try_get("user_id")?;
-    sqlx::query(
+    let workspace_id: String = row.workspace_id.clone();
+    let user_id: String = row.user_id.clone();
+    sqlx::query!(
         "INSERT INTO integration_installations
              (installation_id, integration_id, workspace_id, external_account, config, installed_by)
          VALUES ($1, 'github', $2, $3, $4, $5)
          ON CONFLICT (integration_id, workspace_id, external_account) DO UPDATE
              SET config = EXCLUDED.config, installed_by = EXCLUDED.installed_by,
                  disabled_at = NULL, updated_at = NOW()",
+        Uuid::new_v4().to_string(),
+        &workspace_id,
+        &external_id,
+        json!({ "account_login": account_login }),
+        &user_id,
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(&workspace_id)
-    .bind(&external_id)
-    .bind(json!({ "account_login": account_login }))
-    .bind(&user_id)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -260,7 +260,7 @@ async fn installation_for_user(
     installation_id: &str,
     user_id: &str,
 ) -> Result<Installation, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT i.installation_id, i.workspace_id, i.external_account, i.installed_by
            FROM integration_installations i
            JOIN workspace_memberships m
@@ -270,19 +270,19 @@ async fn installation_for_user(
           WHERE i.installation_id = $1
             AND i.integration_id = $2
             AND i.disabled_at IS NULL",
+        installation_id,
+        integration_id,
+        user_id,
     )
-    .bind(installation_id)
-    .bind(integration_id)
-    .bind(user_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
     Ok(Installation {
-        installation_id: row.try_get("installation_id")?,
-        workspace_id: row.try_get("workspace_id")?,
-        external_account: row.try_get("external_account")?,
-        installed_by: row.try_get("installed_by")?,
+        installation_id: row.installation_id.clone(),
+        workspace_id: row.workspace_id.clone(),
+        external_account: row.external_account.clone(),
+        installed_by: row.installed_by.clone(),
     })
 }
 
@@ -320,7 +320,7 @@ pub async fn list_installations(
     Path(integration_id): Path<String>,
 ) -> Result<Json<Vec<InstallationDto>>, AppError> {
     let descriptor = catalog::find(&integration_id).ok_or(AppError::NotFound)?;
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT i.installation_id, i.workspace_id, i.external_account, i.config
            FROM integration_installations i
            JOIN workspace_memberships m
@@ -329,26 +329,26 @@ pub async fn list_installations(
             AND m.status = 'active'
           WHERE i.integration_id = $1 AND i.disabled_at IS NULL
           ORDER BY i.created_at",
+        &integration_id,
+        &claims.sub,
     )
-    .bind(&integration_id)
-    .bind(&claims.sub)
     .fetch_all(&state.db)
     .await?;
 
     let installations = rows
         .into_iter()
         .map(|row| {
-            let config: serde_json::Value = row.try_get("config")?;
+            let config: serde_json::Value = row.config.clone();
             Ok(InstallationDto {
-                installation_id: row.try_get("installation_id")?,
+                installation_id: row.installation_id.clone(),
                 integration_id: integration_id.clone(),
-                workspace_id: row.try_get("workspace_id")?,
+                workspace_id: row.workspace_id.clone(),
                 display_name: descriptor.display_name.to_string(),
                 external_account: config
                     .get("account_login")
                     .and_then(|value| value.as_str())
                     .map(str::to_string)
-                    .unwrap_or(row.try_get("external_account")?),
+                    .unwrap_or(row.external_account.clone()),
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()
@@ -498,12 +498,13 @@ pub async fn bind_channel(
 
     // The channel and the installation must live in the same workspace, or a
     // binding would carry a repository across a tenancy boundary.
-    let channel_workspace: String =
-        sqlx::query_scalar("SELECT workspace_id FROM channels WHERE channel_id = $1")
-            .bind(&channel_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?;
+    let channel_workspace: String = sqlx::query_scalar!(
+        "SELECT workspace_id FROM channels WHERE channel_id = $1",
+        &channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
     if channel_workspace != installation.workspace_id {
         return Err(AppError::Forbidden(
             "channel and installation are in different workspaces".into(),
@@ -717,12 +718,12 @@ pub async fn init_project(
         .map(str::to_owned);
     let bot_ids: Vec<String> = match target_bot_id {
         Some(bot_id) => {
-            sqlx::query_scalar(
+            sqlx::query_scalar!(
                 "SELECT member_id FROM channel_memberships
               WHERE channel_id = $1 AND member_type = 'bot' AND member_id = $2",
+                &channel_id,
+                bot_id,
             )
-            .bind(&channel_id)
-            .bind(bot_id)
             .fetch_all(&state.db)
             .await?
         }
@@ -733,12 +734,12 @@ pub async fn init_project(
             Vec::new()
         }
         None => {
-            sqlx::query_scalar(
+            sqlx::query_scalar!(
                 "SELECT member_id FROM channel_memberships
                   WHERE channel_id = $1 AND member_type = 'bot'
                   ORDER BY member_id",
+                &channel_id,
             )
-            .bind(&channel_id)
             .fetch_all(&state.db)
             .await?
         }

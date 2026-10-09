@@ -20,7 +20,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use std::net::SocketAddr;
 use uuid::Uuid;
 
@@ -65,20 +65,20 @@ pub struct InviteLinkDto {
     pub status: String,
 }
 
-fn row_to_dto(r: &sqlx::postgres::PgRow) -> InviteLinkDto {
-    let expired: bool = r.try_get("expired").unwrap_or(false);
-    let exhausted: bool = r.try_get("exhausted").unwrap_or(false);
+fn row_to_dto(r: &crate::infra::db::query_rows::InviteLinkRow) -> InviteLinkDto {
+    let expired: bool = r.expired.clone().unwrap_or(false);
+    let exhausted: bool = r.exhausted.clone().unwrap_or(false);
     InviteLinkDto {
-        link_id: r.try_get("link_id").unwrap_or_default(),
-        token: r.try_get("token").unwrap_or_default(),
-        workspace_id: r.try_get("workspace_id").unwrap_or_default(),
-        channel_id: r.try_get("channel_id").ok().flatten(),
-        channel_name: r.try_get("channel_name").ok().flatten(),
-        created_by: r.try_get("created_by_name").ok().flatten(),
-        created_at: r.try_get("created_at").ok().flatten(),
-        expires_at: r.try_get("expires_at").ok().flatten(),
-        max_uses: r.try_get("max_uses").ok().flatten(),
-        use_count: r.try_get("use_count").unwrap_or(0),
+        link_id: r.link_id.clone(),
+        token: r.token.clone(),
+        workspace_id: r.workspace_id.clone(),
+        channel_id: r.channel_id.clone(),
+        channel_name: r.channel_name.clone(),
+        created_by: r.created_by_name.clone(),
+        created_at: r.created_at.clone(),
+        expires_at: r.expires_at.clone(),
+        max_uses: r.max_uses.clone(),
+        use_count: r.use_count.clone(),
         status: if expired {
             "expired".into()
         } else if exhausted {
@@ -91,14 +91,6 @@ fn row_to_dto(r: &sqlx::postgres::PgRow) -> InviteLinkDto {
 
 /// Columns every link query selects — keep the projection in one place so
 /// list/create stay in lockstep with `row_to_dto`.
-const LINK_COLUMNS: &str = "il.link_id, il.token, il.workspace_id, il.channel_id,
-        c.name AS channel_name,
-        COALESCE(u.display_name, u.username) AS created_by_name,
-        il.created_at::text AS created_at, il.expires_at::text AS expires_at,
-        il.max_uses, il.use_count,
-        (il.expires_at IS NOT NULL AND il.expires_at <= NOW()) AS expired,
-        (il.max_uses IS NOT NULL AND il.use_count >= il.max_uses) AS exhausted";
-
 /// POST /api/v1/workspaces/{workspace_id}/invite-links — mint a shareable link
 /// (workspace admin). Returns the full record incl. the token; the token stays
 /// re-readable via the list endpoint for the link's lifetime.
@@ -110,11 +102,12 @@ pub async fn create_invite_link(
 ) -> Result<Json<InviteLinkDto>, AppError> {
     ensure_workspace_admin(&state, &workspace_id, &claims.sub, &claims.role).await?;
 
-    let kind: Option<String> =
-        sqlx::query_scalar("SELECT kind FROM workspaces WHERE workspace_id = $1")
-            .bind(&workspace_id)
-            .fetch_optional(&state.db)
-            .await?;
+    let kind: Option<String> = sqlx::query_scalar!(
+        "SELECT kind FROM workspaces WHERE workspace_id = $1",
+        &workspace_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
     match kind.as_deref() {
         None => return Err(AppError::NotFound),
         Some("personal") => {
@@ -145,13 +138,15 @@ pub async fn create_invite_link(
     // not privilege. Private channels/DMs keep consent-based invites as the only
     // way in — a bearer link must not become a back door.
     if let Some(cid) = body.channel_id.as_deref() {
-        let ch = sqlx::query("SELECT workspace_id, type FROM channels WHERE channel_id = $1")
-            .bind(cid)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?;
-        let ch_ws: String = ch.try_get("workspace_id").unwrap_or_default();
-        let ch_type: String = ch.try_get("type").unwrap_or_default();
+        let ch = sqlx::query!(
+            "SELECT workspace_id, type FROM channels WHERE channel_id = $1",
+            cid,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+        let ch_ws: String = ch.workspace_id.clone();
+        let ch_type: String = ch.r#type.clone();
         if ch_ws != workspace_id {
             return Err(AppError::BadRequest(
                 "channel does not belong to this workspace".into(),
@@ -164,13 +159,13 @@ pub async fn create_invite_link(
         }
     }
 
-    let live: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM invite_links
+    let live: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "value!" FROM invite_links
          WHERE workspace_id = $1 AND NOT revoked
            AND (expires_at IS NULL OR expires_at > NOW())
-           AND (max_uses IS NULL OR use_count < max_uses)",
+           AND (max_uses IS NULL OR use_count < max_uses)"#,
+        &workspace_id,
     )
-    .bind(&workspace_id)
     .fetch_one(&state.db)
     .await?;
     if live >= MAX_LIVE_LINKS_PER_WORKSPACE {
@@ -184,27 +179,34 @@ pub async fn create_invite_link(
     let expires_at = body
         .expires_in_hours
         .map(|h| chrono::Utc::now() + chrono::Duration::hours(h));
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO invite_links (link_id, token, workspace_id, channel_id, created_by, expires_at, max_uses)
          VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        &link_id,
+        &token,
+        &workspace_id,
+        body.channel_id.as_deref(),
+        &claims.sub,
+        expires_at,
+        body.max_uses,
     )
-    .bind(&link_id)
-    .bind(&token)
-    .bind(&workspace_id)
-    .bind(&body.channel_id)
-    .bind(&claims.sub)
-    .bind(expires_at)
-    .bind(body.max_uses)
     .execute(&state.db)
     .await?;
 
-    let row = sqlx::query(&format!(
-        "SELECT {LINK_COLUMNS} FROM invite_links il
+    let row = sqlx::query_as!(
+        crate::infra::db::query_rows::InviteLinkRow,
+        r###"SELECT il.link_id, il.token, il.workspace_id, il.channel_id,
+        c.name AS "channel_name?",
+        COALESCE(u.display_name, u.username) AS created_by_name,
+        il.created_at::text AS created_at, il.expires_at::text AS expires_at,
+        il.max_uses, il.use_count,
+        (il.expires_at IS NOT NULL AND il.expires_at <= NOW()) AS expired,
+        (il.max_uses IS NOT NULL AND il.use_count >= il.max_uses) AS exhausted FROM invite_links il
          LEFT JOIN channels c ON c.channel_id = il.channel_id
          LEFT JOIN users u ON u.user_id = il.created_by
-         WHERE il.link_id = $1"
-    ))
-    .bind(&link_id)
+         WHERE il.link_id = $1"###,
+        &link_id,
+    )
     .fetch_one(&state.db)
     .await?;
     Ok(Json(row_to_dto(&row)))
@@ -219,14 +221,21 @@ pub async fn list_invite_links(
     Path(workspace_id): Path<String>,
 ) -> Result<Json<Vec<InviteLinkDto>>, AppError> {
     ensure_workspace_admin(&state, &workspace_id, &claims.sub, &claims.role).await?;
-    let rows = sqlx::query(&format!(
-        "SELECT {LINK_COLUMNS} FROM invite_links il
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::InviteLinkRow,
+        r###"SELECT il.link_id, il.token, il.workspace_id, il.channel_id,
+        c.name AS "channel_name?",
+        COALESCE(u.display_name, u.username) AS created_by_name,
+        il.created_at::text AS created_at, il.expires_at::text AS expires_at,
+        il.max_uses, il.use_count,
+        (il.expires_at IS NOT NULL AND il.expires_at <= NOW()) AS expired,
+        (il.max_uses IS NOT NULL AND il.use_count >= il.max_uses) AS exhausted FROM invite_links il
          LEFT JOIN channels c ON c.channel_id = il.channel_id
          LEFT JOIN users u ON u.user_id = il.created_by
          WHERE il.workspace_id = $1 AND NOT il.revoked
-         ORDER BY il.created_at DESC"
-    ))
-    .bind(&workspace_id)
+         ORDER BY il.created_at DESC"###,
+        &workspace_id,
+    )
     .fetch_all(&state.db)
     .await?;
     Ok(Json(rows.iter().map(row_to_dto).collect()))
@@ -240,11 +249,11 @@ pub async fn revoke_invite_link(
     Path((workspace_id, link_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
     ensure_workspace_admin(&state, &workspace_id, &claims.sub, &claims.role).await?;
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "UPDATE invite_links SET revoked = TRUE WHERE link_id = $1 AND workspace_id = $2",
+        &link_id,
+        &workspace_id,
     )
-    .bind(&link_id)
-    .bind(&workspace_id)
     .execute(&state.db)
     .await?;
     if res.rows_affected() == 0 {
@@ -299,9 +308,9 @@ pub async fn preview_invite_link(
         });
     }
 
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT il.workspace_id, il.channel_id, w.name AS workspace_name,
-                w.avatar_url AS workspace_avatar_url, c.name AS channel_name,
+                w.avatar_url AS workspace_avatar_url, c.name AS \"channel_name?\",
                 COALESCE(u.display_name, u.username) AS inviter,
                 (il.expires_at IS NOT NULL AND il.expires_at <= NOW()) AS expired,
                 (il.max_uses IS NOT NULL AND il.use_count >= il.max_uses) AS exhausted,
@@ -312,14 +321,14 @@ pub async fn preview_invite_link(
          LEFT JOIN channels c ON c.channel_id = il.channel_id
          LEFT JOIN users u ON u.user_id = il.created_by
          WHERE il.token = $1 AND NOT il.revoked",
+        token.trim(),
     )
-    .bind(token.trim())
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let expired: bool = row.try_get("expired").unwrap_or(false);
-    let exhausted: bool = row.try_get("exhausted").unwrap_or(false);
+    let expired: bool = row.expired.clone().unwrap_or(false);
+    let exhausted: bool = row.exhausted.clone().unwrap_or(false);
     if expired || exhausted {
         return Ok(Json(InviteLinkPreviewDto {
             status: if expired { "expired" } else { "exhausted" }.into(),
@@ -334,13 +343,13 @@ pub async fn preview_invite_link(
     }
     Ok(Json(InviteLinkPreviewDto {
         status: "valid".into(),
-        workspace_id: row.try_get("workspace_id").ok(),
-        workspace_name: row.try_get("workspace_name").ok(),
-        workspace_avatar_url: row.try_get("workspace_avatar_url").ok().flatten(),
-        channel_id: row.try_get("channel_id").ok().flatten(),
-        channel_name: row.try_get("channel_name").ok().flatten(),
-        inviter: row.try_get("inviter").ok().flatten(),
-        member_count: row.try_get("member_count").ok(),
+        workspace_id: Some(row.workspace_id.clone()),
+        workspace_name: Some(row.workspace_name.clone()),
+        workspace_avatar_url: row.workspace_avatar_url.clone(),
+        channel_id: row.channel_id.clone(),
+        channel_name: row.channel_name.clone(),
+        inviter: row.inviter.clone(),
+        member_count: row.member_count.clone(),
     }))
 }
 
@@ -355,7 +364,7 @@ pub async fn accept_invite_link(
     Extension(claims): Extension<Claims>,
     Path(token): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let link = sqlx::query(
+    let link = sqlx::query!(
         "SELECT il.link_id, il.workspace_id, il.channel_id, il.created_by,
                 (il.expires_at IS NOT NULL AND il.expires_at <= NOW()) AS expired,
                 (il.max_uses IS NOT NULL AND il.use_count >= il.max_uses) AS exhausted,
@@ -363,18 +372,18 @@ pub async fn accept_invite_link(
          FROM invite_links il
          JOIN workspaces w ON w.workspace_id = il.workspace_id
          WHERE il.token = $1 AND NOT il.revoked",
+        token.trim(),
     )
-    .bind(token.trim())
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let link_id: String = link.try_get("link_id").unwrap_or_default();
-    let workspace_id: String = link.try_get("workspace_id").unwrap_or_default();
-    let channel_id: Option<String> = link.try_get("channel_id").ok().flatten();
-    let created_by: String = link.try_get("created_by").unwrap_or_default();
-    let expired: bool = link.try_get("expired").unwrap_or(false);
-    let exhausted: bool = link.try_get("exhausted").unwrap_or(false);
+    let link_id: String = link.link_id.clone();
+    let workspace_id: String = link.workspace_id.clone();
+    let channel_id: Option<String> = link.channel_id.clone();
+    let created_by: String = link.created_by.clone();
+    let expired: bool = link.expired.clone().unwrap_or(false);
+    let exhausted: bool = link.exhausted.clone().unwrap_or(false);
     if expired || exhausted {
         return Err(AppError::BadRequest(
             "this invite link is no longer valid".into(),
@@ -382,11 +391,11 @@ pub async fn accept_invite_link(
     }
 
     let me = claims.sub.clone();
-    let membership: Option<String> = sqlx::query_scalar(
+    let membership: Option<String> = sqlx::query_scalar!(
         "SELECT status FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2",
+        &workspace_id,
+        &me,
     )
-    .bind(&workspace_id)
-    .bind(&me)
     .fetch_optional(&state.db)
     .await?;
 
@@ -396,12 +405,12 @@ pub async fn accept_invite_link(
         Some(_) => {
             // A pending directed invite + clicking the link = the user consents.
             // The admin-side grant already exists, so no use is consumed.
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE workspace_memberships SET status = 'active'
                  WHERE workspace_id = $1 AND user_id = $2 AND status = 'pending'",
+                &workspace_id,
+                &me,
             )
-            .bind(&workspace_id)
-            .bind(&me)
             .execute(&state.db)
             .await?;
             false
@@ -414,25 +423,25 @@ pub async fn accept_invite_link(
             // use (0 rows → budget/validity lost since the fetch → tx rolls the
             // membership back).
             let mut tx = state.db.begin().await?;
-            let inserted = sqlx::query(
+            let inserted = sqlx::query!(
                 "INSERT INTO workspace_memberships (workspace_id, user_id, role, status, invited_by, invited_at)
                  VALUES ($1, $2, 'member', 'active', $3, NOW())
                  ON CONFLICT (workspace_id, user_id) DO NOTHING",
+                &workspace_id,
+                &me,
+                &created_by,
             )
-            .bind(&workspace_id)
-            .bind(&me)
-            .bind(&created_by)
             .execute(&mut *tx)
             .await?
             .rows_affected();
             if inserted > 0 {
-                let reserved = sqlx::query(
+                let reserved = sqlx::query!(
                     "UPDATE invite_links SET use_count = use_count + 1
                      WHERE link_id = $1 AND NOT revoked
                        AND (expires_at IS NULL OR expires_at > NOW())
                        AND (max_uses IS NULL OR use_count < max_uses)",
+                    &link_id,
                 )
-                .bind(&link_id)
                 .execute(&mut *tx)
                 .await?
                 .rows_affected();
@@ -464,29 +473,30 @@ pub async fn accept_invite_link(
     let mut channel_joined = false;
     if let Some(cid) = channel_id.as_deref() {
         let ch_type: Option<String> =
-            sqlx::query_scalar("SELECT type FROM channels WHERE channel_id = $1")
-                .bind(cid)
+            sqlx::query_scalar!("SELECT type FROM channels WHERE channel_id = $1", cid,)
                 .fetch_optional(&state.db)
                 .await?;
         if ch_type.as_deref() == Some("public") {
             let mut tx = state.db.begin().await?;
-            let inserted = sqlx::query(
+            let inserted = sqlx::query!(
                 "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
                  VALUES ($1, $2, 'user', 'member', $3)
                  ON CONFLICT (channel_id, member_id) DO NOTHING",
+                cid,
+                &me,
+                &created_by,
             )
-            .bind(cid)
-            .bind(&me)
-            .bind(&created_by)
             .execute(&mut *tx)
             .await?
             .rows_affected();
             // A pending directed invite to this channel is now moot (mirrors join_channel).
-            sqlx::query("DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2")
-                .bind(cid)
-                .bind(&me)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query!(
+                "DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2",
+                cid,
+                &me,
+            )
+            .execute(&mut *tx)
+            .await?;
             tx.commit().await?;
             channel_joined = true;
             if inserted > 0 {
@@ -511,15 +521,15 @@ pub async fn accept_invite_link(
 /// `config.open_registration` — the link IS the sign-up authorization. Read-only;
 /// the use is consumed later by `accept_invite_link` after the account exists.
 pub async fn token_is_live(db: &sqlx::PgPool, token: &str) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT EXISTS(
-            SELECT 1 FROM invite_links
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM invite_links
             WHERE token = $1 AND NOT revoked
               AND (expires_at IS NULL OR expires_at > NOW())
               AND (max_uses IS NULL OR use_count < max_uses)
-        )",
+        ) AS "value!" "#,
+        token.trim(),
     )
-    .bind(token.trim())
     .fetch_one(db)
     .await
 }

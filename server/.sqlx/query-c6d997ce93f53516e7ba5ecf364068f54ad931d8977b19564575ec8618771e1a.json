@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.bot_id, s.provider_session_key\n         FROM cheers_session_bindings b\n         JOIN cheers_sessions s ON s.session_id = b.session_id\n         WHERE b.scope_type = $1 AND b.scope_id = $2\n           AND b.session_id = $3\n           AND s.status NOT IN ('terminated', 'revoked', 'expired')\n         LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_session_key",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c6d997ce93f53516e7ba5ecf364068f54ad931d8977b19564575ec8618771e1a"
+}

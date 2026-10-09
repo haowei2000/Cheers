@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.sender_id, m.content,\n                EXISTS(SELECT 1 AS present FROM channel_memberships cm\n                       WHERE cm.channel_id=m.channel_id AND cm.member_id=m.sender_id AND cm.member_type='bot') AS bot_is_member,\n                COALESCE((b.binding_config->'connector_control'->'capabilities'->>'suggested_questions')::boolean, FALSE) AS suggestions_supported\n         FROM messages m LEFT JOIN bot_accounts b ON b.bot_id=m.sender_id\n         WHERE m.msg_id=$1 AND m.channel_id=$2 AND m.sender_type='bot' AND m.is_partial=FALSE AND m.is_deleted=FALSE AND m.is_secret=FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "bot_is_member",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "suggestions_supported",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "d5abb06486d1246692fd23710d7d628f4342b45123de26e48123f6627bcea889"
+}

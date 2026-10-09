@@ -5,6 +5,24 @@
 
 use super::*;
 
+/// Bump when the standing output contract changes so loaded sessions receive it.
+pub(super) const PROMPT_CONTRACT_VERSION: u32 = 1;
+
+pub(super) fn pinned_digest(pinned: &[String]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let active: Vec<&str> = pinned
+        .iter()
+        .map(String::as_str)
+        .filter(|block| !block.trim().is_empty())
+        .collect();
+    let bytes = serde_json::to_vec(&active).expect("string list is serializable");
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 pub(super) fn bridge_ready_from_initialize(
     initialize: &Value,
     policy: &LocalPolicy,
@@ -87,6 +105,8 @@ pub(super) fn build_prompt(
     channel_name: Option<&str>,
     send_images: bool,
     send_audio: bool,
+    include_contract: bool,
+    include_pinned: bool,
 ) -> Vec<Value> {
     // One XML `<context>` envelope holds every textual part as an escaped, typed
     // child (docs/design/RESOURCE_CONTEXT.md — unified envelope). Trusted platform
@@ -95,15 +115,17 @@ pub(super) fn build_prompt(
     // snapshots/attachments) all live here; entity-escaping makes any `</context>`
     // / `<system>` injection in an untrusted field inert.
     let mut children: Vec<String> = Vec::new();
-    let output_contract = if task.trigger.as_deref() == Some("suggestion_request") {
-        "Privately suggest one to three useful follow-up questions about the supplied reply. Return ONLY a JSON array of objects with text (maximum 500 characters) and slots. Each slot has key and kind (mention, file, or panel). Use matching markers {{mention:key}}, {{file:key}}, or {{panel:key}} inside text, or an empty slots array. Maximum six slots per question. Do not perform the questions or call tools."
-    } else {
-        CHEERS_ACP_OUTPUT_CONTRACT
-    };
-    children.push(format!(
-        "<output_contract>{}</output_contract>",
-        xml_body(output_contract)
-    ));
+    if task.trigger.as_deref() == Some("suggestion_request") {
+        children.push(format!(
+            "<output_contract>{}</output_contract>",
+            xml_body("Privately suggest one to three useful follow-up questions about the supplied reply. Return ONLY a JSON array of objects with text (maximum 500 characters) and slots. Each slot has key and kind (mention, file, or panel). Use matching markers {{mention:key}}, {{file:key}}, or {{panel:key}} inside text, or an empty slots array. Maximum six slots per question. Do not perform the questions or call tools.")
+        ));
+    } else if include_contract && task.trigger.as_deref() != Some("claim_evaluation") {
+        children.push(format!(
+            "<output_contract>{}</output_contract>",
+            xml_body(CHEERS_ACP_OUTPUT_CONTRACT)
+        ));
+    }
     children.push(format!(
         "<identity>{}</identity>",
         xml_body(&identity_context_line(identity, task, channel_name))
@@ -117,10 +139,14 @@ pub(super) fn build_prompt(
             xml_body(&task.msg_id),
         ));
     }
-    // Pinned convention/prompt blocks — the channel's standing instructions.
-    for block in &task.pinned {
-        if !block.trim().is_empty() {
-            children.push(format!("<pinned>{}</pinned>", xml_body(block)));
+    // A changed set replaces the previous one, including when all pinned
+    // instructions were removed. Silence on later turns means no change.
+    if include_pinned {
+        children.push("<pinned_update>Replace all previous pinned instructions for this channel with the following set. An empty set clears them.</pinned_update>".to_string());
+        for block in &task.pinned {
+            if !block.trim().is_empty() {
+                children.push(format!("<pinned>{}</pinned>", xml_body(block)));
+            }
         }
     }
     if let Some(frag) = trigger_element(task) {

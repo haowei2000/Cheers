@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n                SELECT 1 AS present FROM friendships f\n                WHERE f.status = 'accepted'\n                  AND ((f.user_id = $1 AND f.friend_id = $2)\n                    OR (f.user_id = $2 AND f.friend_id = $1))\n             ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dfa15c67995dd7d50649c253859ee27094941df093359b702ac277e8e50c1dab"
+}

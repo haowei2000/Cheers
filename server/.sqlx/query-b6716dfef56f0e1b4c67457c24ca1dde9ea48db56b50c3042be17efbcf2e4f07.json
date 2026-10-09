@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM context_files\n         WHERE channel_id = $1\n           AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6716dfef56f0e1b4c67457c24ca1dde9ea48db56b50c3042be17efbcf2e4f07"
+}

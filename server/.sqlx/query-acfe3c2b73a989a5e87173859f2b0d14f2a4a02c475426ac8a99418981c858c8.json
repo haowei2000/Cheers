@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts SET binding_config = jsonb_set(\n                     jsonb_set(\n                         COALESCE(binding_config, '{}'::jsonb),\n                         '{connector_control}',\n                         COALESCE(binding_config -> 'connector_control', '{}'::jsonb),\n                         true),\n                     '{connector_control,options}',\n                     jsonb_build_object(\n                         'v', $2::text::jsonb,\n                         'options',\n                         COALESCE(binding_config #> '{connector_control,options,options}',\n                                  '{}'::jsonb) || $3::text::jsonb),\n                     true)\n                 WHERE bot_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "acfe3c2b73a989a5e87173859f2b0d14f2a4a02c475426ac8a99418981c858c8"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users u SET password_2fa_enabled = FALSE\n                 WHERE u.user_id = $1 AND u.password_2fa_enabled\n                   AND NOT EXISTS(SELECT 1 AS present FROM webauthn_credentials c WHERE c.user_id = u.user_id)\n                   AND NOT EXISTS(SELECT 1 AS present FROM auth_external_identities i WHERE i.user_id = u.user_id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fe48ca0846c76e6bff950ab0c31d26c9788bed3dab1f852022572adc5279d802"
+}

@@ -44,6 +44,7 @@ export function DropdownSelect({
   actions = [],
   onAction,
   ariaLabel,
+  ariaLabelledBy,
   placement = "down",
   align = "start",
   controlSize,
@@ -74,6 +75,7 @@ export function DropdownSelect({
   actions?: DropdownSelectOption[];
   onAction?: (value: string) => void;
   ariaLabel: string;
+  ariaLabelledBy?: string;
   placement?: "up" | "down";
   align?: "start" | "end";
   controlSize?: ControlSize;
@@ -131,6 +133,7 @@ export function DropdownSelect({
 
   const iconOnly = content === "icon";
 
+  /* eslint-disable jsx-a11y/no-static-element-interactions -- Composite menu/listbox routes keyboard navigation through its focusable popup and option buttons. */
   return (
     <div
       ref={rootRef}
@@ -138,7 +141,7 @@ export function DropdownSelect({
         "relative inline-flex min-w-0",
         // A square trigger must keep its registered ControlSize box; without this the
         // flex row shrinks it into an unregistered in-between width.
-        iconOnly ? "flex-shrink-0" : controlWidth === "fill" && "w-full",
+        iconOnly ? "shrink-0" : controlWidth === "fill" && "w-full",
       )}
     >
       <ControlTrigger
@@ -149,6 +152,7 @@ export function DropdownSelect({
         selected={open || active}
         disabled={disabled || (options.length === 0 && actions.length === 0)}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         title={iconOnly ? ariaLabel : undefined}
         aria-haspopup={popupRole}
         aria-controls={open ? popupId : undefined}
@@ -169,16 +173,17 @@ export function DropdownSelect({
           className,
         )}
       >
-        {leading && <span className="flex flex-shrink-0 items-center">{leading}</span>}
+        {leading && <span className="flex shrink-0 items-center">{leading}</span>}
         {!iconOnly && (
           <>
             <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-            <ChevronDown className={cn("h-4 w-4 flex-shrink-0 text-content-muted transition-transform", open && "rotate-180")} aria-hidden="true" />
+            <ChevronDown className={cn("h-4 w-4 shrink-0 text-content-muted transition-transform", open && "rotate-180")} aria-hidden="true" />
           </>
         )}
       </ControlTrigger>
       {open && (
         <PopoverPanel placement={placement} align={align} className={cn("w-56 p-1", menuClassName)}>
+          {/* The portalled panel's mouse-down listener prevents its children from reaching outside-dismiss logic. */}
           <div ref={menuRef} id={popupId} role={popupRole} tabIndex={-1} aria-label={ariaLabel} onKeyDown={onMenuKeyDown}>
             {withGroups(options).map(({ option, group }) => {
               const selected = option.value === value;
@@ -241,4 +246,5 @@ export function DropdownSelect({
       )}
     </div>
   );
+  /* eslint-enable jsx-a11y/no-static-element-interactions */
 }

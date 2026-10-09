@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_features SET enabled = FALSE, updated_at = NOW()\n         WHERE channel_id = $1 AND feature = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bac9e4d41a66537d0591050a7ab79be52b2226d3d6faff6888b5c474922eba33"
+}

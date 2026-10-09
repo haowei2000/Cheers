@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT credential_pk, credential_id, name, backup_eligible, backup_state,\n                created_at, last_used_at\n         FROM webauthn_credentials\n         WHERE user_id = $1\n         ORDER BY created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "credential_pk",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "credential_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "backup_eligible",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "backup_state",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "last_used_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "880859a5fc72affb96a1f256d03649979c0225c753962b7b2c8869d27eab9d79"
+}

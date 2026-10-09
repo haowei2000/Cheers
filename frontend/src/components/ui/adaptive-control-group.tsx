@@ -303,7 +303,7 @@ export function AdaptiveControlGroup({
         controlSize={resolvedSize}
         collapsedContent={collapsedContent}
       />
-      <div data-adaptive-measurements="" className="pointer-events-none fixed -left-[10000px] top-0 invisible flex w-max items-center gap-1" aria-hidden="true">
+      <div data-adaptive-measurements="" className="pointer-events-none fixed left-[-10000px] top-0 invisible flex w-max items-center gap-1" aria-hidden="true">
         {/* design-system-exempt: menu-option — hidden intrinsic-width probes, not visible item rows. */}
         {(["iconText", "text", "icon", "collapsed"] as const).map((candidate) => (
           <div

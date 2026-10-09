@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 AS ok FROM email_codes\n         WHERE email = $1 AND code_hash = $2 AND purpose = 'register'\n           AND used = FALSE AND expires_at > NOW()\n         LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2b5b1ad2cc697cc01fe7ffbb999e52eea6bf5ede9236e33be6dd159ea01832e1"
+}

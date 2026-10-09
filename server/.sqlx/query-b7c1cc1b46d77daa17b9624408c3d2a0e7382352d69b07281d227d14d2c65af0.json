@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM resource_idempotency_keys\n         WHERE created_at <= NOW() - make_interval(hours => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b7c1cc1b46d77daa17b9624408c3d2a0e7382352d69b07281d227d14d2c65af0"
+}

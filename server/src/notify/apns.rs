@@ -50,6 +50,11 @@ pub struct ApnsClient {
     /// APNs topic = the app's bundle id.
     topic: String,
     endpoint: String,
+    /// Minted provider token, TTL-checked on read. Both lock sites recover from
+    /// poisoning (`PoisonError::into_inner`): `.unwrap()` here turned a panic
+    /// elsewhere into a poisoned-lock panic on every later push, and an
+    /// `Option` assignment cannot be left structurally invalid by a panic.
+    /// Worst case after recovery is a stale token, which the TTL check rejects.
     cached: Mutex<Option<(Instant, String)>>,
 }
 
@@ -178,7 +183,10 @@ impl ApnsClient {
 
     fn provider_token(&self) -> Result<String, ApnsError> {
         {
-            let cached = self.cached.lock().unwrap();
+            let cached = self
+                .cached
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some((minted, token)) = cached.as_ref() {
                 if minted.elapsed() < TOKEN_TTL {
                     return Ok(token.clone());
@@ -194,7 +202,11 @@ impl ApnsClient {
         let claims = serde_json::json!({ "iss": self.team_id, "iat": iat });
         let token = jsonwebtoken::encode(&header, &claims, &self.key)
             .map_err(|e| ApnsError::Transport(format!("sign provider token: {e}")))?;
-        *self.cached.lock().unwrap() = Some((Instant::now(), token.clone()));
+        let mut cached = self
+            .cached
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *cached = Some((Instant::now(), token.clone()));
         Ok(token)
     }
 

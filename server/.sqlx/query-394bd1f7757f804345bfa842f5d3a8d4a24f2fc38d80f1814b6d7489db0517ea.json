@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts\n         SET bot_token_hash = $1, bot_token_prefix = $2, bot_token_rotated_at = NOW()\n         WHERE bot_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "394bd1f7757f804345bfa842f5d3a8d4a24f2fc38d80f1814b6d7489db0517ea"
+}

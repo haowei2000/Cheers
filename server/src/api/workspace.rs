@@ -19,7 +19,7 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{
@@ -160,12 +160,12 @@ async fn ensure_access(
     bot_id: Uuid,
 ) -> Result<(), AppError> {
     if !matches!(claims.role.as_str(), "system_admin" | "admin") {
-        let member = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM channel_memberships
-                 WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user')",
+        let member = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
+                 WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user') AS "value!" "#,
+            channel_id.to_string(),
+            &claims.sub,
         )
-        .bind(channel_id.to_string())
-        .bind(&claims.sub)
         .fetch_one(&state.db)
         .await
         .map_err(AppError::Db)?;
@@ -173,12 +173,12 @@ async fn ensure_access(
             return Err(AppError::Forbidden("channel member required".into()));
         }
     }
-    let bot_member = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM channel_memberships
-             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot')",
+    let bot_member = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
+             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot') AS "value!" "#,
+        channel_id.to_string(),
+        bot_id.to_string(),
     )
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
     .fetch_one(&state.db)
     .await
     .map_err(AppError::Db)?;
@@ -236,12 +236,12 @@ async fn ensure_channel_member_or_admin(
     if matches!(claims.role.as_str(), "system_admin" | "admin") {
         return Ok(());
     }
-    let member = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM channel_memberships
-             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user')",
+    let member = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
+             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user') AS "value!" "#,
+        channel_id.to_string(),
+        &claims.sub,
     )
-    .bind(channel_id.to_string())
-    .bind(&claims.sub)
     .fetch_one(&state.db)
     .await
     .map_err(AppError::Db)?;
@@ -273,14 +273,22 @@ pub async fn resolve_ref(
     let mut also: Vec<Value> = Vec::new();
 
     // 1. Channel inbox, by filename (newest uploaded). The bot delivered this file.
-    let inbox = sqlx::query_as::<_, (String, Option<String>, Option<String>, String)>(
+    let inbox = sqlx::query!(
         "SELECT file_id, original_filename, content_type, status
          FROM file_records
          WHERE channel_id = $1 AND original_filename = $2 AND status IN ('uploaded','converted')
          ORDER BY created_at DESC LIMIT 1",
+        channel_id.to_string(),
+        base,
     )
-    .bind(channel_id.to_string())
-    .bind(base)
+    .map(|row| {
+        (
+            row.file_id,
+            row.original_filename,
+            row.content_type,
+            row.status,
+        )
+    })
     .fetch_optional(&state.db)
     .await
     .map_err(AppError::Db)?;
@@ -291,17 +299,18 @@ pub async fn resolve_ref(
     // containing `%`/`_`/`\` matches by value instead of acting as a wildcard.
     // The `path = $3` exact-match branch keeps the raw `base` (parameter $3).
     let base_like = crate::domain::messages::escape_like_pattern(base);
-    let desk = sqlx::query_as::<_, (String, Option<String>)>(
+    let desk = sqlx::query!(
         "SELECT path, content FROM context_files
          WHERE channel_id = $1 AND is_dir = FALSE
            AND (path = $2 OR path = $3 OR path LIKE '%/' || $4 ESCAPE '\\')
          ORDER BY (path = $2) DESC, length(path) ASC
          LIMIT 1",
+        channel_id.to_string(),
+        r,
+        base,
+        &base_like,
     )
-    .bind(channel_id.to_string())
-    .bind(r)
-    .bind(base)
-    .bind(&base_like)
+    .map(|row| (row.path, row.content))
     .fetch_optional(&state.db)
     .await
     .map_err(AppError::Db)?;
@@ -569,12 +578,12 @@ pub async fn list_workspace_bots(
     Path(channel_id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
     if !matches!(claims.role.as_str(), "system_admin" | "admin") {
-        let member = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM channel_memberships
-                 WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user')",
+        let member = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
+                 WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user') AS "value!" "#,
+            channel_id.to_string(),
+            &claims.sub,
         )
-        .bind(channel_id.to_string())
-        .bind(&claims.sub)
         .fetch_one(&state.db)
         .await
         .map_err(AppError::Db)?;
@@ -587,8 +596,8 @@ pub async fn list_workspace_bots(
     // alongside "which machine". At most one row can match — the schema carries a
     // unique partial index for one active host per bot — so this LEFT JOIN cannot fan
     // a bot out into several rows.
-    let rows = sqlx::query_as::<_, (String, String, Option<String>, Option<String>)>(
-        "SELECT b.bot_id, b.username, b.display_name, h.device_name
+    let rows = sqlx::query!(
+        r#"SELECT b.bot_id, b.username, b.display_name, h.device_name AS "device_name?"
          FROM channel_memberships m
          JOIN bot_accounts b ON b.bot_id = m.member_id
          LEFT JOIN connector_hosts h
@@ -596,9 +605,10 @@ pub async fn list_workspace_bots(
                AND h.status = 'active'
                AND h.revoked_at IS NULL
          WHERE m.channel_id = $1 AND m.member_type = 'bot'
-         ORDER BY b.username",
+         ORDER BY b.username"#,
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
+    .map(|row| (row.bot_id, row.username, row.display_name, row.device_name))
     .fetch_all(&state.db)
     .await
     .map_err(AppError::Db)?;
@@ -647,11 +657,11 @@ async fn browse_roots(state: &AppState, bot_id: Uuid, session_id: Option<Uuid>) 
     let Some(sid) = session_id else {
         return Vec::new();
     };
-    let key: Option<String> = sqlx::query_scalar(
+    let key: Option<String> = sqlx::query_scalar!(
         "SELECT provider_session_key FROM cheers_sessions WHERE session_id = $1 AND bot_id = $2",
+        sid.to_string(),
+        bot_id.to_string(),
     )
-    .bind(sid.to_string())
-    .bind(bot_id.to_string())
     .fetch_optional(&state.db)
     .await
     .ok()
@@ -776,17 +786,17 @@ pub async fn get_file(
 /// no membership row or the lookup fails). This only *widens* the acp_policy query;
 /// the actual fail-closed decision is [`resolve_can_write`]'s `unwrap_or(false)`.
 async fn caller_channel_role(state: &AppState, channel_id: Uuid, user_id: &str) -> String {
-    sqlx::query(
+    sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        channel_id.to_string(),
+        user_id,
     )
-    .bind(channel_id.to_string())
-    .bind(user_id)
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten()
-    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .and_then(|r| Some(r.role.clone()))
     .unwrap_or_else(|| "member".to_string())
 }
 

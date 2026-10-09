@@ -18,7 +18,6 @@ import {
   Activity,
   ArrowRight,
   ArrowUpRight,
-  Check,
   ChevronDown,
   Filter,
   Paperclip,
@@ -136,14 +135,14 @@ function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup })
   const shown = bots.slice(0, CHAIN_BOT_CAP);
   const leadMember = memberOf(lead);
   return (
-    <span className="flex items-center flex-shrink-0">
+    <span className="flex items-center shrink-0">
       <Avatar
         name={nameOf(leadMember, lead)}
         src={leadMember?.avatar_url ?? undefined}
         id={lead ?? ep.id}
         size="small"
       />
-      {shown.length > 0 && <ArrowRight className="w-3.5 h-3.5 text-content-muted flex-shrink-0" />}
+      {shown.length > 0 && <ArrowRight className="w-3.5 h-3.5 text-content-muted shrink-0" />}
       {shown.map((id, i) => {
         const mem = memberOf(id);
         return (
@@ -251,27 +250,27 @@ function MessageRow({
       presentationLevel="minimal"
       onClick={clickable ? () => n.msgId && onJump?.(n.msgId) : undefined}
       leading={<span
-        className={cn("text-compact font-medium flex-shrink-0", !brand && "text-content-secondary")}
+        className={cn("text-compact font-medium shrink-0", !brand && "text-content-secondary")}
         style={brand ? { color: brand } : undefined}
       >
         {name}
       </span>}
       title={<span className="text-compact font-normal text-content-muted">{renderExcerpt(n.excerpt)}</span>}
       status={n.fileCount > 0 ? (
-        <span className="inline-flex items-center gap-1 text-minimal text-content-muted flex-shrink-0">
+        <span className="inline-flex items-center gap-1 text-minimal text-content-muted shrink-0">
           <Paperclip className="h-3.5 w-3.5" />
           {n.fileCount}
         </span>
       ) : undefined}
       trailing={<span
         className={cn(
-          "text-minimal text-content-muted tabular-nums flex-shrink-0",
+          "text-minimal text-content-muted tabular-nums shrink-0",
           clickable && "group-hover/item:hidden"
         )}
       >
         {fmtTime(n.ts)}
       </span>}
-      criticalStatus={clickable ? <ArrowUpRight className="hidden h-3.5 w-3.5 flex-shrink-0 text-accent-300 group-hover/item:block" /> : undefined}
+      criticalStatus={clickable ? <ArrowUpRight className="hidden h-3.5 w-3.5 shrink-0 text-accent-300 group-hover/item:block" /> : undefined}
       className="border-b-0"
     />
   );
@@ -304,12 +303,12 @@ function EpisodeDetail({
                 )}
               >
                 {failed ? (
-                  <AlertCircle className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-danger-400" />
+                  <AlertCircle className="mt-1 h-3.5 w-3.5 shrink-0 text-danger-400" />
                 ) : (
-                  <Activity className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-accent-300" />
+                  <Activity className="mt-1 h-3.5 w-3.5 shrink-0 text-accent-300" />
                 )}
                 <span className="min-w-0 flex-1">{row.n.excerpt}</span>
-                <span className="flex-shrink-0 text-minimal text-content-muted">{fmtTime(row.n.ts)}</span>
+                <span className="shrink-0 text-minimal text-content-muted">{fmtTime(row.n.ts)}</span>
               </div>
             );
           }
@@ -317,7 +316,7 @@ function EpisodeDetail({
             const Icon = row.items.some((it) => it.kind === "write") ? Pencil : ShieldCheck;
             return (
               <div key={`m-${row.seq}-${i}`} className="flex items-baseline gap-2 py-[3px]">
-                <Icon className="w-3.5 h-3.5 text-content-muted self-center flex-shrink-0" />
+                <Icon className="w-3.5 h-3.5 text-content-muted self-center shrink-0" />
                 <span className="min-w-0 truncate text-minimal text-content-muted">
                   {row.items.map((it, j) => (
                     <span key={j}>
@@ -358,7 +357,6 @@ function FlowEpisode({
       <UiButton controlWidth="fill" variant="plain" role="option" aria-selected={expanded} selected={expanded}
         type="button"
         onClick={onToggle}
-        aria-expanded={expanded}
         controlSize="regular" className={cn(
  "flex items-center gap-2 text-left transition-colors",
  !expanded && "hover:bg-control/40"
@@ -373,7 +371,7 @@ function FlowEpisode({
         >
           {episodeTitle(ep, memberOf)}
         </span>
-        <span className="text-minimal text-content-muted tabular-nums flex-shrink-0">{fmtTime(ep.startTs)}</span>
+        <span className="text-minimal text-content-muted tabular-nums shrink-0">{fmtTime(ep.startTs)}</span>
       </UiButton>
       {expanded && <EpisodeDetail ep={ep} memberOf={memberOf} onJump={onJump} />}
     </div>
@@ -404,7 +402,7 @@ function ParticipantStrip({
   const online = ids.reduce((n, id) => n + (memberOf(id)?.is_online ? 1 : 0), 0);
 
   return (
-    <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-1 rounded-sm bg-panel/50 px-2 py-2">
+    <div className="mx-2 mt-2 flex shrink-0 items-center gap-1 rounded-sm bg-panel/50 px-2 py-2">
       <div className="flex items-center -space-x-2">
         {shown.map((id) => {
           const mem = memberOf(id);
@@ -439,9 +437,9 @@ function ParticipantStrip({
         })}
       </div>
       {overflow > 0 && (
-        <span className="ml-1 text-minimal text-content-muted flex-shrink-0">+{overflow}</span>
+        <span className="ml-1 text-minimal text-content-muted shrink-0">+{overflow}</span>
       )}
-      {online > 0 && <span className="ml-2 text-minimal text-content-muted flex-shrink-0">{online} online</span>}
+      {online > 0 && <span className="ml-2 text-minimal text-content-muted shrink-0">{online} online</span>}
     </div>
   );
 }
@@ -604,7 +602,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
                 onClick={() => setLens(l)}
                 controlSize={FLOATING_CHROME_CONTROL_SIZE}
                 className={cn(
-                  "rounded-none border-b-2 bg-transparent ring-0 shadow-none px-2 capitalize transition-colors hover:bg-transparent -mb-[3px]",
+                  "rounded-none border-b-2 bg-transparent ring-0 shadow-none px-2 capitalize transition-colors hover:bg-transparent mb-[-3px]",
                   lens === l
                     ? "border-content-strong text-content-strong font-semibold"
                     : "border-transparent text-content-primary hover:text-content-strong",
@@ -651,7 +649,7 @@ function FilterChip({
       selected={active}
       onClick={onClick}
       controlSize="regular"
-      className="flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-sm text-content-primary transition-colors hover:text-content-strong"
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm text-content-primary transition-colors hover:text-content-strong"
     >
       {children}
     </UiButton>
@@ -690,7 +688,7 @@ function MemberFilter({
   );
 
   return (
-    <div ref={rootRef} className="relative flex-shrink-0">
+    <div ref={rootRef} className="relative shrink-0">
       <UiButton
         action="search"
         variant="plain"
@@ -712,7 +710,6 @@ function MemberFilter({
           <SearchInput
             containerClassName="m-1 w-auto"
             aria-label="Search members"
-            autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search members…"
@@ -743,7 +740,7 @@ function MemberFilter({
                       {mem.display_name || mem.username || short(mem.member_id)}
                     </span>
                     {mem.member_type === "bot" && (
-                      <span className="text-minimal uppercase tracking-label text-content-muted flex-shrink-0">bot</span>
+                      <span className="text-minimal uppercase tracking-label text-content-muted shrink-0">bot</span>
                     )}
                   </UiButton>
                 );
@@ -767,7 +764,7 @@ function MemberFilter({
               <UiButton action="clear" variant="plain"
                 type="button"
                 onClick={onClear}
-                className=" text-content-primary hover:text-content-strong transition-colors flex-shrink-0"
+                className=" text-content-primary hover:text-content-strong transition-colors shrink-0"
               >
                 Clear
               </UiButton>
