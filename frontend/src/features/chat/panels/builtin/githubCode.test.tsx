@@ -1,7 +1,7 @@
-import React from "react";
+import React, { isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { panelsFor } from "../registry";
+import { panelsFor, type PanelSurface } from "../registry";
 import "./githubCode";
 
 describe("githubCode panels", () => {
@@ -46,4 +46,21 @@ describe("githubCode panels", () => {
     expect(markup).toContain('title="Configure repository and working directory"');
     expect(markup).toContain('title="Configure execution target"');
   });
+});
+
+describe("GitHub code panel component boundaries", () => {
+  it.each(["header", "lane", "inline"] as PanelSurface[])(
+    "%s factory can run outside React without executing component hooks",
+    (surface) => {
+      const panel = panelsFor(surface, "code").find((entry) =>
+        entry.id === "github-code" || entry.id.startsWith("official.github"),
+      );
+      expect(panel).toBeDefined();
+      // Hosts call the factory conditionally when the channel profile changes.
+      // Calling a hook-using component here would throw an invalid hook call.
+      const element = panel!.render({ channelId: "test-channel", profile: null });
+      expect(isValidElement(element)).toBe(true);
+      expect(renderToStaticMarkup(<>{element}</>)).toBe("");
+    },
+  );
 });

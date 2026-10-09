@@ -397,7 +397,7 @@ registerPanel({
   icon: GitFork,
   surface: "header",
   profiles: ["code"],
-  render: CodeHeader,
+  render: (ctx) => <CodeHeader {...ctx} />,
 });
 
 registerPanel({
@@ -406,7 +406,7 @@ registerPanel({
   icon: GitFork,
   surface: "lane",
   profiles: ["code"],
-  render: CodeBoard,
+  render: (ctx) => <CodeBoard {...ctx} />,
 });
 
 registerPanel({
@@ -415,5 +415,5 @@ registerPanel({
   icon: GitFork,
   surface: "inline",
   profiles: ["code"],
-  render: CodeWorkspaceStrip,
+  render: (ctx) => <CodeWorkspaceStrip {...ctx} />,
 });
