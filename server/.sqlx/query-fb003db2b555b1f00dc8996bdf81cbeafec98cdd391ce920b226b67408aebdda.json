@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET backup_codes = $2 WHERE user_id = $1 AND is_deleted = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb003db2b555b1f00dc8996bdf81cbeafec98cdd391ce920b226b67408aebdda"
+}

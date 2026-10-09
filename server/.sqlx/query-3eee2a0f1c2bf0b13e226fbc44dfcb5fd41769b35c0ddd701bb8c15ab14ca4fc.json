@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cheers_sessions\n         SET provider_session_id = COALESCE($1, provider_session_id),\n             provider_session_key = COALESCE($2, provider_session_key),\n             metadata = CASE\n                WHEN $3::text IS NULL THEN metadata\n                WHEN jsonb_typeof($3::jsonb) = 'object' THEN COALESCE(metadata, '{}'::jsonb) || $3::jsonb\n                ELSE metadata\n             END,\n             status = $4,\n             last_used_at = $5,\n             updated_at = $5\n         WHERE session_id = $6\n           AND bot_id = $7\n           AND provider = $8\n           AND provider_account_id = $9\n         RETURNING session_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3eee2a0f1c2bf0b13e226fbc44dfcb5fd41769b35c0ddd701bb8c15ab14ca4fc"
+}

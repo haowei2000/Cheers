@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT MAX(created_at) FILTER (WHERE event = 'connected') AS last_connected_at,\n                MAX(created_at) FILTER (WHERE event = 'disconnected') AS last_disconnected_at\n         FROM bot_connection_events\n         WHERE bot_id = $1 AND stream = 'control'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_connected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_disconnected_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "8e0b4a5ad930cd2f82ae4adf6c4d2f4e3b29bafb37bff9af646723577fbdcc04"
+}

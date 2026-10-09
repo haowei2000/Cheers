@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT challenge_json, expires_at, status\n         FROM auth_transactions\n         WHERE transaction_id = $1 AND user_id = $2 AND kind = $3\n           AND consumed_at IS NULL\n         FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "challenge_json",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "2a1b53749f7f27ffb15cdfefc7607c3dd8a3bb8163024487b0ee4d6a1fc488b8"
+}

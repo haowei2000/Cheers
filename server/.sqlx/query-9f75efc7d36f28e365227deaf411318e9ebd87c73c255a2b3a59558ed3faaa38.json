@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_external_identities SET email = COALESCE($2, email),\n                 profile = COALESCE(profile, '{}'::jsonb) || jsonb_build_object('relay_status', $3::text), updated_at = NOW()\n                 WHERE identity_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f75efc7d36f28e365227deaf411318e9ebd87c73c255a2b3a59558ed3faaa38"
+}

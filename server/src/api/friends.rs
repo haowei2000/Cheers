@@ -1,10 +1,23 @@
+#[derive(Debug)]
+struct FriendRequestRow {
+    friendship_id: String,
+    other_id: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    message: Option<String>,
+    username: Option<String>,
+    display_name: Option<String>,
+    avatar_url: Option<String>,
+    is_bot: Option<bool>,
+    target_bot_id: Option<String>,
+    target_bot_name: Option<String>,
+}
 use axum::{
     extract::{Path, Query, State},
     Extension, Json,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+
 use uuid::Uuid;
 
 use crate::{api::middleware::Claims, app_state::AppState, errors::AppError};
@@ -67,7 +80,7 @@ pub async fn search_users(
         .map(|id| id.to_string())
         .unwrap_or_default();
     let pattern = format!("%{}%", crate::domain::messages::escape_like_pattern(term));
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "WITH candidates AS (
              SELECT u.user_id,
                     u.username,
@@ -107,9 +120,9 @@ pub async fn search_users(
                 c.avatar_url,
                 c.bio,
                 c.is_bot,
-                f.friendship_id,
-                f.user_id AS friendship_requester_id,
-                f.status AS friendship_status
+                f.friendship_id AS \"friendship_id?\",
+                f.user_id AS \"friendship_requester_id?\",
+                f.status AS \"friendship_status?\"
          FROM candidates c
          LEFT JOIN friendships f
                 ON f.pair_key = CASE WHEN c.user_id <= $2 THEN c.user_id || ':' || $2 ELSE $2 || ':' || c.user_id END
@@ -126,22 +139,21 @@ pub async fn search_users(
                   ELSE 3 END,
              c.username
          LIMIT 20",
-    )
-    .bind(&lookup_id)
-    .bind(&claims.sub)
-    .bind(&pattern)
-    .bind(term)
-    .fetch_all(&state.db)
+        &lookup_id,
+        &claims.sub,
+        &pattern,
+        term,
+    ).fetch_all(&state.db)
     .await?;
 
     let items = rows
         .into_iter()
         .map(|r| {
-            let user_id: String = r.try_get("user_id").unwrap_or_default();
-            let is_bot: bool = r.try_get("is_bot").unwrap_or(false);
-            let friendship_status: Option<String> = r.try_get("friendship_status").ok();
-            let requester_id: Option<String> = r.try_get("friendship_requester_id").ok();
-            let friendship_id: Option<String> = r.try_get("friendship_id").ok();
+            let user_id: String = r.user_id.clone().unwrap_or_default();
+            let is_bot: bool = r.is_bot.clone().unwrap_or(false);
+            let friendship_status: Option<String> = r.friendship_status.clone();
+            let requester_id: Option<String> = r.friendship_requester_id.clone();
+            let friendship_id: Option<String> = r.friendship_id.clone();
 
             let relationship_status = match friendship_status.as_deref() {
                 Some("accepted") => "friend",
@@ -157,10 +169,10 @@ pub async fn search_users(
 
             json!({
                 "user_id": user_id,
-                "username": r.try_get::<String, _>("username").unwrap_or_default(),
-                "display_name": r.try_get::<String, _>("display_name").ok(),
-                "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
-                "bio": r.try_get::<String, _>("bio").ok(),
+                "username": r.username.clone().unwrap_or_default(),
+                "display_name": r.display_name.clone(),
+                "avatar_url": r.avatar_url.clone(),
+                "bio": r.bio.clone(),
                 "is_bot": is_bot,
                 "relationship_status": relationship_status,
                 "friendship_id": friendship_id,
@@ -175,7 +187,7 @@ pub async fn list_friends(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<Value>>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT f.friendship_id,
                 CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END AS friend_id,
                 f.status,
@@ -188,19 +200,24 @@ pub async fn list_friends(
          LEFT JOIN bot_accounts b ON b.bot_id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END
          WHERE (f.user_id = $1 OR f.friend_id = $1) AND f.status = 'accepted'
          ORDER BY username",
-    )
-    .bind(&claims.sub)
-    .fetch_all(&state.db)
+        &claims.sub,
+    ).fetch_all(&state.db)
     .await?;
-    Ok(Json(rows.into_iter().map(|r| json!({
-        "friendship_id": r.try_get::<String, _>("friendship_id").unwrap_or_default(),
-        "friend_id": r.try_get::<String, _>("friend_id").unwrap_or_default(),
-        "status": r.try_get::<String, _>("status").unwrap_or_else(|_| "accepted".into()),
-        "username": r.try_get::<String, _>("username").unwrap_or_default(),
-        "display_name": r.try_get::<String, _>("display_name").ok(),
-        "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
-        "is_bot": r.try_get::<bool, _>("is_bot").unwrap_or(false),
-    })).collect()))
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| {
+                json!({
+                    "friendship_id": r.friendship_id.clone(),
+                    "friend_id": r.friend_id.clone().unwrap_or_default(),
+                    "status": r.status.clone(),
+                    "username": r.username.clone().unwrap_or_default(),
+                    "display_name": r.display_name.clone(),
+                    "avatar_url": r.avatar_url.clone(),
+                    "is_bot": r.is_bot.clone().unwrap_or(false),
+                })
+            })
+            .collect(),
+    ))
 }
 
 pub async fn add_friend(
@@ -212,19 +229,20 @@ pub async fn add_friend(
         return Err(AppError::BadRequest("cannot add yourself".into()));
     }
 
-    let user_row =
-        sqlx::query("SELECT user_id FROM users WHERE user_id = $1 AND is_deleted = FALSE")
-            .bind(&body.friend_id)
-            .fetch_optional(&state.db)
-            .await?;
+    let user_row = sqlx::query!(
+        "SELECT user_id FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        &body.friend_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
 
     let bot_row = if user_row.is_none() {
-        sqlx::query(
+        sqlx::query!(
             "SELECT bot_id, created_by, COALESCE(friend_policy, 'open') AS friend_policy,
                     COALESCE(visibility, 'public') AS visibility, is_disabled, display_name
              FROM bot_accounts WHERE bot_id = $1",
+            &body.friend_id,
         )
-        .bind(&body.friend_id)
         .fetch_optional(&state.db)
         .await?
     } else {
@@ -254,15 +272,13 @@ pub async fn add_friend(
 
     // ── Handle Bot target ────────────────────────────────────────────────────
     if let Some(bot) = bot_row {
-        let is_disabled = bot.try_get::<bool, _>("is_disabled").unwrap_or(false);
+        let is_disabled = bot.is_disabled.clone();
         if is_disabled {
             return Err(AppError::Forbidden(
                 "该 Bot 已被禁用 (This bot is disabled)".into(),
             ));
         }
-        let friend_policy = bot
-            .try_get::<String, _>("friend_policy")
-            .unwrap_or_else(|_| "open".into());
+        let friend_policy = bot.friend_policy.clone().unwrap_or_else(|| "open".into());
 
         if friend_policy == "disabled" {
             return Err(AppError::Forbidden(
@@ -272,17 +288,17 @@ pub async fn add_friend(
 
         if friend_policy == "open" {
             let friendship_id = Uuid::new_v4().to_string();
-            sqlx::query(
+            sqlx::query!(
                 "INSERT INTO friendships (friendship_id, user_id, friend_id, pair_key, status, message, responded_at, updated_at)
                  VALUES ($1, $2, $3, $4, 'accepted', $5, NOW(), NOW())
                  ON CONFLICT (pair_key) DO UPDATE
                  SET status = 'accepted', responded_at = NOW(), updated_at = NOW()",
+                &friendship_id,
+                &claims.sub,
+                &body.friend_id,
+                &pair,
+                message.as_deref(),
             )
-            .bind(&friendship_id)
-            .bind(&claims.sub)
-            .bind(&body.friend_id)
-            .bind(&pair)
-            .bind(&message)
             .execute(&state.db)
             .await?;
 
@@ -310,13 +326,14 @@ pub async fn add_friend(
         }
 
         // require_approval: insert pending and notify owner
-        if let Some(row) =
-            sqlx::query("SELECT friendship_id, status FROM friendships WHERE pair_key = $1")
-                .bind(&pair)
-                .fetch_optional(&state.db)
-                .await?
+        if let Some(row) = sqlx::query!(
+            "SELECT friendship_id, status FROM friendships WHERE pair_key = $1",
+            &pair,
+        )
+        .fetch_optional(&state.db)
+        .await?
         {
-            let status: String = row.try_get("status").unwrap_or_default();
+            let status: String = row.status.clone();
             if status == "accepted" {
                 let me = Uuid::parse_str(&claims.sub).ok();
                 let bot_uuid = Uuid::parse_str(&body.friend_id).ok();
@@ -340,13 +357,13 @@ pub async fn add_friend(
                 })));
             }
             if message.is_some() {
-                let _ = sqlx::query(
+                let _ = sqlx::query!(
                     "UPDATE friendships SET message = $1, updated_at = NOW()
                      WHERE pair_key = $2 AND status = 'pending' AND user_id = $3",
+                    message.as_deref(),
+                    &pair,
+                    &claims.sub,
                 )
-                .bind(&message)
-                .bind(&pair)
-                .bind(&claims.sub)
                 .execute(&state.db)
                 .await;
             }
@@ -358,26 +375,22 @@ pub async fn add_friend(
         }
 
         let friendship_id = Uuid::new_v4().to_string();
-        let inserted = sqlx::query(
+        let inserted = sqlx::query!(
             "INSERT INTO friendships (friendship_id, user_id, friend_id, pair_key, status, message)
              VALUES ($1, $2, $3, $4, 'pending', $5)
              ON CONFLICT (pair_key) DO NOTHING",
+            &friendship_id,
+            &claims.sub,
+            &body.friend_id,
+            &pair,
+            message.as_deref(),
         )
-        .bind(&friendship_id)
-        .bind(&claims.sub)
-        .bind(&body.friend_id)
-        .bind(&pair)
-        .bind(&message)
         .execute(&state.db)
         .await?
         .rows_affected();
 
         if inserted > 0 {
-            if let Some(owner_id) = bot
-                .try_get::<Option<String>, _>("created_by")
-                .ok()
-                .flatten()
-            {
+            if let Some(owner_id) = bot.created_by.clone() {
                 let _ = crate::api::notifications::deliver_notification_by_id(
                     &state,
                     &owner_id,
@@ -395,16 +408,16 @@ pub async fn add_friend(
     }
 
     // ── Handle Human target ──────────────────────────────────────────────────
-    if let Some(row) = sqlx::query(
+    if let Some(row) = sqlx::query!(
         "SELECT friendship_id, user_id, friend_id, status FROM friendships WHERE pair_key = $1",
+        &pair,
     )
-    .bind(&pair)
     .fetch_optional(&state.db)
     .await?
     {
-        let status: String = row.try_get("status").unwrap_or_default();
-        let requester: String = row.try_get("user_id").unwrap_or_default();
-        let friendship_id: String = row.try_get("friendship_id").unwrap_or_default();
+        let status: String = row.status.clone();
+        let requester: String = row.user_id.clone();
+        let friendship_id: String = row.friendship_id.clone();
         match status.as_str() {
             "accepted" => {
                 let me = Uuid::parse_str(&claims.sub).ok();
@@ -426,11 +439,11 @@ pub async fn add_friend(
                 ));
             }
             "pending" if requester == body.friend_id => {
-                sqlx::query(
+                sqlx::query!(
                     "UPDATE friendships SET status='accepted', responded_at=NOW(), updated_at=NOW()
                      WHERE pair_key = $1",
+                    &pair,
                 )
-                .bind(&pair)
                 .execute(&state.db)
                 .await?;
                 crate::api::notifications::resolve_notification(
@@ -461,13 +474,13 @@ pub async fn add_friend(
             }
             _ => {
                 if message.is_some() {
-                    let _ = sqlx::query(
+                    let _ = sqlx::query!(
                         "UPDATE friendships SET message = $1, updated_at = NOW()
                          WHERE pair_key = $2 AND status = 'pending' AND user_id = $3",
+                        message.as_deref(),
+                        &pair,
+                        &claims.sub,
                     )
-                    .bind(&message)
-                    .bind(&pair)
-                    .bind(&claims.sub)
                     .execute(&state.db)
                     .await;
                 }
@@ -478,16 +491,16 @@ pub async fn add_friend(
         }
     }
     let friendship_id = Uuid::new_v4().to_string();
-    let inserted = sqlx::query(
+    let inserted = sqlx::query!(
         "INSERT INTO friendships (friendship_id, user_id, friend_id, pair_key, status, message)
          VALUES ($1, $2, $3, $4, 'pending', $5)
          ON CONFLICT (pair_key) DO NOTHING",
+        &friendship_id,
+        &claims.sub,
+        &body.friend_id,
+        &pair,
+        message.as_deref(),
     )
-    .bind(&friendship_id)
-    .bind(&claims.sub)
-    .bind(&body.friend_id)
-    .bind(&pair)
-    .bind(&message)
     .execute(&state.db)
     .await?
     .rows_affected();
@@ -513,12 +526,12 @@ pub async fn remove_friend(
         .friend_id
         .ok_or_else(|| AppError::BadRequest("friend_id is required".into()))?;
     let pair = pair_key(&claims.sub, &friend_id);
-    let existing = sqlx::query(
+    let existing = sqlx::query!(
         "DELETE FROM friendships
          WHERE pair_key = $1 AND status = 'accepted'
          RETURNING friendship_id, user_id, friend_id",
+        &pair,
     )
-    .bind(&pair)
     .fetch_optional(&state.db)
     .await?;
     Ok(Json(json!({"removed": existing.is_some()})))
@@ -532,7 +545,7 @@ pub async fn delete_pending_friend_request(
     friendship_id: &str,
     caller_id: &str,
 ) -> Result<Option<(String, String)>, AppError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "DELETE FROM friendships
          WHERE friendship_id = $1
            AND status = 'pending'
@@ -542,17 +555,12 @@ pub async fn delete_pending_friend_request(
                OR friend_id IN (SELECT bot_id FROM bot_accounts WHERE created_by = $2)
            )
          RETURNING user_id, friend_id",
+        friendship_id,
+        caller_id,
     )
-    .bind(friendship_id)
-    .bind(caller_id)
     .fetch_optional(db)
     .await?;
-    Ok(row.map(|row| {
-        (
-            row.try_get("user_id").unwrap_or_default(),
-            row.try_get("friend_id").unwrap_or_default(),
-        )
-    }))
+    Ok(row.map(|row| (row.user_id.clone(), row.friend_id.clone())))
 }
 
 /// DELETE /api/v1/friends/requests/:friendship_id — decline an incoming
@@ -585,8 +593,10 @@ pub async fn list_friend_requests(
     Query(rq): Query<RequestsQuery>,
 ) -> Result<Json<Vec<Value>>, AppError> {
     let outgoing = rq.direction.as_deref() == Some("outgoing");
-    let sql = if outgoing {
-        "SELECT f.friendship_id, f.friend_id AS other_id, f.created_at, f.message,
+    let rows = if outgoing {
+        sqlx::query_as!(
+            FriendRequestRow,
+            "SELECT f.friendship_id, f.friend_id AS other_id, f.created_at, f.message,
                 COALESCE(u.username, b.username) AS username,
                 COALESCE(u.display_name, b.display_name) AS display_name,
                 COALESCE(u.avatar_url, b.avatar_url) AS avatar_url,
@@ -597,42 +607,45 @@ pub async fn list_friend_requests(
          LEFT JOIN users u ON u.user_id = f.friend_id
          LEFT JOIN bot_accounts b ON b.bot_id = f.friend_id
          WHERE f.user_id = $1 AND f.status = 'pending'
-         ORDER BY f.created_at DESC"
+         ORDER BY f.created_at DESC",
+            &claims.sub,
+        )
+        .fetch_all(&state.db)
+        .await?
     } else {
-        "SELECT f.friendship_id, f.user_id AS other_id, f.created_at, f.message,
+        sqlx::query_as!(
+            FriendRequestRow,
+            "SELECT f.friendship_id, f.user_id AS other_id, f.created_at, f.message,
                 u.username, u.display_name, u.avatar_url,
                 FALSE AS is_bot,
-                b.bot_id AS target_bot_id,
+                b.bot_id AS \"target_bot_id?\",
                 b.display_name AS target_bot_name
          FROM friendships f
          JOIN users u ON u.user_id = f.user_id
          LEFT JOIN bot_accounts b ON b.bot_id = f.friend_id
          WHERE (f.friend_id = $1 OR (b.created_by = $1 AND b.friend_policy = 'require_approval'))
            AND f.status = 'pending'
-         ORDER BY f.created_at DESC"
-    };
-    let rows = sqlx::query(sql)
-        .bind(&claims.sub)
+         ORDER BY f.created_at DESC",
+            &claims.sub,
+        )
         .fetch_all(&state.db)
-        .await?;
+        .await?
+    };
     let dir = if outgoing { "outgoing" } else { "incoming" };
     Ok(Json(
         rows.into_iter()
             .map(|r| {
-                let created_at = r
-                    .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                    .ok()
-                    .map(|t| t.to_rfc3339());
-                let is_bot: bool = r.try_get("is_bot").unwrap_or(false);
-                let target_bot_id: Option<String> = r.try_get("target_bot_id").ok().flatten();
-                let target_bot_name: Option<String> = r.try_get("target_bot_name").ok().flatten();
+                let created_at = Some(r.created_at.clone()).map(|t| t.to_rfc3339());
+                let is_bot: bool = r.is_bot.clone().unwrap_or(false);
+                let target_bot_id: Option<String> = r.target_bot_id.clone();
+                let target_bot_name: Option<String> = r.target_bot_name.clone();
                 json!({
-                    "friendship_id": r.try_get::<String, _>("friendship_id").unwrap_or_default(),
-                    "user_id": r.try_get::<String, _>("other_id").unwrap_or_default(),
-                    "username": r.try_get::<String, _>("username").unwrap_or_default(),
-                    "display_name": r.try_get::<String, _>("display_name").ok(),
-                    "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
-                    "message": r.try_get::<Option<String>, _>("message").ok().flatten(),
+                    "friendship_id": r.friendship_id.clone(),
+                    "user_id": r.other_id.clone(),
+                    "username": r.username.clone().unwrap_or_default(),
+                    "display_name": r.display_name.clone(),
+                    "avatar_url": r.avatar_url.clone(),
+                    "message": r.message.clone(),
                     "created_at": created_at,
                     "direction": dir,
                     "is_bot": is_bot,
@@ -661,13 +674,12 @@ pub async fn accept_friend(
         Some(bid)
     } else {
         // Check if there is a pending direct request to claims.sub
-        let direct_exists = sqlx::query(
-            "SELECT 1 FROM friendships WHERE pair_key = $1 AND user_id = $2 AND friend_id = $3 AND status = 'pending'",
-        )
-        .bind(pair_key(&claims.sub, &user_id))
-        .bind(&user_id)
-        .bind(&claims.sub)
-        .fetch_optional(&state.db)
+        let direct_exists = sqlx::query!(
+            "SELECT 1 AS present FROM friendships WHERE pair_key = $1 AND user_id = $2 AND friend_id = $3 AND status = 'pending'",
+            pair_key(&claims.sub, &user_id),
+            &user_id,
+            &claims.sub,
+        ).fetch_optional(&state.db)
         .await?
         .is_some();
 
@@ -675,43 +687,45 @@ pub async fn accept_friend(
             None
         } else {
             // Find bot owned by claims.sub that has a pending request from user_id
-            sqlx::query_scalar::<_, String>(
+            sqlx::query_scalar!(
                 "SELECT f.friend_id
                  FROM friendships f
                  JOIN bot_accounts b ON b.bot_id = f.friend_id
                  WHERE f.user_id = $1 AND b.created_by = $2 AND f.status = 'pending'
                  LIMIT 1",
+                &user_id,
+                &claims.sub,
             )
-            .bind(&user_id)
-            .bind(&claims.sub)
             .fetch_optional(&state.db)
             .await?
         }
     };
 
     if let Some(bid) = bot_id {
-        let owns = sqlx::query("SELECT 1 FROM bot_accounts WHERE bot_id = $1 AND created_by = $2")
-            .bind(&bid)
-            .bind(&claims.sub)
-            .fetch_optional(&state.db)
-            .await?
-            .is_some();
+        let owns = sqlx::query!(
+            "SELECT 1 AS present FROM bot_accounts WHERE bot_id = $1 AND created_by = $2",
+            &bid,
+            &claims.sub,
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .is_some();
         if !owns && !crate::api::bots::is_admin(&claims) {
             return Err(AppError::Forbidden("not the bot owner".into()));
         }
 
-        let updated = sqlx::query(
+        let updated = sqlx::query!(
             "UPDATE friendships SET status='accepted', responded_at=NOW(), updated_at=NOW()
              WHERE pair_key = $1 AND user_id = $2 AND friend_id = $3 AND status = 'pending'
              RETURNING friendship_id",
+            pair_key(&bid, &user_id),
+            &user_id,
+            &bid,
         )
-        .bind(pair_key(&bid, &user_id))
-        .bind(&user_id)
-        .bind(&bid)
         .fetch_optional(&state.db)
         .await?;
         let updated = updated.ok_or(AppError::NotFound)?;
-        let friendship_id: String = updated.try_get("friendship_id").unwrap_or_default();
+        let friendship_id: String = updated.friendship_id.clone();
         crate::api::notifications::resolve_notification(
             &state,
             &claims.sub,
@@ -739,18 +753,18 @@ pub async fn accept_friend(
         ));
     }
 
-    let updated = sqlx::query(
+    let updated = sqlx::query!(
         "UPDATE friendships SET status='accepted', responded_at=NOW(), updated_at=NOW()
          WHERE pair_key = $1 AND user_id = $2 AND friend_id = $3 AND status = 'pending'
          RETURNING friendship_id",
+        pair_key(&claims.sub, &user_id),
+        &user_id,
+        &claims.sub,
     )
-    .bind(pair_key(&claims.sub, &user_id))
-    .bind(&user_id)
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?;
     let updated = updated.ok_or(AppError::NotFound)?;
-    let friendship_id: String = updated.try_get("friendship_id").unwrap_or_default();
+    let friendship_id: String = updated.friendship_id.clone();
     crate::api::notifications::resolve_notification(
         &state,
         &claims.sub,
@@ -789,18 +803,19 @@ pub struct BlockRequest {
 /// Whether a block exists in either direction between two users. Used to gate
 /// friend requests and DMs (a block is mutual in effect).
 pub(crate) async fn is_blocked(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bool, AppError> {
-    let ok: bool = sqlx::query(
+    let ok: bool = sqlx::query!(
         "SELECT EXISTS(
-            SELECT 1 FROM user_blocks
+            SELECT 1 AS present FROM user_blocks
             WHERE (blocker_id = $1 AND blocked_id = $2)
                OR (blocker_id = $2 AND blocked_id = $1)
          ) AS ok",
+        a,
+        b,
     )
-    .bind(a)
-    .bind(b)
     .fetch_one(db)
     .await?
-    .try_get("ok")
+    .ok
+    .clone()
     .unwrap_or(false);
     Ok(ok)
 }
@@ -815,15 +830,18 @@ pub async fn block_user(
     if body.user_id == claims.sub {
         return Err(AppError::BadRequest("cannot block yourself".into()));
     }
-    let friendship_id: Option<String> =
-        sqlx::query_scalar("SELECT friendship_id FROM friendships WHERE pair_key = $1")
-            .bind(pair_key(&claims.sub, &body.user_id))
-            .fetch_optional(&state.db)
-            .await?;
-    sqlx::query("DELETE FROM friendships WHERE pair_key = $1")
-        .bind(pair_key(&claims.sub, &body.user_id))
-        .execute(&state.db)
-        .await?;
+    let friendship_id: Option<String> = sqlx::query_scalar!(
+        "SELECT friendship_id FROM friendships WHERE pair_key = $1",
+        pair_key(&claims.sub, &body.user_id),
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM friendships WHERE pair_key = $1",
+        pair_key(&claims.sub, &body.user_id),
+    )
+    .execute(&state.db)
+    .await?;
     if let Some(id) = friendship_id {
         crate::api::notifications::resolve_notification(
             &state,
@@ -838,12 +856,12 @@ pub async fn block_user(
         )
         .await;
     }
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)
          ON CONFLICT DO NOTHING",
+        &claims.sub,
+        &body.user_id,
     )
-    .bind(&claims.sub)
-    .bind(&body.user_id)
     .execute(&state.db)
     .await?;
     Ok(Json(json!({"user_id": body.user_id, "blocked": true})))
@@ -855,11 +873,13 @@ pub async fn unblock_user(
     Extension(claims): Extension<Claims>,
     Json(body): Json<BlockRequest>,
 ) -> Result<Json<Value>, AppError> {
-    sqlx::query("DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2")
-        .bind(&claims.sub)
-        .bind(&body.user_id)
-        .execute(&state.db)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2",
+        &claims.sub,
+        &body.user_id,
+    )
+    .execute(&state.db)
+    .await?;
     Ok(Json(json!({"user_id": body.user_id, "blocked": false})))
 }
 
@@ -868,23 +888,23 @@ pub async fn list_blocks(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<Value>>, AppError> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT b.blocked_id, u.username, u.display_name, u.avatar_url
          FROM user_blocks b JOIN users u ON u.user_id = b.blocked_id
          WHERE b.blocker_id = $1
          ORDER BY u.username",
+        &claims.sub,
     )
-    .bind(&claims.sub)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(
         rows.into_iter()
             .map(|r| {
                 json!({
-                    "user_id": r.try_get::<String, _>("blocked_id").unwrap_or_default(),
-                    "username": r.try_get::<String, _>("username").unwrap_or_default(),
-                    "display_name": r.try_get::<String, _>("display_name").ok(),
-                    "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
+                    "user_id": r.blocked_id.clone(),
+                    "username": r.username.clone(),
+                    "display_name": r.display_name.clone(),
+                    "avatar_url": r.avatar_url.clone(),
                 })
             })
             .collect(),

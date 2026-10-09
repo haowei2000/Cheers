@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.user_id AS member_id, 'user' AS member_type, u.username,\n                u.display_name, u.avatar_url, wm.role, wm.status\n         FROM workspace_memberships wm\n         JOIN users u ON u.user_id = wm.user_id\n         WHERE wm.workspace_id = $1\n         UNION ALL\n         SELECT b.bot_id AS member_id, 'bot' AS member_type, b.username,\n                b.display_name, b.avatar_url, wbm.role, 'active' AS status\n         FROM workspace_bot_memberships wbm\n         JOIN bot_accounts b ON b.bot_id = wbm.bot_id\n         WHERE wbm.workspace_id = $1\n         ORDER BY status, username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "member_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d6ef47060f78e97c804d731731998ec3519ccd465da4d16b9594d6f09f43ba2a"
+}

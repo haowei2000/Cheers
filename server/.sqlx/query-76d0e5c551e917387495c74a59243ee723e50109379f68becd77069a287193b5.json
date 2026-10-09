@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM scheduled_messages WHERE task_id=$1 AND created_by=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "76d0e5c551e917387495c74a59243ee723e50109379f68becd77069a287193b5"
+}

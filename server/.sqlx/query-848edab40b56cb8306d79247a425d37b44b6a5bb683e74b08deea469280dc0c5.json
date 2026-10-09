@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT challenge_json FROM auth_transactions\n         WHERE transaction_id = $1 AND kind IN ('login', 'step_up')\n           AND status IN ('method_required', 'factor_required', 'verified')\n           AND consumed_at IS NULL AND expires_at > NOW()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "challenge_json",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "848edab40b56cb8306d79247a425d37b44b6a5bb683e74b08deea469280dc0c5"
+}

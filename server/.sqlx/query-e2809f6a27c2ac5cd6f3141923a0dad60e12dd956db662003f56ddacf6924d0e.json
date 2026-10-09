@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channel_profiles (channel_id, profile, config, status, created_by)\n         VALUES ($1, 'code', $2, $3, $4)\n         ON CONFLICT (channel_id) DO UPDATE\n           SET profile = 'code', config = EXCLUDED.config, status = EXCLUDED.status,\n               updated_at = NOW()\n         RETURNING profile, config, status",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "profile",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Jsonb",
+        "Jsonb",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e2809f6a27c2ac5cd6f3141923a0dad60e12dd956db662003f56ddacf6924d0e"
+}

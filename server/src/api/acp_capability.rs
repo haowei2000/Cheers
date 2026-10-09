@@ -5,7 +5,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -123,6 +123,29 @@ pub struct CapabilityRejectLogItem {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug)]
+struct DelegationRow {
+    delegation_id: String,
+    bot_id: String,
+    scope_type: String,
+    scope_id: Option<String>,
+    session_id: Option<String>,
+    allowed_actions: Vec<String>,
+    allowed_resources: Vec<String>,
+    max_uses: Option<i32>,
+    use_count: i32,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    public_key: String,
+    algorithm: String,
+    delegated_to: Option<String>,
+    status: String,
+    revoked: bool,
+    revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+    granted_by: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    note: Option<String>,
+}
 pub async fn list_delegations(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -133,7 +156,8 @@ pub async fn list_delegations(
     ensure_bot_owner_or_admin(&state.db, &bot_id, &claims).await?;
 
     let rows = if include_inactive {
-        sqlx::query(
+        sqlx::query_as!(
+            DelegationRow,
             "SELECT delegation_id, bot_id, scope_type, scope_id, session_id, allowed_actions,
                     allowed_resources, max_uses, use_count, expires_at, public_key,
                     algorithm, delegated_to, status, revoked, revoked_at, granted_by, created_at,
@@ -141,12 +165,13 @@ pub async fn list_delegations(
              FROM acp_capability_delegations
              WHERE bot_id = $1
              ORDER BY created_at DESC",
+            bot_id.to_string(),
         )
-        .bind(bot_id.to_string())
         .fetch_all(&state.db)
         .await?
     } else {
-        sqlx::query(
+        sqlx::query_as!(
+            DelegationRow,
             "SELECT delegation_id, bot_id, scope_type, scope_id, session_id, allowed_actions,
                     allowed_resources, max_uses, use_count, expires_at, public_key,
                     algorithm, delegated_to, status, revoked, revoked_at, granted_by, created_at,
@@ -154,8 +179,8 @@ pub async fn list_delegations(
              FROM acp_capability_delegations
              WHERE bot_id = $1 AND status = 'active' AND revoked = FALSE
              ORDER BY created_at DESC",
+            bot_id.to_string(),
         )
-        .bind(bot_id.to_string())
         .fetch_all(&state.db)
         .await?
     };
@@ -163,32 +188,26 @@ pub async fn list_delegations(
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
         items.push(DelegationItem {
-            delegation_id: row.try_get("delegation_id").unwrap_or_default(),
-            bot_id: row.try_get("bot_id").unwrap_or_default(),
-            scope_type: row.try_get("scope_type").unwrap_or_default(),
-            scope_id: row.try_get("scope_id").ok(),
-            session_id: row.try_get("session_id").ok(),
-            allowed_actions: row.try_get("allowed_actions").unwrap_or_default(),
-            allowed_resources: row.try_get("allowed_resources").unwrap_or_default(),
-            max_uses: row
-                .try_get::<Option<i32>, _>("max_uses")
-                .ok()
-                .flatten()
-                .map(i64::from),
-            use_count: row.try_get::<i32, _>("use_count").unwrap_or_default() as i64,
-            expires_at: row.try_get("expires_at").ok(),
-            public_key: row.try_get("public_key").unwrap_or_default(),
-            algorithm: row
-                .try_get("algorithm")
-                .unwrap_or_else(|_| acp_capability::CAPABILITY_SUPPORTED_ALGORITHM.to_string()),
-            delegated_to: row.try_get("delegated_to").ok(),
-            status: row.try_get("status").unwrap_or_else(|_| "active".into()),
-            revoked: row.try_get("revoked").unwrap_or(false),
-            revoked_at: row.try_get("revoked_at").ok(),
-            granted_by: row.try_get("granted_by").unwrap_or_default(),
-            created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
-            updated_at: row.try_get("updated_at").unwrap_or_else(|_| Utc::now()),
-            note: row.try_get("note").ok(),
+            delegation_id: row.delegation_id.clone(),
+            bot_id: row.bot_id.clone(),
+            scope_type: row.scope_type.clone(),
+            scope_id: row.scope_id.clone(),
+            session_id: row.session_id.clone(),
+            allowed_actions: row.allowed_actions.clone(),
+            allowed_resources: row.allowed_resources.clone(),
+            max_uses: row.max_uses.clone().map(i64::from),
+            use_count: row.use_count.clone() as i64,
+            expires_at: row.expires_at.clone(),
+            public_key: row.public_key.clone(),
+            algorithm: row.algorithm.clone(),
+            delegated_to: row.delegated_to.clone(),
+            status: row.status.clone(),
+            revoked: row.revoked.clone(),
+            revoked_at: row.revoked_at.clone(),
+            granted_by: row.granted_by.clone(),
+            created_at: row.created_at.clone(),
+            updated_at: row.updated_at.clone(),
+            note: row.note.clone(),
         });
     }
 
@@ -236,8 +255,8 @@ async fn list_reject_logs_by_filter(
     let fetch_limit = params.limit + 1;
     let offset = (params.page - 1) * params.limit;
 
-    let rows = sqlx::query(
-        "SELECT log_id, bot_id, provider_account_id, delegation_id, decision_scope_type, decision_scope_id,
+    let rows = sqlx::query!(
+            "SELECT log_id, bot_id, provider_account_id, delegation_id, decision_scope_type, decision_scope_id,
                 frame_type, action, request_id, request_session_id, resolved_session_id,
                 resolved_session_status, resolved_session_scope_type, resolved_session_scope_id,
                 session_locator_source, session_locator_value, resource, decision_reason, created_at
@@ -248,38 +267,37 @@ async fn list_reject_logs_by_filter(
            AND ($4::timestamptz IS NULL OR created_at <= $4)
          ORDER BY created_at DESC, log_id DESC
          LIMIT $5 OFFSET $6",
-    )
-    .bind(bot_id)
-    .bind(params.delegation_id.as_deref())
-    .bind(params.start_at)
-    .bind(params.end_at)
-    .bind(fetch_limit)
-    .bind(offset)
-    .fetch_all(db)
+            bot_id,
+            params.delegation_id.as_deref(),
+            params.start_at,
+            params.end_at,
+            fetch_limit,
+            offset,
+        ).fetch_all(db)
     .await?;
 
     let mut items = Vec::with_capacity(rows.len().min(params.limit as usize));
     for row in rows {
         items.push(CapabilityRejectLogItem {
-            log_id: row.try_get("log_id").unwrap_or_default(),
-            bot_id: row.try_get("bot_id").unwrap_or_default(),
-            provider_account_id: row.try_get("provider_account_id").unwrap_or_default(),
-            delegation_id: row.try_get("delegation_id").ok(),
-            decision_scope_type: row.try_get("decision_scope_type").ok(),
-            decision_scope_id: row.try_get("decision_scope_id").ok(),
-            frame_type: row.try_get("frame_type").unwrap_or_default(),
-            action: row.try_get("action").ok(),
-            request_id: row.try_get("request_id").ok(),
-            request_session_id: row.try_get("request_session_id").ok(),
-            resolved_session_id: row.try_get("resolved_session_id").ok(),
-            resolved_session_status: row.try_get("resolved_session_status").ok(),
-            resolved_session_scope_type: row.try_get("resolved_session_scope_type").ok(),
-            resolved_session_scope_id: row.try_get("resolved_session_scope_id").ok(),
-            session_locator_source: row.try_get("session_locator_source").ok(),
-            session_locator_value: row.try_get("session_locator_value").ok(),
-            resource: row.try_get("resource").ok(),
-            decision_reason: row.try_get("decision_reason").unwrap_or_default(),
-            created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
+            log_id: row.log_id.clone(),
+            bot_id: row.bot_id.clone(),
+            provider_account_id: row.provider_account_id.clone(),
+            delegation_id: row.delegation_id.clone(),
+            decision_scope_type: row.decision_scope_type.clone(),
+            decision_scope_id: row.decision_scope_id.clone(),
+            frame_type: row.frame_type.clone(),
+            action: row.action.clone(),
+            request_id: row.request_id.clone(),
+            request_session_id: row.request_session_id.clone(),
+            resolved_session_id: row.resolved_session_id.clone(),
+            resolved_session_status: row.resolved_session_status.clone(),
+            resolved_session_scope_type: row.resolved_session_scope_type.clone(),
+            resolved_session_scope_id: row.resolved_session_scope_id.clone(),
+            session_locator_source: row.session_locator_source.clone(),
+            session_locator_value: row.session_locator_value.clone(),
+            resource: row.resource.clone(),
+            decision_reason: row.decision_reason.clone(),
+            created_at: row.created_at.clone(),
         });
     }
 
@@ -413,7 +431,7 @@ pub async fn create_delegation(
         .map_err(|err| AppError::BadRequest(err.to_string()))?;
 
     let delegation_id = Uuid::new_v4();
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "INSERT INTO acp_capability_delegations (
             delegation_id, bot_id, scope_type, scope_id, session_id,
             allowed_actions, allowed_resources, max_uses, use_count, expires_at,
@@ -428,51 +446,45 @@ pub async fn create_delegation(
                    allowed_resources, max_uses, use_count, expires_at, public_key,
                    algorithm, delegated_to, status, revoked, revoked_at, granted_by, created_at,
                    updated_at, note",
+        delegation_id.to_string(),
+        bot_id.to_string(),
+        scope_type,
+        scope_id,
+        session_id,
+        &allowed_actions,
+        &allowed_resources,
+        body.max_uses,
+        body.expires_at,
+        public_key,
+        algorithm,
+        body.delegated_to,
+        &claims.sub,
+        body.note,
     )
-    .bind(delegation_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(scope_type)
-    .bind(scope_id)
-    .bind(session_id)
-    .bind(&allowed_actions)
-    .bind(&allowed_resources)
-    .bind(body.max_uses)
-    .bind(body.expires_at)
-    .bind(public_key)
-    .bind(algorithm)
-    .bind(body.delegated_to)
-    .bind(&claims.sub)
-    .bind(body.note)
     .fetch_one(&state.db)
     .await?;
 
     Ok(Json(DelegationItem {
-        delegation_id: row.try_get("delegation_id").unwrap_or_default(),
-        bot_id: row.try_get("bot_id").unwrap_or_default(),
-        scope_type: row.try_get("scope_type").unwrap_or_default(),
-        scope_id: row.try_get("scope_id").ok(),
-        session_id: row.try_get("session_id").ok(),
-        allowed_actions: row.try_get("allowed_actions").unwrap_or_default(),
-        allowed_resources: row.try_get("allowed_resources").unwrap_or_default(),
-        max_uses: row
-            .try_get::<Option<i32>, _>("max_uses")
-            .ok()
-            .flatten()
-            .map(i64::from),
-        use_count: row.try_get::<i32, _>("use_count").unwrap_or_default() as i64,
-        expires_at: row.try_get("expires_at").ok(),
-        public_key: row.try_get("public_key").unwrap_or_default(),
-        algorithm: row
-            .try_get("algorithm")
-            .unwrap_or_else(|_| acp_capability::CAPABILITY_SUPPORTED_ALGORITHM.to_string()),
-        delegated_to: row.try_get("delegated_to").ok(),
-        status: row.try_get("status").unwrap_or_else(|_| "active".into()),
-        revoked: row.try_get("revoked").unwrap_or(false),
-        revoked_at: row.try_get("revoked_at").ok(),
-        granted_by: row.try_get("granted_by").unwrap_or_default(),
-        created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
-        updated_at: row.try_get("updated_at").unwrap_or_else(|_| Utc::now()),
-        note: row.try_get("note").ok(),
+        delegation_id: row.delegation_id.clone(),
+        bot_id: row.bot_id.clone(),
+        scope_type: row.scope_type.clone(),
+        scope_id: row.scope_id.clone(),
+        session_id: row.session_id.clone(),
+        allowed_actions: row.allowed_actions.clone(),
+        allowed_resources: row.allowed_resources.clone(),
+        max_uses: row.max_uses.clone().map(i64::from),
+        use_count: row.use_count.clone() as i64,
+        expires_at: row.expires_at.clone(),
+        public_key: row.public_key.clone(),
+        algorithm: row.algorithm.clone(),
+        delegated_to: row.delegated_to.clone(),
+        status: row.status.clone(),
+        revoked: row.revoked.clone(),
+        revoked_at: row.revoked_at.clone(),
+        granted_by: row.granted_by.clone(),
+        created_at: row.created_at.clone(),
+        updated_at: row.updated_at.clone(),
+        note: row.note.clone(),
     }))
 }
 
@@ -483,14 +495,14 @@ pub async fn revoke_delegation(
 ) -> Result<Json<serde_json::Value>, AppError> {
     ensure_bot_owner_or_admin(&state.db, &bot_id, &claims).await?;
 
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "UPDATE acp_capability_delegations
          SET status = 'revoked', revoked = TRUE, revoked_at = NOW(), updated_at = NOW()
          WHERE bot_id = $1 AND delegation_id = $2
          RETURNING delegation_id",
+        bot_id.to_string(),
+        delegation_id.to_string(),
     )
-    .bind(bot_id.to_string())
-    .bind(delegation_id.to_string())
     .fetch_optional(&state.db)
     .await?;
 
@@ -544,20 +556,19 @@ async fn ensure_bot_owner_or_admin(
     bot_id: &Uuid,
     claims: &Claims,
 ) -> Result<(), AppError> {
-    let row = sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id.to_string())
-        .fetch_optional(db)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let row = sqlx::query!(
+        "SELECT created_by FROM bot_accounts WHERE bot_id = $1",
+        bot_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(AppError::NotFound)?;
 
     if matches!(claims.role.as_str(), "admin" | "system_admin") {
         return Ok(());
     }
 
-    let created_by = row
-        .try_get::<Option<String>, _>("created_by")
-        .ok()
-        .flatten();
+    let created_by = row.created_by.clone();
     if created_by.as_deref() == Some(claims.sub.as_str()) {
         return Ok(());
     }
@@ -622,18 +633,17 @@ async fn count_reject_logs(
     start_at: Option<DateTime<Utc>>,
     end_at: Option<DateTime<Utc>>,
 ) -> Result<i64, AppError> {
-    let total = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*)::bigint
-         FROM acp_capability_reject_logs
+    let total = sqlx::query_scalar!(
+        r#"SELECT COUNT(*)::bigint AS "value!" FROM acp_capability_reject_logs
          WHERE ($1::VARCHAR(36) IS NULL OR bot_id = $1)
            AND ($2::VARCHAR(36) IS NULL OR delegation_id = $2)
            AND ($3::timestamptz IS NULL OR created_at >= $3)
-           AND ($4::timestamptz IS NULL OR created_at <= $4)",
+           AND ($4::timestamptz IS NULL OR created_at <= $4)"#,
+        bot_id,
+        delegation_id,
+        start_at,
+        end_at,
     )
-    .bind(bot_id)
-    .bind(delegation_id)
-    .bind(start_at)
-    .bind(end_at)
     .fetch_one(db)
     .await?;
     Ok(total)

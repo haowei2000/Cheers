@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE integration_webhook_events\n            SET last_error = $4\n          WHERE integration_id = $1 AND installation_id = $2 AND event_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "57f55114b031f140f44149878228e7c22c3fc7d6a442bb2e507dfd712908a9fa"
+}

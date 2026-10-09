@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"value!\" FROM invite_links\n         WHERE workspace_id = $1 AND NOT revoked\n           AND (expires_at IS NULL OR expires_at > NOW())\n           AND (max_uses IS NULL OR use_count < max_uses)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ac5291f8c214e124c3b1ac0aaa8c9a929d8bd55b5ab22ecebd54275be009d384"
+}

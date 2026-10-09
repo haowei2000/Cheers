@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channels SET archived_at = NOW() WHERE channel_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "83d15ef51b75e5f4bf393817fd8456f479ddce0d6ffe8d78fbac5aa8503a33b4"
+}

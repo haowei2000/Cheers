@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts SET\n            status_text = $2,\n            status_emoji = $3,\n            description = CASE WHEN $4 THEN $5 ELSE description END,\n            status_updated_at = NOW(),\n            status_last_auto_update_at = NOW()\n         WHERE bot_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "56f2aae7617d6b4e868d0f430b49f78ce34264882a9c77c6b9cb04028539dffe"
+}

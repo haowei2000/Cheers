@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE voice_transcript_segments\n         SET deleted_at = NOW()\n         WHERE channel_id = $1 AND channel_seq = $2 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ba29b20cac2aa35ca259216042899b0df124adb5144840aba3d77859ba530c6"
+}

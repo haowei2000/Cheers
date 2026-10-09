@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_id, original_filename, content_type, size_bytes, object_key,\n                storage_bucket, status, md_path,\n                COALESCE(expires_at < NOW(), FALSE) AS \"expired!\"\n         FROM file_records\n         WHERE file_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "original_filename",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "content_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "size_bytes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "object_key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "storage_bucket",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "md_path",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "expired!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "5e0122d78e9b0e88b048998b345f1cffecda55fdedf4cf770bcbe599b0305989"
+}

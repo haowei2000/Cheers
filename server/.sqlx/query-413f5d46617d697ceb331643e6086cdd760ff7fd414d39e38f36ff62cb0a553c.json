@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_memberships SET projected_from = NULL\n          WHERE channel_id = $1 AND projected_from IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "413f5d46617d697ceb331643e6086cdd760ff7fd414d39e38f36ff62cb0a553c"
+}

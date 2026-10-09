@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE friendships SET status='accepted', responded_at=NOW(), updated_at=NOW()\n                     WHERE pair_key = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0447764285cd353b21cc64232bf3e4e824f99cc400e9d7ba0b00b081586773ef"
+}

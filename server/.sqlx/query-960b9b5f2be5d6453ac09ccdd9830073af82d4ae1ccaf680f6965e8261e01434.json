@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO voice_participant_sessions\n            (participant_session_id, voice_session_id, user_id, provider_identity,\n             connection_nonce, consent_version)\n         VALUES ($1, $2, $3, $4, $5, $6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "960b9b5f2be5d6453ac09ccdd9830073af82d4ae1ccaf680f6965e8261e01434"
+}

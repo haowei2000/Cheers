@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE connector_hosts\n                     SET connector_version = COALESCE($2, connector_version),\n                         capabilities = CASE WHEN $3::text::jsonb = 'null'::jsonb\n                                             THEN capabilities ELSE $3::text::jsonb END,\n                         last_seen_at = NOW(), updated_at = NOW()\n                     WHERE host_id = $1 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31ea548ecd5f1da90e2c19f4d5061c2e035ac34b4173fdb2393255502eb9dff9"
+}

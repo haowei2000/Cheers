@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.blocked_id, u.username, u.display_name, u.avatar_url\n         FROM user_blocks b JOIN users u ON u.user_id = b.blocked_id\n         WHERE b.blocker_id = $1\n         ORDER BY u.username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blocked_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "0cd01e78a482839d99d576033fd873e9fcf4b4abd92b2662984bc2aa37242713"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.binding_config,\n                COALESCE(\n                    (SELECT NULLIF(TRIM(i.agent_type), '')\n                     FROM connector_hosts i\n                     WHERE i.bot_id = b.bot_id AND i.status = 'active'\n                       AND i.revoked_at IS NULL\n                     ORDER BY i.updated_at DESC\n                     LIMIT 1),\n                    NULLIF(TRIM(b.bridge_provider), ''),\n                    'generic'\n                ) AS agent_type\n         FROM bot_accounts b\n         WHERE b.bot_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "binding_config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "agent_type",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "07138e30d8153a7a878e0b8c72e8dcab95d635df6b71f044ca1b1a98d653384f"
+}

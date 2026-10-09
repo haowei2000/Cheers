@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channels SET archived_at = NOW() WHERE workspace_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "209180ac2db3dd1e543e524bad593d5c417f9eedfd678e33d952d806c9a7ac5d"
+}

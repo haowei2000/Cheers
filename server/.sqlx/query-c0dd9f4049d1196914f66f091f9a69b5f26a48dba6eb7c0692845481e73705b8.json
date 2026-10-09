@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM bot_connection_events\n         WHERE created_at < NOW() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0dd9f4049d1196914f66f091f9a69b5f26a48dba6eb7c0692845481e73705b8"
+}

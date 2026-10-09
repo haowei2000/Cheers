@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('resolved', TRUE, 'decision', $2::text, 'resolved_by', $3::text) WHERE msg_id = (SELECT confirmation_message_id FROM task_claim_requests WHERE claim_id=$1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "afe800e61eff9eb3677f6fe98eff615fd041e67848622b3af0531150ef59baa2"
+}

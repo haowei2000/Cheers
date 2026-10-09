@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM friendships\n         WHERE pair_key = $1 AND status = 'accepted'\n         RETURNING friendship_id, user_id, friend_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "friendship_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "friend_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e2319e418d5a144ac6e72eb76777022c2af45f30f40f3c195eb7e32df38299f8"
+}

@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.installation_id, i.workspace_id, i.external_account, i.installed_by\n           FROM integration_installations i\n           JOIN workspace_memberships m\n             ON m.workspace_id = i.workspace_id\n            AND m.user_id = $3\n            AND m.status = 'active'\n          WHERE i.installation_id = $1\n            AND i.integration_id = $2\n            AND i.disabled_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "installation_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "external_account",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "installed_by",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0aa7aca62e5f25fd72b41b4c0e618dfdc4f1b8577c5cc82cca4a5ec251ecb098"
+}

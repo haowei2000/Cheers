@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT vs.channel_id, vs.voice_session_id, vs.status,\n                vps.user_id AS \"user_id?\",\n                COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS display_name,\n                u.avatar_url, vps.mic_published_at\n         FROM voice_sessions vs\n         JOIN channel_features cf ON cf.channel_id = vs.channel_id\n              AND cf.feature = 'voice' AND cf.enabled = TRUE\n         JOIN channels c ON c.channel_id = vs.channel_id\n         JOIN channel_memberships viewer ON viewer.channel_id = vs.channel_id\n              AND viewer.member_id = $1 AND viewer.member_type = 'user'\n         LEFT JOIN voice_participant_sessions vps ON vps.voice_session_id = vs.voice_session_id\n              AND vps.joined_at IS NOT NULL AND vps.left_at IS NULL\n         LEFT JOIN users u ON u.user_id = vps.user_id\n         WHERE vs.ended_at IS NULL\n         ORDER BY vs.channel_id, vps.joined_at, vps.participant_session_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "voice_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "mic_published_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "a34a48e21c4fe25991d0b96162e890b476aae50a5698763edf2d927eef7eda23"
+}

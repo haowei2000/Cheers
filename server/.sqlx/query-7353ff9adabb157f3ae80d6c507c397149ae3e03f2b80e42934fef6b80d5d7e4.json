@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 AS present FROM ai_data_consents WHERE user_id=$1 AND channel_id=$2 AND bot_id=$3 AND policy_version=$4 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "present",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7353ff9adabb157f3ae80d6c507c397149ae3e03f2b80e42934fef6b80d5d7e4"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO workspace_memberships (workspace_id, user_id, role, status, invited_by, invited_at)\n                 VALUES ($1, $2, 'member', 'active', $3, NOW())\n                 ON CONFLICT (workspace_id, user_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "76ff81aa930900dd444ec99892bbbf2279c39eabfb3912b49193599b5621c5fa"
+}

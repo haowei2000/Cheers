@@ -48,11 +48,11 @@ async fn channel_bot_members(db: &PgPool, channel_id: Uuid) -> Vec<String> {
             }
         }
     }
-    let fetched: Result<Vec<String>, _> = sqlx::query_scalar(
+    let fetched: Result<Vec<String>, _> = sqlx::query_scalar!(
         "SELECT member_id FROM channel_memberships
          WHERE channel_id = $1 AND member_type = 'bot'",
+        channel_id.to_string(),
     )
-    .bind(channel_id.to_string())
     .fetch_all(db)
     .await;
     match fetched {
@@ -121,11 +121,11 @@ pub async fn channel_online_bots(
 
 /// bot 桥接上线/下线时：向它所属的每个频道广播一次 presence。
 pub async fn broadcast_bot_presence(state: &AppState, bot_id: Uuid) {
-    let channel_ids: Vec<String> = sqlx::query_scalar(
+    let channel_ids: Vec<String> = sqlx::query_scalar!(
         "SELECT channel_id FROM channel_memberships
          WHERE member_id = $1 AND member_type = 'bot'",
+        bot_id.to_string(),
     )
-    .bind(bot_id.to_string())
     .fetch_all(&state.db)
     .await
     .unwrap_or_default();

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts SET is_disabled = TRUE WHERE created_by = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "82b14f79c31c27899ec0bc2c2123ae8931fae4fe6b4b5449126b77ac9fea5feb"
+}

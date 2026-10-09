@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bot_id FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2 AND status='pending'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2639be56625afe264298ab25b77690e5813d5a19a29604d8d6fba0755e0f05c0"
+}

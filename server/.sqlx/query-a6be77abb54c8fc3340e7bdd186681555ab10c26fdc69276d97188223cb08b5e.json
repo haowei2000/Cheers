@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status, revoked_at, agent_type, connector_version, last_seen_at,\n                mcp_connection_state, mcp_token_issued_at, mcp_connected_at,\n                mcp_last_seen_at, mcp_protocol_version, mcp_client_name,\n                mcp_client_version, mcp_rejected_at, mcp_rejection\n         FROM connector_hosts\n         WHERE host_id = $1 AND bot_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "agent_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "connector_version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "mcp_connection_state",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "mcp_token_issued_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "mcp_connected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "mcp_last_seen_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "mcp_protocol_version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "mcp_client_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "mcp_client_version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "mcp_rejected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "mcp_rejection",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "a6be77abb54c8fc3340e7bdd186681555ab10c26fdc69276d97188223cb08b5e"
+}

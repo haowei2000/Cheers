@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, client_type, context_json, failed_attempts, expires_at\n         FROM auth_transactions\n         WHERE transaction_id = $1 AND kind = 'login'\n           AND status IN ('factor_required', 'verified') AND consumed_at IS NULL\n         FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "client_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "context_json",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "failed_attempts",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f367f6a7ba0181415d2ba9213e43541a72e388ceedd643af6c945181c33d3059"
+}

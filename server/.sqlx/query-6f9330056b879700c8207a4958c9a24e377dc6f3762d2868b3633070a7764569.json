@@ -1,0 +1,120 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.segment_id, t.voice_session_id, t.channel_id,\n                t.participant_session_id, t.user_id,\n                COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS speaker_name,\n                t.provider_segment_id, t.track_id, t.channel_seq, t.text,\n                t.started_at_ms, t.ended_at_ms, t.language,\n                t.confidence::double precision AS confidence,\n                t.supersedes_segment_id, t.finalized_at, t.created_at\n         FROM voice_transcript_segments t\n         JOIN users u ON u.user_id = t.user_id\n         WHERE t.channel_id = $1 AND t.channel_seq > $2\n         ORDER BY t.channel_seq ASC LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "segment_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "voice_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "participant_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "speaker_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "provider_segment_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "track_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "channel_seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "started_at_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "ended_at_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "confidence",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 14,
+        "name": "supersedes_segment_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "finalized_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "6f9330056b879700c8207a4958c9a24e377dc6f3762d2868b3633070a7764569"
+}

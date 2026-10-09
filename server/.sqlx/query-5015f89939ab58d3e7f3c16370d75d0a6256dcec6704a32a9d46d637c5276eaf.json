@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.channel_id, c.name AS cname, w.workspace_id AS wid, w.name AS wname\n         FROM channel_memberships cm\n         JOIN channels c ON c.channel_id = cm.channel_id\n         JOIN workspaces w ON w.workspace_id = c.workspace_id\n         WHERE cm.member_id = $1 AND cm.member_type = 'bot'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "cname",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "wid",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "wname",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5015f89939ab58d3e7f3c16370d75d0a6256dcec6704a32a9d46d637c5276eaf"
+}

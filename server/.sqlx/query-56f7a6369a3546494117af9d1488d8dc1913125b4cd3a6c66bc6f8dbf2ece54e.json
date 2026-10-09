@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO channel_memberships\n                         (channel_id, member_id, member_type, role, added_by, projected_from)\n                     VALUES ($1, $2, 'user', $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "56f7a6369a3546494117af9d1488d8dc1913125b4cd3a6c66bc6f8dbf2ece54e"
+}

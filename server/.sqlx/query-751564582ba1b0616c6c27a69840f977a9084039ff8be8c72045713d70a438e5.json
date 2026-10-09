@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_annotations SET deleted_at=NOW(),revision=revision+1 WHERE channel_id=$1 AND id=$2 AND deleted_at IS NULL AND revision=$3 AND (author_id=$4 OR $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "751564582ba1b0616c6c27a69840f977a9084039ff8be8c72045713d70a438e5"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT feature FROM channel_features\n         WHERE channel_id = $1 AND enabled = TRUE ORDER BY feature",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "feature",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f19e8aed290a21495947b018d8d65e1d03e90f1e9b08a4aa368920a81769e8aa"
+}

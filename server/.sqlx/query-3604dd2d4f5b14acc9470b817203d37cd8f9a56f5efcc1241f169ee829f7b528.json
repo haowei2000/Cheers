@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM email_codes\n            WHERE email = $1 AND purpose = 'update_email' AND used = FALSE\n              AND created_at > NOW() - INTERVAL '60 seconds'\n              AND expires_at > NOW()\n         ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3604dd2d4f5b14acc9470b817203d37cd8f9a56f5efcc1241f169ee829f7b528"
+}

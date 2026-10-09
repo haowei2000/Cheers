@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.session_id\n               FROM cheers_session_bindings b\n              WHERE b.bot_id = $1 AND b.scope_type = 'channel' AND b.scope_id = $2\n                AND b.role = 'primary' AND b.detached_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "dd3ce3845332cf6bf2157da4fb090d045a491a54184f9fb69090dd09894ddb17"
+}

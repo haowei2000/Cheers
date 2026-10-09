@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cheers_session_bindings\n         SET detached_at = COALESCE(detached_at, $1),\n             role = CASE WHEN role = 'primary' THEN 'other' ELSE role END\n         WHERE session_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e65b92bfbedffe44a2a374e8c74b5dd9bf3cb3a23bc79b50c13d31f686f39354"
+}

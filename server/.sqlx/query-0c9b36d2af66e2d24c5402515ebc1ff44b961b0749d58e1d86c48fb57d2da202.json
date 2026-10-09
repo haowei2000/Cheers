@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts SET status_last_auto_update_at = NOW() WHERE bot_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0c9b36d2af66e2d24c5402515ebc1ff44b961b0749d58e1d86c48fb57d2da202"
+}

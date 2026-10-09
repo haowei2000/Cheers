@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT session_id FROM cheers_sessions\n         WHERE provider = $1\n           AND provider_account_id = $2\n           AND bot_id = $3\n           AND provider_session_id = $4\n         ORDER BY updated_at DESC\n         LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2161a3f6fa5eea75d297d5d4b019b128bc7c1c3ef793abac3cb3b7cf2f605322"
+}

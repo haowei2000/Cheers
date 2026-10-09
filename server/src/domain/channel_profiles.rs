@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -60,16 +60,17 @@ pub struct ChannelProfile {
 }
 
 pub async fn get(db: &PgPool, channel_id: &str) -> Result<Option<ChannelProfile>, sqlx::Error> {
-    let row =
-        sqlx::query("SELECT profile, config, status FROM channel_profiles WHERE channel_id = $1")
-            .bind(channel_id)
-            .fetch_optional(db)
-            .await?;
+    let row = sqlx::query!(
+        "SELECT profile, config, status FROM channel_profiles WHERE channel_id = $1",
+        channel_id,
+    )
+    .fetch_optional(db)
+    .await?;
     row.map(|row| {
         Ok(ChannelProfile {
-            profile: row.try_get("profile")?,
-            config: row.try_get("config")?,
-            status: row.try_get("status")?,
+            profile: row.profile.clone(),
+            config: row.config.clone(),
+            status: row.status.clone(),
         })
     })
     .transpose()
@@ -90,24 +91,24 @@ pub async fn put_code(
         },
         ..CodeProfileStatus::default()
     });
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "INSERT INTO channel_profiles (channel_id, profile, config, status, created_by)
          VALUES ($1, 'code', $2, $3, $4)
          ON CONFLICT (channel_id) DO UPDATE
            SET profile = 'code', config = EXCLUDED.config, status = EXCLUDED.status,
                updated_at = NOW()
          RETURNING profile, config, status",
+        channel_id,
+        config,
+        status,
+        actor_id,
     )
-    .bind(channel_id)
-    .bind(config)
-    .bind(status)
-    .bind(actor_id)
     .fetch_one(db)
     .await?;
     Ok(ChannelProfile {
-        profile: row.try_get("profile")?,
-        config: row.try_get("config")?,
-        status: row.try_get("status")?,
+        profile: row.profile.clone(),
+        config: row.config.clone(),
+        status: row.status.clone(),
     })
 }
 
@@ -117,21 +118,21 @@ pub async fn update_code_status(
     status: &CodeProfileStatus,
 ) -> Result<Option<ChannelProfile>, sqlx::Error> {
     let status = serde_json::to_value(status).expect("code profile status serializes");
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "UPDATE channel_profiles
             SET status = $2, updated_at = NOW()
           WHERE channel_id = $1 AND profile = 'code'
           RETURNING profile, config, status",
+        channel_id,
+        status,
     )
-    .bind(channel_id)
-    .bind(status)
     .fetch_optional(db)
     .await?;
     row.map(|row| {
         Ok(ChannelProfile {
-            profile: row.try_get("profile")?,
-            config: row.try_get("config")?,
-            status: row.try_get("status")?,
+            profile: row.profile.clone(),
+            config: row.config.clone(),
+            status: row.status.clone(),
         })
     })
     .transpose()

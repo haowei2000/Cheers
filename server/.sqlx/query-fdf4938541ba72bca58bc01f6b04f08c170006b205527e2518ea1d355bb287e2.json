@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH ins AS (\n            INSERT INTO acp_capability_nonce_log\n                (delegation_id, nonce, request_id, frame_type, frame_resource, used_at, created_at)\n            VALUES ($1, $2, $3, $4, $5, NOW(), NOW())\n            ON CONFLICT DO NOTHING\n            RETURNING 1\n         ),\n         upd AS (\n            UPDATE acp_capability_delegations\n            SET use_count = use_count + 1, updated_at = NOW()\n            WHERE delegation_id = $1\n              AND (max_uses IS NULL OR use_count < max_uses)\n              AND EXISTS (SELECT 1 AS present FROM ins)\n            RETURNING use_count\n         )\n         SELECT\n            EXISTS(SELECT 1 AS present FROM ins) AS nonce_inserted,\n            (SELECT use_count FROM upd) AS new_use_count",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nonce_inserted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "new_use_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text",
+        "Text",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "fdf4938541ba72bca58bc01f6b04f08c170006b205527e2518ea1d355bb287e2"
+}

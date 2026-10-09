@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO messages\n         (msg_id, channel_id, sender_type, sender_id, content, msg_type,\n          is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq,\n          context_bundle, content_data)\n         VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10, $11, $12)\n         RETURNING thread_root_msg_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "thread_root_msg_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Jsonb",
+        "Timestamptz",
+        "Int8",
+        "Jsonb",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a5c918f3de4244e806c0f366387c047d8ce5b255d31500a726a0ee7b99ef588a"
+}

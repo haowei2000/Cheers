@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::{error::DatabaseError, Row};
+use sqlx::error::DatabaseError;
 use uuid::Uuid;
 
 use crate::{
@@ -54,32 +54,29 @@ pub async fn get_me(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
-    let r = sqlx::query(
+    let r = sqlx::query!(
         "SELECT user_id, username, display_name, email, role, avatar_url, bio,
                 status_text, status_emoji, status_updated_at,
                 (password_hash IS NOT NULL) AS has_password
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        &claims.sub,
     )
-    .bind(&claims.sub)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
     Ok(Json(json!({
-        "user_id": r.try_get::<String, _>("user_id").unwrap_or_default(),
-        "username": r.try_get::<String, _>("username").unwrap_or_default(),
-        "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-        "email": r.try_get::<Option<String>, _>("email").ok().flatten(),
-        "role": r.try_get::<String, _>("role").unwrap_or_else(|_| "member".into()),
-        "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-        "bio": r.try_get::<Option<String>, _>("bio").ok().flatten(),
-        "status_text": r.try_get::<Option<String>, _>("status_text").ok().flatten(),
-        "status_emoji": r.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
-        "status_updated_at": r
-            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
-            .ok()
-            .flatten()
+        "user_id": r.user_id.clone(),
+        "username": r.username.clone(),
+        "display_name": r.display_name.clone(),
+        "email": r.email.clone(),
+        "role": r.role.clone(),
+        "avatar_url": r.avatar_url.clone(),
+        "bio": r.bio.clone(),
+        "status_text": r.status_text.clone(),
+        "status_emoji": r.status_emoji.clone(),
+        "status_updated_at": r.status_updated_at.clone()
             .map(|t| t.to_rfc3339()),
-        "has_password": r.try_get::<bool, _>("has_password").unwrap_or(false),
+        "has_password": r.has_password.clone().unwrap_or(false),
     })))
 }
 
@@ -138,7 +135,7 @@ pub async fn update_me(
 
     let touched_status = status_text.provided || status_emoji.provided;
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE users SET
             display_name = CASE WHEN $2 THEN $3 ELSE display_name END,
             bio          = CASE WHEN $4 THEN $5 ELSE bio END,
@@ -147,19 +144,19 @@ pub async fn update_me(
             status_emoji = CASE WHEN $10 THEN $11 ELSE status_emoji END,
             status_updated_at = CASE WHEN $12 THEN NOW() ELSE status_updated_at END
          WHERE user_id = $1 AND is_deleted = FALSE",
+        &claims.sub,
+        display_name.provided,
+        display_name.value.as_deref(),
+        bio.provided,
+        bio.value.as_deref(),
+        avatar_url.provided,
+        avatar_url.value.as_deref(),
+        status_text.provided,
+        status_text.value.as_deref(),
+        status_emoji.provided,
+        status_emoji.value.as_deref(),
+        touched_status,
     )
-    .bind(&claims.sub)
-    .bind(display_name.provided)
-    .bind(&display_name.value)
-    .bind(bio.provided)
-    .bind(&bio.value)
-    .bind(avatar_url.provided)
-    .bind(&avatar_url.value)
-    .bind(status_text.provided)
-    .bind(&status_text.value)
-    .bind(status_emoji.provided)
-    .bind(&status_emoji.value)
-    .bind(touched_status)
     .execute(&state.db)
     .await?;
 
@@ -186,11 +183,11 @@ pub async fn update_me(
 /// Best-effort: any DB or send hiccup is swallowed (the profile edit already
 /// succeeded; a missed live update self-heals on the next member-list fetch).
 pub async fn broadcast_member_update(state: &AppState, user_id: &str) {
-    let row = match sqlx::query(
+    let row = match sqlx::query!(
         "SELECT display_name, avatar_url, bio, status_text, status_emoji, status_updated_at
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+        user_id,
     )
-    .bind(user_id)
     .fetch_optional(&state.db)
     .await
     {
@@ -200,25 +197,22 @@ pub async fn broadcast_member_update(state: &AppState, user_id: &str) {
     let profile = json!({
         "member_id": user_id,
         "member_type": "user",
-        "display_name": row.try_get::<Option<String>, _>("display_name").ok().flatten(),
-        "avatar_url": row.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-        "bio": row.try_get::<Option<String>, _>("bio").ok().flatten(),
-        "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
-        "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+        "display_name": row.display_name.clone(),
+        "avatar_url": row.avatar_url.clone(),
+        "bio": row.bio.clone(),
+        "status_text": row.status_text.clone(),
+        "status_emoji": row.status_emoji.clone(),
         // RFC3339 so a user's member card / hovercard can render "updated x ago"
         // live — the same field the bot broadcast emits (audit item 5).
-        "status_updated_at": row
-            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
-            .ok()
-            .flatten()
+        "status_updated_at": row.status_updated_at.clone()
             .map(|t| t.to_rfc3339()),
     });
 
-    let channels: Vec<String> = sqlx::query_scalar(
-        "SELECT channel_id::text FROM channel_memberships
-         WHERE member_id = $1 AND member_type = 'user'",
+    let channels: Vec<String> = sqlx::query_scalar!(
+        r#"SELECT channel_id::text AS "value!" FROM channel_memberships
+         WHERE member_id = $1 AND member_type = 'user'"#,
+        user_id,
     )
-    .bind(user_id)
     .fetch_all(&state.db)
     .await
     .unwrap_or_default();
@@ -258,32 +252,31 @@ pub async fn list_users(
     } else {
         Some(format!("%{term}%"))
     };
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT user_id, username, display_name, email, role, avatar_url, is_suspended, created_at
          FROM users
          WHERE is_deleted = FALSE
            AND ($1::text IS NULL OR username ILIKE $1 OR display_name ILIKE $1 OR email ILIKE $1)
          ORDER BY created_at DESC
          LIMIT 200",
+        like.as_deref(),
     )
-    .bind(&like)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(
         rows.into_iter()
             .map(|r| {
                 json!({
-                    "user_id": r.try_get::<String, _>("user_id").unwrap_or_default(),
-                    "username": r.try_get::<String, _>("username").unwrap_or_default(),
-                    "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-                    "email": r.try_get::<Option<String>, _>("email").ok().flatten(),
-                    "role": r.try_get::<String, _>("role").unwrap_or_else(|_| "member".into()),
-                    "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-                    "is_suspended": r.try_get::<bool, _>("is_suspended").unwrap_or(false),
-                    "created_at": r
-                        .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                    "user_id": r.user_id.clone(),
+                    "username": r.username.clone(),
+                    "display_name": r.display_name.clone(),
+                    "email": r.email.clone(),
+                    "role": r.role.clone(),
+                    "avatar_url": r.avatar_url.clone(),
+                    "is_suspended": r.is_suspended.clone(),
+                    "created_at": Some(r.created_at.clone())
                         .map(|t| t.to_rfc3339())
-                        .ok(),
+                        ,
                 })
             })
             .collect(),
@@ -346,16 +339,16 @@ pub async fn create_user(
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
     let user_id = Uuid::new_v4().to_string();
 
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "INSERT INTO users (user_id, username, email, password_hash, display_name, role)
          VALUES ($1, $2, $3, $4, $5, $6)",
+        &user_id,
+        &username,
+        email.as_deref(),
+        &hash,
+        display_name.as_deref(),
+        &role,
     )
-    .bind(&user_id)
-    .bind(&username)
-    .bind(&email)
-    .bind(&hash)
-    .bind(&display_name)
-    .bind(&role)
     .execute(&state.db)
     .await;
     if let Err(e) = res {
@@ -384,12 +377,12 @@ pub async fn delete_user(
     if user_id == claims.sub {
         return Err(AppError::BadRequest("cannot delete yourself".into()));
     }
-    let updated = sqlx::query(
+    let updated = sqlx::query!(
         "UPDATE users
          SET is_deleted = TRUE, deleted_at = NOW(), token_version = token_version + 1
          WHERE user_id = $1 AND is_deleted = FALSE",
+        &user_id,
     )
-    .bind(&user_id)
     .execute(&state.db)
     .await?;
     if updated.rows_affected() == 0 {
@@ -415,12 +408,12 @@ pub async fn suspend_user(
     if user_id == claims.sub {
         return Err(AppError::BadRequest("cannot suspend yourself".into()));
     }
-    let updated = sqlx::query(
+    let updated = sqlx::query!(
         "UPDATE users
          SET is_suspended = TRUE, token_version = token_version + 1
          WHERE user_id = $1 AND is_deleted = FALSE",
+        &user_id,
     )
-    .bind(&user_id)
     .execute(&state.db)
     .await?;
     if updated.rows_affected() == 0 {
@@ -447,10 +440,12 @@ pub async fn unsuspend_user(
     if !is_admin(&claims) {
         return Err(AppError::Forbidden("admin only".into()));
     }
-    let updated = sqlx::query("UPDATE users SET is_suspended = FALSE WHERE user_id = $1")
-        .bind(&user_id)
-        .execute(&state.db)
-        .await?;
+    let updated = sqlx::query!(
+        "UPDATE users SET is_suspended = FALSE WHERE user_id = $1",
+        &user_id,
+    )
+    .execute(&state.db)
+    .await?;
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }

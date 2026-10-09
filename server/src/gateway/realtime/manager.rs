@@ -249,18 +249,17 @@ impl ConnectionManager {
 
     /// Raw, uncached membership lookup.
     async fn query_membership(&self, user_id: Uuid, channel_id: Uuid) -> Result<bool, sqlx::Error> {
-        use sqlx::Row;
-        let row = sqlx::query(
+        let row = sqlx::query!(
             "SELECT EXISTS(
-                SELECT 1 FROM channel_memberships
+                SELECT 1 AS present FROM channel_memberships
                 WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
             ) AS is_member",
+            channel_id.to_string(),
+            user_id.to_string(),
         )
-        .bind(channel_id.to_string())
-        .bind(user_id.to_string())
         .fetch_one(&self.db)
         .await?;
-        Ok(row.try_get("is_member").unwrap_or(false))
+        Ok(row.is_member.clone().unwrap_or(false))
     }
 }
 

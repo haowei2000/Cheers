@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE apple_auth_challenges SET consumed_at = NOW()\n         WHERE challenge_id = $1 AND consumed_at IS NULL AND expires_at > NOW()\n         RETURNING nonce_hash",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nonce_hash",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c69001397f94007ef133ca5c028baa8537a4736e234e58758c060b068c4ec874"
+}

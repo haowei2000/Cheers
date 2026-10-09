@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM connector_hosts i\n         USING enrollment_codes e\n         WHERE e.host_id = i.host_id\n           AND i.status = 'pending'\n           AND (e.redeemed_at IS NOT NULL OR e.revoked OR e.expires_at < NOW())\n           AND e.created_at < NOW() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ecf158bc51d3774453da6f56058131c45b8311bd807c63f4d244c29e98f3c28"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM workspace_memberships\n         WHERE workspace_id = $1 AND user_id = $2 AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7f9157af9a35b2807365ebfb2bea90dde108e8370be4a9292ce3f863fffedbd0"
+}

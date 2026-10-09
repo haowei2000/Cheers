@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE file_records\n         SET preview_object_key = $1, converted_at = NOW(), last_error = NULL\n         WHERE file_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0f2ab7dec18aed82581c04c87653d5a7a2c4d2f1ce993cb08ccdc21b18ce8c3"
+}

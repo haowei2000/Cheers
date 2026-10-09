@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts SET\n            display_name = CASE WHEN $2 THEN $3 ELSE display_name END,\n            description  = CASE WHEN $4 THEN $5 ELSE description END,\n            intro        = CASE WHEN $6 THEN $7 ELSE intro END,\n            status_text  = CASE WHEN $8 THEN $9 ELSE status_text END,\n            status_emoji = CASE WHEN $10 THEN $11 ELSE status_emoji END,\n            status_updated_at = CASE WHEN $12 THEN NOW() ELSE status_updated_at END,\n            status_auto_update = CASE WHEN $13 THEN $14 ELSE status_auto_update END,\n            status_update_prompt = CASE WHEN $15 THEN $16 ELSE status_update_prompt END,\n            status_update_interval_minutes = CASE WHEN $17 THEN $18 ELSE status_update_interval_minutes END,\n            external_processor = CASE WHEN $19 THEN $20 ELSE external_processor END,\n            processor_name = CASE WHEN $21 THEN $22 ELSE processor_name END,\n            processor_privacy_url = CASE WHEN $23 THEN $24 ELSE processor_privacy_url END,\n            processor_data_use = CASE WHEN $25 THEN $26 ELSE processor_data_use END,\n            processor_policy_version = CASE WHEN $27 THEN $28 ELSE processor_policy_version END\n         WHERE bot_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool",
+        "Varchar",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Varchar",
+        "Bool",
+        "Varchar",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Text",
+        "Bool",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Varchar",
+        "Bool",
+        "Varchar",
+        "Bool",
+        "Text",
+        "Bool",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bbee7aed25be14446cb882c4d2a7b3eae26e3d94a1d0108c56f08f9a6149af37"
+}

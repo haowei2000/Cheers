@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n                    SELECT 1 AS present FROM voice_transcript_segments\n                    WHERE segment_id = $1 AND voice_session_id = $2\n                 ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4ee3dbe476d264c29e4330f4771fa125ecf32a32a58e43a6b8137294490b9507"
+}

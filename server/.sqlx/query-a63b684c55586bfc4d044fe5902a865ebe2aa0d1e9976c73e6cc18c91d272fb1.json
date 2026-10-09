@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE voice_participant_sessions\n         SET consent_version = $1\n         WHERE user_id = $2 AND voice_session_id = $3 AND consent_version IS DISTINCT FROM $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a63b684c55586bfc4d044fe5902a865ebe2aa0d1e9976c73e6cc18c91d272fb1"
+}

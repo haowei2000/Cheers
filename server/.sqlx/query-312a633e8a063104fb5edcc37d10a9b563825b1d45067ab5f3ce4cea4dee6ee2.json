@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM enrollment_codes\n         WHERE (redeemed_at IS NOT NULL OR revoked OR expires_at < NOW())\n           AND created_at < NOW() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "312a633e8a063104fb5edcc37d10a9b563825b1d45067ab5f3ce4cea4dee6ee2"
+}

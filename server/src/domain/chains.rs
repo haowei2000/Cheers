@@ -5,7 +5,7 @@
 //! 取消接口（cancel / resolve_chain_id_for_message）保留供已有 cancel-chain API 使用。
 use std::sync::Arc;
 
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -283,13 +283,15 @@ async fn assemble_handoff_bundle(
 /// empty on miss / no bundle). The stored bundle was already sanitized on write
 /// (`context_bundle::sanitize_bot_bundle`), so its items are trusted here.
 async fn manual_pick_items(db: &PgPool, trigger_msg_id: Uuid) -> Vec<serde_json::Value> {
-    let stored: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT context_bundle FROM messages WHERE msg_id = $1")
-            .bind(trigger_msg_id.to_string())
-            .fetch_optional(db)
-            .await
-            .ok()
-            .flatten();
+    let stored: Option<serde_json::Value> = sqlx::query_scalar!(
+        "SELECT context_bundle FROM messages WHERE msg_id = $1",
+        trigger_msg_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
     stored
         .as_ref()
         .map(crate::domain::context_bundle::bundle_items)
@@ -319,14 +321,14 @@ async fn record_dispatch_audit(
         "decision": if decision.allow { "allow" } else { "deny" },
         "reason": decision.reason,
     });
-    if let Err(err) = sqlx::query(
+    if let Err(err) = sqlx::query!(
         "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
-         VALUES ($1, $2, $3, NULL, 'dispatch', 'cheers', $4::jsonb)",
+         VALUES ($1, $2, $3, NULL, 'dispatch', 'cheers', $4::text::jsonb)",
+        Uuid::new_v4().to_string(),
+        target_bot_id.to_string(),
+        channel_id.to_string(),
+        payload.to_string(),
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(target_bot_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(payload.to_string())
     .execute(db)
     .await
     {
@@ -343,16 +345,19 @@ async fn resolve_provider_account_id_for_bot(
     db: &PgPool,
     bot_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
-    let Some(row) = sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id.to_string())
-        .fetch_optional(db)
-        .await?
+    let Some(row) = sqlx::query!(
+        "SELECT binding_config FROM bot_accounts WHERE bot_id = $1",
+        bot_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await?
     else {
         return Ok(None);
     };
 
     let binding_config = row
-        .try_get::<Option<serde_json::Value>, _>("binding_config")?
+        .binding_config
+        .clone()
         .unwrap_or(serde_json::Value::Null);
 
     Ok(resolve_provider_account_id_from_binding_config(

@@ -342,10 +342,10 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
             .and_then(Value::as_str)
             .and_then(|value| value.parse::<Uuid>().ok());
         let is_dm = if let Some(channel_id) = channel_id {
-            sqlx::query_scalar::<_, bool>(
-                "SELECT EXISTS(SELECT 1 FROM channels WHERE channel_id = $1 AND type = 'dm')",
+            sqlx::query_scalar!(
+                r#"SELECT EXISTS(SELECT 1 AS present FROM channels WHERE channel_id = $1 AND type = 'dm') AS "value!" "#,
+                channel_id.to_string(),
             )
-            .bind(channel_id.to_string())
             .fetch_one(&db)
             .await
             .unwrap_or(false)
@@ -353,21 +353,21 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
             false
         };
         if is_dm {
-            let sender_name: String = sqlx::query_scalar(
-                "SELECT COALESCE(display_name, username) FROM bot_accounts WHERE bot_id = $1",
+            let sender_name: String = sqlx::query_scalar!(
+                r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
+                author_bot_id.to_string(),
             )
-            .bind(author_bot_id.to_string())
             .fetch_optional(&db)
             .await
             .ok()
             .flatten()
             .unwrap_or_else(|| "Bot".into());
             if let Some(channel_id) = channel_id {
-                let users: Vec<String> = sqlx::query_scalar(
+                let users: Vec<String> = sqlx::query_scalar!(
                     "SELECT member_id FROM channel_memberships
                      WHERE channel_id = $1 AND member_type = 'user'",
+                    channel_id.to_string(),
                 )
-                .bind(channel_id.to_string())
                 .fetch_all(&db)
                 .await
                 .unwrap_or_default();
@@ -394,10 +394,10 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
             }
         }
         if !human_mentions.is_empty() {
-            let sender_name: Option<String> = sqlx::query_scalar(
-                "SELECT COALESCE(display_name, username) FROM bot_accounts WHERE bot_id = $1",
+            let sender_name: Option<String> = sqlx::query_scalar!(
+                r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
+                author_bot_id.to_string(),
             )
-            .bind(author_bot_id.to_string())
             .fetch_optional(&db)
             .await
             .ok()
@@ -471,17 +471,17 @@ async fn audit_status_write(state: &AppState, bot_id: &str, frame: &Value) {
         "status_emoji_len": field_len("status_emoji"),
         "info_len": field_len("info"),
     });
-    if let Err(err) = sqlx::query(
+    if let Err(err) = sqlx::query!(
         "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7::text::jsonb)",
+        Uuid::new_v4().to_string(),
+        bot_id,
+        Option::<&str>::None,
+        frame.get("session_id").and_then(Value::as_str),
+        "bot.status.write",
+        "cheers",
+        audit_payload.to_string(),
     )
-    .bind(Uuid::new_v4().to_string())
-    .bind(bot_id)
-    .bind(Option::<&str>::None)
-    .bind(frame.get("session_id").and_then(Value::as_str))
-    .bind("bot.status.write")
-    .bind("cheers")
-    .bind(audit_payload.to_string())
     .execute(&state.db)
     .await
     {

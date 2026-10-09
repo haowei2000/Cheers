@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ad.channel_id, c.name AS channel_name, ad.user_id, u.username, u.display_name,\n                    ad.operation_kind, ad.granted_by, ad.granted_at\n             FROM approval_delegations ad\n             JOIN channels c ON c.channel_id = ad.channel_id\n             JOIN users u ON u.user_id = ad.user_id\n             WHERE ad.bot_id = $1 AND ad.revoked_at IS NULL\n             ORDER BY ad.granted_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "operation_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "granted_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "granted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b119ca3eb3fdbf61cd4d85ab7168289c165339be3d6622d83b5268665a304a72"
+}

@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT credential_id, integration_id, subject_type, subject_id, external_account,\n                access_token_enc, refresh_token_enc, scopes, expires_at, revoked_at\n           FROM integration_credentials\n          WHERE integration_id = $1 AND subject_type = $2 AND subject_id = $3\n            AND ($4::text IS NULL OR external_account = $4)\n          ORDER BY updated_at DESC\n          LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "credential_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "integration_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "subject_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "subject_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "external_account",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "access_token_enc",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "refresh_token_enc",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "scopes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "1745f67fb88ce811bbe11f0d280b3b33f69d2a1d260d3dc2cb24317448f7b409"
+}

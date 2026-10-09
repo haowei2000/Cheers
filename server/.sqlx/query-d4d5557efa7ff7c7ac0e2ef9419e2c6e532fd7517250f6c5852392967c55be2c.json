@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_transactions\n         SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()\n         WHERE transaction_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d4d5557efa7ff7c7ac0e2ef9419e2c6e532fd7517250f6c5852392967c55be2c"
+}

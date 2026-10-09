@@ -4,7 +4,7 @@
 //! - `mention_ids`（UUID）：程序化调用（前端、WebSocket 帧）用此方式，精确无歧义。
 //! - `mention_names`（username / display_name）：LLM agent 通过 MCP 调用时用此方式，
 //!   gateway 做 name → UUID 解析，查 `channel_memberships` + `users` / `bot_accounts`。
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// 单条 mention 记录（多态，与 channel_memberships.member_* 同形）。
@@ -53,12 +53,12 @@ pub async fn validate_mention_ids(
         return Ok(Vec::new());
     }
     let id_strs: Vec<String> = mention_ids.iter().map(|id| id.to_string()).collect();
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT member_id, member_type FROM channel_memberships
          WHERE channel_id = $1 AND member_id = ANY($2)",
+        channel_id.to_string(),
+        &id_strs,
     )
-    .bind(channel_id.to_string())
-    .bind(&id_strs)
     .fetch_all(db)
     .await?;
 
@@ -66,13 +66,10 @@ pub async fn validate_mention_ids(
     let mut type_by_id: std::collections::HashMap<Uuid, MemberType> =
         std::collections::HashMap::new();
     for row in &rows {
-        let mid = row
-            .try_get::<String, _>("member_id")
-            .ok()
-            .and_then(|s| s.parse::<Uuid>().ok());
-        let mty = match row.try_get::<String, _>("member_type").as_deref() {
-            Ok("bot") => Some(MemberType::Bot),
-            Ok("user") => Some(MemberType::User),
+        let mid = Some(row.member_id.clone()).and_then(|s| s.parse::<Uuid>().ok());
+        let mty = match row.member_type.as_str() {
+            "bot" => Some(MemberType::Bot),
+            "user" => Some(MemberType::User),
             _ => None,
         };
         if let (Some(mid), Some(mty)) = (mid, mty) {
@@ -142,14 +139,14 @@ async fn expand_group_mention(
         GroupScope::Bots => Some("bot"),
         GroupScope::Humans => Some("user"),
     };
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT member_id, member_type FROM channel_memberships
          WHERE channel_id = $1 AND ($2::text IS NULL OR member_type = $2)
          LIMIT $3",
+        channel_id.to_string(),
+        type_filter,
+        GROUP_MENTION_CAP + 1,
     )
-    .bind(channel_id.to_string())
-    .bind(type_filter)
-    .bind(GROUP_MENTION_CAP + 1)
     .fetch_all(db)
     .await?;
 
@@ -164,16 +161,12 @@ async fn expand_group_mention(
 
     let mut mentions = Vec::new();
     for row in rows.iter().take(GROUP_MENTION_CAP as usize) {
-        let Some(member_id) = row
-            .try_get::<String, _>("member_id")
-            .ok()
-            .and_then(|s| s.parse().ok())
-        else {
+        let Some(member_id) = Some(row.member_id.clone()).and_then(|s| s.parse().ok()) else {
             continue;
         };
-        let member_type = match row.try_get::<String, _>("member_type").as_deref() {
-            Ok("bot") => MemberType::Bot,
-            Ok("user") => MemberType::User,
+        let member_type = match row.member_type.as_str() {
+            "bot" => MemberType::Bot,
+            "user" => MemberType::User,
             _ => continue,
         };
         push_unique(&mut mentions, member_id, member_type);
@@ -214,7 +207,7 @@ pub async fn resolve_mention_names(
     let name_to_mention: std::collections::HashMap<String, Mention> = if plain_names.is_empty() {
         std::collections::HashMap::new()
     } else {
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             "SELECT cm.member_id, cm.member_type,
                     COALESCE(u.username, ba.username)         AS username,
                     COALESCE(u.display_name, ba.display_name) AS display_name
@@ -229,9 +222,9 @@ pub async fn resolve_mention_names(
                  OR
                  (cm.member_type = 'bot' AND (ba.username = ANY($2) OR ba.display_name = ANY($2)))
                )",
+            channel_id.to_string(),
+            &plain_names,
         )
-        .bind(channel_id.to_string())
-        .bind(&plain_names)
         .fetch_all(db)
         .await?;
 
@@ -240,26 +233,24 @@ pub async fn resolve_mention_names(
         // arbitrarily under the old per-name `LIMIT 1`.
         let mut map: std::collections::HashMap<String, Mention> = std::collections::HashMap::new();
         for row in &rows {
-            let Some(member_id) = row
-                .try_get::<String, _>("member_id")
-                .ok()
-                .and_then(|s| s.parse::<Uuid>().ok())
+            let Some(member_id) = Some(row.member_id.clone()).and_then(|s| s.parse::<Uuid>().ok())
             else {
                 continue;
             };
-            let member_type = match row.try_get::<String, _>("member_type").as_deref() {
-                Ok("bot") => MemberType::Bot,
-                Ok("user") => MemberType::User,
+            let member_type = match row.member_type.as_str() {
+                "bot" => MemberType::Bot,
+                "user" => MemberType::User,
                 _ => continue,
             };
             let mention = Mention {
                 member_id,
                 member_type,
             };
-            for key in ["username", "display_name"] {
-                if let Ok(Some(value)) = row.try_get::<Option<String>, _>(key) {
-                    map.entry(value).or_insert(mention);
-                }
+            for value in [row.username.clone(), row.display_name.clone()]
+                .into_iter()
+                .flatten()
+            {
+                map.entry(value).or_insert(mention);
             }
         }
         map
@@ -300,15 +291,15 @@ pub async fn insert_batch(
         .iter()
         .map(|m| m.member_type.as_str().to_string())
         .collect();
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO message_mentions (msg_id, member_id, member_type)
          SELECT $1, u.id, u.ty
          FROM unnest($2::text[], $3::text[]) AS u(id, ty)
          ON CONFLICT DO NOTHING",
+        msg_id.to_string(),
+        &member_ids,
+        &member_types,
     )
-    .bind(msg_id.to_string())
-    .bind(&member_ids)
-    .bind(&member_types)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -320,10 +311,12 @@ pub async fn replace_batch(
     msg_id: Uuid,
     mentions: &[Mention],
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM message_mentions WHERE msg_id = $1")
-        .bind(msg_id.to_string())
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM message_mentions WHERE msg_id = $1",
+        msg_id.to_string(),
+    )
+    .execute(&mut **tx)
+    .await?;
     insert_batch(tx, msg_id, mentions).await
 }
 

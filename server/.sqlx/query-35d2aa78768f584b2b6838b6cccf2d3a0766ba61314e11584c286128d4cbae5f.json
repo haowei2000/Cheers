@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.workspace_id, w.name AS title, wm.role, wm.invited_by AS actor_id,\n                COALESCE(iu.display_name, iu.username) AS actor_name,\n                wm.invited_at::text AS created_at\n         FROM workspace_memberships wm\n         JOIN workspaces w ON w.workspace_id = wm.workspace_id\n         LEFT JOIN users iu ON iu.user_id = wm.invited_by\n         WHERE wm.user_id = $1 AND wm.status = 'pending'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "actor_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "35d2aa78768f584b2b6838b6cccf2d3a0766ba61314e11584c286128d4cbae5f"
+}

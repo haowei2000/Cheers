@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(c.default_bot_id, w.default_bot_id) AS default_bot_id\n         FROM channels c\n         LEFT JOIN workspaces w ON w.workspace_id = c.workspace_id\n         JOIN channel_memberships cm\n           ON cm.channel_id = c.channel_id\n          AND cm.member_type = 'bot'\n          AND cm.member_id = COALESCE(c.default_bot_id, w.default_bot_id)\n         WHERE c.channel_id = $1\n           AND COALESCE(c.default_bot_id, w.default_bot_id) IS NOT NULL\n         LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "default_bot_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e0aab478376be4ae8b240e85ae0dae310ee5fb872959f52635d49901a7ced5ba"
+}

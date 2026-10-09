@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO message_mentions(msg_id,member_id,member_type) VALUES($1,$2,'user')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d5e107d17f37d2db7bd6b92287f50c931f89e9bf9c9b09559604c6b271c918ce"
+}

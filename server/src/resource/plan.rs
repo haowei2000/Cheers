@@ -14,7 +14,7 @@
 //! ```
 //! Ordered by `updated_at DESC` (freshest plan first).
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{authorize_channel_read, Principal, ResourceResult};
@@ -31,15 +31,15 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     // Optional session scope: NULL → all sessions; else only that session.
     let session_id = params.get("session_id").and_then(|v| v.as_str());
 
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT bot_id, session_id, entries, total, completed, updated_at
          FROM bot_session_plans
          WHERE channel_id = $1
            AND ($2::text IS NULL OR session_id = $2::text)
          ORDER BY updated_at DESC",
+        channel_id.to_string(),
+        session_id,
     )
-    .bind(channel_id.to_string())
-    .bind(session_id)
     .fetch_all(db)
     .await
     .map_err(super::db_err("plan.read: select bot_session_plans"))?;
@@ -49,18 +49,14 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .map(|row| {
             // entries is a jsonb array of {content, priority?, status?}; pass it
             // through verbatim (agent-authored text is inert on the client).
-            let entries: Value = row
-                .try_get::<Value, _>("entries")
-                .unwrap_or_else(|_| json!([]));
+            let entries: Value = row.entries.clone();
             json!({
-                "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
-                "session_id": row.try_get::<String, _>("session_id").unwrap_or_default(),
+                "bot_id": row.bot_id.clone(),
+                "session_id": row.session_id.clone(),
                 "entries": entries,
-                "total": row.try_get::<i32, _>("total").unwrap_or(0),
-                "completed": row.try_get::<i32, _>("completed").unwrap_or(0),
-                "updated_at": row
-                    .try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
-                    .ok(),
+                "total": row.total.clone(),
+                "completed": row.completed.clone(),
+                "updated_at": Some(row.updated_at.clone()),
             })
         })
         .collect();

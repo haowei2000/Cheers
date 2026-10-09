@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.host_id, i.bot_id,\n                COALESCE(b.display_name, b.username) AS bot_name,\n                b.username AS bot_username, i.device_name, i.agent_type,\n                i.credential_prefix, i.status, i.connector_version,\n                i.last_seen_at, i.connected_at, i.created_at, i.revoked_at,\n                i.mcp_connection_state, i.mcp_state_updated_at,\n                i.mcp_connected_at, i.mcp_last_seen_at\n         FROM connector_hosts i\n         JOIN bot_accounts b ON b.bot_id = i.bot_id\n         WHERE ($1 OR b.created_by = $2)\n           AND NOT (i.status = 'pending' AND i.revoked_at IS NOT NULL)\n         ORDER BY i.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "bot_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "device_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "agent_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "credential_prefix",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "connector_version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "connected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "mcp_connection_state",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "mcp_state_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "mcp_connected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "mcp_last_seen_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "eb866b8dcf822ca67d154fd2e607482402901b8ffbf0379f6742d9f597f87841"
+}

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT username, status_auto_update, status_update_prompt,\n                status_update_interval_minutes\n         FROM bot_accounts WHERE bot_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "status_auto_update",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "status_update_prompt",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status_update_interval_minutes",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "01281323450fc799d3eb3caa029d70a3bfc25729d6f25e3962e2658c35169ef6"
+}

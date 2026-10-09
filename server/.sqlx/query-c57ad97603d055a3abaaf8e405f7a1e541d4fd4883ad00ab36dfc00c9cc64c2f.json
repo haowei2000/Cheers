@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_channel_invites\n                (channel_id, bot_id, owner_user_id, invited_by, role, cwd, additional_dirs, invited_at)\n             VALUES ($1, $2, $3, $4, $5, $6, $7::text::jsonb, NOW())\n             ON CONFLICT (channel_id, bot_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c57ad97603d055a3abaaf8e405f7a1e541d4fd4883ad00ab36dfc00c9cc64c2f"
+}

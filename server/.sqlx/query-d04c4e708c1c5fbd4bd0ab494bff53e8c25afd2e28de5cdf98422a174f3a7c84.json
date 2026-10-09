@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1\n            FROM cheers_session_bindings b\n            JOIN cheers_sessions s ON s.session_id = b.session_id\n            WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3\n              AND b.role = 'primary'\n              AND s.status NOT IN ('terminated', 'revoked', 'expired')\n        ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d04c4e708c1c5fbd4bd0ab494bff53e8c25afd2e28de5cdf98422a174f3a7c84"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM channel_memberships WHERE member_id = $1 AND member_type = 'bot'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3d28bb48680d4d5633872a3b504a89477a252121c8d90e1b48edad94ca598d4b"
+}

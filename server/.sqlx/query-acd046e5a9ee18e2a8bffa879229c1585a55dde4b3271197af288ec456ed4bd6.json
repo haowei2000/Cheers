@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bci.bot_id AS member_id, bci.role, b.username, b.display_name,\n                b.avatar_url, b.description AS bio, b.status_text, b.status_emoji,\n                bci.cwd, bci.additional_dirs\n         FROM bot_channel_invites bci\n         JOIN bot_accounts b ON b.bot_id = bci.bot_id\n         WHERE bci.channel_id = $1\n         ORDER BY b.username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "bio",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status_text",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "cwd",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "additional_dirs",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "acd046e5a9ee18e2a8bffa879229c1585a55dde4b3271197af288ec456ed4bd6"
+}

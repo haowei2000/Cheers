@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE trusted_devices SET last_used_at = NOW()\n         WHERE user_id = $1 AND credential_hash = $2\n           AND revoked_at IS NULL AND expires_at > NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d682356795a67b189c1c0a83f7a703d0f1ea072c847acda977755ff51e5563c7"
+}

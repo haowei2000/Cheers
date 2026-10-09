@@ -1,4 +1,5 @@
 pub mod models;
+pub(crate) mod query_rows;
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 

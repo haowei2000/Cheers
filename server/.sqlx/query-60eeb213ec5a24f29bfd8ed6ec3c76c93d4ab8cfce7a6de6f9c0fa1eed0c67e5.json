@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM auth_external_identities WHERE identity_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "60eeb213ec5a24f29bfd8ed6ec3c76c93d4ab8cfce7a6de6f9c0fa1eed0c67e5"
+}

@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_profiles\n            SET status = $2, updated_at = NOW()\n          WHERE channel_id = $1 AND profile = 'code'\n          RETURNING profile, config, status",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "profile",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f926abed152a1dbb6f5c344ae265d70d69696f44f54fb12b7f3019d642308b57"
+}

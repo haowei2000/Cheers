@@ -1,0 +1,118 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT host_id, device_name, agent_type, credential_prefix, status,\n                connector_version, capabilities, last_seen_at, connected_at,\n                credential_rotated_at, created_at, updated_at, revoked_at,\n                mcp_connection_state, mcp_state_updated_at, mcp_connected_at,\n                mcp_last_seen_at\n         FROM connector_hosts\n         WHERE bot_id = $1\n           AND NOT (status = 'pending' AND revoked_at IS NOT NULL)\n         ORDER BY created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "device_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "agent_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "credential_prefix",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "connector_version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "capabilities",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "connected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "credential_rotated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "mcp_connection_state",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "mcp_state_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "mcp_connected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "mcp_last_seen_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "f1eb81e75929ffd94cb61c493099a57cd38ed169381dc5eee0664e08f2a20a73"
+}

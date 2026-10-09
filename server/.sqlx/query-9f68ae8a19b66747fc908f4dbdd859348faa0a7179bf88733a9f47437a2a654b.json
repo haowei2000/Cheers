@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT transaction_id, kind, status, user_id, session_id, client_type,\n                context_json, failed_attempts, expires_at\n         FROM auth_transactions\n         WHERE transaction_id = $1 AND kind IN ('login', 'step_up')\n           AND status IN ('method_required', 'factor_required', 'verified')\n           AND consumed_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "client_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "context_json",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "failed_attempts",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9f68ae8a19b66747fc908f4dbdd859348faa0a7179bf88733a9f47437a2a654b"
+}

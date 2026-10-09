@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH stale AS (\n        SELECT evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to\n        FROM task_claim_evaluations WHERE status='dispatched' AND dispatched_at < NOW()-INTERVAL '10 minutes'\n      ), rewound AS (\n        UPDATE channel_bot_monitoring m SET last_evaluated_seq=s.source_seq_from-1,next_eligible_at=NOW()\n        FROM stale s WHERE m.channel_id=s.channel_id AND m.bot_id=s.bot_id AND m.last_evaluated_seq=s.source_seq_to\n        RETURNING s.evaluation_id\n      ) UPDATE task_claim_evaluations e SET status='failed',error='evaluation lease expired',completed_at=NOW()\n        FROM rewound r WHERE e.evaluation_id=r.evaluation_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "af7056c71563b0111cad09d070f25d28e72752afd90e7a4a208d68de152cd661"
+}

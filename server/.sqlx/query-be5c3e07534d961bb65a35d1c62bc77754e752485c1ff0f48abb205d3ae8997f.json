@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT refresh_token_id, family_id, host_id, credential_hash, scope, channel_id\n         FROM mcp_oauth_refresh_tokens\n         WHERE token_hash=$1 AND client_id=$2 AND resource=$3\n           AND rotated_at IS NULL AND revoked_at IS NULL AND expires_at>NOW()\n         FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "refresh_token_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "family_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "credential_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "scope",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "be5c3e07534d961bb65a35d1c62bc77754e752485c1ff0f48abb205d3ae8997f"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE file_records\n         SET conversion_attempts = conversion_attempts + 1, last_error = $1\n         WHERE file_id = $2\n         RETURNING conversion_attempts",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "conversion_attempts",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "554e3b32b44ea271f46cd529d574edec89b015e3065d9c5d72ab5c0229e7f686"
+}

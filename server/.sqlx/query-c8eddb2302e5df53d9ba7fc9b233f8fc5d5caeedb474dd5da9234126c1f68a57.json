@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT trusted_device_id, session_id, device_name, created_at,\n                last_used_at, expires_at\n         FROM trusted_devices\n         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()\n         ORDER BY COALESCE(last_used_at, created_at) DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "trusted_device_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "device_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_used_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "c8eddb2302e5df53d9ba7fc9b233f8fc5d5caeedb474dd5da9234126c1f68a57"
+}

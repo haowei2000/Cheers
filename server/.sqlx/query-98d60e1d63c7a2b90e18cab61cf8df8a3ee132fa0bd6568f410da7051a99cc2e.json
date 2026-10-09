@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO two_factor_login_sessions (session_id, user_id, expires_at)\n         VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "98d60e1d63c7a2b90e18cab61cf8df8a3ee132fa0bd6568f410da7051a99cc2e"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO voice_webhook_events\n            (provider, event_id, event_type, provider_room_id)\n         VALUES ('livekit', $1, $2, NULLIF($3, ''))\n         ON CONFLICT (provider, event_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b1b57e03acdb2354451a227e8bb3c8c181edd0a579a63993d62d621ba4d3067"
+}

@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO message_traces\n                (id, msg_id, channel_id, bot_id, task_id, run_id, trace_seq, stream,\n                 kind, phase, status, title, message, data,\n                 request_id, approval_kind, decision, option_id, actor_id)\n             VALUES ($1, $2, $3, $4, $5, $6,\n                 (SELECT COALESCE(MAX(trace_seq), 0) + 1 FROM message_traces WHERE msg_id = $2::varchar),\n                 $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)\n             ON CONFLICT (id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ade09210d594c408bd8e4d1abd99e9f7cc7f184b6c2e52ddf87c624ba28ceac8"
+}

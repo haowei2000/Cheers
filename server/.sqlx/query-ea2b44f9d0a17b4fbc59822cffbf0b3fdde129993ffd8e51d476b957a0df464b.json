@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.user_id, u.username, u.display_name, u.avatar_url,\n                COALESCE(wm.status, 'none') AS workspace_status,\n                (EXISTS(\n                    SELECT 1 AS present FROM channel_memberships cm\n                    WHERE cm.channel_id = $1 AND cm.member_id = u.user_id\n                      AND cm.member_type = 'user'\n                ) OR EXISTS(\n                    SELECT 1 AS present FROM channel_invites ci\n                    WHERE ci.channel_id = $1 AND ci.user_id = u.user_id\n                )) AS already_member\n         FROM users u\n         JOIN channels c ON c.channel_id = $1\n         LEFT JOIN workspace_memberships wm\n                ON wm.user_id = u.user_id AND wm.workspace_id = c.workspace_id\n         WHERE u.is_deleted = FALSE\n           AND (u.username ILIKE $2 OR u.display_name ILIKE $2)\n           AND (\n                wm.status = 'active'\n                OR (c.type = 'private' AND (\n                    wm.status = 'pending'\n                    OR EXISTS (\n                        SELECT 1 AS present FROM friendships f\n                        WHERE f.status = 'accepted'\n                          AND ((f.user_id = $3 AND f.friend_id = u.user_id)\n                            OR (f.user_id = u.user_id AND f.friend_id = $3))\n                    )\n                ))\n           )\n         ORDER BY u.username\n         LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "workspace_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "already_member",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "ea2b44f9d0a17b4fbc59822cffbf0b3fdde129993ffd8e51d476b957a0df464b"
+}

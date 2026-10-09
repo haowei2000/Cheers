@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.workspace_id\n         FROM channels c\n         JOIN channel_memberships cm ON cm.channel_id = c.channel_id\n         WHERE c.channel_id = $1 AND cm.member_id = $2 AND cm.member_type = 'user'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ea032489392e108e7b342766682cc77055f21bd05ada3172fb0a0e039a605866"
+}

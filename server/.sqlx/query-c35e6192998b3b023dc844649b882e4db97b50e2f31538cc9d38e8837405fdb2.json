@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE voice_participant_sessions SET left_at = COALESCE(left_at, NOW())\n                 WHERE provider_identity = $1 AND left_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c35e6192998b3b023dc844649b882e4db97b50e2f31538cc9d38e8837405fdb2"
+}

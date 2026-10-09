@@ -1,0 +1,67 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id,t.data,t.title,t.phase,t.status,t.bot_id,t.kind,m.channel_seq AS \"channel_seq?\" FROM message_traces t LEFT JOIN messages m ON m.msg_id=t.msg_id AND m.channel_id=t.channel_id WHERE t.channel_id=$1 AND t.msg_id=$2 AND (t.id=$3 OR t.request_id=$3 OR t.data->>'event_id'=$3 OR t.data->>'toolCallId'=$3 OR t.data->>'tool_call_id'=$3 OR ($4::text IS NOT NULL AND (t.data->>'toolCallId'=$4 OR t.data->>'tool_call_id'=$4 OR t.data->'update'->>'toolCallId'=$4))) ORDER BY t.trace_seq LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "data",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "phase",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "channel_seq?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "97413a07e09792760b314490839279a78191261bf8a9bc0b2bd3aa3543a56cc2"
+}

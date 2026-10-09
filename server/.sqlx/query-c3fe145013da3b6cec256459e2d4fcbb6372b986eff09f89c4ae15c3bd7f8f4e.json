@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bot_id, is_disabled, binding_type, created_by,\n                status_text, status_emoji, status_updated_at,\n                binding_config->'connector_control'->>'connector_version' AS connector_version\n         FROM bot_accounts WHERE bot_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "binding_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "status_text",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "status_emoji",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "status_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "connector_version",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "c3fe145013da3b6cec256459e2d4fcbb6372b986eff09f89c4ae15c3bd7f8f4e"
+}

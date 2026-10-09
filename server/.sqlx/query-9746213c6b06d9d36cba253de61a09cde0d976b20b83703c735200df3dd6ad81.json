@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts\n                     SET binding_config = COALESCE(binding_config, '{}'::jsonb)\n                         || jsonb_build_object(\n                             'connector_control',\n                             COALESCE(binding_config->'connector_control', '{}'::jsonb)\n                             || CASE WHEN $2::text::jsonb IS NOT NULL AND $2::text::jsonb <> 'null'::jsonb\n                                     THEN jsonb_build_object(\n                                         'capabilities', $2::text::jsonb,\n                                         'capabilities_updated_at', to_jsonb(NOW())\n                                     )\n                                     ELSE '{}'::jsonb END\n                             || CASE WHEN $3::text IS NOT NULL\n                                     THEN jsonb_build_object('connector_version', $3::text)\n                                     ELSE '{}'::jsonb END\n                     )\n                     WHERE bot_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9746213c6b06d9d36cba253de61a09cde0d976b20b83703c735200df3dd6ad81"
+}

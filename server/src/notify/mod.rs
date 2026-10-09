@@ -23,7 +23,7 @@ pub mod apns;
 pub mod relay;
 
 use serde_json::{json, Value};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::app_state::AppState;
@@ -285,8 +285,7 @@ pub fn push_to_user(state: &AppState, user_id: Uuid, kind: PushKind) {
                 Err(apns::ApnsError::TokenDead) => {
                     // Prune tokens Apple reports as gone (uninstall / expiry).
                     tracing::info!(%user_id, kind = kind_label, "apns token dead; pruning");
-                    let _ = sqlx::query("DELETE FROM user_devices WHERE push_token = $1")
-                        .bind(&token)
+                    let _ = sqlx::query!("DELETE FROM user_devices WHERE push_token = $1", &token,)
                         .execute(&db)
                         .await;
                 }
@@ -312,18 +311,19 @@ pub fn push_bot_mentions_apns(
     }
     let state = state.clone();
     tokio::spawn(async move {
-        let channel_name: String =
-            sqlx::query_scalar("SELECT COALESCE(name, '') FROM channels WHERE channel_id = $1")
-                .bind(channel_id.to_string())
-                .fetch_optional(&state.db)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-        let sender_name: String = sqlx::query_scalar(
-            "SELECT COALESCE(display_name, username) FROM bot_accounts WHERE bot_id = $1",
+        let channel_name: String = sqlx::query_scalar!(
+            r#"SELECT COALESCE(name, '') AS "value!" FROM channels WHERE channel_id = $1"#,
+            channel_id.to_string(),
         )
-        .bind(bot_id.to_string())
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+        let sender_name: String = sqlx::query_scalar!(
+            r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
+            bot_id.to_string(),
+        )
         .fetch_optional(&state.db)
         .await
         .ok()
@@ -363,10 +363,11 @@ pub fn push_bot_reply_apns(
             sender_type: String,
             sender_id: Option<String>,
         }
-        let Ok(Some(trigger)) = sqlx::query_as::<_, TriggerRow>(
+        let Ok(Some(trigger)) = sqlx::query_as!(
+            TriggerRow,
             "SELECT sender_type, sender_id FROM messages WHERE msg_id = $1",
+            trigger_msg_id.to_string(),
         )
-        .bind(trigger_msg_id.to_string())
         .fetch_optional(&state.db)
         .await
         else {
@@ -384,14 +385,14 @@ pub fn push_bot_reply_apns(
         };
 
         // Mention already notifies this user for the same reply — don't double-push.
-        let already_mentioned: bool = sqlx::query_scalar(
-            "SELECT EXISTS(
-                SELECT 1 FROM message_mentions
+        let already_mentioned: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(
+                SELECT 1 AS present FROM message_mentions
                 WHERE msg_id = $1 AND member_type = 'user' AND member_id = $2
-             )",
+             ) AS "value!" "#,
+            reply_msg_id.to_string(),
+            user_id.to_string(),
         )
-        .bind(reply_msg_id.to_string())
-        .bind(user_id.to_string())
         .fetch_one(&state.db)
         .await
         .unwrap_or(false);
@@ -399,18 +400,19 @@ pub fn push_bot_reply_apns(
             return;
         }
 
-        let channel_name: String =
-            sqlx::query_scalar("SELECT COALESCE(name, '') FROM channels WHERE channel_id = $1")
-                .bind(channel_id.to_string())
-                .fetch_optional(&state.db)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-        let bot_name: String = sqlx::query_scalar(
-            "SELECT COALESCE(display_name, username) FROM bot_accounts WHERE bot_id = $1",
+        let channel_name: String = sqlx::query_scalar!(
+            r#"SELECT COALESCE(name, '') AS "value!" FROM channels WHERE channel_id = $1"#,
+            channel_id.to_string(),
         )
-        .bind(bot_id.to_string())
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+        let bot_name: String = sqlx::query_scalar!(
+            r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
+            bot_id.to_string(),
+        )
         .fetch_optional(&state.db)
         .await
         .ok()
@@ -430,11 +432,11 @@ pub fn push_bot_reply_apns(
 }
 
 async fn is_channel_muted(db: &PgPool, user_id: Uuid, channel_id: Uuid) -> bool {
-    sqlx::query_scalar::<_, bool>(
+    sqlx::query_scalar!(
         "SELECT muted FROM channel_notification_preferences WHERE user_id = $1 AND channel_id = $2",
+        user_id.to_string(),
+        channel_id.to_string(),
     )
-    .bind(user_id.to_string())
-    .bind(channel_id.to_string())
     .fetch_optional(db)
     .await
     .ok()
@@ -477,45 +479,43 @@ pub fn push_message_fanout(
     }
     let state = state.clone();
     tokio::spawn(async move {
-        let Ok(channel) = sqlx::query(
+        let Ok(channel) = sqlx::query!(
             "SELECT type::text AS channel_type, name FROM channels WHERE channel_id = $1",
+            channel_id.to_string(),
         )
-        .bind(channel_id.to_string())
         .fetch_one(&state.db)
         .await
         else {
             return;
         };
-        let channel_type: String = channel.try_get("channel_type").unwrap_or_default();
-        let channel_name: String = channel.try_get("name").unwrap_or_default();
+        let channel_type: String = channel.channel_type.clone().unwrap_or_default();
+        let channel_name: String = channel.name.clone();
 
-        let sender_name = sqlx::query(
+        let sender_name = sqlx::query!(
             "SELECT COALESCE(display_name, username) AS name FROM users WHERE user_id = $1",
+            sender_user_id.to_string(),
         )
-        .bind(sender_user_id.to_string())
         .fetch_optional(&state.db)
         .await
         .ok()
         .flatten()
-        .and_then(|r| r.try_get::<String, _>("name").ok())
+        .and_then(|r| r.name.clone())
         .unwrap_or_else(|| "Someone".into());
 
         if channel_type == "dm" {
             // Every human member except the sender (1:1 today, robust to group DMs).
-            if let Ok(rows) = sqlx::query(
+            if let Ok(rows) = sqlx::query!(
                 "SELECT member_id FROM channel_memberships
                  WHERE channel_id = $1 AND member_type = 'user' AND member_id <> $2",
+                channel_id.to_string(),
+                sender_user_id.to_string(),
             )
-            .bind(channel_id.to_string())
-            .bind(sender_user_id.to_string())
             .fetch_all(&state.db)
             .await
             {
                 for row in rows {
-                    if let Some(uid) = row
-                        .try_get::<String, _>("member_id")
-                        .ok()
-                        .and_then(|s| s.parse::<Uuid>().ok())
+                    if let Some(uid) =
+                        Some(row.member_id.clone()).and_then(|s| s.parse::<Uuid>().ok())
                     {
                         push_to_user(
                             &state,
@@ -536,13 +536,15 @@ pub fn push_message_fanout(
             if target == sender_user_id {
                 continue;
             }
-            let is_user = sqlx::query("SELECT 1 AS one FROM users WHERE user_id = $1")
-                .bind(target.to_string())
-                .fetch_optional(&state.db)
-                .await
-                .ok()
-                .flatten()
-                .is_some();
+            let is_user = sqlx::query!(
+                "SELECT 1 AS one FROM users WHERE user_id = $1",
+                target.to_string(),
+            )
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
             if is_user {
                 push_to_user(
                     &state,
@@ -605,20 +607,20 @@ pub fn approval_option_ids(options: &Value) -> (Option<String>, Option<String>) 
 
 #[doc(hidden)]
 pub async fn active_device_tokens(db: &PgPool, user_id: Uuid) -> Vec<String> {
-    sqlx::query(
+    sqlx::query!(
         "SELECT d.push_token
          FROM user_devices d
          JOIN users u ON u.user_id = d.user_id
          WHERE d.user_id = $1
            AND u.is_suspended = FALSE
            AND u.is_deleted = FALSE",
+        user_id.to_string(),
     )
-    .bind(user_id.to_string())
     .fetch_all(db)
     .await
     .map(|rows| {
         rows.into_iter()
-            .filter_map(|r| r.try_get::<String, _>("push_token").ok())
+            .filter_map(|r| Some(r.push_token.clone()))
             .collect()
     })
     .unwrap_or_default()
@@ -627,8 +629,7 @@ pub async fn active_device_tokens(db: &PgPool, user_id: Uuid) -> Vec<String> {
 /// Revoke every native push registration owned by a user. Call this whenever
 /// all sessions are invalidated so lost or offline devices stop receiving APNs.
 pub async fn revoke_user_devices(db: &PgPool, user_id: &str) {
-    match sqlx::query("DELETE FROM user_devices WHERE user_id = $1")
-        .bind(user_id)
+    match sqlx::query!("DELETE FROM user_devices WHERE user_id = $1", user_id,)
         .execute(db)
         .await
     {

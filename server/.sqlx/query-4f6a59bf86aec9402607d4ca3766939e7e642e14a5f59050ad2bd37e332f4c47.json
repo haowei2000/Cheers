@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE apple_auth_credentials SET revoked_at = NOW(), updated_at = NOW()\n         WHERE identity_id IN (SELECT identity_id FROM auth_external_identities WHERE provider = 'apple' AND user_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4f6a59bf86aec9402607d4ca3766939e7e642e14a5f59050ad2bd37e332f4c47"
+}

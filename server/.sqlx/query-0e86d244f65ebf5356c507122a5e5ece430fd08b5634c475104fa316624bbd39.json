@@ -1,0 +1,131 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,\n        m.channel_seq, u.display_name AS sender_name,\n        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,\n        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,\n        m.created_at, m.content_data,\n        m.context_bundle,\n        trace_stats.trace_count,\n        trace_stats.trace_has_failure\n FROM messages m\n LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id\n LEFT JOIN LATERAL (\n    SELECT COUNT(*)::BIGINT AS trace_count,\n           COALESCE(BOOL_OR(\n             mt.phase IN ('prompt_failed', 'terminal_ack_failed')\n             OR mt.status IN ('failed', 'error')\n           ), FALSE) AS trace_has_failure\n      FROM message_traces mt\n     WHERE mt.msg_id = m.msg_id\n ) trace_stats ON TRUE\n                     WHERE m.channel_id = $1\n                       AND m.is_partial = FALSE\n                       AND m.is_secret = FALSE\n                     ORDER BY m.created_at DESC, m.msg_id DESC\n                     LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "depth",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "sender_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "channel_seq",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "sender_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "msg_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "is_partial",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_deleted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "file_ids",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "reply_to_msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "thread_root_msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "content_data",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 16,
+        "name": "context_bundle",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 17,
+        "name": "trace_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 18,
+        "name": "trace_has_failure",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "0e86d244f65ebf5356c507122a5e5ece430fd08b5634c475104fa316624bbd39"
+}

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth_sessions\n         (session_id, user_id, client_type, device_name, token_family_id,\n          csrf_token_hash, absolute_expires_at)\n         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7e99cae6cdb3daf971044466f2c17071107f0baf42b5f362067584d52ea7c705"
+}

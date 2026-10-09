@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT msg_id, sender_id\n         FROM messages\n         WHERE is_partial = TRUE\n           AND channel_seq IS NULL\n           AND created_at < NOW() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "58c9fcccd931e7e4fe512cd425972978a134f968cc49f7031067390b8fa9e98d"
+}

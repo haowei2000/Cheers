@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT task_id,created_by,channel_id,content,mention_ids,schedule_kind,\n                interval_minutes,local_time,timezone\n         FROM scheduled_messages WHERE task_id=$1 AND created_by=$2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "task_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "mention_ids",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "schedule_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "interval_minutes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "local_time",
+        "type_info": "Time"
+      },
+      {
+        "ordinal": 8,
+        "name": "timezone",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2ab68d01121230fff54ac39c8faf19338cb989953bb1c520baa1268bfddd9c48"
+}

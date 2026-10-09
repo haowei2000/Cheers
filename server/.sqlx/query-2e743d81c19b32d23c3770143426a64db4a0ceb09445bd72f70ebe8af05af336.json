@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sender_id, chain_id FROM messages\n         WHERE msg_id = $1 AND channel_id = $2\n           AND is_partial = TRUE AND sender_type = 'bot'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "2e743d81c19b32d23c3770143426a64db4a0ceb09445bd72f70ebe8af05af336"
+}

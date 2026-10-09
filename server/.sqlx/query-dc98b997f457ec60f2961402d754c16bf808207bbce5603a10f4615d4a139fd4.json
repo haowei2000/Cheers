@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE workspace_memberships SET status = 'active'\n                 WHERE workspace_id = $1 AND user_id = $2 AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc98b997f457ec60f2961402d754c16bf808207bbce5603a10f4615d4a139fd4"
+}

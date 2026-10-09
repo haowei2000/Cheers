@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT session_id, status, current_scope_type, current_scope_id\n             FROM cheers_sessions\n             WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND provider_session_key = $4\n             LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "current_scope_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "current_scope_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "145f10dd4a8b63e31a7b42744d74c9cd7526a4b9df3e423ca8adaa11c41cc69c"
+}

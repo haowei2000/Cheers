@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT voice_session_id, channel_id, provider_room_id, started_at\n         FROM voice_sessions\n         WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL\n         ORDER BY started_at DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "voice_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_room_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "started_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d7b28e5277631c4f6a2b09a18c6ddd78d23d95ff067d0ef0402057ed3d049cde"
+}

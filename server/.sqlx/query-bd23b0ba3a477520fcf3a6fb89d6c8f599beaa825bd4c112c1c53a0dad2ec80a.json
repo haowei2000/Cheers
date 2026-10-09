@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT msg_id\n         FROM messages\n         WHERE is_partial = TRUE\n           AND channel_seq IS NULL\n           AND sender_type = 'bot'\n           AND sender_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bd23b0ba3a477520fcf3a6fb89d6c8f599beaa825bd4c112c1c53a0dad2ec80a"
+}

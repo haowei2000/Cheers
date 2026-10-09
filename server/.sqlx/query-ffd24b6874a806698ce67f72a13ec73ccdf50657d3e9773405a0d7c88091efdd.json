@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH ranked AS (\n            SELECT COALESCE(m.thread_root_msg_id, m.msg_id) AS root_id,\n                   m.sender_id, m.sender_type,\n                   COALESCE(NULLIF(u.display_name, ''), u.username,\n                            NULLIF(b.display_name, ''), b.username, m.sender_id) AS name,\n                   COALESCE(u.avatar_url, b.avatar_url) AS avatar_url,\n                   MAX(m.created_at) AS last_seen\n            FROM messages m\n            LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id\n            LEFT JOIN bot_accounts b ON m.sender_type = 'bot' AND b.bot_id = m.sender_id\n            WHERE m.channel_id = $1\n              AND COALESCE(m.thread_root_msg_id, m.msg_id) = ANY($2)\n              AND m.is_partial = FALSE\n              AND m.is_secret = FALSE\n              AND m.is_deleted = FALSE\n              AND m.msg_type NOT IN ('permission', 'auth_required', 'elicitation')\n              AND m.sender_type IN ('user', 'bot')\n            GROUP BY COALESCE(m.thread_root_msg_id, m.msg_id), m.sender_id,\n                     m.sender_type, u.display_name, u.username, b.display_name,\n                     b.username, u.avatar_url, b.avatar_url\n         )\n         SELECT root_id, sender_id, sender_type, name, avatar_url, last_seen,\n                COUNT(*) OVER (PARTITION BY root_id)::bigint AS participant_count\n         FROM ranked\n         ORDER BY root_id, last_seen DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "root_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "sender_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_seen",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "participant_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ffd24b6874a806698ce67f72a13ec73ccdf50657d3e9773405a0d7c88091efdd"
+}

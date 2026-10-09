@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT vs.channel_id, vs.status, vs.started_at AS session_started_at,\n                vps.participant_session_id, vps.user_id, vps.joined_at, vps.left_at\n         FROM voice_sessions vs\n         JOIN voice_participant_sessions vps ON vps.voice_session_id = vs.voice_session_id\n              AND vps.provider_identity = $2 AND vps.provider_track_id = $3\n         JOIN channel_memberships cm ON cm.channel_id = vs.channel_id\n              AND cm.member_id = vps.user_id AND cm.member_type = 'user'\n         WHERE vs.voice_session_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "session_started_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "participant_session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "joined_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "left_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c7e6febc818798f277fb1ce64f94078b0e54cd9ee238342ebe04fa55d7b999c4"
+}

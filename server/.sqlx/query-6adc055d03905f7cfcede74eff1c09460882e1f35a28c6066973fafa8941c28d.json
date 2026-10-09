@@ -1,0 +1,142 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_accounts\n         (bot_id, username, display_name, description, avatar_url, model_id, template_id,\n             custom_system_prompt, scope, intro, binding_type, bridge_provider,\n             binding_config, created_by, external_processor, processor_name,\n             processor_privacy_url, processor_data_use, processor_policy_version)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)\n         RETURNING bot_id, username, display_name, description, avatar_url, is_disabled, scope,\n                   binding_type, bridge_provider, model_id, template_id, intro, binding_config,\n                   external_processor, processor_name, processor_privacy_url, processor_data_use, processor_policy_version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_disabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "scope",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "binding_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "bridge_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "model_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "template_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "intro",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "binding_config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "external_processor",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "processor_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "processor_privacy_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "processor_data_use",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "processor_policy_version",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Jsonb",
+        "Varchar",
+        "Bool",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "6adc055d03905f7cfcede74eff1c09460882e1f35a28c6066973fafa8941c28d"
+}

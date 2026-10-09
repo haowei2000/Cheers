@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 AS present FROM connector_hosts i\n                     JOIN channel_memberships bm ON bm.member_id=i.bot_id AND bm.member_type='bot'\n                     JOIN channel_memberships um ON um.channel_id=bm.channel_id\n                       AND um.member_id=$3 AND um.member_type='user'\n                     WHERE i.host_id=$1 AND bm.channel_id=$2 AND i.status='active'\n                       AND i.revoked_at IS NULL) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6a0928ab13ad9867fc43f7ca7bf6276d80ab4df3da3a85ef6d16a10a47513856"
+}

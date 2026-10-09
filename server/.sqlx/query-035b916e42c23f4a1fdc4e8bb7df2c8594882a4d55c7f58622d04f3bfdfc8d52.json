@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.workspace_id, w.name, wm.role,\n                COALESCE(iu.display_name, iu.username) AS invited_by\n         FROM workspace_memberships wm\n         JOIN workspaces w ON w.workspace_id = wm.workspace_id\n         LEFT JOIN users iu ON iu.user_id = wm.invited_by\n         WHERE wm.user_id = $1 AND wm.status = 'pending'\n         ORDER BY wm.invited_at DESC NULLS LAST",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "invited_by",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "035b916e42c23f4a1fdc4e8bb7df2c8594882a4d55c7f58622d04f3bfdfc8d52"
+}

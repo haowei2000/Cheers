@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT source, event_id, event_type, bot_id, host_id, actor_id,\n                detail, created_at\n         FROM (\n           SELECT 'management'::text AS source, a.id AS event_id, a.event_type,\n                  a.bot_id, a.host_id, a.actor_id, a.detail, a.created_at\n           FROM bot_management_audit a\n           WHERE ($1 OR a.actor_id = $2 OR EXISTS (\n             SELECT 1 AS present FROM bot_accounts b WHERE b.bot_id = a.bot_id AND b.created_by = $2\n           ))\n           UNION ALL\n           SELECT 'connection', e.id::text, 'connection.' || e.event, e.bot_id,\n                  NULL, NULL, jsonb_build_object('stream', e.stream, 'reason', e.reason,\n                  'connection_id', e.connection_id), e.created_at\n           FROM bot_connection_events e JOIN bot_accounts b ON b.bot_id = e.bot_id\n           WHERE $1 OR b.created_by = $2\n           UNION ALL\n           SELECT 'acp', l.id::text, l.name, l.bot_id, NULL, NULL,\n                  jsonb_build_object('home', l.home, 'channel_id', l.channel_id,\n                  'session_id', l.session_id, 'payload', l.payload), l.created_at\n           FROM acp_event_log l JOIN bot_accounts b ON b.bot_id = l.bot_id\n           WHERE $1 OR b.created_by = $2\n           UNION ALL\n           SELECT 'approval', a.id, 'approval.' || a.event_type, a.bot_id, NULL,\n                  a.actor_id, jsonb_build_object('channel_id', a.channel_id,\n                  'request_id', a.request_id, 'decision', a.decision, 'detail', a.detail),\n                  a.created_at\n           FROM approval_audit a JOIN bot_accounts b ON b.bot_id = a.bot_id\n           WHERE $1 OR b.created_by = $2\n         ) events\n         WHERE ($3::timestamptz IS NULL OR created_at < $3)\n           AND ($4::text IS NULL OR bot_id = $4)\n           AND ($5::text IS NULL OR host_id = $5)\n           AND ($6::text IS NULL OR event_type = $6)\n         ORDER BY created_at DESC, event_id DESC\n         LIMIT $7",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "event_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "event_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "host_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "actor_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "detail",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "3ddfd31a7e14560a13d2b78a36b597cb97ca2ce0986e87674d55151bb9e8e686"
+}

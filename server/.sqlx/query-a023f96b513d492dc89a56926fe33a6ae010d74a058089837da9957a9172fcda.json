@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.msg_id AS \"msg_id?\", m.sender_id AS \"sender_id?\", m.content AS \"content?\" FROM task_claim_evaluations e\n         LEFT JOIN messages m ON m.channel_id=e.channel_id AND m.channel_seq=e.source_seq_to\n         WHERE e.evaluation_id=$1 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "content?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a023f96b513d492dc89a56926fe33a6ae010d74a058089837da9957a9172fcda"
+}

@@ -1,0 +1,142 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.task_id,s.channel_id,s.title,s.content,s.mention_ids,s.schedule_kind,s.run_at,s.interval_minutes,s.next_run_at,s.enabled,s.source_extension_id,s.source_automation_id,s.last_run_at,s.last_error,s.consecutive_failures,s.created_at,s.updated_at,s.local_time,s.timezone,s.retry_attempt,c.name AS channel_name FROM scheduled_messages s\n         JOIN channels c ON c.channel_id=s.channel_id\n         WHERE s.created_by=$1 ORDER BY s.enabled DESC,s.next_run_at NULLS LAST,s.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "task_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "mention_ids",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "schedule_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "run_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "interval_minutes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "next_run_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "source_extension_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "source_automation_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "last_run_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "consecutive_failures",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "local_time",
+        "type_info": "Time"
+      },
+      {
+        "ordinal": 18,
+        "name": "timezone",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 19,
+        "name": "retry_attempt",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "channel_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "196bf55debe302009966a15cc3cefb461cd8f2c3ea1a2f261ee825aecb39933d"
+}

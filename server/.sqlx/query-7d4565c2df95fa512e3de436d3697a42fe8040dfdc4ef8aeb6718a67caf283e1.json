@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE enrollment_codes SET revoked = TRUE\n             WHERE host_id = $1 AND bot_id = $2\n               AND redeemed_at IS NULL AND NOT revoked",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d4565c2df95fa512e3de436d3697a42fe8040dfdc4ef8aeb6718a67caf283e1"
+}
