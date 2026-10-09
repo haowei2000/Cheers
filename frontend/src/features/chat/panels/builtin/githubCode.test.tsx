@@ -49,7 +49,7 @@ describe("githubCode panels", () => {
 });
 
 describe("GitHub code panel component boundaries", () => {
-  it.each(["header", "lane", "inline"] as PanelSurface[])(
+  it.each(["header", "lane"] as PanelSurface[])(
     "%s factory can run outside React without executing component hooks",
     (surface) => {
       const panel = panelsFor(surface, "code").find((entry) =>
@@ -63,4 +63,11 @@ describe("GitHub code panel component boundaries", () => {
       expect(renderToStaticMarkup(<>{element}</>)).toBe("");
     },
   );
+
+  it("does not register an inline surface workspace strip in workbench", () => {
+    const inlinePanels = panelsFor("inline", "code").filter((entry) =>
+      entry.id.startsWith("official.github"),
+    );
+    expect(inlinePanels).toHaveLength(0);
+  });
 });
