@@ -45,7 +45,9 @@ export function PanelWorkspace({
   sharedLayout,
   sharedGeometryFor,
   onLayoutChange,
+  header,
 }: {
+  header?: (navigation: ReactNode) => ReactNode;
   sharedLayout?: SharedWorkspaceLayout;
   sharedGeometryFor?: (kind: SpawnKind) => Rect | null;
   onLayoutChange?: (state: {
@@ -347,6 +349,14 @@ export function PanelWorkspace({
       }
     }
     try {
+      let existingOpen: Partial<Record<SpawnKind, boolean>> | undefined;
+      const raw = localStorage.getItem(workspacePreferenceKey(channelId));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.open && typeof parsed.open === "object") {
+          existingOpen = parsed.open;
+        }
+      }
       localStorage.setItem(
         workspacePreferenceKey(channelId),
         JSON.stringify({
@@ -355,6 +365,7 @@ export function PanelWorkspace({
           ratio: nextRatio,
           active: nextActive,
           floats: storedFloats,
+          ...(existingOpen ? { open: existingOpen } : {}),
         }),
       );
     } catch {
@@ -676,14 +687,67 @@ export function PanelWorkspace({
     setFloats,
     split,
   ]);
+  const navigation = hasDock ? (
+    <ButtonGroup
+      label="Workspace panels"
+      role="tablist"
+      controlSize="compact"
+      className="min-w-0 flex-nowrap overflow-x-auto"
+    >
+      {!layout.sideBySide && showWork && (
+        <IconButton label="Back to messages" onClick={showMessages}>
+          <ArrowLeft className="h-4 w-4" />
+        </IconButton>
+      )}
+      {docked.map((panel) => (
+        <ControlTrigger
+          key={panel.id}
+          selected={effectiveActive === panel.id && (layout.sideBySide || showWork)}
+          aria-selected={effectiveActive === panel.id && (layout.sideBySide || showWork)}
+          onClick={() => {
+            setShowWork(true);
+            setActive(panel.id);
+            remember(requestedWidth, split, ratio, panel.id);
+          }}
+          role="tab"
+          className={cn(
+            "rounded-none border-b-2 bg-transparent shadow-none ring-0",
+            effectiveActive === panel.id
+              ? "border-content-strong text-content-strong font-semibold"
+              : "border-transparent text-content-primary hover:text-content-strong hover:bg-transparent"
+          )}
+        >
+          {panel.label}
+        </ControlTrigger>
+      ))}
+      {canSplitWorkspace(stageHeight, docked.length) && (
+        <IconButton
+          label={split ? "Use panel tabs" : "Split panels vertically"}
+          aria-pressed={split}
+          onClick={() => {
+            setSplit(!split);
+            remember(requestedWidth, !split);
+          }}
+        >
+          {split ? (
+            <Columns2 className="h-4 w-4" />
+          ) : (
+            <Rows2 className="h-4 w-4" />
+          )}
+        </IconButton>
+      )}
+    </ButtonGroup>
+  ) : null;
+
   return (
     <ManagedPanelProvider resolve={getPanel}>
+      {header?.(navigation)}
       <div
         ref={setRoot}
         data-panel-workspace=""
         className="relative flex min-h-0 min-w-0 flex-1 flex-col"
       >
-        {!layout.sideBySide && hasDock && (
+        {!header && !layout.sideBySide && hasDock && (
           <ButtonGroup
             role="tablist"
             label="Conversation view"
@@ -777,54 +841,7 @@ export function PanelWorkspace({
                 !layout.sideBySide && hasDock && !showWork ? "none" : undefined,
             }}
           >
-            {hasDock && (
-              <ButtonGroup
-                label="Workspace panels"
-                controlSize="compact"
-                className="shrink-0 flex-wrap border-b border-control/80 bg-panel px-2 py-1"
-              >
-                {!layout.sideBySide && (
-                  <IconButton label="Back to messages" onClick={showMessages}>
-                    <ArrowLeft className="h-4 w-4" />
-                  </IconButton>
-                )}
-                {docked.map((panel) => (
-                  <ControlTrigger
-                    key={panel.id}
-                    selected={effectiveActive === panel.id}
-                    onClick={() => {
-                      setActive(panel.id);
-                      remember(requestedWidth, split, ratio, panel.id);
-                    }}
-                    role="tab"
-                    className={cn(
-                      "rounded-none border-b-2 bg-transparent shadow-none ring-0",
-                      effectiveActive === panel.id
-                        ? "border-content-strong text-content-strong font-semibold"
-                        : "border-transparent text-content-primary hover:text-content-strong hover:bg-transparent"
-                    )}
-                  >
-                    {panel.label}
-                  </ControlTrigger>
-                ))}
-                {canSplitWorkspace(stageHeight, docked.length) && (
-                  <IconButton
-                    label={split ? "Use panel tabs" : "Split panels vertically"}
-                    aria-pressed={split}
-                    onClick={() => {
-                      setSplit(!split);
-                      remember(requestedWidth, !split);
-                    }}
-                  >
-                    {split ? (
-                      <Columns2 className="h-4 w-4" />
-                    ) : (
-                      <Rows2 className="h-4 w-4" />
-                    )}
-                  </IconButton>
-                )}
-              </ButtonGroup>
-            )}
+            {!header && navigation}
             <div ref={setStage} className="relative min-h-0 flex-1">
               {panels}
               {splitIds.length === 2 && (
