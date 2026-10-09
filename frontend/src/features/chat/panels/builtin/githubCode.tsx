@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Folder, GitBranch, GitCommitHorizontal, GitFork, RefreshCw, Server } from "lucide-react";
+import { Folder, GitBranch, GitCommitHorizontal, GitFork, Server } from "lucide-react";
 import toast from "react-hot-toast";
-import { initializeChannelIntegration } from "@/api/integrations";
 import { putCodeProfile } from "@/api/channelProfiles";
 import { addChannelMember } from "@/api/channels";
 import { getFleetHosts, type FleetHost } from "@/api/fleet";
@@ -14,7 +13,6 @@ import { ActionButton } from "@/components/ui/action-button";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { Dialog } from "@/components/ui/dialog";
-import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { bustBotControls } from "@/features/chat/sessionControlsCache";
@@ -230,25 +228,6 @@ function ExecutionTargetDialog({
   );
 }
 
-function ExecutionTargetControl({ ctx, compact = false }: { ctx: PanelContext; compact?: boolean }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      {compact ? (
-        <IconButton controlSize="compact" onClick={() => setOpen(true)} label="Configure execution target">
-          <Server className="h-3.5 w-3.5" />
-        </IconButton>
-      ) : (
-        <Button action="setup" content="iconText" variant="secondary" controlSize="compact" onClick={() => setOpen(true)}>
-          <Server />
-        </Button>
-      )}
-      <ExecutionTargetDialog ctx={ctx} open={open} onClose={() => setOpen(false)} />
-    </>
-  );
-}
-
 /** Header: a compact chip beside the channel title. Hidden below `lg` — the header has
  *  no room for it on narrow desktops. Clickable to configure execution target & workdir. */
 function CodeHeader(ctx: PanelContext) {
@@ -338,59 +317,6 @@ function CodeBoard(ctx: PanelContext) {
   );
 }
 
-/** Workbench: a one-line status strip above the scene content, with the import retry —
- *  the only surface that offers an action, because it is the one you are on when a
- *  clone or checkout has failed. */
-function CodeWorkspaceStrip(ctx: PanelContext) {
-  const facts = codeFacts(ctx);
-  if (!facts) return null;
-
-  async function retryImport() {
-    try {
-      await initializeChannelIntegration(ctx.channelId);
-      toast.success("Repository import requested");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Repository import failed");
-    }
-  }
-
-  return (
-    <section
-      className="border-b border-zinc-800 bg-zinc-950/60 px-3 py-2"
-      aria-label="Code workspace status"
-    >
-      <div className="flex min-w-0 items-center gap-3 text-compact">
-        <GitFork className="h-4 w-4 shrink-0 text-content-muted" />
-        <span className="min-w-0 truncate font-medium text-content-primary">{facts.repository}</span>
-        <span className="inline-flex min-w-0 items-center gap-1 text-content-muted">
-          <GitBranch className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{facts.branch}</span>
-        </span>
-        {facts.head && (
-          <span className="inline-flex items-center gap-1 font-code text-content-muted">
-            <GitCommitHorizontal className="h-3.5 w-3.5" />
-            {facts.head.slice(0, 8)}
-          </span>
-        )}
-        <span className="ml-auto shrink-0 capitalize text-content-secondary">{facts.state}</span>
-        <ExecutionTargetControl ctx={ctx} compact />
-        {facts.hasRemoteSource && (facts.state === "error" || facts.state === "pending") && (
-          <IconButton
-            controlSize="compact"
-            onClick={() => void retryImport()}
-            label="Retry repository import"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </IconButton>
-        )}
-      </div>
-      {facts.lastError && (
-        <p className="mt-1 truncate text-minimal text-danger-400">{facts.lastError}</p>
-      )}
-    </section>
-  );
-}
-
 registerPanel({
   id: "official.github-code.header",
   title: "Code",
@@ -407,13 +333,4 @@ registerPanel({
   surface: "lane",
   profiles: ["code"],
   render: CodeBoard,
-});
-
-registerPanel({
-  id: "official.github.code.workspace",
-  title: "Code workspace",
-  icon: GitFork,
-  surface: "inline",
-  profiles: ["code"],
-  render: CodeWorkspaceStrip,
 });
