@@ -1,0 +1,57 @@
+# Shared local development dependencies for multiple worktrees.
+# Start once with `make dev-infra-up`; gateway/frontend processes run on the host.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DEV_INFRA_POSTGRES_PORT:-15432}:5432"
+    environment:
+      POSTGRES_USER: ${DEV_INFRA_POSTGRES_USER:-cheers}
+      POSTGRES_PASSWORD: ${DEV_INFRA_POSTGRES_PASSWORD:-cheers}
+      POSTGRES_DB: postgres
+    volumes:
+      - cheers-dev-infra-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DEV_INFRA_POSTGRES_USER:-cheers} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DEV_INFRA_REDIS_PORT:-16379}:6379"
+    volumes:
+      - cheers-dev-infra-redis:/data
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DEV_INFRA_S3_PORT:-19000}:9000"
+      - "127.0.0.1:${DEV_INFRA_S3_CONSOLE_PORT:-19001}:9001"
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: ${DEV_INFRA_S3_ACCESS_KEY:-cheers-local-access-key}
+      RUSTFS_SECRET_KEY: ${DEV_INFRA_S3_SECRET_KEY:-cheers-local-secret-key}
+      RUSTFS_OBS_LOGGER_LEVEL: info
+    volumes:
+      - cheers-dev-infra-rustfs:/data
+      - cheers-dev-infra-rustfs-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -S -O /dev/null http://127.0.0.1:9000/rustfs/health/live 2>&1 | grep -Eq 'HTTP/[0-9.]+ (200|403)'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  cheers-dev-infra-postgres:
+  cheers-dev-infra-redis:
+  cheers-dev-infra-rustfs:
+  cheers-dev-infra-rustfs-logs:

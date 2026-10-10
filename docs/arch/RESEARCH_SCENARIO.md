@@ -442,7 +442,7 @@ online" cause.
 
 1. **Start the stack** (kind + Helm, see `CLAUDE.md`). For the dev inner loop, port-forward
    the gateway (`kubectl port-forward -n cheers svc/cheers-gateway 8000:8000`) and run Vite
-   (`npm --prefix frontend run dev`) — the UI is at <http://localhost:5173> (`admin` /
+   (`pnpm --dir frontend dev`) — the UI is at <http://localhost:5173> (`admin` /
    `admin12345`); the NodePort build is at <http://localhost:30080>.
 2. **Bot identity + channel + membership.** Reuse or create a Bot identity, then create a
    pending Codex Host and put the Bot in a channel. Headless equivalents:

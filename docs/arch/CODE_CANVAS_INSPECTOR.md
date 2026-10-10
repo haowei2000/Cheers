@@ -23,7 +23,7 @@ The React preview compiles JSX with a small Babel AST visitor that adds `data-ch
 
 `data-cheers-canvas` makes a positioned container. A card with adjacent literal `data-cheers-id` and `data-cheers-position="x,y"` can be dragged in Design Mode. The host changes just the two coordinate values in the same TSX/HTML file, through its existing file session and save path. Duplicate ids, computed positions, and nonliteral coordinates cannot be dragged; edit those in Raw. This keeps position write-back explicit and avoids rewriting unrelated JSX.
 
-For a gateway-free manual check, run `cd frontend && npm run dev`, then open `/dev/code-canvas.html`. Dragging the Revenue card changes `data-cheers-position` in the source pane beside it.
+For a gateway-free manual check, run `cd frontend && pnpm dev`, then open `/dev/code-canvas.html`. Dragging the Revenue card changes `data-cheers-position` in the source pane beside it.
 
 The annotation store remains `annotations.yaml` as a file of notes, but a code-authored card's anchor is now its URI. The canvas content and card structure do not have to be YAML. Existing YAML canvas files and lenses continue to load during migration.
 

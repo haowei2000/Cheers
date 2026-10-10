@@ -8,7 +8,7 @@ import "@/index.css";
 // Harness for the canvas, with no gateway: `onOps` applies the ops to local state the
 // way `useFile.applyOps` applies them to the file, and every batch is echoed on screen.
 //
-// Run it: `npm run dev`, then open /dev/canvas.html.
+// Run it: `pnpm dev`, then open /dev/canvas.html.
 //
 // What it exists to show, none of which a pure test can reach:
 //   1. Unpinned nodes are arranged; the pinned one stays where the file put it.
