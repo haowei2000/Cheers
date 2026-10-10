@@ -7,8 +7,12 @@ import { getFleetHosts, type FleetHost } from "@/api/fleet";
 import { listHostRepositories, type HostRepository } from "@/api/bots";
 import {
   createChannelBotSession,
+  listChannelBotSessions,
   setPrimaryChannelBotSession,
 } from "@/api/sessionControl";
+import { getGitStatus, getSessionWorkdirs } from "@/api/workspace";
+import { pickFolder } from "@/lib/desktop";
+import { isTauri } from "@/lib/serverConfig";
 import { ActionButton } from "@/components/ui/action-button";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
@@ -28,6 +32,7 @@ import { PanelShell } from "../definePanel";
 
 interface CodeFacts {
   repository: string;
+  workdir: string | null;
   branch: string;
   hasRemoteSource: boolean;
   target: string | null;
@@ -39,7 +44,7 @@ interface CodeFacts {
 
 /** Read the `code` profile's facts. The profile is capability-filtered by the gateway and
  *  never carries OAuth or App installation credentials — see docs/arch/PLUGIN_SYSTEM.md. */
-function codeFacts(ctx: PanelContext): CodeFacts | null {
+function profileFacts(ctx: PanelContext): CodeFacts | null {
   const profile = ctx.profile;
   if (!profile) return null;
   const str = (value: unknown, fallback: string | null) =>
@@ -49,15 +54,76 @@ function codeFacts(ctx: PanelContext): CodeFacts | null {
   const targetBot = str(profile.status.target_bot_name, str(target?.bot_id, null));
   const targetDevice = str(profile.status.target_device, null);
   return {
-    repository: str(source?.repository, "Local repository") as string,
-    branch: str(source?.branch, "local") as string,
+    repository: str(source?.repository, "No repository selected") as string,
+    workdir: null,
+    branch: "—",
     hasRemoteSource: source?.kind === "github",
     target: targetBot ? [targetBot, targetDevice].filter(Boolean).join(" · ") : null,
     targetOnline: typeof profile.status.target_online === "boolean" ? profile.status.target_online : null,
     state: str(profile.status.state, "unconfigured") as string,
-    head: str(profile.status.head_commit, null),
+    head: null,
     lastError: str(profile.status.last_error, null),
   };
+}
+
+/** The profile describes the imported source; the connector's primary session is
+ *  the authority for the live checkout and Git facts shown in the Code surfaces. */
+function useCodeFacts(ctx: PanelContext): CodeFacts | null {
+  const facts = profileFacts(ctx);
+  const botId = ctx.profile?.config.execution_target?.bot_id;
+  const hasRemoteSource = facts?.hasRemoteSource ?? false;
+  const configuredRepository = facts?.repository ?? "";
+  const [workspaceResult, setWorkspaceResult] = useState<{
+    botId: string;
+    facts: Pick<CodeFacts, "repository" | "workdir" | "branch" | "head"> | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!botId) {
+      setWorkspaceResult(null);
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const [sessionsResult, workdirs] = await Promise.all([
+          listChannelBotSessions(ctx.channelId, botId),
+          getSessionWorkdirs(ctx.channelId, botId),
+        ]);
+        const primary = sessionsResult.sessions.find((session) => session.is_primary);
+        const workdir = workdirs.find((item) => item.session_id === primary?.session_id) ?? workdirs[0];
+        if (!workdir) {
+          if (active) setWorkspaceResult({ botId, facts: null });
+          return;
+        }
+        const git = await getGitStatus(ctx.channelId, botId, "", workdir.path, workdir.session_id);
+        const raw = "raw" in git ? git.raw : "";
+        const branch = raw.match(/^# branch\.head (.+)$/m)?.[1] ?? null;
+        const head = raw.match(/^# branch\.oid (.+)$/m)?.[1] ?? null;
+        const segments = workdir.path.replace(/\\/g, "/").split("/").filter(Boolean);
+        if (active) setWorkspaceResult({ botId, facts: {
+          repository: hasRemoteSource ? configuredRepository : (segments.at(-1) ?? workdir.path),
+          workdir: workdir.path,
+          branch: branch && branch !== "(detached)" ? branch : (branch ? "Detached HEAD" : "—"),
+          head: head && head !== "(initial)" ? head : null,
+        } });
+      } catch {
+        if (active) setWorkspaceResult({ botId, facts: null });
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    window.addEventListener("cheers:channel-workdir-changed", refresh);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("cheers:channel-workdir-changed", refresh);
+    };
+  }, [botId, ctx.channelId, hasRemoteSource, configuredRepository]);
+
+  if (!facts) return null;
+  const workspaceFacts = workspaceResult?.botId === botId ? workspaceResult.facts : null;
+  return workspaceFacts ? { ...facts, ...workspaceFacts } : facts;
 }
 
 function stateTone(state: string): string {
@@ -80,7 +146,10 @@ function ExecutionTargetDialog({
   const [repositories, setRepositories] = useState<HostRepository[]>([]);
   const [checkoutPath, setCheckoutPath] = useState("");
   const [customPath, setCustomPath] = useState(false);
+  const [pickingFolder, setPickingFolder] = useState(false);
   const [saving, setSaving] = useState(false);
+  const selectedHost = hosts.find((host) => host.host_id === hostId);
+  const canBrowseLocalFolder = isTauri() && selectedHost?.device_name === "Cheers Desktop";
 
   useEffect(() => {
     if (!open) return;
@@ -139,6 +208,7 @@ function ExecutionTargetDialog({
       );
       await setPrimaryChannelBotSession(ctx.channelId, host.bot_id, session.session_id);
       bustBotControls(ctx.channelId, host.bot_id);
+      window.dispatchEvent(new Event("cheers:channel-workdir-changed"));
       await putCodeProfile(ctx.channelId, {
         remote_source: ctx.profile?.config.remote_source,
         execution_target: { bot_id: host.bot_id, host_id: host.host_id },
@@ -149,6 +219,21 @@ function ExecutionTargetDialog({
       toast.error(error instanceof Error ? error.message : "Couldn't update execution target");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function chooseLocalFolder() {
+    setPickingFolder(true);
+    try {
+      const path = await pickFolder();
+      if (path) {
+        setCheckoutPath(path);
+        setCustomPath(true);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't open the folder picker");
+    } finally {
+      setPickingFolder(false);
     }
   }
 
@@ -187,6 +272,17 @@ function ExecutionTargetDialog({
                 onClick={() => setCustomPath((prev) => !prev)}
               >
                 {customPath ? "Choose from scanned repos" : "Enter custom path"}
+              </ControlTrigger>
+            )}
+            {canBrowseLocalFolder && (
+              <ControlTrigger
+                type="button"
+                controlSize="compact"
+                controlWidth="content"
+                disabled={pickingFolder}
+                onClick={() => void chooseLocalFolder()}
+              >
+                {pickingFolder ? "Opening…" : "Browse this Mac…"}
               </ControlTrigger>
             )}
           </div>
@@ -228,11 +324,11 @@ function ExecutionTargetDialog({
   );
 }
 
-/** Header: a compact chip beside the channel title. Hidden below `lg` — the header has
- *  no room for it on narrow desktops. Clickable to configure execution target & workdir. */
+/** Header: a compact chip beside the channel title. Clickable to configure execution
+ *  target and workdir; its contents truncate as needed instead of disappearing. */
 function CodeHeader(ctx: PanelContext) {
   const [open, setOpen] = useState(false);
-  const facts = codeFacts(ctx);
+  const facts = useCodeFacts(ctx);
   if (!facts) return null;
   return (
     <>
@@ -242,7 +338,7 @@ function CodeHeader(ctx: PanelContext) {
         controlSize="compact"
         onClick={() => setOpen(true)}
         selected={open}
-        className="hidden min-w-0 items-center gap-2 text-compact lg:inline-flex hover:text-content-strong"
+        className="min-w-0 max-w-full items-center gap-2 text-compact hover:text-content-strong"
         title={`${facts.repository} · ${facts.branch} · ${facts.state} — Configure repository & execution target`}
         aria-label="Configure repository & execution target"
         aria-haspopup="dialog"
@@ -252,6 +348,12 @@ function CodeHeader(ctx: PanelContext) {
         <span className="max-w-48 truncate text-content-secondary">{facts.repository}</span>
         <GitBranch className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />
         <span className="max-w-28 truncate">{facts.branch}</span>
+        {facts.workdir && (
+          <>
+            <Folder className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />
+            <span className="max-w-32 truncate" title={facts.workdir}>{facts.workdir}</span>
+          </>
+        )}
         <span className={stateTone(facts.state)}>{facts.state}</span>
       </ControlTrigger>
       <ExecutionTargetDialog ctx={ctx} open={open} onClose={() => setOpen(false)} />
@@ -262,7 +364,7 @@ function CodeHeader(ctx: PanelContext) {
 /** Lane: the full board — source, execution target, branch, and head commit. */
 function CodeBoard(ctx: PanelContext) {
   const [open, setOpen] = useState(false);
-  const facts = codeFacts(ctx);
+  const facts = useCodeFacts(ctx);
   if (!facts) return null;
   return (
     <PanelShell title="Code" icon={GitFork}>
@@ -270,7 +372,7 @@ function CodeBoard(ctx: PanelContext) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-compact text-content-muted">Repository &amp; Working directory</div>
-            <div className="mt-1 font-medium text-content-primary truncate">{facts.repository}</div>
+            <div className="mt-1 font-medium text-content-primary truncate" title={facts.workdir ?? undefined}>{facts.workdir ?? facts.repository}</div>
           </div>
           <Button
             action="switch"
