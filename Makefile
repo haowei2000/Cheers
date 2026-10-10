@@ -1,4 +1,4 @@
-.PHONY: lint fix test test-integration docs-pages design-system-check dev-gateway dev-frontend dev-ports dev-deps dev-deps-down
+.PHONY: lint fix test test-integration docs-pages design-system-check dev-gateway dev-frontend dev-ports dev-deps dev-deps-down dev-infra-up dev-infra-down dev-worktree-env dev-worktree-export dev-worktree-db
 
 # Mirrors the CI clippy step exactly: same feature set, same deny-warnings gate.
 # Without `--features integration` the integration suites aren't linted at all,
@@ -74,3 +74,26 @@ dev-deps:
 
 dev-deps-down:
 	$(INFISICAL_RUN) $(COMPOSE) stop $(DEV_DEPS)
+
+# Shared, long-lived backing services for host-run development processes across
+# worktrees. Data is persisted in named Docker volumes; per-worktree isolation
+# is provided by separate PostgreSQL databases and S3 buckets.
+DEV_INFRA_COMPOSE = docker compose -p cheers-dev-infra -f docker-compose.dev-infra.yml
+
+dev-infra-up:
+	$(DEV_INFRA_COMPOSE) up -d --wait
+
+dev-infra-down:
+	$(DEV_INFRA_COMPOSE) down
+
+# Print isolated local gateway settings for this checkout. The database and S3
+# bucket are provisioned idempotently by Postgres/S3 helpers when the gateway starts.
+dev-worktree-env:
+	@sh scripts/dev-worktree-env.sh env
+
+dev-worktree-export:
+	@sh scripts/dev-worktree-env.sh export
+
+# Provision this checkout's database in the shared local PostgreSQL instance.
+dev-worktree-db:
+	@sh scripts/dev-worktree-env.sh db

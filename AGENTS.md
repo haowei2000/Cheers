@@ -97,6 +97,47 @@ docker compose down
 > from `INTEGRATION_BASE_URL` (never hard-code a port) so multiple stacks can run in
 > parallel via a unique `COMPOSE_PROJECT_NAME` + distinct host ports.
 
+## Parallel Worktree Runtime Services
+
+For local development with multiple Git worktrees, share service processes and container
+images, but isolate mutable application data and host processes per worktree. The
+opt-in `docker-compose.dev-infra.yml` starts shared PostgreSQL, Redis, and RustFS
+services on loopback ports `15432`, `16379`, and `19000` (RustFS console `19001`).
+Start them once with `make dev-infra-up`; stop containers while retaining their named
+volumes with `make dev-infra-down`.
+
+- Give every worktree its own PostgreSQL database (for example `db_main`, `db_auth`),
+  and point `DATABASE_URL` at that database. sqlx migrations run on gateway startup,
+  so they must only affect that worktree's database.
+- Give each worktree a unique S3 bucket (`S3_BUCKET` or `STORAGE_S3_BUCKET`) on the
+  shared RustFS instance. The gateway creates its configured bucket during startup.
+- A worktree's local Rust gateway and Vite frontend are separate processes. Assign
+  distinct host ports; `make dev-worktree-env` prints deterministic database, bucket,
+  and gateway port settings for the current checkout. Set Vite's port separately with
+  `pnpm --dir frontend dev -- --port <unique-port>`.
+- Redis may use the shared `redis://127.0.0.1:16379/0` endpoint. Current gateway startup
+  uses in-process realtime fan-out; its Redis fan-out/registry implementations are not
+  wired into the single-instance runtime. If Redis-backed multi-instance behavior is
+  enabled later, every worktree/instance must use disjoint key and pub/sub channel
+  prefixes; a shared Redis database number alone does not isolate keys.
+- Do not run multiple copies of the full `docker-compose.yml.template` stack for this
+  workflow. That template owns its own database, Redis, and object-store processes.
+  The canonical reproducible cluster setup remains Helm/kind as described in
+  `CLAUDE.md`.
+
+Example:
+
+```bash
+make dev-infra-up
+eval "$(make dev-worktree-export)"  # load this checkout's isolated settings
+make dev-worktree-db        # create db_<worktree> once in shared PostgreSQL
+cd server && cargo run     # gateway runs this worktree's migrations
+pnpm --dir frontend dev -- --port 5173
+```
+
+Use a different frontend port for each active worktree. The printed gateway port is
+stable for a checkout name; adjust `PORT` if it collides with another local process.
+
 The frontend package in `frontend/` uses **pnpm** as its preferred package manager.
 Use `pnpm install` and `pnpm <script>` there; keep its `pnpm-lock.yaml` authoritative.
 CI, Docker builds, Tauri's frontend hooks, Make targets, and frontend setup docs should

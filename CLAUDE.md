@@ -142,6 +142,42 @@ helm uninstall cheers -n cheers           # remove the release (keeps the kind c
 > a port) so multiple stacks can run in parallel via a unique `COMPOSE_PROJECT_NAME` +
 > distinct host ports.
 
+## Parallel Worktree Runtime Services
+
+For concurrent local worktrees, use the opt-in `docker-compose.dev-infra.yml` to share
+PostgreSQL, Redis, and RustFS processes while isolating mutable data and app processes.
+Start the shared services once with `make dev-infra-up`; `make dev-infra-down` stops
+them but retains their named volumes. Defaults bind only to localhost: PostgreSQL
+`15432`, Redis `16379`, RustFS S3 `19000`, and RustFS console `19001`.
+
+- Use one PostgreSQL database per worktree (`db_main`, `db_auth`, etc.). Set that
+  worktree's `DATABASE_URL` to its database. Gateway startup applies sqlx migrations,
+  so never point parallel branches at the same database.
+- Use one RustFS bucket per worktree via `S3_BUCKET` / `STORAGE_S3_BUCKET`; the gateway
+  bootstraps its configured bucket.
+- Run one gateway and one Vite dev server per active worktree, each on unique host
+  ports. `make dev-worktree-env` prints deterministic database, bucket, and gateway
+  port values for the current checkout; select a separate Vite port with
+  `pnpm --dir frontend dev -- --port <unique-port>`.
+- Redis is shared at `redis://127.0.0.1:16379/0`. The current single-instance gateway
+  uses in-process realtime fan-out and does not wire its Redis fan-out/registry code
+  into startup. If Redis-backed multi-instance support is enabled later, isolate key
+  and pub/sub channel names with a unique per-worktree prefix.
+- Keep the existing Helm/kind deployment as the canonical reproducible full-stack
+  setup. The legacy full Compose template starts its own dependencies and is not the
+  shared-services path for parallel worktrees.
+
+```bash
+make dev-infra-up
+eval "$(make dev-worktree-export)"  # load this checkout's isolated settings
+make dev-worktree-db        # create db_<worktree> once in shared PostgreSQL
+cd server && cargo run
+pnpm --dir frontend dev -- --port 5173
+```
+
+Choose a different Vite port in each active worktree. Adjust the generated `PORT` if
+another local process already uses it.
+
 ## sqlx Migration Discipline (Mandatory)
 
 Migrations live in `server/migrations/<NNNN>_<desc>.sql` and run automatically on
