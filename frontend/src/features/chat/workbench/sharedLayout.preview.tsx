@@ -14,7 +14,7 @@ import "@/index.css";
 // local state you can change from the buttons, standing in for a teammate's save or an
 // agent writing `.workbench.json`.
 //
-// Run it: `npm run dev`, then open /dev/shared-layout.html.
+// Run it: `pnpm dev`, then open /dev/shared-layout.html.
 //
 // What it is here to show, none of which a pure test can reach:
 //   1. A window with no local geometry ADOPTS the shared placement.

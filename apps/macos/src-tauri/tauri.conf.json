@@ -4,9 +4,9 @@
   "version": "0.1.40",
   "identifier": "com.cheers.macos",
   "build": {
-    "beforeDevCommand": "npm --prefix ../../frontend run dev",
+    "beforeDevCommand": "pnpm --dir ../../frontend dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm --prefix ../../frontend run build",
+    "beforeBuildCommand": "pnpm --dir ../../frontend build",
     "frontendDist": "../../../frontend/dist"
   },
   "app": {

@@ -17,8 +17,8 @@
 
 - [ ] 已添加/更新单元测试
 - [ ] 本地 `pytest` 全量通过
-- [ ] 前端 `npm run build` 无报错
-- [ ] 涉及 npm 包时，对应包的 `npm run lint` / `npm test` / `npm run build` 已通过
+- [ ] 前端 `pnpm build` 无报错
+- [ ] 前端 `pnpm lint` / `pnpm test` / `pnpm build` 已通过
 
 ## 数据库迁移
 

@@ -1,13 +1,14 @@
 # Override for regional mirrors, e.g.
 #   --build-arg BASE_REGISTRY=docker.m.daocloud.io
-#   --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+#   --build-arg PNPM_REGISTRY=https://registry.npmmirror.com
 ARG BASE_REGISTRY=docker.io
 FROM ${BASE_REGISTRY}/library/node:20-alpine AS builder
-ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG PNPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /repo/frontend
-COPY frontend/package*.json ./
-RUN npm config set registry "${NPM_REGISTRY}" && \
-    npm ci --legacy-peer-deps
+RUN corepack enable
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm config set registry "${PNPM_REGISTRY}" && \
+    pnpm install --frozen-lockfile
 ARG VITE_API_PROXY_TARGET=http://gateway:8000
 ARG VITE_WS_PROXY_TARGET=ws://gateway:8000
 ARG VITE_PUBLIC_BASE_PATH=/
@@ -22,7 +23,7 @@ COPY frontend/ ./
 # The App Store policy/support pages live in website/ as their single source of
 # truth. Vite copies the selected public pages into dist during closeBundle.
 COPY website/ ../website/
-RUN npm run build
+RUN pnpm run build
 
 FROM ${BASE_REGISTRY}/library/nginx:alpine
 COPY --from=builder /repo/frontend/dist /usr/share/nginx/html

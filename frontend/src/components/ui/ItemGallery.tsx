@@ -91,7 +91,7 @@ const traceGalleryEvents: TraceEvent[] = [
     v: 1, id: "gallery-shell", event_id: "gallery-shell", msg_id: "gallery-message", channel_id: "gallery-channel",
     trace_seq: 2, kind: "trace", phase: "tool_call", status: "in_progress", is_terminal: false,
     created_at: "2026-08-12T07:44:01Z",
-    data: { presentation: { v: 2, event_type: "shell_command", family: "shell", operation: "run", confidence: "explicit", matched_by: "gallery", command: "npm run typecheck" } },
+    data: { presentation: { v: 2, event_type: "shell_command", family: "shell", operation: "run", confidence: "explicit", matched_by: "gallery", command: "pnpm typecheck" } },
   },
 ];
 
