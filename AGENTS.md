@@ -111,10 +111,10 @@ volumes with `make dev-infra-down`.
   so they must only affect that worktree's database.
 - Give each worktree a unique S3 bucket (`S3_BUCKET` or `STORAGE_S3_BUCKET`) on the
   shared RustFS instance. The gateway creates its configured bucket during startup.
-- A worktree's local Rust gateway and Vite frontend are separate processes. Assign
-  distinct host ports; `make dev-worktree-env` prints deterministic database, bucket,
-  and gateway port settings for the current checkout. Set Vite's port separately with
-  `pnpm --dir frontend dev -- --port <unique-port>`.
+- A worktree's local Rust gateway and Vite frontend are separate processes. The repo
+  `.envrc` sets distinct deterministic `GATEWAY_PORT` and `VITE_PORT` values, and
+  points Vite at that worktree's gateway. `make dev-worktree-gateway` and
+  `make dev-worktree-frontend` launch them with those settings.
 - Redis may use the shared `redis://127.0.0.1:16379/0` endpoint. Current gateway startup
   uses in-process realtime fan-out; its Redis fan-out/registry implementations are not
   wired into the single-instance runtime. If Redis-backed multi-instance behavior is
@@ -128,15 +128,19 @@ volumes with `make dev-infra-down`.
 Example:
 
 ```bash
+# Install direnv once (`brew install direnv`) and add
+# `eval "$(direnv hook zsh)"` to ~/.zshrc, then open a new shell.
+direnv allow               # once in each worktree
 make dev-infra-up
-eval "$(make dev-worktree-export)"  # load this checkout's isolated settings
 make dev-worktree-db        # create db_<worktree> once in shared PostgreSQL
-cd server && cargo run     # gateway runs this worktree's migrations
-pnpm --dir frontend dev -- --port 5173
+make dev-worktree-gateway  # Infisical supplies JWT and other secrets
+make dev-worktree-frontend # opens the generated Vite port
 ```
 
-Use a different frontend port for each active worktree. The printed gateway port is
-stable for a checkout name; adjust `PORT` if it collides with another local process.
+direnv loads the current worktree's settings on directory entry and unloads them on
+exit. Run `direnv allow` once in each newly created worktree. Ports are derived from
+the checkout directory name; if a generated port collides with another process, set
+`GATEWAY_PORT` or `VITE_PORT` in that worktree's ignored `.env` file and re-allow it.
 
 The frontend package in `frontend/` uses **pnpm** as its preferred package manager.
 Use `pnpm install` and `pnpm <script>` there; keep its `pnpm-lock.yaml` authoritative.

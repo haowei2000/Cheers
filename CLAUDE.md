@@ -156,9 +156,9 @@ them but retains their named volumes. Defaults bind only to localhost: PostgreSQ
 - Use one RustFS bucket per worktree via `S3_BUCKET` / `STORAGE_S3_BUCKET`; the gateway
   bootstraps its configured bucket.
 - Run one gateway and one Vite dev server per active worktree, each on unique host
-  ports. `make dev-worktree-env` prints deterministic database, bucket, and gateway
-  port values for the current checkout; select a separate Vite port with
-  `pnpm --dir frontend dev -- --port <unique-port>`.
+  ports. The repo `.envrc` sets deterministic `GATEWAY_PORT` and `VITE_PORT` values and
+  points Vite at that worktree's gateway. Use `make dev-worktree-gateway` and
+  `make dev-worktree-frontend` to launch them.
 - Redis is shared at `redis://127.0.0.1:16379/0`. The current single-instance gateway
   uses in-process realtime fan-out and does not wire its Redis fan-out/registry code
   into startup. If Redis-backed multi-instance support is enabled later, isolate key
@@ -168,15 +168,19 @@ them but retains their named volumes. Defaults bind only to localhost: PostgreSQ
   shared-services path for parallel worktrees.
 
 ```bash
+# Install direnv once (`brew install direnv`) and add
+# `eval "$(direnv hook zsh)"` to ~/.zshrc, then open a new shell.
+direnv allow
 make dev-infra-up
-eval "$(make dev-worktree-export)"  # load this checkout's isolated settings
 make dev-worktree-db        # create db_<worktree> once in shared PostgreSQL
-cd server && cargo run
-pnpm --dir frontend dev -- --port 5173
+make dev-worktree-gateway  # Infisical injects JWT and other secrets
+make dev-worktree-frontend
 ```
 
-Choose a different Vite port in each active worktree. Adjust the generated `PORT` if
-another local process already uses it.
+direnv loads settings when entering a worktree and unloads them on exit. Run
+`direnv allow` once per new worktree. Ports derive from the checkout directory name;
+if one collides, set `GATEWAY_PORT` or `VITE_PORT` in that worktree's ignored `.env`
+file and re-allow it.
 
 ## sqlx Migration Discipline (Mandatory)
 

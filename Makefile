@@ -1,4 +1,4 @@
-.PHONY: lint fix test test-integration docs-pages design-system-check dev-gateway dev-frontend dev-ports dev-deps dev-deps-down dev-infra-up dev-infra-down dev-worktree-env dev-worktree-export dev-worktree-db
+.PHONY: lint fix test test-integration docs-pages design-system-check dev-gateway dev-frontend dev-ports dev-deps dev-deps-down dev-infra-up dev-infra-down dev-worktree-env dev-worktree-export dev-worktree-db dev-worktree-gateway dev-worktree-frontend
 
 # Mirrors the CI clippy step exactly: same feature set, same deny-warnings gate.
 # Without `--features integration` the integration suites aren't linted at all,
@@ -97,3 +97,19 @@ dev-worktree-export:
 # Provision this checkout's database in the shared local PostgreSQL instance.
 dev-worktree-db:
 	@sh scripts/dev-worktree-env.sh db
+
+# Run the Gateway with Infisical secrets and this worktree's isolated resources.
+dev-worktree-gateway:
+	@test -n "$$DATABASE_URL" -a -n "$$GATEWAY_PORT" || { echo "Enter a direnv-enabled worktree first (run direnv allow once)." >&2; exit 1; }
+	$(INFISICAL_RUN) env \
+		DATABASE_URL="$$DATABASE_URL" REDIS_URL="$$REDIS_URL" \
+		S3_ENDPOINT="$$S3_ENDPOINT" S3_BUCKET="$$S3_BUCKET" \
+		S3_ACCESS_KEY="$$STORAGE_S3_ACCESS_KEY" \
+		S3_SECRET_KEY="$$STORAGE_S3_SECRET_KEY" \
+		CORS_ALLOWED_ORIGINS="$$CORS_ALLOWED_ORIGINS" PORT="$$GATEWAY_PORT" \
+		cargo run --manifest-path server/Cargo.toml
+
+# Launch Vite on the worktree's generated port and proxy to its Gateway.
+dev-worktree-frontend:
+	@test -n "$$VITE_PORT" -a -n "$$VITE_API_PROXY_TARGET" || { echo "Enter a direnv-enabled worktree first (run direnv allow once)." >&2; exit 1; }
+	PORT="$$VITE_PORT" pnpm --dir frontend dev
