@@ -25,8 +25,8 @@ describe("githubCode panels", () => {
 
     expect(markup).toContain('data-control-trigger=""');
     expect(markup).toContain('aria-haspopup="dialog"');
-    expect(markup).toContain("Local repository");
-    expect(markup).toContain("local");
+    expect(markup).toContain("No repository selected");
+    expect(markup).toContain("—");
     expect(markup).toContain("pending");
     expect(markup).toContain("Configure repository &amp; execution target");
   });
@@ -41,7 +41,7 @@ describe("githubCode panels", () => {
     const markup = renderToStaticMarkup(React.createElement(Board, mockContext));
 
     expect(markup).toContain("Repository &amp; Working directory");
-    expect(markup).toContain("Local repository");
+    expect(markup).toContain("No repository selected");
     expect(markup).toContain("Host execution target");
     expect(markup).toContain('title="Configure repository and working directory"');
     expect(markup).toContain('title="Configure execution target"');
