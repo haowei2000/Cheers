@@ -122,7 +122,9 @@ function useCodeFacts(ctx: PanelContext): CodeFacts | null {
   }, [botId, ctx.channelId, hasRemoteSource, configuredRepository]);
 
   if (!facts) return null;
-  const workspaceFacts = workspaceResult?.botId === botId ? workspaceResult.facts : null;
+  const workspaceFacts = workspaceResult && workspaceResult.botId === botId
+    ? workspaceResult.facts
+    : null;
   return workspaceFacts ? { ...facts, ...workspaceFacts } : facts;
 }
 
