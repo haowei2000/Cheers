@@ -87,6 +87,22 @@ docker compose down
 > 重建；新增时必须从 `INTEGRATION_BASE_URL` 读取目标 URL（绝不硬编码端口），以便
 > 通过唯一的 `COMPOSE_PROJECT_NAME` + 不同宿主机端口并行运行多套服务栈。
 
+`frontend/` 前端统一优先使用 **pnpm**：运行 `pnpm install` 和 `pnpm <脚本>`，并以
+`frontend/pnpm-lock.yaml` 作为权威锁文件。CI、Docker 构建、Tauri 前端钩子、Make 目标和前端安装文档都应使用 pnpm。其他独立 Node 包可继续使用自己的包管理器和锁文件，除非明确迁移。
+
+## Rust 构建缓存与 Worktree 维护
+
+本机 macOS 多 worktree 配置为每个 worktree 使用独立的 Cargo `target/`，多个 worktree
+共享全局 `sccache`，并由 Worktrunk 在 APFS 上通过写时复制（CoW）为新 worktree 复用构建文件。
+不要让并行 worktree 共用同一个 `CARGO_TARGET_DIR`：Cargo 会锁定 target 目录，并行 Agent 会等待锁或互相影响产物。
+
+- `.cargo/config.toml` 关闭增量编译，并将 dev/test profile 的调试信息设为仅行号；这是本仓库的本机开发配置，可降低 target 增长。需要 LLDB 变量和类型信息时，再临时覆盖 profile。
+- `target/` 保持 git 忽略且位于各自 worktree 中。`.worktreeinclude` 选择要复制的目录，`.config/wt.toml` 在 Worktrunk `pre-start` hook 运行 `wt step copy-ignored --require-include`。优先从已完成构建且没有正在写入的主 worktree 复制。APFS 会共享未变化的数据块，文件改写后才分配独立数据块。
+- 在个人 shell 配置中设置 `RUSTC_WRAPPER=sccache`、`CARGO_INCREMENTAL=0`、`SCCACHE_DIR=$HOME/Library/Caches/sccache`、`SCCACHE_CACHE_SIZE=100G`。不要提交个人绝对路径或凭据。使用 `sccache --show-stats` 和 `du -sh "$SCCACHE_DIR"` 检查缓存。
+- 开发单个模块时优先运行 `cargo check -p server` 或 `cargo test -p server`；需要集成验证时再运行 workspace 范围命令。独立 Rust package 可以拥有各自的 target 目录。
+- 清理前先确认没有 Cargo/rustc 构建使用目标目录。宽范围清理先运行 `cargo clean-all --dry-run --keep-days 21 --keep-size 2GiB <directory>` 并审查候选项；确认后才清理闲置 target。需要局部清理时使用 `cargo clean --release` 或 `cargo clean --doc`。主 worktree 的 target 应尽量保留作为 CoW 来源。不要把 CoW 克隆的 `du` 数值相加来判断物理占用；查看 `df -h /`。
+- 清理已合并 worktree 前先运行 `wt step prune --dry-run` 并审查候选项。Worktrunk 会跳过有未提交改动的 worktree。
+
 ## 相关文档
 
 - [文档主页](docs/help/README.zh-CN.md)

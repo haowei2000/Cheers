@@ -97,6 +97,87 @@ docker compose down
 > from `INTEGRATION_BASE_URL` (never hard-code a port) so multiple stacks can run in
 > parallel via a unique `COMPOSE_PROJECT_NAME` + distinct host ports.
 
+## Parallel Worktree Runtime Services
+
+For local development with multiple Git worktrees, share service processes and container
+images, but isolate mutable application data and host processes per worktree. The
+opt-in `docker-compose.dev-infra.yml` starts shared PostgreSQL, Redis, and RustFS
+services on loopback ports `15432`, `16379`, and `19000` (RustFS console `19001`).
+Start them once with `make dev-infra-up`; stop containers while retaining their named
+volumes with `make dev-infra-down`.
+
+- Give every worktree its own PostgreSQL database (for example `db_main`, `db_auth`),
+  and point `DATABASE_URL` at that database. sqlx migrations run on gateway startup,
+  so they must only affect that worktree's database.
+- Give each worktree a unique S3 bucket (`S3_BUCKET` or `STORAGE_S3_BUCKET`) on the
+  shared RustFS instance. The gateway creates its configured bucket during startup.
+- A worktree's local Rust gateway and Vite frontend are separate processes. The repo
+  `.envrc` sets distinct deterministic `GATEWAY_PORT` and `VITE_PORT` values, and
+  points Vite at that worktree's gateway. `make dev-worktree-gateway` and
+  `make dev-worktree-frontend` launch them with those settings.
+- Redis may use the shared `redis://127.0.0.1:16379/0` endpoint. Current gateway startup
+  uses in-process realtime fan-out; its Redis fan-out/registry implementations are not
+  wired into the single-instance runtime. If Redis-backed multi-instance behavior is
+  enabled later, every worktree/instance must use disjoint key and pub/sub channel
+  prefixes; a shared Redis database number alone does not isolate keys.
+- Do not run multiple copies of the full `docker-compose.yml.template` stack for this
+  workflow. That template owns its own database, Redis, and object-store processes.
+  The canonical reproducible cluster setup remains Helm/kind as described in
+  `CLAUDE.md`.
+
+Example:
+
+```bash
+# Install direnv once (`brew install direnv`) and add
+# `eval "$(direnv hook zsh)"` to ~/.zshrc, then open a new shell.
+direnv allow               # once in each worktree
+make dev-infra-up
+make dev-worktree-db        # create db_<worktree> once in shared PostgreSQL
+make dev-worktree-gateway  # Infisical supplies JWT and other secrets
+make dev-worktree-frontend # opens the generated Vite port
+```
+
+direnv loads the current worktree's settings on directory entry and unloads them on
+exit. Run `direnv allow` once in each newly created worktree. Ports are derived from
+the checkout directory name; if a generated port collides with another process, set
+`GATEWAY_PORT` or `VITE_PORT` in that worktree's ignored `.env` file and re-allow it.
+
+The frontend package in `frontend/` uses **pnpm** as its preferred package manager.
+Use `pnpm install` and `pnpm <script>` there; keep its `pnpm-lock.yaml` authoritative.
+CI, Docker builds, Tauri's frontend hooks, Make targets, and frontend setup docs should
+use pnpm. Other independent Node packages may retain their existing package manager and
+lockfile until they are explicitly migrated.
+
+## Rust Build Cache and Worktree Maintenance
+
+This macOS development setup uses separate Cargo `target/` directories per worktree,
+one global `sccache` cache, and Worktrunk's APFS copy-on-write (CoW) copy to warm up
+new worktrees. Never point parallel worktrees at one shared `CARGO_TARGET_DIR`:
+Cargo serializes access to a target directory and concurrent agents can wait on its
+locks or interfere with artifacts.
+
+- `.cargo/config.toml` keeps incremental compilation off and uses line-table debug
+  information for dev and test profiles. This is a local repo setting to reduce target
+  growth; remove it only after measuring a need for full LLDB variable/type information.
+- Keep `target/` ignored and local to each worktree. `.worktreeinclude` selects it for
+  `wt step copy-ignored --require-include`, and `.config/wt.toml` runs that step in the
+  `pre-start` hook. APFS shares unchanged file blocks; changed files consume separate
+  blocks. Copy from a quiet, already-built primary worktree when possible.
+- Configure `RUSTC_WRAPPER=sccache`, `CARGO_INCREMENTAL=0`,
+  `SCCACHE_DIR=$HOME/Library/Caches/sccache`, and `SCCACHE_CACHE_SIZE=100G` in the
+  developer's shell environment. Do not commit machine-specific absolute paths or
+  credentials. Verify with `sccache --show-stats` and `du -sh "$SCCACHE_DIR"`.
+- Prefer focused commands such as `cargo check -p server` or `cargo test -p server`;
+  run workspace-wide commands when integration coverage is needed. Each Rust package
+  with its own manifest may own a separate target directory.
+- Before cleaning, confirm no `cargo`/`rustc` build is using the target. Preview broad
+  cleanup with `cargo clean-all --dry-run --keep-days 21 --keep-size 2GiB <directory>`.
+  Only clean inactive targets after reviewing the preview; use `cargo clean --release`
+  or `cargo clean --doc` for narrower cleanup. Keep the primary worktree's target warm
+  for CoW copies. Do not sum `du` sizes of CoW clones as physical usage; use `df -h /`.
+- Review merged worktrees with `wt step prune --dry-run` before pruning. Worktrunk
+  skips worktrees with uncommitted changes, but always review the candidates first.
+
 ## Related Documentation
 
 - [Documentation Home](docs/help/README.md)

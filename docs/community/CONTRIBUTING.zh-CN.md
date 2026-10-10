@@ -23,8 +23,8 @@ cargo run   # 启动时自动运行 sqlx 迁移
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Docker Compose：
@@ -43,10 +43,10 @@ docker compose up -d
 
 ```bash
 cd server && cargo build && cargo test
-cd frontend && npm run build
+cd frontend && pnpm build
 ```
 
-npm 包变更还需要运行对应包目录下的 `npm run lint`、`npm test`、`npm run build`。
+前端变更还需要在 `frontend/` 中运行 `pnpm lint`、`pnpm test` 和 `pnpm build`。其他由 npm 管理的独立包继续使用各自的包管理器和锁文件。
 
 ## npm 包发布说明
 
