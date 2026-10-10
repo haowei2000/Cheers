@@ -49,6 +49,7 @@
     "react-router-dom": "^7.18.2",
     "remark-gfm": "^4.0.0",
     "tailwind-merge": "^3.7.0",
+    "workbox-window": "^7.4.1",
     "yaml": "^2.9.0",
     "zustand": "^5.0.15"
   },
