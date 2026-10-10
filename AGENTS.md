@@ -97,6 +97,36 @@ docker compose down
 > from `INTEGRATION_BASE_URL` (never hard-code a port) so multiple stacks can run in
 > parallel via a unique `COMPOSE_PROJECT_NAME` + distinct host ports.
 
+## Rust Build Cache and Worktree Maintenance
+
+This macOS development setup uses separate Cargo `target/` directories per worktree,
+one global `sccache` cache, and Worktrunk's APFS copy-on-write (CoW) copy to warm up
+new worktrees. Never point parallel worktrees at one shared `CARGO_TARGET_DIR`:
+Cargo serializes access to a target directory and concurrent agents can wait on its
+locks or interfere with artifacts.
+
+- `.cargo/config.toml` keeps incremental compilation off and uses line-table debug
+  information for dev and test profiles. This is a local repo setting to reduce target
+  growth; remove it only after measuring a need for full LLDB variable/type information.
+- Keep `target/` ignored and local to each worktree. `.worktreeinclude` selects it for
+  `wt step copy-ignored --require-include`, and `.config/wt.toml` runs that step in the
+  `pre-start` hook. APFS shares unchanged file blocks; changed files consume separate
+  blocks. Copy from a quiet, already-built primary worktree when possible.
+- Configure `RUSTC_WRAPPER=sccache`, `CARGO_INCREMENTAL=0`,
+  `SCCACHE_DIR=$HOME/Library/Caches/sccache`, and `SCCACHE_CACHE_SIZE=100G` in the
+  developer's shell environment. Do not commit machine-specific absolute paths or
+  credentials. Verify with `sccache --show-stats` and `du -sh "$SCCACHE_DIR"`.
+- Prefer focused commands such as `cargo check -p server` or `cargo test -p server`;
+  run workspace-wide commands when integration coverage is needed. Each Rust package
+  with its own manifest may own a separate target directory.
+- Before cleaning, confirm no `cargo`/`rustc` build is using the target. Preview broad
+  cleanup with `cargo clean-all --dry-run --keep-days 21 --keep-size 2GiB <directory>`.
+  Only clean inactive targets after reviewing the preview; use `cargo clean --release`
+  or `cargo clean --doc` for narrower cleanup. Keep the primary worktree's target warm
+  for CoW copies. Do not sum `du` sizes of CoW clones as physical usage; use `df -h /`.
+- Review merged worktrees with `wt step prune --dry-run` before pruning. Worktrunk
+  skips worktrees with uncommitted changes, but always review the candidates first.
+
 ## Related Documentation
 
 - [Documentation Home](docs/help/README.md)

@@ -59,6 +59,32 @@ npm run security:check             # frontend security rules + npm audit — CI 
 # Connector / MCP crates: cargo fmt --check, cargo test, cargo check inside each package dir
 ```
 
+## Rust Build Cache and Worktree Maintenance
+
+On macOS, use a separate Cargo `target/` per worktree, one global `sccache` cache, and
+Worktrunk's APFS copy-on-write (CoW) copy to warm up new worktrees. Do not set a shared
+`CARGO_TARGET_DIR` for concurrently active worktrees; Cargo locks target directories.
+
+- `.cargo/config.toml` disables incremental compilation and sets line-table debug info
+  for dev/test profiles to limit local target growth. Full LLDB variable/type debugging
+  may need a temporary profile override.
+- `.worktreeinclude` selects ignored `target/` files and `.config/wt.toml` copies them
+  during Worktrunk's `pre-start` hook. Build in the primary worktree first and avoid
+  copying while Cargo is rewriting its artifacts. CoW shares unchanged blocks; later
+  writes allocate private blocks.
+- Set `RUSTC_WRAPPER=sccache`, `CARGO_INCREMENTAL=0`,
+  `SCCACHE_DIR=$HOME/Library/Caches/sccache`, and `SCCACHE_CACHE_SIZE=100G` in the local
+  shell configuration. Check `sccache --show-stats`; do not commit local paths or
+  credentials.
+- Build focused crates (`cargo check -p server`, `cargo test -p server`) during module
+  development and run workspace-wide commands for integration validation. Independent
+  Rust packages can have separate target directories.
+- Before cleanup, confirm no Cargo build is active. Preview with
+  `cargo clean-all --dry-run --keep-days 21 --keep-size 2GiB <directory>` and review
+  candidates. Keep the primary target warm. `du` over CoW clones is not physical disk
+  usage; check `df -h /` instead. Preview merged worktree removal with
+  `wt step prune --dry-run`.
+
 ## Local Run: Kubernetes (canonical)
 
 The local stack runs on a **kind** cluster via the **Helm chart** at
