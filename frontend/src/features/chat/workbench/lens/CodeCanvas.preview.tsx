@@ -5,7 +5,7 @@ import { Textarea as UiTextarea } from "@/components/ui/textarea";
 import { ArtifactLens } from "./ArtifactLens";
 import "@/index.css";
 
-// Run `npm run dev`, then open /dev/code-canvas.html. Drag a card in Design Mode:
+// Run `pnpm dev`, then open /dev/code-canvas.html. Drag a card in Design Mode:
 // the same source shown at right should change its data-cheers-position literal.
 const START = `export default function Dashboard() {
   return <main data-cheers-canvas style={{height: "100%", background: "#f5f2ed"}}>

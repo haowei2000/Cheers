@@ -87,6 +87,9 @@ docker compose down
 > 重建；新增时必须从 `INTEGRATION_BASE_URL` 读取目标 URL（绝不硬编码端口），以便
 > 通过唯一的 `COMPOSE_PROJECT_NAME` + 不同宿主机端口并行运行多套服务栈。
 
+`frontend/` 前端统一优先使用 **pnpm**：运行 `pnpm install` 和 `pnpm <脚本>`，并以
+`frontend/pnpm-lock.yaml` 作为权威锁文件。CI、Docker 构建、Tauri 前端钩子、Make 目标和前端安装文档都应使用 pnpm。其他独立 Node 包可继续使用自己的包管理器和锁文件，除非明确迁移。
+
 ## Rust 构建缓存与 Worktree 维护
 
 本机 macOS 多 worktree 配置为每个 worktree 使用独立的 Cargo `target/`，多个 worktree

@@ -40,7 +40,7 @@ dev-gateway:
 	$(INFISICAL_RUN) cargo run --manifest-path server/Cargo.toml
 
 dev-frontend:
-	$(INFISICAL_RUN) npm --prefix frontend run dev
+	$(INFISICAL_RUN) pnpm --dir frontend dev
 
 # Infisical 的 dev 值指向 localhost:5432 / :9000，但本地 Postgres 和 rustfs 只作为
 # ClusterIP 跑在 kind 里（deploy/kind-config.yaml 只映射了 NodePort 30080）。没有

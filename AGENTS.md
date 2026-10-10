@@ -97,6 +97,12 @@ docker compose down
 > from `INTEGRATION_BASE_URL` (never hard-code a port) so multiple stacks can run in
 > parallel via a unique `COMPOSE_PROJECT_NAME` + distinct host ports.
 
+The frontend package in `frontend/` uses **pnpm** as its preferred package manager.
+Use `pnpm install` and `pnpm <script>` there; keep its `pnpm-lock.yaml` authoritative.
+CI, Docker builds, Tauri's frontend hooks, Make targets, and frontend setup docs should
+use pnpm. Other independent Node packages may retain their existing package manager and
+lockfile until they are explicitly migrated.
+
 ## Rust Build Cache and Worktree Maintenance
 
 This macOS development setup uses separate Cargo `target/` directories per worktree,

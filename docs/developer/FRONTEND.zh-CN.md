@@ -507,14 +507,14 @@ types/
 
 ```bash
 cd frontend
-npm run build
+pnpm build
 ```
 
 涉及样式、布局、搜索、成员项、文件预览、消息渲染时，还应本地启动并手工检查：
 
 ```bash
 cd frontend
-npm run dev
+pnpm dev
 ```
 
 重点检查：

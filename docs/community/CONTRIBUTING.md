@@ -18,8 +18,8 @@ cargo run   # runs sqlx migrations on startup
 ```
 front end:```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 Docker Compose:```bash
 cp docker-compose.yml.template docker-compose.yml
@@ -32,9 +32,9 @@ Please modify the default password and key in `.env` before running it for the f
 
 Run based on change scope:```bash
 cd server && cargo build && cargo test
-cd frontend && npm run build
+cd frontend && pnpm build
 ```
-npm package changes also require running `npm run lint`, `npm test`, and `npm run build` in the corresponding package directory.
+Frontend changes also require running `pnpm lint`, `pnpm test`, and `pnpm build` in `frontend/`. Other npm-managed packages keep using their own package manager and lockfile.
 
 ## npm package release notes
 

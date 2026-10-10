@@ -169,7 +169,7 @@ wait_http "$gateway_origin/health" "$gateway_pid" || { tail -n 100 "$case_dir/ga
 
 (
   cd "$repo_root/frontend"
-  PORT="$frontend_port" VITE_API_PROXY_TARGET="$gateway_origin" npm run dev -- --host 127.0.0.1 --strictPort
+  PORT="$frontend_port" VITE_API_PROXY_TARGET="$gateway_origin" pnpm run dev -- --host 127.0.0.1 --strictPort
 ) >"$case_dir/frontend.log" 2>&1 &
 frontend_pid=$!
 wait_http "$frontend_origin" "$frontend_pid" || { tail -n 100 "$case_dir/frontend.log" >&2; exit 1; }

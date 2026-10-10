@@ -47,17 +47,22 @@ cargo test <name>                  # single test filter
 cargo clippy --all-targets         # lint (also: make lint from repo root)
 cargo fmt                          # format — run `cargo fmt --check` per-crate before pushing; CI's fmt gate fails PRs that cargo check/test won't catch
 
-# Frontend (run from frontend/)
-npm run dev                        # Vite dev server
-npm run typecheck                  # tsc --noEmit
-npm run test                       # vitest run
-npm run build
-npm run design-system:check        # DESIGN.md conformance — CI gate; typecheck/test/lint do NOT catch it
-npm run design-system:test         # the checker's own tests
-npm run security:check             # frontend security rules + npm audit — CI gate
+# Frontend (run from frontend/, managed with pnpm)
+pnpm dev                           # Vite dev server
+pnpm typecheck                     # tsc --noEmit
+pnpm test                          # vitest run
+pnpm build
+pnpm design-system:check           # DESIGN.md conformance — CI gate; typecheck/test/lint do NOT catch it
+pnpm design-system:test            # the checker's own tests
+pnpm security:check                # frontend security rules + pnpm audit — CI gate
 
 # Connector / MCP crates: cargo fmt --check, cargo test, cargo check inside each package dir
 ```
+
+Use **pnpm** as the preferred package manager for `frontend/`: run `pnpm install` and
+`pnpm <script>`, and keep `frontend/pnpm-lock.yaml` authoritative. CI, Docker builds,
+Tauri frontend hooks, Make targets, and frontend setup docs should use pnpm. Other
+independent Node packages may continue using their own package manager and lockfile.
 
 ## Rust Build Cache and Worktree Maintenance
 
@@ -128,7 +133,7 @@ helm uninstall cheers -n cheers           # remove the release (keeps the kind c
 ```
 
 > Fast frontend-only inner loop: you can still run Vite
-> (`npm --prefix frontend run dev`) pointed at the in-cluster gateway, but the
+> (`pnpm --dir frontend dev`) pointed at the in-cluster gateway, but the
 > canonical, reproducible stack is the Helm/kind path above — start it with k8s.
 
 > Integration tests against the running stack are being re-established on the Rust
