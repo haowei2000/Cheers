@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { SurfaceSpinner } from "@/components/ui/spinner";
+import { ErrorState } from "@/components/ui/error-state";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import { listChannelFiles } from "@/api/files";
 import { FloatingPanel } from "@/components/ui/floating-panel";
@@ -23,16 +24,20 @@ export function ChannelFilesDialog({
   focusFileId?: string;
 }) {
   const [files, setFiles] = useState<FileInfo[] | null>(null);
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
+    setFiles(null);
+    setError(false);
     listChannelFiles(channelId)
       .then((f) => alive && setFiles(f))
-      .catch(() => alive && setFiles([]));
+      .catch(() => alive && setError(true));
     return () => {
       alive = false;
     };
-  }, [channelId]);
+  }, [channelId, attempt]);
 
   return (
     <FloatingPanel
@@ -56,7 +61,7 @@ export function ChannelFilesDialog({
         <GlanceRow
           Icon={Paperclip}
           label="Files"
-          value={files === null ? "…" : String(files.length)}
+          value={error ? "Error" : files === null ? "…" : String(files.length)}
           onClick={expand}
           title="Open channel files"
         >
@@ -69,7 +74,14 @@ export function ChannelFilesDialog({
         </GlanceRow>
       )}
     >
-      {files === null ? (
+      {error ? (
+        <ErrorState
+          className="h-full"
+          title="Couldn't load channel files"
+          description="Check your connection and try again."
+          action={{ label: "Retry", onClick: () => setAttempt((n) => n + 1) }}
+        />
+      ) : files === null ? (
         <SurfaceSpinner />
       ) : (
         <FileGrid

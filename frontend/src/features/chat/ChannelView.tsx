@@ -795,6 +795,10 @@ export function ChannelView({
   );
   const closeWorkbench = useCallback(() => setWbOpen(false), [setWbOpen]);
 
+  const composerPinnedTargetName = selectedSessionId && selectedSessionBotId
+    ? switcherBots.find((bot) => bot.botId === selectedSessionBotId)?.name ?? selectedSessionBotId
+    : undefined;
+
   // Hoisted so the memoized MessageComposer isn't handed a fresh `toolbar` element
   // on every streaming delta render. Null when there's no channel (composer unmounted).
   const composerToolbar = useMemo(
@@ -1774,6 +1778,7 @@ export function ChannelView({
                           <MessageComposer
                             channelId={channel.channel_id}
                             channelName={channel.name}
+                            sessionTargetName={composerPinnedTargetName}
                             mentionables={mentionables}
                             commands={commands}
                             toolbar={composerToolbar}
@@ -1903,6 +1908,7 @@ export function ChannelView({
                   <MessageComposer
                     channelId={channel.channel_id}
                     channelName={channel.name}
+                    sessionTargetName={composerPinnedTargetName}
                     mentionables={mentionables}
                     commands={commands}
                     toolbar={composerToolbar}

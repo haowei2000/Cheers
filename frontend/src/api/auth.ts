@@ -1,6 +1,7 @@
 import { apiJson, currentAccessToken } from "./client";
 import { getServerBase, isTauri } from "@/lib/serverConfig";
 import { invokeDesktop } from "@/lib/desktop";
+import { useAuthStore } from "@/stores/authStore";
 
 export interface LoginResponse {
   status?: "authenticated" | "factor_required";
@@ -628,7 +629,6 @@ export async function logout(): Promise<{ ok: boolean }> {
   if (isTauri()) {
     const serverBase = getServerBase();
     if (serverBase) {
-      const { useAuthStore } = await import("@/stores/authStore");
       await invokeDesktop("desktop_logout_session", {
         serverBase,
         accessToken: useAuthStore.getState().token,

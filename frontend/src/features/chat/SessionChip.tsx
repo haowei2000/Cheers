@@ -298,7 +298,7 @@ export function SessionChip({
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((i) => (i - 1 + items.length) % items.length);
-    } else if (e.key === "Enter" || e.key === "Tab") {
+    } else if (e.key === "Enter") {
       e.preventDefault();
       const item = items[activeIndex];
       if (item) activate(item);
@@ -337,9 +337,18 @@ export function SessionChip({
         ) : (
           <Layers className={cn("w-3.5 h-3.5 shrink-0", open ? "text-accent-400" : "text-content-muted")} />
         )}
-        <span className="max-w-28 truncate">{selected ? selectedDirectory ?? "Default" : "Auto"}</span>
+        <span className="max-w-28 truncate">{selected ? "Pinned" : "Auto"}</span>
         <ChevronDown className={cn("w-3.5 h-3.5 shrink-0 transition-transform", open && "rotate-180")} />
       </ComposerToolbarButton>
+      {selected && (
+        <span
+          className="self-center truncate text-compact text-content-secondary"
+          title={`Messages go directly to @${selected.bot_name}; @mentions are ignored`}
+          aria-label={`Pinned target @${selected.bot_name}; ignores @mentions`}
+        >
+          @{selected.bot_name} · ignores mentions
+        </span>
+      )}
 
       {open && (
         <PopoverPanel className="w-80 max-w-[calc(100vw-2rem)] max-h-[min(70vh,28rem)] overflow-y-auto p-1">

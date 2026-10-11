@@ -48,7 +48,7 @@ export function ServerPicker() {
         </p>
         <p className="text-compact text-content-muted mt-1 mb-4">
           The address of the Cheers deployment this app should talk to. You can
-          change it later in Settings → Account.
+          change it later in Settings → Server.
         </p>
         <Input
           value={value}

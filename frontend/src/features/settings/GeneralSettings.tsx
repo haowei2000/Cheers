@@ -1,13 +1,14 @@
-import { ButtonGroup } from "@/components/ui/button-group";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell, Palette } from "lucide-react";
 import toast from "react-hot-toast";
 import { ActionButton } from "@/components/ui/action-button";
+import { ButtonGroup } from "@/components/ui/button-group";
+import { Input } from "@/components/ui/input";
 import { SettingsCard, SettingsCardSection, SettingsSection } from "@/components/ui/settings-card";
 import { ThemeSelector } from "@/components/ui/theme-selector";
 import { useAuthStore } from "@/stores/authStore";
 import { disablePush, enablePush, getPushStatus, type PushStatus } from "@/lib/push";
-import { getServerBase, isTauri, setServerBase } from "@/lib/serverConfig";
+import { getServerBase, isTauri, normalizeBase, setServerBase } from "@/lib/serverConfig";
 import {
   getAutostart,
   setAutostart,
@@ -32,6 +33,64 @@ export function AppearanceCard() {
 export function ServerCard() {
   const logout = useAuthStore((s) => s.logout);
   const base = isTauri() ? getServerBase() : window.location.origin;
+  const [changing, setChanging] = useState(false);
+  const [candidate, setCandidate] = useState(base ?? "https://www.tocheers.com");
+  const [checkedBase, setCheckedBase] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const checkController = useRef<AbortController | null>(null);
+
+  async function checkServer() {
+    const normalized = normalizeBase(candidate);
+    if (!normalized) {
+      setError("Enter an HTTPS server address. HTTP is only allowed for localhost development.");
+      setCheckedBase(null);
+      return;
+    }
+    setChecking(true);
+    setError(null);
+    setCheckedBase(null);
+    const controller = new AbortController();
+    checkController.current = controller;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 8000);
+    try {
+      const response = await fetch(`${normalized}/health`, { signal: controller.signal });
+      if (!response.ok) throw new Error(`health check failed (HTTP ${response.status})`);
+      setCheckedBase(normalized);
+    } catch (e) {
+      if (timedOut) setError("Server didn't respond — check the address and your network.");
+      else if (!controller.signal.aborted) {
+        setError(`Couldn't reach that server${e instanceof Error ? ` (${e.message})` : ""}.`);
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (checkController.current === controller) checkController.current = null;
+      setChecking(false);
+    }
+  }
+
+  function cancelChange() {
+    checkController.current?.abort();
+    checkController.current = null;
+    setChecking(false);
+    setCandidate(base ?? "https://www.tocheers.com");
+    setCheckedBase(null);
+    setError(null);
+    setChanging(false);
+  }
+
+  function switchServer() {
+    if (!checkedBase) return;
+    // Commit only after the user has selected and verified a destination.
+    logout();
+    setServerBase(checkedBase);
+    window.location.reload();
+  }
+
   return (
     <SettingsCard
       title="Server"
@@ -46,22 +105,51 @@ export function ServerCard() {
           )}
         </>
       }
-      actions={
-        isTauri() ? (
-          <ActionButton action="switch" context="settings"
-            accessibleLabel="Switch server"
-            controlSize="compact"
-            onClick={() => {
-              // Order matters: drop the session first (the token belongs to the
-              // old server), then clear the base — reload lands on the picker.
-              logout();
-              setServerBase(null);
-              window.location.reload();
+      actions={isTauri() && !changing ? (
+        <ActionButton action="switch" context="settings"
+          accessibleLabel="Choose another server"
+          controlSize="compact"
+          onClick={() => setChanging(true)}
+        />
+      ) : undefined}
+    >
+      {isTauri() && changing && (
+        <div className="space-y-3">
+          <span id="server-address-label" className="block text-caption text-content-secondary">
+            New server address
+          </span>
+          <Input
+            id="server-address"
+            value={candidate}
+            onChange={(event) => {
+              setCandidate(event.target.value);
+              setCheckedBase(null);
+              setError(null);
             }}
+            onKeyDown={(event) => event.key === "Enter" && !checking && void checkServer()}
+            placeholder="https://example.com"
+            aria-labelledby="server-address-label"
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "server-address-error" : undefined}
+            disabled={checking}
           />
-        ) : undefined
-      }
-    />
+          {error && <p id="server-address-error" role="alert" className="text-caption text-removed-400">{error}</p>}
+          {checkedBase && (
+            <p className="text-caption text-content-secondary">
+              Ready to switch to <span className="font-code">{checkedBase}</span>. This signs you out and restarts Cheers.
+            </p>
+          )}
+          <ButtonGroup label="Server change actions">
+            {!checkedBase ? (
+              <ActionButton action="test" context="settings" accessibleLabel="Check server address" loading={checking} onClick={() => void checkServer()} />
+            ) : (
+              <ActionButton action="switch" context="settings" accessibleLabel="Switch server and sign out" onClick={switchServer} />
+            )}
+            <ActionButton action="cancel" context="dialog" onClick={cancelChange} />
+          </ButtonGroup>
+        </div>
+      )}
+    </SettingsCard>
   );
 }
 
