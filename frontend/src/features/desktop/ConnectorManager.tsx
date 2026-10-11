@@ -1,6 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
-import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -38,10 +37,11 @@ import {
 import { isTauri } from "@/lib/serverConfig";
 import { ConnectorConfigForm } from "./ConnectorConfigForm";
 import { ConnectorChanges } from "./ConnectorChanges";
+import { LocalHostSetup } from "./LocalHostSetup";
 import { AgentUpdates } from "./AgentUpdates";
-import { AgentPicker, type DetectedAgent } from "./AgentPicker";
+import { type DetectedAgent } from "./AgentPicker";
 import { consumeConnectorIntent } from "./connectorIntent";
-import { createHost, listBots, redeemHostPairing, type AgentType } from "@/api/bots";
+import { listBots, redeemHostPairing, type AgentType } from "@/api/bots";
 import type { BotItem } from "@/types";
 
 /** Shape returned by the Tauri `connector_list` command (src-tauri/src/connector.rs). */
@@ -115,8 +115,9 @@ async function ensureAdapterReady(agentType: AgentType): Promise<boolean> {
       toast.error(detail, { id: toastId });
       return false;
     }
-  } catch {
-    return true;
+  } catch (error) {
+    toast.error(typeof error === "string" ? error : "Could not check installed agents. Try again.");
+    return false;
   }
 }
 
@@ -213,7 +214,6 @@ export function ConnectorManager() {
   const [pairingCode, setPairingCode] = useState("");
   const [agentType, setAgentType] = useState<AgentType>("codex");
   const [onboarding, setOnboarding] = useState(false);
-  const [onboardingError, setOnboardingError] = useState<string | null>(null);
   // Advanced fallback: start straight from an existing .toml on disk.
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -393,44 +393,6 @@ export function ConnectorManager() {
       toast.error(
         typeof e === "string" ? e : e instanceof Error ? e.message : "couldn't use that code"
       );
-    } finally {
-      setOnboarding(false);
-    }
-  }
-
-  // ── onboarding (the New tile) ──────────────────────────────────────────────
-  async function onboard() {
-    setOnboardingError(null);
-    setOnboarding(true);
-    try {
-      // Pre-flight the adapter before creating a pending host, so an
-      // unavailable local agent does not leave a pairing behind.
-      if (!(await ensureAdapterReady(agentType))) {
-        return;
-      }
-
-      const botId = existingBotId;
-      if (!botId) {
-        toast.error("Pick a bot first");
-        return;
-      }
-      const pairing = await createHost(botId, agentType, "Cheers Desktop");
-      const redeemed = await redeemHostPairing(pairing.pairing_code, "Cheers Desktop");
-      const configPath = await invokeDesktop<string>("connector_write_onboarded", {
-        accountId: redeemed.account_id,
-        configToml: redeemed.config_toml,
-        token: redeemed.credential,
-        tokenFile: redeemed.credential_file,
-      });
-      await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
-      toast.success(`Host "${redeemed.account_id}" is running`);
-      setModal(null);
-      refresh();
-    } catch (e) {
-      const detail =
-        typeof e === "string" ? e : e instanceof Error ? e.message : "onboarding failed";
-      setOnboardingError(detail);
-      toast.error(detail);
     } finally {
       setOnboarding(false);
     }
@@ -715,12 +677,8 @@ export function ConnectorManager() {
           <OnboardForm
             bots={bots}
             existingBotId={existingBotId}
-            setExistingBotId={setExistingBotId}
             agentType={agentType}
-            setAgentType={setAgentType}
-            onboarding={onboarding}
-            onboardingError={onboardingError}
-            onSubmit={() => void onboard()}
+            onDone={() => { setModal(null); refresh(); }}
             advancedOpen={advancedOpen}
             setAdvancedOpen={setAdvancedOpen}
             newName={newName}
@@ -1001,12 +959,8 @@ function AuditRow({ e }: { e: AuditEvent }) {
 function OnboardForm(props: {
   bots: BotItem[];
   existingBotId: string;
-  setExistingBotId: (v: string) => void;
   agentType: AgentType;
-  setAgentType: (v: AgentType) => void;
-  onboarding: boolean;
-  onboardingError: string | null;
-  onSubmit: () => void;
+  onDone: () => void;
   advancedOpen: boolean;
   setAdvancedOpen: (v: boolean) => void;
   newName: string;
@@ -1019,66 +973,7 @@ function OnboardForm(props: {
   const p = props;
   return (
     <div className="grid gap-3">
-      <div className="rounded-sm bg-indigo-950/35 p-3 text-compact text-accent-100">
-        <p className="font-medium">Four steps, all on this Mac</p>
-        <p className="mt-1 text-accent-200/75">
-          Choose a bot → check its agent → save its host config → start and verify it.
-          If startup fails, the host remains below with recovery and diagnostics.
-        </p>
-      </div>
-      <Field label="Bot identity" htmlFor="onb-bot">
-          <UiSelect
-            id="onb-bot"
-            value={p.existingBotId}
-            onChange={(e) => p.setExistingBotId(e.target.value)}
-            controlSize="regular"
-          >
-            {p.bots.length === 0 && <option value="">No manageable bots</option>}
-            {p.bots.map((b) => (
-              <option key={b.bot_id} value={b.bot_id}>
-                {b.display_name || b.username}
-              </option>
-            ))}
-          </UiSelect>
-        </Field>
-      {p.bots.length === 0 && <div className="rounded-sm bg-amber-950/30 p-3 text-compact text-warning-200">
-        Create a bot identity first; hosts cannot create bots.
-        <div className="mt-2"><Button action="open" variant="secondary" controlSize="compact" onClick={() => window.location.assign("/fleet/bots")}>Create bot in Fleet</Button></div>
-      </div>}
-
-      <Field label="Agent">
-        <AgentPicker
-          value={p.agentType}
-          onPick={(key) => {
-            // Picker keys are Cheers agent ids (claude/codex/opencode/registry-id)
-            // or "custom" → generic placeholder config.
-            p.setAgentType(key === "custom" ? "generic" : key);
-          }}
-        />
-      </Field>
-
-      <AgentUpdates />
-
-      {p.onboardingError && (
-        <div className="rounded-sm bg-rose-950/35 p-3 text-compact text-removed-200">
-          <p className="font-medium">Setup needs attention</p>
-          <p className="mt-1 wrap-break-word text-removed-200/80">{p.onboardingError}</p>
-          <p className="mt-1 text-removed-200/70">
-            You can fix the agent or configuration and retry. The saved host remains on this page.
-          </p>
-        </div>
-      )}
-
-      <div>
-        <Button action="setup" content="iconText"
-          controlSize="compact"
-          loading={p.onboarding}
-          disabled={p.onboarding || !p.existingBotId}
-          onClick={p.onSubmit}
-        >
-          <Play className="w-3.5 h-3.5" />
-        </Button>
-      </div>
+      <LocalHostSetup bots={p.bots} initialBotId={p.existingBotId} initialAgent={p.agentType} onDone={p.onDone} />
 
       <div>
         <UiButton action={p.advancedOpen ? "collapse" : "expand"} variant="plain"
@@ -1090,6 +985,7 @@ function OnboardForm(props: {
         </UiButton>
         {p.advancedOpen && (
           <div className="grid gap-3 mt-3">
+            <AgentUpdates />
             <Field label="Name" htmlFor="conn-name">
               <Input
                 id="conn-name"

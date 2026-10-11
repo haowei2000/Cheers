@@ -5,6 +5,7 @@ import { notify, messageOf } from "@/lib/notify";
 import { useNavigate } from "react-router-dom";
 import { serverOrigin, isTauri } from "@/lib/serverConfig";
 import { requestConnectorForBot } from "@/features/desktop/connectorIntent";
+import { LocalHostSetup } from "@/features/desktop/LocalHostSetup";
 import { invokeDesktop } from "@/lib/desktop";
 import {
   Terminal,
@@ -227,6 +228,7 @@ export function CreateHostWizard({
 }) {
   const navigate = useNavigate();
   const localDesktop = isTauri();
+  const [localMode, setLocalMode] = useState(initialStep === 0);
   const [step, setStep] = useState<0 | 1>(initialStep);
   const botFieldId = useId();
   const agentFieldId = useId();
@@ -413,6 +415,16 @@ export function CreateHostWizard({
     pairing && guidance
       ? guidance.prompt_template.replace(guidance.pairing_code_placeholder, pairing.pairing_code)
       : "";
+
+  if (localDesktop && localMode) {
+    return <Dialog title="Connect bot and project" onClose={onClose} maxWidth="max-w-2xl">
+      <LocalHostSetup bots={bots} initialBotId={initialBotId} onDone={onDone} />
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <p className="text-body-secondary">To run the agent on another computer, use a pairing code.</p>
+        <Button action="switch" variant="plain" onClick={() => setLocalMode(false)} aria-label="Set up on another computer" />
+      </div>
+    </Dialog>;
+  }
 
   return (
     <Dialog

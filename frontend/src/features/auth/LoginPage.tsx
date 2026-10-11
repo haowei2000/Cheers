@@ -26,6 +26,7 @@ import { errorMessage } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { AppleMark, GitHubMark, GoogleMark } from "@/components/ui/provider-marks";
 import { Input } from "@/components/ui/input";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 import { Field } from "@/components/ui/field";
 import { Fingerprint, Mail } from "lucide-react";
 import {
@@ -60,6 +61,15 @@ export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const [form, setForm] = useState({ login: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(() => {
+    try { return sessionStorage.getItem("cheers.remember_device") !== "false"; }
+    catch { return true; }
+  });
+  function chooseDeviceTrust(checked: boolean) {
+    setRememberDevice(checked);
+    try { sessionStorage.setItem("cheers.remember_device", String(checked)); }
+    catch { /* The preference still applies when storage is unavailable. */ }
+  }
   const [transactionId, setTransactionId] = useState<string | null>(
     params.get("factor_transaction")
   );
@@ -151,7 +161,7 @@ export default function LoginPage() {
     try {
       const flow = await startLoginFlow(form.login);
       setUnifiedFlow(true);
-      completeOutcome(await verifyLoginFlowPassword(flow.transaction_id, form.password));
+      completeOutcome(await verifyLoginFlowPassword(flow.transaction_id, form.password, rememberDevice));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -166,17 +176,18 @@ export default function LoginPage() {
     try {
       const res = unifiedFlow
         ? usePasswordFactor
-          ? await verifyLoginFlowPassword(transactionId, factorCode)
+          ? await verifyLoginFlowPassword(transactionId, factorCode, rememberDevice)
           : await verifyLoginFlowCode(
               transactionId,
               activeCodeSource === "email" ? "email" : "totp",
-              factorCode
+              factorCode,
+              rememberDevice
             )
         : await verifyTwoFactorLogin({
             transaction_id: transactionId,
             code: factorCode,
             method: usePasswordFactor ? "password" : "code",
-            remember_device: true,
+            remember_device: rememberDevice,
           });
       completeOutcome(res);
     } catch (err) {
@@ -217,11 +228,11 @@ export default function LoginPage() {
         : await passkeyFactorOptions(transactionId);
       const credential = await getPasskey(options);
       const res = unifiedFlow
-        ? await verifyLoginFlowPasskey(transactionId, credential)
+        ? await verifyLoginFlowPasskey(transactionId, credential, rememberDevice)
         : await passkeyFactorVerify({
             transaction_id: transactionId,
             credential,
-            remember_device: true,
+            remember_device: rememberDevice,
           });
       completeOutcome(res);
     } catch (err) {
@@ -247,7 +258,7 @@ export default function LoginPage() {
       const options = await loginFlowPasskeyOptions(flow.transaction_id);
       const credential = await getPasskey(options);
       setUnifiedFlow(true);
-      completeOutcome(await verifyLoginFlowPasskey(flow.transaction_id, credential));
+      completeOutcome(await verifyLoginFlowPasskey(flow.transaction_id, credential, rememberDevice));
     } catch (err) {
       const message = errorMessage(err, "Passkey sign-in failed");
       if (!/cancel|abort/i.test(message)) toast.error(message);
@@ -344,6 +355,13 @@ export default function LoginPage() {
               ))}
             </div>
           )}
+          <CheckboxField
+            checked={rememberDevice}
+            onChange={(event) => chooseDeviceTrust(event.target.checked)}
+            disabled={loading}
+            label="Trust this device for 30 days"
+          />
+          <p className="text-compact text-content-muted">Use this on your own device. Signing out or revoking the device removes its trust.</p>
           <Button action="send" controlWidth="fill" type="submit" loading={loading} disabled={!factorCode}>
             Verify
           </Button>
@@ -397,78 +415,8 @@ export default function LoginPage() {
               Sign in with a method already connected to your account. You&apos;ll link {accountLinkLabel} next.
             </div>
           )}
-          <Field label="Username or Email" htmlFor="login">
-            <Input
-              id="login"
-              type="text"
-              placeholder="you@example.com"
-              autoComplete="username"
-              required
-              value={form.login}
-              onChange={(e) => setForm((f) => ({ ...f, login: e.target.value }))}
-            />
-          </Field>
-
-          {capabilities?.passkey && (
-            <Button action="usePasskey" content="iconText" controlWidth="fill"
-              type="button"
-              variant="emphasis"
-              disabled={loading || !form.login.trim()}
-              onClick={() => void handlePrimaryPasskey()}
-            >
-              <Fingerprint className="h-4 w-4" />
-            </Button>
-          )}
-
-          {capabilities?.passkey && (
-            <div className="flex items-center gap-3" aria-hidden="true">
-              <span className="h-px flex-1 bg-zinc-800" />
-              <span className="text-compact text-content-muted">Try another method</span>
-              <span className="h-px flex-1 bg-zinc-800" />
-            </div>
-          )}
-
-          <Field label="Password" htmlFor="password">
-            <Input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              autoComplete="current-password"
-              required
-              value={form.password}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, password: e.target.value }))
-              }
-            />
-          </Field>
-
-          <Button action="signIn" controlWidth="fill"
-            type="submit"
-            className="mt-2"
-            loading={loading}
-          >
-            Sign in
-          </Button>
-
-          <Button
-            action="emailCode"
-            content="iconText"
-            controlWidth="fill"
-            type="button"
-            variant="secondary"
-            disabled={loading || !form.login.trim()}
-            onClick={() => void handlePrimaryEmail()}
-          >
-            <Mail className="h-4 w-4" />
-          </Button>
-
           {(capabilities?.providers.apple || capabilities?.providers.google || capabilities?.providers.github) && (
             <div className="space-y-3 pt-1">
-              <div className="flex items-center gap-3" aria-hidden="true">
-                <span className="h-px flex-1 bg-zinc-800" />
-                <span className="text-compact text-content-muted">or</span>
-                <span className="h-px flex-1 bg-zinc-800" />
-              </div>
               {capabilities.providers.apple && (
                 <Button action="continueWithApple" content="iconText" controlWidth="fill"
                   type="button"
@@ -523,8 +471,87 @@ export default function LoginPage() {
                   <GitHubMark className="h-4 w-4" />
                 </Button>
               )}
+              <div className="flex items-center gap-3" aria-hidden="true">
+                <span className="h-px flex-1 bg-zinc-800" />
+                <span className="text-compact text-content-muted">or</span>
+                <span className="h-px flex-1 bg-zinc-800" />
+              </div>
             </div>
           )}
+
+          <Field label="Username or Email" htmlFor="login">
+            <Input
+              id="login"
+              type="text"
+              placeholder="you@example.com"
+              autoComplete="username"
+              required
+              value={form.login}
+              onChange={(e) => setForm((f) => ({ ...f, login: e.target.value }))}
+            />
+          </Field>
+
+          {capabilities?.passkey && (
+            <Button action="usePasskey" content="iconText" controlWidth="fill"
+              type="button"
+              variant="emphasis"
+              disabled={loading || !form.login.trim()}
+              onClick={() => void handlePrimaryPasskey()}
+            >
+              <Fingerprint className="h-4 w-4" />
+            </Button>
+          )}
+
+          {capabilities?.passkey && (
+            <div className="flex items-center gap-3" aria-hidden="true">
+              <span className="h-px flex-1 bg-zinc-800" />
+              <span className="text-compact text-content-muted">Try another method</span>
+              <span className="h-px flex-1 bg-zinc-800" />
+            </div>
+          )}
+
+          <Field label="Password" htmlFor="password">
+            <Input
+              id="password"
+              type="password"
+              placeholder="••••••••"
+              autoComplete="current-password"
+              required
+              value={form.password}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, password: e.target.value }))
+              }
+            />
+          </Field>
+
+          <CheckboxField
+            checked={rememberDevice}
+            onChange={(event) => chooseDeviceTrust(event.target.checked)}
+            disabled={loading}
+            label="Trust this device for 30 days"
+          />
+          <p className="text-compact text-content-muted">Use this on your own device. Signing out or revoking the device removes its trust.</p>
+          <Button action="signIn" controlWidth="fill"
+            type="submit"
+            className="mt-2"
+            loading={loading}
+          >
+            Sign in
+          </Button>
+
+          <Button
+            action="emailCode"
+            content="iconText"
+            controlWidth="fill"
+            type="button"
+            variant="secondary"
+            disabled={loading || !form.login.trim()}
+            onClick={() => void handlePrimaryEmail()}
+          >
+            <Mail className="h-4 w-4" />
+          </Button>
+
+
 
           <div className="flex items-center justify-between text-compact text-content-muted">
             <Link to="/register" className={publicLinkClass}>

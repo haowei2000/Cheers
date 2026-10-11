@@ -16,6 +16,7 @@ struct LoginView: View {
     @State private var factorChallenge: FactorChallenge?
     @State private var emailHint: String?
     @State private var emailSent = false
+    @State private var rememberDevice = true
     @State private var isBusy = false
     @State private var errorText: String?
     @State private var appleEnabled = false
@@ -344,6 +345,16 @@ struct LoginView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            Toggle("Trust this device for 30 days", isOn: $rememberDevice)
+                .font(.subheadline)
+                .tint(Theme.accent)
+                .disabled(isBusy)
+                .accessibilityIdentifier("trust-this-device")
+            Text("Use this on your own device. Signing out or revoking the device removes its trust.")
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             if hasTypedFactor {
                 Button(action: submitFactor) {
                     HStack(spacing: 8) {
@@ -544,7 +555,8 @@ struct LoginView: View {
                     code: factorMethod == .password
                         ? factorCode
                         : factorCode.trimmingCharacters(in: .whitespacesAndNewlines),
-                    method: factorMethod.rawValue
+                    method: factorMethod.rawValue,
+                    rememberDevice: rememberDevice
                 )
             } catch {
                 errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
@@ -601,7 +613,8 @@ struct LoginView: View {
                 try await app.completeTwoFactorPasskeyLogin(
                     server: server,
                     transactionId: challenge.transactionId,
-                    credential: credential
+                    credential: credential,
+                    rememberDevice: rememberDevice
                 )
             } catch PasskeyError.cancelled {
                 // User dismissed Face ID / passkey sheet.
