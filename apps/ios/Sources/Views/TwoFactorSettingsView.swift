@@ -89,7 +89,7 @@ struct TwoFactorSettingsView: View {
                     .foregroundStyle(enabled ? Theme.online : Theme.textMuted)
             }
         } footer: {
-            Text(enabled
+            HelpText(enabled
                  ? "A second step is required when you sign in. Any method below can complete it."
                  : "Turn on any one method below. You do not need an authenticator app.")
         }
@@ -100,7 +100,7 @@ struct TwoFactorSettingsView: View {
                     .foregroundStyle(methods?.passkey == true ? Theme.online : Theme.textMuted)
             }
         } footer: {
-            Text(methods?.passkey == true
+            HelpText(methods?.passkey == true
                  ? "Armed by the passkeys on this account."
                  : "Add a passkey under Settings › Passkeys to turn this on.")
         }
@@ -127,7 +127,7 @@ struct TwoFactorSettingsView: View {
         } header: {
             Text("Authenticator app")
         } footer: {
-            Text("Six-digit codes from an app on your phone.")
+            HelpText("Six-digit codes from an app on your phone.")
         }
 
         Section {
@@ -139,7 +139,7 @@ struct TwoFactorSettingsView: View {
         } header: {
             Text("Email code")
         } footer: {
-            Text(methods?.email == true || status?.emailAvailable == true
+            HelpText(methods?.email == true || status?.emailAvailable == true
                  ? "A one-time code sent to your address."
                  : "Add an email address and a password or passkey first.")
         }
@@ -153,7 +153,7 @@ struct TwoFactorSettingsView: View {
         } header: {
             Text("Password")
         } footer: {
-            Text(methods?.password == true || status?.passwordAvailable == true
+            HelpText(methods?.password == true || status?.passwordAvailable == true
                  ? "Re-enter your password after signing in with a passkey or provider."
                  : "Needs a password plus a passkey or linked provider to sign in with first.")
         }
@@ -199,7 +199,7 @@ struct TwoFactorSettingsView: View {
         } header: {
             Text("Remembered devices")
         } footer: {
-            Text("These skip the second step for 30 days. Turning on a new method clears the list. Swipe to forget one.")
+            HelpText("These skip the second step for 30 days. Turning on a new method clears the list. Swipe to forget one.")
         }
     }
 
@@ -224,7 +224,7 @@ struct TwoFactorSettingsView: View {
             } header: {
                 Text("Scan with your authenticator")
             } footer: {
-                Text("If you cannot scan the QR code, enter the secret manually.")
+                HelpText("If you cannot scan the QR code, enter the secret manually.")
             }
         }
 

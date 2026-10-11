@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { FLOATING_CHROME_CONTROL_SIZE } from "@/components/ui/control-size";
 import { Input as UiInput } from "@/components/ui/input";
@@ -437,7 +438,8 @@ function ChartLens({ data, requestContextPick }: LensProps) {
   if (series.length === 0) {
     return (
       <div className="p-3 text-content-muted text-compact">
-        Empty — this file holds metric curves: {'{ "series": [{ "name": "loss", "points": [[step, value], …] }] }'}
+        No metric curves
+        <HelpText>Expected file format: {'{ "series": [{ "name": "loss", "points": [[step, value], …] }] }'}</HelpText>
       </div>
     );
   }
@@ -840,7 +842,7 @@ function CodemapLens({ data, requestContextPick }: LensProps) {
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <Boxes className="h-5 w-5 text-content-muted" />
         <div className="text-regular font-medium text-content-secondary">Codemap is empty</div>
-        <p className="max-w-md text-compact leading-5 text-content-muted">Ask the agent to explore the repository and maintain codemap/map.yaml. Modules will appear here automatically.</p>
+        <HelpText>Ask the agent to explore the repository and maintain codemap/map.yaml. Modules will appear here automatically.</HelpText>
       </div>
     );
   }

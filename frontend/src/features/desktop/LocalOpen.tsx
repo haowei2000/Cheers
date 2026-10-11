@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
@@ -154,9 +155,7 @@ export function LocalOpen({
       {menuOpen && (
         <div className="absolute right-0 top-full mt-1 z-20 rounded-sm bg-zinc-900 shadow-xl shadow-black/40 py-1 min-w-38">
           {hintLocal === false && (
-            <p className="px-3 py-1 text-minimal text-content-muted border-b border-zinc-800">
-              Remote file — opens a downloaded copy
-            </p>
+            <HelpText>Remote file — opens a downloaded copy</HelpText>
           )}
           {/* design-system-exempt: menu-option — opener command menu. */}
           {openers.map((op) => (

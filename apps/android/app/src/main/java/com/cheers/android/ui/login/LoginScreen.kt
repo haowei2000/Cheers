@@ -23,7 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.cheers.android.ui.components.CheersIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -46,6 +46,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.cheers.android.ui.components.HelpText
 import com.cheers.android.R
 import com.cheers.android.di.AppContainer
 import com.cheers.android.ui.theme.LocalCheersColors
@@ -86,17 +87,14 @@ fun LoginScreen(container: AppContainer) {
             Spacer(Modifier.height(16.dp))
             Text("Cheers", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(4.dp))
-            Text(
-                "Sign in to your workspace",
-                style = MaterialTheme.typography.bodySmall,
-                color = cc.textMuted,
-            )
+            HelpText("Sign in to your workspace")
             Spacer(Modifier.height(24.dp))
 
             OutlinedTextField(
                 value = state.serverUrl,
                 onValueChange = vm::onServerUrlChange,
                 label = { Text("Server URL") },
+                trailingIcon = { HelpText("10.0.2.2 reaches your computer from the Android emulator.") },
                 singleLine = true,
                 enabled = !state.loading,
                 colors = fieldColors,
@@ -134,7 +132,7 @@ fun LoginScreen(container: AppContainer) {
                     PasswordVisualTransformation()
                 },
                 trailingIcon = {
-                    IconButton(onClick = { showPassword = !showPassword }) {
+                    CheersIconButton(onClick = { showPassword = !showPassword }) {
                         Icon(
                             imageVector = if (showPassword) {
                                 Icons.Filled.VisibilityOff
@@ -192,12 +190,6 @@ fun LoginScreen(container: AppContainer) {
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = "Tip: 10.0.2.2 reaches your computer from the Android emulator.",
-                style = MaterialTheme.typography.bodySmall,
-                color = cc.textFaint,
-            )
         }
     }
 }

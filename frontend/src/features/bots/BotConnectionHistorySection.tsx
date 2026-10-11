@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { IconButton } from "@/components/ui/icon-button";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
@@ -49,9 +50,9 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-compact font-medium text-content-secondary">Connection history</span>
-        <span className="text-compact text-content-muted">
+        <HelpText>
           bridge connects/disconnects (newest first)
-        </span>
+        </HelpText>
         <IconButton
           label="Refresh connection history"
           onClick={load}
@@ -63,7 +64,7 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
       </div>
       {events.length === 0 ? (
         <p className="text-compact text-content-muted">
-          {loading ? "Loading…" : "No connections recorded yet — attach a connector to see its history."}
+          {loading ? "Loading…" : "No connections recorded yet."}
         </p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">

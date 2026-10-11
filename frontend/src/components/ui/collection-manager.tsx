@@ -8,7 +8,7 @@ import { SearchInput } from "./search-input";
 import { ItemList, OperationsItem } from "./item";
 import type { PresentationLevel } from "./presentation";
 import type { ControlSize } from "./control-size";
-import { Tip } from "./tip";
+import { HelpLabel } from "./help-text";
 import { cn } from "@/lib/cn";
 
 export type CollectionMode =
@@ -127,15 +127,7 @@ export function CollectionManager({
           )}
         >
           <div className="flex min-w-0 items-center gap-2">
-            {tip ? (
-              <Tip content={tip} align="start">
-                <span className="min-w-0 truncate cursor-help transition-colors hover:text-content-strong">
-                  {label}
-                </span>
-              </Tip>
-            ) : (
-              <span className="min-w-0 truncate">{label}</span>
-            )}
+            <HelpLabel help={tip}><span className="min-w-0 truncate">{label}</span></HelpLabel>
             {typeof count === "number" && (
               <span className="font-normal tabular-nums text-content-muted">{count}</span>
             )}

@@ -92,8 +92,7 @@ export function LocalHostSetup({ bots, initialBotId, initialAgent = "codex", onD
   }
 
   return <div className="space-y-4">
-    <p className="text-body-secondary">Choose your agent and project. Cheers will connect this Mac to your bot.</p>
-    <Field label="Bot" htmlFor={botFieldId}>
+    <Field label="Bot" htmlFor={botFieldId} hint="Choose your agent and project. Cheers will connect this Mac to your bot.">
       <Select id={botFieldId} value={botId} onChange={(event) => setBotId(event.target.value)} disabled={busy || !!prepared}>
         {!bots.length && <option value="">Create a bot first</option>}
         {bots.map((item) => <option key={item.bot_id} value={item.bot_id}>{item.display_name || item.username}</option>)}

@@ -33,7 +33,7 @@ struct ForgotPasswordView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     } footer: {
-                        Text("We'll email a one-time code. This never reveals whether the address is registered.")
+                        HelpText("We'll email a one-time code. This never reveals whether the address is registered.")
                     }
                     if let errorText {
                         Section { Text(errorText).foregroundStyle(Theme.danger) }

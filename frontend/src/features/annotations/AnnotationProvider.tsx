@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { createPortal } from "react-dom";
 import { Plus, Search, X } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -445,10 +446,10 @@ export function AnnotationProvider({
                               </>
                             )}
                           </div>
-                          <p className="text-compact text-content-muted">
+                          <HelpText>
                             Send adds the note and its source to your message
                             draft for review.
-                          </p>
+                          </HelpText>
                         </div>
                       ))}
                   </ItemGroup>

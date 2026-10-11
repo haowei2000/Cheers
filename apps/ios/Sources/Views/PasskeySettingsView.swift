@@ -32,7 +32,7 @@ struct PasskeySettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("Passkeys use Face ID or Touch ID and sync through iCloud Keychain when enabled.")
+                    HelpText("Passkeys use Face ID or Touch ID and sync through iCloud Keychain when enabled.")
                 }
 
                 if !newRecoveryCodes.isEmpty {

@@ -1,3 +1,4 @@
+import { HelpLabel, HelpText } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState } from "react";
 import {
   ChevronRight,
@@ -350,11 +351,11 @@ export function TwoFactorCard() {
         <Dialog title="Two-step verification" onClose={closeDialog}>
           {phase === "overview" && (
             <div className="space-y-3">
-              <p className="text-caption">
+              <HelpText>
                 {enabled
                   ? "A second step is required when you sign in. Any method below can complete it."
                   : "Turn on any one method below. You do not need an authenticator app."}
-              </p>
+              </HelpText>
               <ItemList presentationLevel="medium" controlSize="regular">
                 <OperationsItem
                   leading={<Fingerprint className="h-4 w-4 text-content-muted" />}
@@ -451,10 +452,10 @@ export function TwoFactorCard() {
           {phase === "setup" && (
             <div className="space-y-3">
           <div>
-            <p className="text-regular font-semibold text-content-primary">Authenticator app</p>
-            <p className="mt-1 text-compact text-content-muted">
+            <p className="text-regular font-semibold text-content-primary"><HelpLabel help={<>
               Scan the QR code with your authenticator app. This is one way to turn on two-step verification; a passkey or an email code works too.
-            </p>
+            </>}>Authenticator app</HelpLabel></p>
+
           </div>
           <div className="grid grid-cols-[12rem_minmax(0,1fr)] items-start gap-4 max-sm:grid-cols-1">
             <div className="flex h-48 w-48 items-center justify-center rounded-sm bg-white" aria-live="polite">
@@ -630,13 +631,13 @@ export function TwoFactorCard() {
           {phase === "password-setup" && (
             <div className="space-y-3">
               <div>
-                <p className="text-regular font-semibold text-content-primary">
-                  Password verification
-                </p>
-                <p className="mt-1 text-compact text-content-muted">
+                <p className="text-regular font-semibold text-content-primary"><HelpLabel help={<>
                   Enter your account password to verify and turn on password verification as a
                   second sign-in step.
-                </p>
+                </>}>
+                  Password verification
+                </HelpLabel></p>
+
               </div>
               <Field label="Account password" htmlFor="password-2fa-input">
                 <Input
@@ -730,6 +731,7 @@ export function TrustedDevicesCard() {
   return (
     <SettingsCardSection
       title="Remembered devices"
+      status={devices != null ? `${devices.length} remembered` : undefined}
       description={devices != null && devices.length > 0
         ? `${devices.length} remembered. These devices skip the second step for 30 days.`
         : "These devices skip the second step for 30 days. Turning on a new verification method clears the list."}
@@ -913,11 +915,8 @@ export function PasskeyCard() {
   return (
     <SettingsCardSection
       title="Passkeys"
-      description={loading
-        ? "Loading passkeys…"
-        : available
-          ? <>Use Face ID, Touch ID, or your device lock for verification.{rpId && <span className="ml-2 font-code">{rpId}</span>}</>
-          : "Passkeys are not configured on this server."}
+      status={loading ? "Loading passkeys…" : !available ? "Passkeys are not configured on this server." : rpId}
+      description={available ? "Use Face ID, Touch ID, or your device lock for verification." : undefined}
       icon={Fingerprint}
       actions={available ? (
         <ActionButton
@@ -961,7 +960,7 @@ export function PasskeyCard() {
 
       {addOpen && (
         <Dialog title="Add passkey" onClose={closeAddDialog}>
-          <p className="text-caption">Give this passkey an optional device name before the system security prompt opens.</p>
+          <HelpText>Give this passkey an optional device name before the system security prompt opens.</HelpText>
           <Field label="Name (optional)" htmlFor="passkey-name">
             <Input id="passkey-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="This MacBook" />
           </Field>

@@ -58,9 +58,8 @@ export function CreateBotDialog({
       maxWidth="max-w-lg"
     >
       <div className="space-y-4">
-        <p className="text-body-secondary">Choose a name. Next, connect your agent and project on the computer that will run this bot.</p>
         {error && <p className="text-body-error" role="alert">{error}</p>}
-        <Field label="Bot name" htmlFor={displayNameId}>
+        <Field label="Bot name" htmlFor={displayNameId} hint="Choose a name. Next, connect your agent and project on the computer that will run this bot.">
           <Input id={displayNameId} value={displayName} onChange={(event) => setDisplayName(event.target.value)} controlSize="regular" />
         </Field>
         <details>
@@ -68,13 +67,8 @@ export function CreateBotDialog({
         <Field
           label="Username"
           htmlFor={usernameId}
-          hint={
-            showUsernameProblem ? (
-              <span className="text-danger-400">{usernameProblem}</span>
-            ) : (
-              "Used as @mention and as the connector's account id — letters, digits, hyphen, underscore."
-            )
-          }
+          error={showUsernameProblem ? usernameProblem : undefined}
+          hint="Used as @mention and as the connector's account id — letters, digits, hyphen, underscore."
         >
           <Input
             id={usernameId}

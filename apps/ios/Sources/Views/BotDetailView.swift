@@ -112,7 +112,7 @@ struct BotDetailView: View {
                         } header: {
                             Text("Governance posture")
                         } footer: {
-                            Text("These are owner-level defaults. The connector still enforces its local capability envelope.")
+                            HelpText("These are owner-level defaults. The connector still enforces its local capability envelope.")
                         }
                     }
 

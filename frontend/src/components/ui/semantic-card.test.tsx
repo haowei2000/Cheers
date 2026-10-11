@@ -37,7 +37,8 @@ describe("semantic cards", () => {
     );
 
     expect(markup).toContain("Passkeys");
-    expect(markup).toContain("Use your device lock.");
+    expect(markup).not.toContain("Use your device lock.");
+    expect(markup).toContain("More information");
     expect(markup).toContain("border-t border-zinc-600/70");
   });
 });

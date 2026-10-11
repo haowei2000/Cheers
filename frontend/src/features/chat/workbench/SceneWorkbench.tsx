@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import {
   AnnotationIcon,
   CollectionIcon,
@@ -225,9 +226,9 @@ export function SceneWorkbench({
         <CollectionIcon className="h-5 w-5 text-content-muted" />
         <div>
           <div className="text-regular font-medium text-content-secondary">Choose a Collection</div>
-          <p className="mt-1 max-w-sm text-compact leading-5 text-content-muted">
+          <HelpText>
             Collections turn workspace data into focused Tabs. Unsupported files remain available in Raw workspace files.
-          </p>
+          </HelpText>
         </div>
         {available.length > 0 && (
           <ResponsiveActionButton
@@ -373,9 +374,9 @@ export function SceneWorkbench({
           <div className="flex h-full flex-1 flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
             <FileQuestion className="h-5 w-5 text-content-muted" aria-hidden="true" />
             <span className="text-regular font-medium text-content-secondary">No native Tabs in this Collection.</span>
-            <span className="max-w-xs text-compact leading-4 text-content-muted">
+            <HelpText>
               Unsupported files stay hidden here and remain available from Raw workspace files.
-            </span>
+            </HelpText>
             <Button
               action="open"
               type="button"

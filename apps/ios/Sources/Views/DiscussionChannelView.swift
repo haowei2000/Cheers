@@ -257,7 +257,7 @@ struct DiscussionChannelView<Footer: View>: View {
                 ContentUnavailableView {
                     Label("Start a new discussion", systemImage: "square.and.pencil")
                 } description: {
-                    Text("Write the topic below. The first non-empty line becomes its title.")
+                    HelpText("Write the topic below. The first non-empty line becomes its title.")
                 }
                 .frame(maxHeight: .infinity)
             } else if model.isLoadingDiscussion && model.selectedDiscussionRoot == nil {
@@ -284,7 +284,10 @@ struct DiscussionChannelView<Footer: View>: View {
                             .foregroundStyle(Theme.textSecondary)
                         }
                         if threadRows.isEmpty {
-                            Text("No replies yet. Continue the discussion below.")
+                            HStack {
+                        Text("No replies yet.")
+                        HelpText("Continue the discussion below.")
+                    }
                                 .font(.subheadline)
                                 .foregroundStyle(Theme.textMuted)
                                 .frame(maxWidth: .infinity)

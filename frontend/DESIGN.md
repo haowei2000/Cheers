@@ -551,6 +551,14 @@ form-label recipe; the control is any shared field (`Input`/`Textarea`/
 </Field>
 ```
 
+`hint` and `tip` are supplementary help beside the label. Use `error` for visible
+validation failures and `status` for visible current values or required confirmation
+instructions. `<HelpLabel>` and `<HelpText>` (`src/components/ui/help-text.tsx`)
+provide the same help trigger for section titles and standalone notes. Settings-card
+descriptions and empty-state hints follow this contract. Labels, live status,
+errors, irreversible consequences, and screen-reader instructions remain directly
+available. Text inside an already-open help panel stays readable in that panel.
+
 `<SectionHead>` (same file) is the in-card divider heading —
 `text-compact font-semibold text-content-muted uppercase tracking-section`, optional
 leading icon. Don't repeat a heading the surrounding chrome already says (a
@@ -571,7 +579,9 @@ A bubble answers a question, and the pointer only asks one by **coming to rest**
 every hover-opened tip waits out `TOOLTIP_REST_MS` (`src/lib/hoverIntent.ts`) of
 stillness on the trigger, and neither a cursor that content arrived under nor one
 crossing a toolbar on its way elsewhere opens anything. A press cancels the wait,
-so clicking a control never leaves its tooltip standing open. Keyboard focus asks
+so clicking an action control never leaves its tooltip standing open. A dedicated
+ⓘ help button toggles and pins its explanation on click or tap; Escape, blur, or an
+outside press dismisses it. Keyboard focus asks
 outright and is answered at once. Never start a private `setTimeout` for a tip —
 use `whenPointerRests`, so every bubble in the app answers at the same speed.
 

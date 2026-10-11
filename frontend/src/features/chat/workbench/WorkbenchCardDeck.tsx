@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import {
   useCallback,
   useEffect,
@@ -434,9 +435,9 @@ export function WorkbenchCardDeck({
                         {tab.previewSnippet}
                       </p>
                     ) : (
-                      <div className="flex flex-1 items-center justify-center text-compact text-content-muted">
+                      <HelpText>
                         Select the card title to view and edit
-                      </div>
+                      </HelpText>
                     )}
                   </div>
                 )}

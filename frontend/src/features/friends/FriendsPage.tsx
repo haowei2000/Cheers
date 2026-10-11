@@ -1,3 +1,4 @@
+import { HelpLabel, HelpText } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -85,12 +86,12 @@ export default function FriendsPage() {
           </IconButton>
           <Users className="h-4 w-4 text-accent-400" aria-hidden="true" />
           <div>
-            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">
-              Friends
-            </h1>
-            <p className="mt-1 hidden text-minimal text-content-muted sm:block">
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>
               Direct connections and member requests
-            </p>
+            </>}>
+              Friends
+            </HelpLabel></h1>
+
           </div>
         </header>
       </RouteChromeHeader>
@@ -460,11 +461,11 @@ function AddTab() {
 
   return (
     <div>
-      <p className="text-compact text-content-muted mb-2 leading-reading">
+      <HelpText>
         Find people by <span className="text-content-secondary">username</span>,{" "}
         <span className="text-content-secondary">display name</span>, or exact{" "}
         <span className="text-content-secondary">user ID</span>.
-      </p>
+      </HelpText>
       <div className="mb-4">
         <InputWithLeadingIcon
           leading={<Search className="h-4 w-4" />}

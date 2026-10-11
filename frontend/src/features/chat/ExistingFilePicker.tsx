@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -66,7 +67,7 @@ export function ExistingFilePicker({
         </div>
       ) : files.length === 0 ? (
         <div className="py-8 text-center text-compact text-content-muted">
-          No files in this channel yet. Upload one with 📎 first.
+          No files in this channel yet. <HelpText>Upload a file from the composer first.</HelpText>
         </div>
       ) : (
         <div className="max-h-[50vh] overflow-auto -mx-1">

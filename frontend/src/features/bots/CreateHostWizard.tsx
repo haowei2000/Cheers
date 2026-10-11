@@ -1,3 +1,4 @@
+import { HelpLabel, HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -420,7 +421,7 @@ export function CreateHostWizard({
     return <Dialog title="Connect bot and project" onClose={onClose} maxWidth="max-w-2xl">
       <LocalHostSetup bots={bots} initialBotId={initialBotId} onDone={onDone} />
       <div className="mt-4 flex items-center justify-between gap-2">
-        <p className="text-body-secondary">To run the agent on another computer, use a pairing code.</p>
+        <HelpText>To run the agent on another computer, use a pairing code.</HelpText>
         <Button action="switch" variant="plain" onClick={() => setLocalMode(false)} aria-label="Set up on another computer" />
       </div>
     </Dialog>;
@@ -449,15 +450,15 @@ export function CreateHostWizard({
         {step === 0 && (
           <div className="space-y-3">
             <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-accent-100">
-              <p className="font-medium">Create a runtime host for an existing bot.</p>
-              <p className="mt-1 text-accent-200/75">
+              <p className="font-medium"><HelpLabel help={<>
                 The bot identity stays unchanged. This host chooses its own agent and device.
-              </p>
+              </>}>Create a runtime host for an existing bot.</HelpLabel></p>
+
             </div>
             <Field
               label="Bot identity"
               htmlFor={initialBotId ? undefined : botFieldId}
-              hint={!bots.length ? <span className="text-warning-300">Create a bot identity before adding a host.</span> : undefined}
+              error={!bots.length ? <span className="text-warning-300">Create a bot identity before adding a host.</span> : undefined}
             >
               {initialBotId ? (
                 <p className="rounded-sm bg-zinc-800/40 px-3 py-2 text-regular text-content-secondary">

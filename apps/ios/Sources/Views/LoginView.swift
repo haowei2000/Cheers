@@ -275,7 +275,7 @@ struct LoginView: View {
                     .foregroundStyle(Theme.textSecondary)
                     .textSelection(.enabled)
                 if identity.kind == .custom {
-                    Text("Accounts and data on this server may differ from Cheers Cloud.")
+                    HelpText("Accounts and data on this server may differ from Cheers Cloud.")
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.warning)
                 }
@@ -350,7 +350,7 @@ struct LoginView: View {
                 .tint(Theme.accent)
                 .disabled(isBusy)
                 .accessibilityIdentifier("trust-this-device")
-            Text("Use this on your own device. Signing out or revoking the device removes its trust.")
+            HelpText("Use this on your own device. Signing out or revoking the device removes its trust.")
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

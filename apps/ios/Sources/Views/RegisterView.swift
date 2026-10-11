@@ -83,7 +83,7 @@ struct RegisterView: View {
                 .foregroundStyle(Theme.textMuted)
                 .multilineTextAlignment(.center)
 
-            Text("Step 1: Verify your email · Step 2: Create your account")
+            HelpText("Step 1: Verify your email · Step 2: Create your account")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -159,7 +159,7 @@ struct RegisterView: View {
             )
 
             secureInputField("Password", text: $password, field: .password, submitLabel: .next)
-            Text("Use at least 12 characters. A longer, unique passphrase is recommended.")
+            HelpText("Use at least 12 characters. A longer, unique passphrase is recommended.")
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

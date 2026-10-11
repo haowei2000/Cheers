@@ -1,3 +1,4 @@
+import { HelpLabel, HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -472,10 +473,10 @@ export function ConnectorManager() {
       <div className="bg-zinc-900 rounded-sm p-6">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-regular font-medium text-content-secondary">Bots installed on this Mac</p>
-            <p className="mt-1 text-compact text-content-muted">
+            <p className="text-regular font-medium text-content-secondary"><HelpLabel help={<>
               Local connector processes. Registered devices and credentials are listed above.
-            </p>
+            </>}>Bots installed on this Mac</HelpLabel></p>
+
           </div>
           <div className="flex items-center gap-1">
             <UiButton action="setup" content="iconText" variant="secondary" controlSize="compact" onClick={() => setModal({ kind: "onboard" })}>
@@ -489,7 +490,7 @@ export function ConnectorManager() {
 
         {instances.length === 0 && (
           <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-content-muted">
-            No connector is running on this Mac. Add a host or use a pairing code.
+            No connector is running on this Mac. <HelpText>Add a host or use a pairing code.</HelpText>
           </p>
         )}
 
@@ -641,11 +642,11 @@ export function ConnectorManager() {
       {modal?.kind === "redeem" && (
         <Dialog title="I have a code" onClose={() => setModal(null)} maxWidth="max-w-lg">
           <div className="space-y-3">
-            <p className="text-compact text-content-muted">
+            <HelpText>
               Paste the one-time code from wherever the bot was created — the
               Cheers app on your phone, the web UI, or a teammate. This Mac
               becomes the machine that runs it.
-            </p>
+            </HelpText>
             <UiInput
               value={pairingCode}
               onChange={(e) => setPairingCode(e.target.value)}
@@ -725,10 +726,10 @@ export function ConnectorManager() {
 
       {modal?.kind === "workspace" && (
         <Dialog title={`Workspace — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-lg">
-          <p className="text-compact text-content-muted mb-3">
+          <HelpText>
             Open the agent's own directories in a local editor or Finder — only
             this desktop app can reach your disk.
-          </p>
+          </HelpText>
           {roots === null ? (
             <p className="text-compact text-content-muted">Loading…</p>
           ) : wsDirs.length === 0 ? (
@@ -918,11 +919,11 @@ function AuditTimeline({
         </UiButton>
       </div>
       {shown.length === 0 ? (
-        <p className="text-compact text-content-muted">
+        <HelpText>
           No audit events yet. Advanced per-command and file detail requires{" "}
           <code className="bg-zinc-800 rounded-sm px-1">RUST_LOG=debug</code>; default logs still show
           restarts, permission asks/decisions and errors.
-        </p>
+        </HelpText>
       ) : (
         <div className="space-y-2 max-h-[60vh] overflow-auto pr-1" role="list">
           {shown.map((e, i) => (

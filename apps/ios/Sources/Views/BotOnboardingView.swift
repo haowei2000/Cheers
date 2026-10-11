@@ -163,7 +163,7 @@ struct BotOnboardingView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Chosen for this Host. That machine will need \(agentType.adapterHint) installed.")
+                        HelpText("Chosen for this Host. That machine will need \(agentType.adapterHint) installed.")
                             .font(.caption).foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -202,7 +202,7 @@ struct BotOnboardingView: View {
 
     private var modeStep: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Connecting @\(bot?.username ?? username.trimmingCharacters(in: .whitespaces)). Pick how the connector gets onto the agent's machine.")
+            HelpText("Connecting @\(bot?.username ?? username.trimmingCharacters(in: .whitespaces)). Pick how the connector gets onto the agent's machine.")
                 .font(.subheadline).foregroundStyle(Theme.textSecondary)
 
             if preselectedBot != nil {
@@ -335,7 +335,7 @@ struct BotOnboardingView: View {
     @ViewBuilder
     private func scriptPanel(_ bot: BotDto) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Open Cheers on the machine that will run the agent, go to Fleet → Hosts → Use pairing code, and scan or type this.")
+            HelpText("Open Cheers on the machine that will run the agent, go to Fleet → Hosts → Use pairing code, and scan or type this.")
                 .font(.subheadline).foregroundStyle(Theme.textSecondary)
 
             if let code {
@@ -398,7 +398,7 @@ struct BotOnboardingView: View {
     @ViewBuilder
     private func agentPanel(_ bot: BotDto) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Paste this to an agent already running on the target machine. It installs the connector as a background service — otherwise @\(bot.username ?? bot.name) goes offline the moment that agent's turn ends.")
+            HelpText("Paste this to an agent already running on the target machine. It installs the connector as a background service — otherwise @\(bot.username ?? bot.name) goes offline the moment that agent's turn ends.")
                 .font(.subheadline).foregroundStyle(Theme.textSecondary)
 
             if let guidanceError {

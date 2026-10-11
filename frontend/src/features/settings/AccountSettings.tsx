@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -140,9 +141,9 @@ export function EmailAction() {
           onClose={closeDialog}
           maxWidth="max-w-md"
         >
-          <p className="text-caption">
+          <HelpText>
             We will send a 6-digit verification code to confirm ownership of the email address.
-          </p>
+          </HelpText>
           <div className="space-y-3">
             <Field label="Email address" htmlFor="email-input">
               <div className="flex gap-2">
@@ -601,7 +602,7 @@ export function DeleteAccountAction({ onDeleted }: { onDeleted: () => void }) {
           <Field label="Current password" hint="Optional for passwordless accounts" htmlFor="delete-account-password">
             <UiInput id="delete-account-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
           </Field>
-          <Field label="Confirmation" hint="Type DELETE to confirm" htmlFor="delete-account-confirmation">
+          <Field label="Confirmation" status="Type DELETE to confirm" htmlFor="delete-account-confirmation">
             <UiInput id="delete-account-confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="DELETE" />
           </Field>
           <div className="flex justify-end gap-2">

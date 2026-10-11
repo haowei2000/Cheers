@@ -316,11 +316,11 @@ struct InviteSheet: View {
             }
             if query.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
                 Section {
-                    ContentUnavailableView(
-                        "Find workspace members",
-                        systemImage: "person.badge.plus",
-                        description: Text("Search by name. Use an invite link to bring in someone new.")
-                    )
+                    ContentUnavailableView {
+                        Label("Find workspace members", systemImage: "person.badge.plus")
+                    } description: {
+                        HelpText("Search by name. Use an invite link to bring in someone new.")
+                    }
                 }
             } else if isSearching {
                 Section { ProgressView("Searching…") }

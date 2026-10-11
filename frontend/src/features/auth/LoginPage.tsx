@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -326,13 +327,13 @@ export default function LoginPage() {
           </Field>
           {otherFamilies.length > 0 && (
             <div className="space-y-2">
-              <p className="text-compact font-medium text-content-muted">
+              <HelpText>
                 {activeCodeSource === "email"
                   ? "Using the code emailed to you."
                   : activeCodeSource === "password"
                     ? "Using your account password."
                     : "Using your authenticator app or a backup code."}
-              </p>
+              </HelpText>
               {otherFamilies.map((family) => (
                 <Button
                   key={family}
@@ -360,8 +361,8 @@ export default function LoginPage() {
             onChange={(event) => chooseDeviceTrust(event.target.checked)}
             disabled={loading}
             label="Trust this device for 30 days"
+            hint="Use this on your own device. Signing out or revoking the device removes its trust."
           />
-          <p className="text-compact text-content-muted">Use this on your own device. Signing out or revoking the device removes its trust.</p>
           <Button action="send" controlWidth="fill" type="submit" loading={loading} disabled={!factorCode}>
             Verify
           </Button>
@@ -529,8 +530,8 @@ export default function LoginPage() {
             onChange={(event) => chooseDeviceTrust(event.target.checked)}
             disabled={loading}
             label="Trust this device for 30 days"
+            hint="Use this on your own device. Signing out or revoking the device removes its trust."
           />
-          <p className="text-compact text-content-muted">Use this on your own device. Signing out or revoking the device removes its trust.</p>
           <Button action="signIn" controlWidth="fill"
             type="submit"
             className="mt-2"

@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { HelpLabel } from "./help-text";
 import { SectionHead } from "./field";
 
 export function SettingsSection({
@@ -27,12 +28,14 @@ export function SettingsSection({
 export function SettingsCard({
   title,
   description,
+  status,
   actions,
   children,
   className,
 }: {
   title: ReactNode;
   description?: ReactNode;
+  status?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
   className?: string;
@@ -41,8 +44,8 @@ export function SettingsCard({
     <div className={cn("rounded-sm bg-panel p-6 max-md:p-4", className)}>
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-title">{title}</p>
-          {description && <div className="mt-1 text-caption">{description}</div>}
+          <HelpLabel className="text-title" help={description}>{title}</HelpLabel>
+          {status && <div className="mt-1 text-caption" role="status">{status}</div>}
         </div>
         {actions && <div className="flex shrink-0 items-center">{actions}</div>}
       </div>
@@ -56,6 +59,7 @@ export function SettingsCard({
 export function SettingsCardSection({
   title,
   description,
+  status,
   icon: Icon,
   actions,
   children,
@@ -63,6 +67,7 @@ export function SettingsCardSection({
 }: {
   title: ReactNode;
   description?: ReactNode;
+  status?: ReactNode;
   icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
   actions?: ReactNode;
   children?: ReactNode;
@@ -72,11 +77,11 @@ export function SettingsCardSection({
     <section className={cn("border-t border-zinc-600/70 py-5 last:pb-0", className)}>
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 text-title">
+          <HelpLabel className="text-title" help={description}>
             {Icon && <Icon className="h-4 w-4 text-content-muted" aria-hidden="true" />}
             {title}
-          </p>
-          {description && <div className="mt-1 text-caption">{description}</div>}
+          </HelpLabel>
+          {status && <div className="mt-1 text-caption" role="status">{status}</div>}
         </div>
         {actions && <div className="flex shrink-0 items-center">{actions}</div>}
       </div>

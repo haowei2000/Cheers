@@ -64,7 +64,11 @@ struct FleetView: View {
                     case .hosts:
                         sectionHeader("Registered hosts")
                         if model.hosts.isEmpty {
-                            ContentUnavailableView("No hosts", systemImage: "laptopcomputer", description: Text("Add one to choose where a bot runs."))
+                            ContentUnavailableView {
+                                Label("No hosts", systemImage: "laptopcomputer")
+                            } description: {
+                                HelpText("Add one to choose where a bot runs.")
+                            }
                         } else {
                             ForEach(model.hosts) { hostRow($0) }
                         }
@@ -159,7 +163,7 @@ struct FleetView: View {
             } else {
                 Text("No agents yet")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                Text("Create one here, then connect it from the machine that will run it — this phone can't host an agent itself.")
+                HelpText("Create one here, then connect it from the machine that will run it — this phone can't host an agent itself.")
                     .font(.subheadline).foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button { showOnboarding = true } label: {

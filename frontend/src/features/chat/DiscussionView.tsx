@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 /** @file Discussion-mode channel UI for browsing topics and their reply threads. */
 
 import { Button as UiButton } from "@/components/ui/button";
@@ -425,7 +426,7 @@ export function DiscussionView({
         ) : topics.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <MessageCircle className="h-5 w-5 text-content-muted" />
-            <div><p className="text-regular font-medium text-content-secondary">No discussions yet</p><p className="mt-1 text-compact text-content-muted">Start a topic for the channel.</p></div>
+            <div><p className="text-regular font-medium text-content-secondary"><HelpLabel help={<>Start a topic for the channel.</>}>No discussions yet</HelpLabel></p></div>
             <UiButton action="start" variant="plain" type="button" onClick={startDiscussion} className="font-medium text-accent-300 hover:text-accent-200">Start the first discussion</UiButton>
           </div>
         ) : (
@@ -462,7 +463,7 @@ export function DiscussionView({
       <div className="flex min-h-0 flex-1 flex-col">
       {creating ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">
-          <div className="max-w-sm"><MessageCircle className="mx-auto h-5 w-5 text-accent-400" /><h2 className="mt-4 text-comfortable font-semibold text-content-primary">Start a new discussion</h2><p className="mt-2 text-regular leading-6 text-content-muted">Write the topic in the composer below. The first non-empty line becomes its title.</p></div>
+          <div className="max-w-sm"><MessageCircle className="mx-auto h-5 w-5 text-accent-400" /><h2 className="mt-4 text-comfortable font-semibold text-content-primary"><HelpLabel help={<>Write the topic in the composer below. The first non-empty line becomes its title.</>}>Start a new discussion</HelpLabel></h2></div>
         </div>
       ) : loadingDetail ? (
         <div className="flex flex-1 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-content-muted" /></div>
@@ -520,7 +521,7 @@ export function DiscussionView({
           </div>
         </>
       ) : (
-        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-content-muted" /><p className="mt-3 text-regular font-medium text-content-secondary">Select a discussion</p><p className="mt-1 text-compact text-content-muted">Open a topic to read and reply.</p></div></div>
+        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-content-muted" /><p className="mt-3 text-regular font-medium text-content-secondary"><HelpLabel help={<>Open a topic to read and reply.</>}>Select a discussion</HelpLabel></p></div></div>
       )}
       </div>
       {(selectedId || creating) && footer}

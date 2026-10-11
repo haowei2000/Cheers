@@ -1,6 +1,39 @@
 import SwiftUI
 import UIKit
 
+/// Supplementary help stays out of the reading flow. Pointer users can hover;
+/// touch and VoiceOver users can open the same explanation from this button.
+struct HelpText: View {
+    let content: LocalizedStringKey
+    @State private var isPresented = false
+
+    init(_ content: LocalizedStringKey) {
+        self.content = content
+    }
+
+    var body: some View {
+        Button { isPresented.toggle() } label: {
+            Image(systemName: "info.circle")
+                .font(Theme.utilityFont)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.textSecondary)
+        .accessibilityLabel("More information")
+        .accessibilityHint(Text(content))
+        .help(Text(content))
+        .popover(isPresented: $isPresented) {
+            Text(content)
+                .font(Theme.utilityFont)
+                .foregroundStyle(Theme.textPrimary)
+                .padding(Theme.space4)
+                .frame(maxWidth: 320, alignment: .leading)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
 enum PresentationLevel: String, CaseIterable, Sendable {
     case max
     case medium

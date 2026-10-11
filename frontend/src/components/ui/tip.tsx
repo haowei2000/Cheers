@@ -38,24 +38,37 @@ export function Tip({
   const rootRef = useRef<HTMLSpanElement>(null);
   const cancelRest = useRef<(() => void) | null>(null);
   const [open, setOpen] = useState(false);
+  const pinned = useRef(false);
 
   // Hover is a question the pointer asks by staying; focus is one the user asks
-  // outright, so the keyboard path answers immediately. Clicks and pointer taps
-  // never pop open hover tooltips.
+  // outright, so the keyboard path answers immediately. The dedicated help
+  // button also toggles on click/tap; wrapped action controls keep their action.
   const closeTip = () => {
     cancelRest.current?.();
     cancelRest.current = null;
+    pinned.current = false;
     setOpen(false);
   };
 
   useEffect(() => {
-    return onDisarmHover(closeTip);
+    const dismiss = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) closeTip();
+    };
+    const unsubscribe = onDisarmHover(closeTip);
+    document.addEventListener("pointerdown", dismiss, true);
+    window.addEventListener("blur", closeTip);
+    return () => {
+      unsubscribe();
+      cancelRest.current?.();
+      document.removeEventListener("pointerdown", dismiss, true);
+      window.removeEventListener("blur", closeTip);
+    };
   }, []);
 
   const trigger =
     children && isValidElement(children) ? (
       cloneElement(children as ReactElement<{ "aria-describedby"?: string; title?: string }>, {
-        "aria-describedby": id,
+        "aria-describedby": open ? [(children as ReactElement<{ "aria-describedby"?: string }>).props["aria-describedby"], id].filter(Boolean).join(" ") : (children as ReactElement<{ "aria-describedby"?: string }>).props["aria-describedby"],
         title: "",
       })
     ) : (
@@ -63,7 +76,8 @@ export function Tip({
         label={label}
         title=""
         controlSize="compact"
-        aria-describedby={id}
+        aria-describedby={open ? id : undefined}
+        aria-expanded={open}
         className="-m-1 text-content-primary transition-colors hover:text-content-strong"
       >
         <Info className="h-3.5 w-3.5" />
@@ -80,14 +94,25 @@ export function Tip({
         cancelRest.current?.();
         cancelRest.current = whenPointerRests(event.currentTarget, () => setOpen(true));
       }}
-      onMouseLeave={closeTip}
+      onMouseLeave={() => { if (!pinned.current) closeTip(); }}
       onPointerDownCapture={() => {
         markPointerInteraction();
-        closeTip();
+        if (children) closeTip();
       }}
       onClickCapture={() => {
         markPointerInteraction();
-        closeTip();
+        if (children) closeTip();
+        else {
+          pinned.current = !open;
+          setOpen(!open);
+        }
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key === "Escape" && open) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeTip();
+        }
       }}
       onFocusCapture={(event) => {
         if (isPointerFocus(event.nativeEvent)) return;

@@ -256,7 +256,7 @@ struct SettingsView: View {
         } header: {
             sectionHeader("Account")
         } footer: {
-            Text("Link Apple or Google to sign in on other devices.")
+            HelpText("Link Apple or Google to sign in on other devices.")
                 .font(.caption)
                 .foregroundStyle(Theme.textFaint)
         }
@@ -408,7 +408,7 @@ private struct ProfileEditSheet: View {
                                         .foregroundStyle(Theme.accent)
                                 }
                                 .disabled(isUploadingAvatar)
-                                Text("JPEG or PNG, used across Cheers clients.")
+                                HelpText("JPEG or PNG, used across Cheers clients.")
                                     .font(.caption)
                                     .foregroundStyle(Theme.textMuted)
                             }
@@ -726,7 +726,7 @@ private struct SignInMethodsView: View {
 
             if let apple = appleIdentity, !apple.linked {
                 Section {
-                    Text("Authenticate both your current Cheers session and Apple account. Matching email addresses are never linked automatically.")
+                    HelpText("Authenticate both your current Cheers session and Apple account. Matching email addresses are never linked automatically.")
                         .font(.subheadline)
                         .foregroundStyle(Theme.textSecondary)
                     AppleAuthorizationControl { payload in
@@ -1122,7 +1122,7 @@ struct WorkspaceAdminSheet: View {
                 } header: {
                     Text("Invite member")
                 } footer: {
-                    Text(inviteMemberType == "bot"
+                    HelpText(inviteMemberType == "bot"
                         ? "Bots and people use the same workspace membership. Bots join immediately."
                         : "People remain pending until they accept. Only owners can grant the owner role.")
                 }

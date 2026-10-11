@@ -1,3 +1,4 @@
+import { HelpLabel } from "./help-text";
 import { useNearbyContentActions } from "./content-action-scope";
 import { ButtonGroup } from "./button-group";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
@@ -245,12 +246,9 @@ export function ItemSection({
       className={cn("min-w-0 space-y-1", className)}
     >
       <header className={cn("flex items-center gap-2 px-1 text-section-label", controlMinHeightClasses[headerControlSize], nearbyActions && "flex-wrap")}>
-        <span className={cn("min-w-0 truncate", !nearbyActions && "flex-1")}>{label}</span>
+        <HelpLabel className={cn("min-w-0", !nearbyActions && "flex-1")} help={description}><span className="truncate">{label}</span></HelpLabel>
         {nearbyActions && action ? <ButtonGroup label="Section actions" controlSize={headerControlSize}>{action}</ButtonGroup> : action}
       </header>
-      {description && (
-        <p className="px-1 text-caption">{description}</p>
-      )}
       <ItemList presentationLevel={level} controlSize={size}>{children}</ItemList>
     </section>
   );

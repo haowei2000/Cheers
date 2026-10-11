@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import {
   memo,
   useState,
@@ -1121,9 +1122,9 @@ function MessageComposerImpl({
           )}
         </div>
       </div>
-      <p className="sr-only">
+      <HelpText>
         Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands.
-      </p>
+      </HelpText>
     </div>
   );
 }

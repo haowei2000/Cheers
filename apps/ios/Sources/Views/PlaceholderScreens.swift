@@ -54,7 +54,7 @@ struct NewConversationSheet: View {
                     Label("Voice", systemImage: "waveform")
                 }
             } footer: {
-                Text("Add a voice room above the normal chat timeline.")
+                HelpText("Add a voice room above the normal chat timeline.")
             }
 
             Section {

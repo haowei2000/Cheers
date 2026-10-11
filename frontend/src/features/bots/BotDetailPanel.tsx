@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
@@ -312,10 +313,10 @@ function BotHostsSection({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <SectionHead>Hosts</SectionHead>
-          <p className="mt-1 max-w-2xl text-compact text-content-muted">
+          <HelpText>
             A host is this bot running on a specific device. Each one has its own
             credential, agent, workspace, and connection state. One host is active at a time.
-          </p>
+          </HelpText>
         </div>
         <ActionButton
           action="add"
@@ -327,7 +328,7 @@ function BotHostsSection({
       </div>
       {items.length === 0 && (
         <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-content-muted">
-          This bot has no hosts yet. Add one to choose where the bot runs.
+          This bot has no hosts yet. <HelpText>Add a host to choose where the bot runs.</HelpText>
         </p>
       )}
       <ItemList presentationLevel="medium" controlSize="regular">
@@ -721,9 +722,9 @@ function BotStatusEditor({
                 />
               </Field>
             </div>
-            <p className="text-caption text-content-muted">
+            <HelpText>
               Changing the disclosure version requires members to consent again before their next AI-directed message.
-            </p>
+            </HelpText>
           </div>
         )}
       </div>
@@ -792,10 +793,10 @@ function BotStatusEditor({
             rows={4}
             aria-label="Status update prompt"
           />
-          <p className="text-compact text-content-muted">
+          <HelpText>
             The bot answers this prompt on the schedule and the reply becomes its status.
             Save the profile to apply your changes.
-          </p>
+          </HelpText>
           <div className="flex justify-end gap-2">
             <Button action="cancel" variant="secondary" onClick={() => setPromptOpen(false)}>
               Cancel

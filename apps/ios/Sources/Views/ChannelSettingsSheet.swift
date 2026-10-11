@@ -82,7 +82,7 @@ struct ChannelSettingsSheet: View {
                     Section {
                         Toggle("Public channel", isOn: $isPublic)
                     } footer: {
-                        Text("Anyone in the workspace can join. Invite links require this.")
+                        HelpText("Anyone in the workspace can join. Invite links require this.")
                     }
                 }
 

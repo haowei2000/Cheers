@@ -1,3 +1,4 @@
+import { HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { IconButton } from "@/components/ui/icon-button";
@@ -383,9 +384,9 @@ export function ContextPickerButton({
               )}
             </>
           )}
-          <p className="px-2 pt-2 pb-1 text-minimal text-content-muted">
+          <HelpText>
             Or attach a message from its reply action.
-          </p>
+          </HelpText>
         </PopoverPanel>
       )}
     </div>
