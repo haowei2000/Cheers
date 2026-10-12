@@ -100,7 +100,7 @@ describe("FloatingPanel visibility", () => {
 
     expect(markup).toContain("No files yet");
     expect(markup).not.toContain("Upload a file to get started.");
-    expect(markup).toContain('aria-label="More information"');
+    expect(markup).toContain('aria-label="About No files yet"');
     expect(markup).not.toContain("stale child content");
   });
 });
