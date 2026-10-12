@@ -368,6 +368,10 @@ export function ItemGallery() {
               <Input id={`help-project-${size}`} controlSize={size} aria-invalid="true" />
             </Field>
             <CheckboxField label="Trust this device" hint="Your device credential can be revoked." error="Verification is required." controlSize={size} />
+            <CheckboxField label="Include resolved items" controlSize={size} checked readOnly />
+            <CheckboxField label="Select all projects" controlSize={size} indeterminate readOnly />
+            <CheckboxField label="Use owner defaults" controlSize={size} disabled checked readOnly />
+            <CheckboxField label="Allow access to the selected project folder and all of its nested working directories" controlSize={size} />
           </div>)}
         </div>
       </section>
