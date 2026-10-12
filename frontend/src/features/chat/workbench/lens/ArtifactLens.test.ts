@@ -59,10 +59,11 @@ describe("isolated artifact document", () => {
     expect(html).not.toContain("</script><script>window.injected=true</script>");
   });
 
-  it("emits a syntactically valid bridge", () => {
+  it("emits a syntactically valid bridge with request capability", () => {
     const html = buildArtifactHtml('<main data-cheers-canvas><div data-cheers-id="card" data-cheers-position="10,20"/></main>', "html");
     const bridge = html.match(/<script>([\s\S]*?canvas\.move[\s\S]*?)<\/script>/)?.[1];
     expect(bridge).toBeTruthy();
+    expect(bridge).toContain("cheers.request");
     expect(() => new Function(bridge ?? "")).not.toThrow();
   });
 });

@@ -17,7 +17,8 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@cheers/canvas-runtime": ["../packages/cheers-canvas-runtime/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"],

@@ -427,39 +427,33 @@ async fn validate_resource_interaction(
             "The interactive resource changed. Reload it before submitting.".into(),
         ));
     }
-    let surfaces = cheers_mcp_server::interactive::validate_document(&source["data"])
-        .map_err(|error| AppError::BadRequest(error.into()))?;
-    let component = surfaces
-        .get(event["surfaceId"].as_str().unwrap())
-        .and_then(|surface| surface.get(event["componentId"].as_str().unwrap()))
+    let content = source["content"].as_str().unwrap_or("");
+    let actions = cheers_mcp_server::interactive::extract_action_declarations(
+        &path,
+        content,
+        source.get("data"),
+    )
+    .map_err(|error| AppError::BadRequest(error.into()))?;
+
+    let action_id = event["actionId"].as_str().unwrap();
+    let action = actions
+        .iter()
+        .find(|a| a.action_id == action_id)
         .ok_or_else(|| AppError::BadRequest("source action not found".into()))?;
-    let action = &component["action"]["event"];
-    if action["name"] != "cheers.request"
-        || action["context"]["actionId"] != event["actionId"]
-        || action["context"]["botId"] != event["botId"]
-    {
+
+    if action.name != "cheers.request" || action.bot_id.as_deref() != event["botId"].as_str() {
         return Err(AppError::BadRequest(
             "interaction does not match the source action".into(),
         ));
     }
-    let expected = action["context"]["payload"].as_object().unwrap();
-    let supplied = event["input"].as_object().unwrap();
-    if expected.len() != supplied.len()
-        || expected.iter().any(|(key, value)| {
-            let Some(input) = supplied.get(key) else {
-                return true;
-            };
-            if value.is_object() {
-                input.is_object() || input.is_array()
-            } else {
-                value != input
-            }
-        })
-    {
-        return Err(AppError::BadRequest(
-            "interaction inputs do not match the source payload".into(),
-        ));
-    }
+
+    let supplied = event["input"]
+        .as_object()
+        .ok_or_else(|| AppError::BadRequest("interaction input must be an object".into()))?;
+    cheers_mcp_server::interactive::validate_action_input(&action.payload, supplied).map_err(
+        |_| AppError::BadRequest("interaction inputs do not match the source payload".into()),
+    )?;
+
     Ok(())
 }
 

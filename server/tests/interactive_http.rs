@@ -164,3 +164,120 @@ async fn interactive_http_rejects_forged_stale_requests_and_replays_accepted_rec
         StatusCode::FORBIDDEN
     );
 }
+
+#[sqlx::test]
+async fn interactive_http_validates_tsx_canvas_actions(db: PgPool) {
+    let password = Uuid::new_v4().to_string();
+    let (_gateway, base) = gateway::TestGateway::start(&db, "tsx-admin", &password).await;
+    let client = Client::new();
+    let (status, auth) = post(
+        &client,
+        &base,
+        "",
+        "/auth/login",
+        json!({"login":"tsx-admin","password":password}),
+    )
+    .await;
+    assert!(status.is_success(), "{auth}");
+    let token = auth["access_token"].as_str().unwrap();
+    let (_, ws) = post(
+        &client,
+        &base,
+        token,
+        "/workspaces",
+        json!({"name":"tsx-ws"}),
+    )
+    .await;
+    let (_, ch) = post(
+        &client,
+        &base,
+        token,
+        "/channels",
+        json!({"workspace_id":ws["workspace_id"],"name":"tsx-ch"}),
+    )
+    .await;
+    let channel: Uuid = ch["channel_id"].as_str().unwrap().parse().unwrap();
+    let bot = Uuid::new_v4();
+    sqlx::query("INSERT INTO bot_accounts(bot_id,username,external_processor) VALUES($1,$2,FALSE)")
+        .bind(bot.to_string())
+        .bind(format!("tsx-bot-{bot}"))
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO channel_memberships(channel_id,member_id,member_type,role) VALUES($1,$2,'bot','member')")
+        .bind(channel.to_string())
+        .bind(bot.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let tsx_source = cheers_mcp_server::interactive::tsx_request_example(&bot.to_string());
+    let written = server::resource::fs::handle_write(
+        &db,
+        &server::resource::Principal::bot(bot),
+        &json!({
+            "channel_id": channel,
+            "path": "cards/report.tsx",
+            "content": tsx_source,
+            "if_version": 0
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(written["version"], 1);
+
+    let event = json!({
+        "v": 1,
+        "sourceUri": "cheers:desk/cards/report.tsx",
+        "sourceVersion": 1,
+        "surfaceId": "root",
+        "componentId": "report.prepare",
+        "actionId": "report.prepare",
+        "botId": bot,
+        "invocationId": Uuid::new_v4(),
+        "input": { "topic": "Quarterly Analysis", "includeSources": false }
+    });
+    let body = json!({
+        "content": "Resource request",
+        "mention_ids": [bot],
+        "context_bundle": { "items": [], "interaction": event }
+    });
+    let endpoint = format!("/channels/{channel}/messages");
+
+    // 1. Undeclared action is rejected
+    let mut undeclared = body.clone();
+    undeclared["context_bundle"]["interaction"]["actionId"] = json!("fake_action");
+    assert_eq!(
+        post(&client, &base, token, &endpoint, undeclared).await.0,
+        StatusCode::BAD_REQUEST
+    );
+
+    // 2. Mismatched input (extra field) is rejected
+    let mut bad_input = body.clone();
+    bad_input["context_bundle"]["interaction"]["input"]["extra"] = json!("malicious");
+    assert_eq!(
+        post(&client, &base, token, &endpoint, bad_input).await.0,
+        StatusCode::BAD_REQUEST
+    );
+
+    // 3. Constant mismatch (includeSources must match boolean false)
+    let mut bad_constant = body.clone();
+    bad_constant["context_bundle"]["interaction"]["input"]["includeSources"] = json!(true);
+    assert_eq!(
+        post(&client, &base, token, &endpoint, bad_constant).await.0,
+        StatusCode::BAD_REQUEST
+    );
+
+    // 4. Stale version is rejected with Conflict
+    let mut stale = body.clone();
+    stale["context_bundle"]["interaction"]["sourceVersion"] = json!(2);
+    assert_eq!(
+        post(&client, &base, token, &endpoint, stale).await.0,
+        StatusCode::CONFLICT
+    );
+
+    // 5. Valid TSX request passes validation (fails with bot offline Conflict since bot is not bound)
+    let (status, offline) = post(&client, &base, token, &endpoint, body.clone()).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(offline.to_string().contains("offline"), "{offline}");
+}

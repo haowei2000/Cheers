@@ -48,4 +48,22 @@ describe("resource reference cards", () => {
     expect(markup).toContain("cheers:desk/notes.md#L3");
     expect(markup).not.toContain("javascript:");
   });
+  it("renders an isolated TSX canvas in the reply preview", () => {
+    const fs = makeFsClient(vi.fn(), "channel");
+    const tsx = `
+/**
+ * @cheers-actions
+ * [{ "actionId": "calc", "name": "cheers.request", "botId": "00000000-0000-0000-0000-000000000001" }]
+ */
+export default function Calc() { return <div>Calculator</div>; }
+`;
+    fileResourceStore(fs).publish("cards/calc.tsx", { path: "cards/calc.tsx", content: tsx, version: 1, is_dir: false });
+    const open = vi.fn();
+    const html = renderToStaticMarkup(<ResourceCardProvider fs={fs} channelId="channel" filesTick={0} openLocator={open} composeMessage={vi.fn()}>
+      <LocatorOpenContext.Provider value={open}><ResourceRefCards cards={[{ v: 1, kind: "resource_ref", uri: "cheers:desk/cards/calc.tsx", title: "Calculator" }]} /></LocatorOpenContext.Provider>
+    </ResourceCardProvider>);
+    expect(html).toContain("<iframe");
+    expect(html).toContain('title="REACT Canvas"');
+    expect(html).toContain("Version 1");
+  });
 });

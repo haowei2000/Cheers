@@ -7,6 +7,7 @@ import { ResourceCardContext } from "./ResourceCardContext";
 import { fileResourceStore } from "./workbench/fileResource";
 import { formatFor, errMsg } from "./workbench/jsonFile";
 import { A2UILens } from "./workbench/lens/a2ui/A2UILens";
+import { ArtifactLens } from "./workbench/lens/ArtifactLens";
 
 function DeskPreview({ path, active }: { path: string; active: boolean }) {
   const host = useContext(ResourceCardContext)!;
@@ -30,15 +31,35 @@ function DeskPreview({ path, active }: { path: string; active: boolean }) {
   if (!snapshot.file) return <p role="status" className="text-body-secondary">Loading resource preview…</p>;
   const file = snapshot.file;
   if (file.is_dir) return <p className="text-body-secondary">Open this folder to browse its files.</p>;
-  const interactive = parsed.data && typeof parsed.data === "object" && "a2ui" in parsed.data;
+  const isA2ui = parsed.data && typeof parsed.data === "object" && "a2ui" in parsed.data;
+  const isTsx = /\.(tsx|jsx)$/i.test(path);
   const limit = expanded ? 12_000 : 1_200;
   const sourceFont = /\.(md|txt)$/i.test(path) ? "font-reading leading-reading" : "font-code";
   return <div className="space-y-2" aria-label={`Preview of ${path}`} aria-busy={snapshot.loading}>
     <div id={contentId} className={expanded ? "max-h-96 overflow-auto" : "min-w-0"}>
-      {parsed.error ? <p role="alert" className="text-body-error">Preview syntax error: {parsed.error}. Open the full view to correct it.</p>
-        : interactive ? <A2UILens data={parsed.data} path={path} sourceVersion={file.version} config={undefined}
+      {parsed.error && !isTsx ? (
+        <p role="alert" className="text-body-error">Preview syntax error: {parsed.error}. Open the full view to correct it.</p>
+      ) : isA2ui ? (
+        <A2UILens data={parsed.data} path={path} sourceVersion={file.version} config={undefined}
           presentation={expanded ? "medium" : "minimal"} onChange={() => {}} onInteraction={host.interactions} />
-          : <pre className={`${expanded ? "" : "line-clamp-4 "}whitespace-pre-wrap break-words text-regular ${sourceFont}`}>{file.content.slice(0, limit) || "Empty file."}{file.content.length > limit ? "\n…" : ""}</pre>}
+      ) : isTsx ? (
+        <div className={`w-full overflow-hidden rounded-sm ring-1 ring-border ${expanded ? "h-96" : "h-52"}`}>
+          <ArtifactLens
+            data={file.content}
+            path={path}
+            sourceVersion={file.version}
+            mode="react"
+            presentation={expanded ? "medium" : "minimal"}
+            inspectorActive={false}
+            readOnly={true}
+            config={undefined}
+            onChange={() => {}}
+            onInteraction={host.interactions}
+          />
+        </div>
+      ) : (
+        <pre className={`${expanded ? "" : "line-clamp-4 "}whitespace-pre-wrap break-words text-regular ${sourceFont}`}>{file.content.slice(0, limit) || "Empty file."}{file.content.length > limit ? "\n…" : ""}</pre>
+      )}
     </div>
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <ControlTrigger controlSize="compact" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((value) => !value)}>{expanded ? "Collapse" : "Expand"}</ControlTrigger>
