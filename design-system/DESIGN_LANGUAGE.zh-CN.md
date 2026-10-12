@@ -167,6 +167,7 @@ Workbench 顶栏固定表达 `Workbench → Collection → Tab`。左侧只放�
   或平台等价能力处理溢出。
 - subtitle、metadata、preview 和复杂说明进入 Edit、Detail、Popover/Sheet，或仅在明确需要的
   `max` 内容场景显示；不能让普通管理列表重新变成多行卡片。
+- 辅助解释、字段 hint 与操作教学直接挂在现有标题/标签文字上，不增加说明图标或额外按钮：支持 hover、键盘聚焦及触屏点击；原生移动端以长按文字或读屏说明动作打开 popover，保留原控件点击行为。名称、当前值、关键状态、错误、不可逆操作确认和读屏指令保持直接可用。已打开的帮助面板内完整显示说明，避免再嵌套 tooltip。
 - 单一整行交互可以使用 row action，但不得包含内部按钮；复合操作行禁止整行 action，所有操作
   进入 actions slot，避免嵌套按钮。
 - `trailing` 只承载非交互时间、计数等信息；交互必须进入 actions。

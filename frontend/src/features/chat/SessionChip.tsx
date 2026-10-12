@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
 import { MenuOption } from "@/components/ui/menu-option";
 // Composer-side session target (docs/arch/SESSION_MODEL.md) — the successor to
@@ -416,8 +417,7 @@ export function SessionChip({
           ))}
 
           {loaded && entries.length === 0 && (
-            <p className="px-3 py-2 text-compact text-content-muted">
-              No sessions yet — one is created when a bot first responds.
+            <p className="px-3 py-2 text-compact text-content-muted"><HelpLabel help={<>A session is created when a bot first responds.</>}>No sessions yet</HelpLabel>
             </p>
           )}
 

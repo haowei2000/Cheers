@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState } from "react";
@@ -116,7 +117,7 @@ export function ConnectorConfigForm({
   if (rawMode) {
     return (
       <div className="mt-3 space-y-2">
-        <p className="text-compact text-content-muted">Raw TOML — full control.</p>
+        <HelpLabel help="Edit the full connector configuration as TOML.">Raw TOML</HelpLabel>
         <Textarea
           value={raw}
           onChange={(e) => setRaw(e.target.value)}

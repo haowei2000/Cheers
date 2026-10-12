@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import {
   useCallback,
   useEffect,
@@ -427,16 +428,12 @@ export function WorkbenchCardDeck({
 
                   >
                     <div className="font-reading text-comfortable text-content-strong line-clamp-3 mb-3 font-semibold">
-                      {tab.label}
+                      <HelpLabel help="Select the card title to view and edit">{tab.label}</HelpLabel>
                     </div>
-                    {tab.previewSnippet ? (
+                    {tab.previewSnippet && (
                       <p className="font-reading text-regular text-content-secondary line-clamp-12 whitespace-pre-wrap leading-relaxed">
                         {tab.previewSnippet}
                       </p>
-                    ) : (
-                      <div className="flex flex-1 items-center justify-center text-compact text-content-muted">
-                        Select the card title to view and edit
-                      </div>
                     )}
                   </div>
                 )}

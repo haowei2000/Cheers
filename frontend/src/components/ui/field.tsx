@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import { Tip } from "./tip";
+import { HelpLabel } from "./help-text";
 
 // Form field stack (DESIGN.md §2.13): a persistent label over a control, with an
 // optional hint. The label is never replaced by a placeholder (HIG data-entry
@@ -10,6 +10,8 @@ export function Field({
   htmlFor,
   hint,
   tip,
+  error,
+  status,
   children,
   className,
 }: {
@@ -17,34 +19,23 @@ export function Field({
   htmlFor?: string;
   hint?: ReactNode;
   tip?: ReactNode;
+  error?: ReactNode;
+  status?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
-  const labelContent = tip ? (
-    <Tip content={tip} align="start">
-      <span className="inline-flex items-center cursor-help transition-colors hover:text-content-strong">
-        {label}
-      </span>
-    </Tip>
-  ) : (
-    label
-  );
 
   return (
     <div className={cn("space-y-2", className)}>
-      {htmlFor ? (
-        <div className="space-y-2">
-          {/* eslint-disable-next-line jsx-a11y/label-has-for -- Custom Input children expose the matching id through this field API. */}
-          <label htmlFor={htmlFor} className="block text-label uppercase">{labelContent}</label>
-          {children}
-        </div>
-      ) : (
-        <>
-          <span className="block text-label uppercase">{labelContent}</span>
-          {children}
-        </>
-      )}
-      {hint && <p className="text-caption">{hint}</p>}
+      <HelpLabel helpLabel={typeof label === "string" ? `About ${label}` : undefined} help={tip && hint ? <>{tip}<br />{hint}</> : tip ?? hint}>
+        {htmlFor ? (
+          /* eslint-disable-next-line jsx-a11y/label-has-for -- Custom Input children expose the matching id through this field API. */
+          <label htmlFor={htmlFor} className="text-label uppercase">{label}</label>
+        ) : <span className="text-label uppercase">{label}</span>}
+      </HelpLabel>
+      {children}
+      {status && <p className="text-caption" role="status">{status}</p>}
+      {error && <p className="text-caption-error" role="alert">{error}</p>}
     </div>
   );
 }
@@ -83,15 +74,6 @@ export function SectionHead({
   tip?: ReactNode;
   className?: string;
 }) {
-  const content = tip ? (
-    <Tip content={tip} align="start">
-      <span className="inline-flex items-center cursor-help transition-colors hover:text-content-strong">
-        {children}
-      </span>
-    </Tip>
-  ) : (
-    children
-  );
 
   return (
     <p
@@ -101,7 +83,7 @@ export function SectionHead({
       )}
     >
       {Icon && <Icon className="h-3.5 w-3.5" />}
-      {content}
+      <HelpLabel help={tip}>{children}</HelpLabel>
     </p>
   );
 }

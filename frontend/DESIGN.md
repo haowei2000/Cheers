@@ -551,6 +551,16 @@ form-label recipe; the control is any shared field (`Input`/`Textarea`/
 </Field>
 ```
 
+`hint` and `tip` are supplementary help on the label itself. Use `error` for visible
+validation failures and `status` for visible current values or required confirmation
+instructions. `<HelpLabel>` (`src/components/ui/help-text.tsx`)
+uses the existing section title or label as its trigger, with no additional icon or
+help button. Standalone notes attach to their corresponding title, field or action.
+Settings-card
+descriptions and empty-state hints follow this contract. Labels, live status,
+errors, irreversible consequences, and screen-reader instructions remain directly
+available. Text inside an already-open help panel stays readable in that panel.
+
 `<SectionHead>` (same file) is the in-card divider heading —
 `text-compact font-semibold text-content-muted uppercase tracking-section`, optional
 leading icon. Don't repeat a heading the surrounding chrome already says (a
@@ -571,12 +581,14 @@ A bubble answers a question, and the pointer only asks one by **coming to rest**
 every hover-opened tip waits out `TOOLTIP_REST_MS` (`src/lib/hoverIntent.ts`) of
 stillness on the trigger, and neither a cursor that content arrived under nor one
 crossing a toolbar on its way elsewhere opens anything. A press cancels the wait,
-so clicking a control never leaves its tooltip standing open. Keyboard focus asks
+so clicking an action control never leaves its tooltip standing open. The existing
+text toggles and pins its explanation on click or tap; Escape, blur, or an
+outside press dismisses it. Keyboard focus asks
 outright and is answered at once. Never start a private `setTimeout` for a tip —
 use `whenPointerRests`, so every bubble in the app answers at the same speed.
 
 ```tsx
-<Tip content="Asks the bot on a schedule and writes the answer back." />   {/* default ⓘ trigger */}
+<HelpLabel help="Asks the bot on a schedule and writes the answer back.">Schedule</HelpLabel>
 <Tip content={`Current prompt: "${p}". Click to edit.`}>                    {/* wrap any control */}
   <Button size="sm" variant="secondary">Edit prompt</Button>
 </Tip>

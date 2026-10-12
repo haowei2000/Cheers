@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -117,6 +118,7 @@ export default function OAuthCallbackPage() {
 
   return (
     <PublicPageShell
+      descriptionKind="status"
       title={linkRequiredProvider ? "Link your existing account" : error ? "Couldn't sign in" : linkedMessage ? "Account linked" : "Completing sign-in"}
       description={
         linkRequiredProvider
@@ -127,10 +129,10 @@ export default function OAuthCallbackPage() {
       <div className={`${publicPanelClass} text-center`}>
         {linkRequiredProvider ? (
           <div>
-            <h2 className="font-masthead text-comfortable">Your account is safe</h2>
-            <p className="mt-2 text-regular text-content-muted">
+            <h2 className="font-masthead text-comfortable"><HelpLabel help={<>
               We won&apos;t create a duplicate account or link identities by email alone.
-            </p>
+            </>}>Your account is safe</HelpLabel></h2>
+
             <UiButton
               action="signIn"
               controlWidth="fill"
