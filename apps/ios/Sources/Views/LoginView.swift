@@ -275,7 +275,7 @@ struct LoginView: View {
                     .foregroundStyle(Theme.textSecondary)
                     .textSelection(.enabled)
                 if identity.kind == .custom {
-                    HelpText("Accounts and data on this server may differ from Cheers Cloud.")
+                    Text("Accounts and data on this server may differ from Cheers Cloud.")
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.warning)
                 }

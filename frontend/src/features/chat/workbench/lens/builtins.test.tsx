@@ -223,7 +223,7 @@ describe("resilient rendering when data is empty or malformed", () => {
     ]);
 
     expect(() => render("chart", null)).not.toThrow();
-    expect(render("chart", null)).toContain("Empty");
+    expect(render("chart", null)).toContain("No metric curves");
     expect(() => render("chart", { series: "not-array" })).not.toThrow();
     expect(() => render("chart", { series: [{ points: [[1, 2]] }], xLabel: { not: "string" } as unknown as string })).not.toThrow();
   });
