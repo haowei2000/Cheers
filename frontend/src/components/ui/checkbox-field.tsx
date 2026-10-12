@@ -14,7 +14,7 @@ import {
   type ControlSize,
 } from "./control-size";
 import { contentIconClasses } from "./content-size";
-import { HelpText } from "./help-text";
+import { HelpLabel } from "./help-text";
 
 interface CheckboxFieldProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "size"> {
@@ -82,12 +82,11 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
           </span>
           <span className="min-w-0 py-2 max-md:py-0">
             <span className="block">
-              {label}
+              <HelpLabel help={tip && hint ? <>{tip}<br />{hint}</> : tip ?? hint}>{label}</HelpLabel>
             </span>
             {error && <span className="mt-1 block text-caption-error" role="alert">{error}</span>}
           </span>
         </label>
-        {(tip || hint) && <HelpText>{tip && hint ? <>{tip}<br />{hint}</> : tip ?? hint}</HelpText>}
       </div>
     );
   }

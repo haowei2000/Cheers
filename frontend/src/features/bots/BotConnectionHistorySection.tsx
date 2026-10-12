@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { IconButton } from "@/components/ui/icon-button";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
@@ -49,10 +49,9 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-compact font-medium text-content-secondary">Connection history</span>
-        <HelpText>
-          bridge connects/disconnects (newest first)
-        </HelpText>
+        <span className="text-compact font-medium text-content-secondary"><HelpLabel help={<>bridge connects/disconnects (newest first)
+        </>}>Connection history</HelpLabel></span>
+
         <IconButton
           label="Refresh connection history"
           onClick={load}

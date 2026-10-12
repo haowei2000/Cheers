@@ -88,22 +88,20 @@ struct TwoFactorSettingsView: View {
                 Text(enabled ? "On" : "Off")
                     .foregroundStyle(enabled ? Theme.online : Theme.textMuted)
             }
-        } footer: {
-            HelpText(enabled
+        }
+            .helpExplanation(enabled
                  ? "A second step is required when you sign in. Any method below can complete it."
                  : "Turn on any one method below. You do not need an authenticator app.")
-        }
 
         Section {
             LabeledContent("Passkey") {
                 Text(methods?.passkey == true ? "On" : "Off")
                     .foregroundStyle(methods?.passkey == true ? Theme.online : Theme.textMuted)
             }
-        } footer: {
-            HelpText(methods?.passkey == true
+        }
+            .helpExplanation(methods?.passkey == true
                  ? "Armed by the passkeys on this account."
                  : "Add a passkey under Settings › Passkeys to turn this on.")
-        }
 
         Section {
             if methods?.totp == true {
@@ -126,8 +124,7 @@ struct TwoFactorSettingsView: View {
             }
         } header: {
             Text("Authenticator app")
-        } footer: {
-            HelpText("Six-digit codes from an app on your phone.")
+                .helpExplanation("Six-digit codes from an app on your phone.")
         }
 
         Section {
@@ -138,8 +135,7 @@ struct TwoFactorSettingsView: View {
             .disabled(isBusy || (methods?.email != true && status?.emailAvailable != true))
         } header: {
             Text("Email code")
-        } footer: {
-            HelpText(methods?.email == true || status?.emailAvailable == true
+                .helpExplanation(methods?.email == true || status?.emailAvailable == true
                  ? "A one-time code sent to your address."
                  : "Add an email address and a password or passkey first.")
         }
@@ -152,8 +148,7 @@ struct TwoFactorSettingsView: View {
             .disabled(isBusy || (methods?.password != true && status?.passwordAvailable != true))
         } header: {
             Text("Password")
-        } footer: {
-            HelpText(methods?.password == true || status?.passwordAvailable == true
+                .helpExplanation(methods?.password == true || status?.passwordAvailable == true
                  ? "Re-enter your password after signing in with a passkey or provider."
                  : "Needs a password plus a passkey or linked provider to sign in with first.")
         }
@@ -198,8 +193,7 @@ struct TwoFactorSettingsView: View {
             }
         } header: {
             Text("Remembered devices")
-        } footer: {
-            HelpText("These skip the second step for 30 days. Turning on a new method clears the list. Swipe to forget one.")
+                .helpExplanation("These skip the second step for 30 days. Turning on a new method clears the list. Swipe to forget one.")
         }
     }
 
@@ -223,8 +217,7 @@ struct TwoFactorSettingsView: View {
                 }
             } header: {
                 Text("Scan with your authenticator")
-            } footer: {
-                HelpText("If you cannot scan the QR code, enter the secret manually.")
+                    .helpExplanation("If you cannot scan the QR code, enter the secret manually.")
             }
         }
 

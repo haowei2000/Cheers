@@ -1,4 +1,3 @@
-import { HelpText } from "@/components/ui/help-text";
 import { createPortal } from "react-dom";
 import { Plus, Search, X } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -418,7 +417,7 @@ export function AnnotationProvider({
                             <Button
                               action="send"
                               aria-label="Add annotation and source to message draft"
-                              title="Add to message draft"
+                              title="Send adds the note and its source to your message draft for review."
                               onClick={() => {
                                 onCompose(annotationFeedback(item), item);
                                 setSelection(null);
@@ -446,10 +445,7 @@ export function AnnotationProvider({
                               </>
                             )}
                           </div>
-                          <HelpText>
-                            Send adds the note and its source to your message
-                            draft for review.
-                          </HelpText>
+
                         </div>
                       ))}
                   </ItemGroup>

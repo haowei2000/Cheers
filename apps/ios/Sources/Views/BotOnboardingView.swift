@@ -163,8 +163,8 @@ struct BotOnboardingView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        HelpText("Chosen for this Host. That machine will need \(agentType.adapterHint) installed.")
-                            .font(.caption).foregroundStyle(Theme.textSecondary)
+                        .helpExplanation("Chosen for this Host. That machine will need \(agentType.adapterHint) installed.")
+
                     }
                 }
             }
@@ -202,8 +202,8 @@ struct BotOnboardingView: View {
 
     private var modeStep: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HelpText("Connecting @\(bot?.username ?? username.trimmingCharacters(in: .whitespaces)). Pick how the connector gets onto the agent's machine.")
-                .font(.subheadline).foregroundStyle(Theme.textSecondary)
+            Text("Connect @\(bot?.username ?? username.trimmingCharacters(in: .whitespaces))")
+                .helpExplanation("Connecting @\(bot?.username ?? username.trimmingCharacters(in: .whitespaces)). Pick how the connector gets onto the agent's machine.")
 
             if preselectedBot != nil {
                 card {
@@ -335,8 +335,8 @@ struct BotOnboardingView: View {
     @ViewBuilder
     private func scriptPanel(_ bot: BotDto) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HelpText("Open Cheers on the machine that will run the agent, go to Fleet → Hosts → Use pairing code, and scan or type this.")
-                .font(.subheadline).foregroundStyle(Theme.textSecondary)
+            Text("Pairing code")
+                .helpExplanation("Open Cheers on the machine that will run the agent, go to Fleet → Hosts → Use pairing code, and scan or type this.")
 
             if let code {
                 card {
@@ -398,8 +398,8 @@ struct BotOnboardingView: View {
     @ViewBuilder
     private func agentPanel(_ bot: BotDto) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HelpText("Paste this to an agent already running on the target machine. It installs the connector as a background service — otherwise @\(bot.username ?? bot.name) goes offline the moment that agent's turn ends.")
-                .font(.subheadline).foregroundStyle(Theme.textSecondary)
+            Text("Agent setup")
+                .helpExplanation("Paste this to an agent already running on the target machine. It installs the connector as a background service — otherwise @\(bot.username ?? bot.name) goes offline the moment that agent's turn ends.")
 
             if let guidanceError {
                 VStack(alignment: .leading, spacing: 8) {

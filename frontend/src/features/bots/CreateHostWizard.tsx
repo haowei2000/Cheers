@@ -1,4 +1,6 @@
-import { HelpLabel, HelpText } from "@/components/ui/help-text";
+import { isPointerFocus, markPointerInteraction, whenPointerRests } from "@/lib/hoverIntent";
+import { Tip } from "@/components/ui/tip";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -21,7 +23,6 @@ import {
   Ticket,
   Trash2,
   CheckCircle2,
-  HelpCircle,
 } from "lucide-react";
 import {
   createHost,
@@ -150,38 +151,51 @@ function Stepper({ step, labels }: { step: 0 | 1; labels: string[] }) {
 }
 
 function QuestionPopover({
-  title,
+  trigger,
   children,
 }: {
-  title?: string;
+  trigger: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const helpId = useId();
+  const cancelRest = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelRest.current?.(), []);
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   return (
-    <div ref={rootRef} className="relative inline-flex items-center">
-      <UiButton
-        action="more"
-        variant="plain"
-        content="icon"
-        controlSize="compact"
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        aria-label={title ?? "Help and instructions"}
-        title={title ?? "Help and instructions"}
+    <div ref={rootRef} className="relative inline-flex min-w-0 items-center">
+      <span
+        tabIndex={0}
+        role="button"
+        className="block min-w-0 truncate cursor-help max-md:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-content-strong/60"
         aria-expanded={open}
-      >
-        <HelpCircle className="w-3.5 h-3.5" />
-      </UiButton>
+        aria-controls={open ? helpId : undefined}
+        onMouseEnter={(event) => {
+          cancelRest.current?.();
+          cancelRest.current = whenPointerRests(event.currentTarget, () => setOpen(true));
+        }}
+        onMouseLeave={() => cancelRest.current?.()}
+        onPointerDownCapture={markPointerInteraction}
+        onFocus={(event) => { if (!isPointerFocus(event.nativeEvent)) setOpen(true); }}
+        onBlur={() => requestAnimationFrame(() => { if (!rootRef.current?.contains(document.activeElement) && !panelRef.current?.contains(document.activeElement)) setOpen(false); })}
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setOpen((value) => !value);
+          }
+        }}
+      >{trigger}</span>
       {open && (
         <PopoverPanel
           placement="down"
           align="end"
           className="w-80 p-3 space-y-2 text-compact text-content-secondary shadow-lg z-50"
         >
-          {children}
+          <div ref={panelRef} id={helpId} className="space-y-2">{children}</div>
         </PopoverPanel>
       )}
     </div>
@@ -421,8 +435,8 @@ export function CreateHostWizard({
     return <Dialog title="Connect bot and project" onClose={onClose} maxWidth="max-w-2xl">
       <LocalHostSetup bots={bots} initialBotId={initialBotId} onDone={onDone} />
       <div className="mt-4 flex items-center justify-between gap-2">
-        <HelpText>To run the agent on another computer, use a pairing code.</HelpText>
-        <Button action="switch" variant="plain" onClick={() => setLocalMode(false)} aria-label="Set up on another computer" />
+
+        <Tip content={<>To run the agent on another computer, use a pairing code.</>}><Button action="switch" variant="plain" onClick={() => setLocalMode(false)} aria-label="Set up on another computer" /></Tip>
       </div>
     </Dialog>;
   }
@@ -520,33 +534,9 @@ export function CreateHostWizard({
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <Terminal className="w-4 h-4 text-accent-300 shrink-0" />
-                  <span className="text-compact font-semibold text-content-secondary truncate">
+                  <QuestionPopover trigger={<span className="text-compact font-semibold text-content-secondary truncate">
                     Run in terminal
-                  </span>
-                  <span className="rounded-sm bg-zinc-900 px-2 py-1 text-minimal text-content-muted shrink-0">
-                    Recommended · Easiest
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {localDesktop && (
-                    <Button
-                      action="installHere"
-                      content="iconText"
-                      variant="secondary"
-                      controlSize="compact"
-                      type="button"
-                      onClick={() => void handleRunLocally()}
-                      loading={localExecuting}
-                      disabled={!pairing || expired || connected}
-                      title="Directly activate and run connector on this Mac"
-                    >
-                      <Laptop className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {terminalCommand && (
-                    <CopyBtn value={terminalCommand} title="Copy command" />
-                  )}
-                  <QuestionPopover title="Terminal setup instructions">
+                  </span>}>
                     <p className="font-medium text-content-strong">Terminal installation</p>
                     <p>
                       Run this single command on the host to download the standalone connector,
@@ -580,6 +570,30 @@ export function CreateHostWizard({
                       <ReachabilityNote reachability={discovery} />
                     )}
                   </QuestionPopover>
+                  <span className="rounded-sm bg-zinc-900 px-2 py-1 text-minimal text-content-muted shrink-0">
+                    Recommended · Easiest
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {localDesktop && (
+                    <Button
+                      action="installHere"
+                      content="iconText"
+                      variant="secondary"
+                      controlSize="compact"
+                      type="button"
+                      onClick={() => void handleRunLocally()}
+                      loading={localExecuting}
+                      disabled={!pairing || expired || connected}
+                      title="Directly activate and run connector on this Mac"
+                    >
+                      <Laptop className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {terminalCommand && (
+                    <CopyBtn value={terminalCommand} title="Copy command" />
+                  )}
+
                 </div>
               </div>
 
@@ -595,15 +609,9 @@ export function CreateHostWizard({
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <Sparkles className="w-4 h-4 text-accent-300 shrink-0" />
-                  <span className="text-compact font-semibold text-content-secondary truncate">
+                  <QuestionPopover trigger={<span className="text-compact font-semibold text-content-secondary truncate">
                     Ask an agent on the host
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {agentPrompt && (
-                    <CopyBtn value={agentPrompt} title="Copy prompt" />
-                  )}
-                  <QuestionPopover title="Agent prompt instructions">
+                  </span>}>
                     <p className="font-medium text-content-strong">Ask an agent to set it up</p>
                     <p>
                       Copy and send this prompt to an AI agent (Claude Code, Cursor, OpenCode, etc.)
@@ -614,6 +622,12 @@ export function CreateHostWizard({
                       <ReachabilityNote reachability={discovery} />
                     )}
                   </QuestionPopover>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {agentPrompt && (
+                    <CopyBtn value={agentPrompt} title="Copy prompt" />
+                  )}
+
                 </div>
               </div>
 

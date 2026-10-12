@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { useRef, useState, type ReactNode } from "react";
 import { Ban, KeyRound, Power, RefreshCw, Trash2 } from "lucide-react";
@@ -235,11 +235,11 @@ export function HostActions({
             `${item.device_name} record deleted`
           )}
         >
-          <p>
+          <p><HelpLabel help={<>The audit log keeps its history either way.</>}>
             Removes <strong className="text-content-primary">{item.device_name}</strong> from this
             list for good. It is already revoked, so nothing that is running changes.
-          </p>
-          <HelpText>The audit log keeps its history either way.</HelpText>
+          </HelpLabel></p>
+
         </ConfirmDialog>
       )}
 

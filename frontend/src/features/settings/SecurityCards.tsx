@@ -1,4 +1,4 @@
-import { HelpLabel, HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState } from "react";
 import {
   ChevronRight,
@@ -348,14 +348,12 @@ export function TwoFactorCard() {
         }}
       />
       {open && status && methods && (
-        <Dialog title="Two-step verification" onClose={closeDialog}>
+        <Dialog title={<HelpLabel help={<>{enabled
+                  ? "A second step is required when you sign in. Any method below can complete it."
+                  : "Turn on any one method below. You do not need an authenticator app."}</>}>{"Two-step verification"}</HelpLabel>} onClose={closeDialog}>
           {phase === "overview" && (
             <div className="space-y-3">
-              <HelpText>
-                {enabled
-                  ? "A second step is required when you sign in. Any method below can complete it."
-                  : "Turn on any one method below. You do not need an authenticator app."}
-              </HelpText>
+
               <ItemList presentationLevel="medium" controlSize="regular">
                 <OperationsItem
                   leading={<Fingerprint className="h-4 w-4 text-content-muted" />}
@@ -960,8 +958,8 @@ export function PasskeyCard() {
 
       {addOpen && (
         <Dialog title="Add passkey" onClose={closeAddDialog}>
-          <HelpText>Give this passkey an optional device name before the system security prompt opens.</HelpText>
-          <Field label="Name (optional)" htmlFor="passkey-name">
+
+          <Field hint={<>Give this passkey an optional device name before the system security prompt opens.</>} label="Name (optional)" htmlFor="passkey-name">
             <Input id="passkey-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="This MacBook" />
           </Field>
           <div className="flex justify-end gap-2">

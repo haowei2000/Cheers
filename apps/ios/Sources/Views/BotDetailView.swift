@@ -111,8 +111,7 @@ struct BotDetailView: View {
                             if governanceBusy { ProgressView().controlSize(.small) }
                         } header: {
                             Text("Governance posture")
-                        } footer: {
-                            HelpText("These are owner-level defaults. The connector still enforces its local capability envelope.")
+                                .helpExplanation("These are owner-level defaults. The connector still enforces its local capability envelope.")
                         }
                     }
 

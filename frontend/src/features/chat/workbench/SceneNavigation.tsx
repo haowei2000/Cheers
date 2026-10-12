@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import {
   useLayoutEffect,
   useRef,
@@ -132,11 +132,9 @@ export function NewCollectionDialog({
   if (!isOpen) return null;
 
   return (
-    <Dialog title="New Collection" onClose={onClose} maxWidth="max-w-lg">
+    <Dialog title={<HelpLabel help={<>Select a template group to add to this workspace.</>}>{"New Collection"}</HelpLabel>} onClose={onClose} maxWidth="max-w-lg">
       <div className="flex flex-col gap-4">
-        <HelpText>
-          Select a template group to add to this workspace.
-        </HelpText>
+
         <div
           role="listbox"
           aria-label="Available templates"

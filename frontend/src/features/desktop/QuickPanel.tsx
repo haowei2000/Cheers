@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Send, Zap } from "lucide-react";
 import toast from "react-hot-toast";
@@ -93,8 +93,8 @@ export function QuickPanel() {
         className="flex h-9 shrink-0 select-none items-center gap-2 border-b border-control/80 px-4"
       >
         <Zap className="w-4 h-4 text-accent-400" />
-        <span className="text-compact font-medium text-content-secondary">Quick send</span>
-        <HelpText>Press Escape to dismiss.</HelpText>
+        <span className="text-compact font-medium text-content-secondary"><HelpLabel help={<>Press Escape to dismiss.</>}>Quick send</HelpLabel></span>
+
       </div>
 
       {!user ? (
@@ -109,8 +109,7 @@ export function QuickPanel() {
         </div>
       ) : dms.length === 0 ? (
         <div className="flex-1 flex items-center justify-center p-6 text-center">
-          <p className="text-regular text-content-muted">
-            No direct messages yet. <HelpText>Start a DM with a bot in the main window, then quick-send here.</HelpText>
+          <p className="text-regular text-content-muted"><HelpLabel help={<>Start a DM with a bot in the main window, then quick-send here.</>}>No direct messages yet.</HelpLabel>
           </p>
         </div>
       ) : (

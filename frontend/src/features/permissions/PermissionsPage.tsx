@@ -1,4 +1,5 @@
-import { HelpLabel, HelpText } from "@/components/ui/help-text";
+import { Tip } from "@/components/ui/tip";
+import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -412,7 +413,7 @@ function PolicyOptionCard({
   recommended?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-2">
+    <Tip className="w-full" content={desc}>
       <ControlTrigger
         controlWidth="fill"
         controlSize="comfortable"
@@ -451,8 +452,7 @@ function PolicyOptionCard({
           </div>
         </div>
       </ControlTrigger>
-    <HelpText label={`About ${title}`}>{desc}</HelpText>
-    </div>
+    </Tip>
   );
 }
 

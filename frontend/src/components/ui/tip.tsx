@@ -1,54 +1,34 @@
-import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { Info } from "lucide-react";
+import { cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type ReactElement, type ReactNode, type MouseEvent, type KeyboardEvent, type FocusEvent } from "react";
 import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
-import { IconButton } from "./icon-button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
 import { isPointerFocus, markPointerInteraction, onDisarmHover, whenPointerRests } from "@/lib/hoverIntent";
 
-// Hover help (DESIGN.md §2.14). Supplementary explanation that shows on hover
-// AND keyboard focus (touch: tapping the trigger focuses it → reveals the tip).
-// The bubble is a high-contrast transient layer, role="tooltip", associated to
-// its trigger via aria-describedby.
-//
-// Two forms:
-//  - default trigger: `<Tip content="…" />` renders a small ⓘ info button.
-//  - wrap a control: `<Tip content="…"><Button>Edit</Button></Tip>` — the child
-//    becomes the trigger (aria-describedby is injected onto it).
-//
-// Never put need-to-know info here (validation errors, irreversible
-// consequences) — those stay inline / in a confirm dialog.
-export function Tip({
-  content,
-  children,
-  align = "center",
-  label = "More information",
-  className,
-}: {
+/** Help belongs to existing text or controls. Never put required errors or
+ * irreversible consequences here; those remain inline or in confirmation. */
+export function Tip({ content, children, align = "center", label = "More information", className, textTrigger = false }: {
   content: ReactNode;
-  /** Trigger element; omit for the default ⓘ info button. */
   children?: ReactElement;
-  /** Horizontal anchor of the bubble relative to the trigger. */
   align?: "start" | "center" | "end";
-  /** Accessible name for the default ⓘ trigger (ignored when wrapping a child). */
+  /** Visible text when no child is supplied. */
   label?: string;
   className?: string;
+  /** Text opens on tap/Enter; wrapped action controls keep their own action. */
+  textTrigger?: boolean;
 }) {
+  const isTextTrigger = textTrigger || !children;
   const id = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
   const cancelRest = useRef<(() => void) | null>(null);
   const [open, setOpen] = useState(false);
   const pinned = useRef(false);
 
-  // Hover is a question the pointer asks by staying; focus is one the user asks
-  // outright, so the keyboard path answers immediately. The dedicated help
-  // button also toggles on click/tap; wrapped action controls keep their action.
-  const closeTip = () => {
+  const closeTip = useCallback(() => {
     cancelRest.current?.();
     cancelRest.current = null;
     pinned.current = false;
     setOpen(false);
-  };
+  }, []);
 
   useEffect(() => {
     const dismiss = (event: PointerEvent) => {
@@ -63,78 +43,67 @@ export function Tip({
       document.removeEventListener("pointerdown", dismiss, true);
       window.removeEventListener("blur", closeTip);
     };
-  }, []);
+  }, [closeTip]);
 
-  const trigger =
-    children && isValidElement(children) ? (
-      cloneElement(children as ReactElement<{ "aria-describedby"?: string; title?: string }>, {
-        "aria-describedby": open ? [(children as ReactElement<{ "aria-describedby"?: string }>).props["aria-describedby"], id].filter(Boolean).join(" ") : (children as ReactElement<{ "aria-describedby"?: string }>).props["aria-describedby"],
+  const child = children as ReactElement<{ "aria-describedby"?: string; title?: string }> | undefined;
+  const trigger = child && isValidElement(child)
+    ? cloneElement(child, {
+        "aria-describedby": open ? [child.props["aria-describedby"], id].filter(Boolean).join(" ") : child.props["aria-describedby"],
         title: "",
       })
-    ) : (
-      <IconButton
-        label={label}
-        title=""
-        controlSize="compact"
-        aria-describedby={open ? id : undefined}
-        aria-expanded={open}
-        className="-m-1 text-content-primary transition-colors hover:text-content-strong"
-      >
-        <Info className="h-3.5 w-3.5" />
-      </IconButton>
-    );
+    : <span>{label}</span>;
 
-  return (
-    <span
-      role="presentation"
-      ref={rootRef}
-      className={cn("relative inline-flex", className)}
-      data-managed-tooltip="true"
-      onMouseEnter={(event) => {
-        cancelRest.current?.();
-        cancelRest.current = whenPointerRests(event.currentTarget, () => setOpen(true));
-      }}
-      onMouseLeave={() => { if (!pinned.current) closeTip(); }}
-      onPointerDownCapture={() => {
-        markPointerInteraction();
-        if (children) closeTip();
-      }}
-      onClickCapture={() => {
-        markPointerInteraction();
-        if (children) closeTip();
-        else {
-          pinned.current = !open;
-          setOpen(!open);
-        }
-      }}
-      onKeyDownCapture={(event) => {
-        if (event.key === "Escape" && open) {
-          event.preventDefault();
-          event.stopPropagation();
-          closeTip();
-        }
-      }}
-      onFocusCapture={(event) => {
-        if (isPointerFocus(event.nativeEvent)) return;
-        setOpen(true);
-      }}
-      onBlurCapture={() =>
-        requestAnimationFrame(() => !rootRef.current?.contains(document.activeElement) && closeTip())
+  const triggerProps = {
+    ref: rootRef,
+    className: cn("relative inline-flex", isTextTrigger && "cursor-help max-md:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-content-strong/60", className),
+    "data-managed-tooltip": "true",
+    onMouseEnter: (event: MouseEvent<HTMLSpanElement>) => {
+      cancelRest.current?.();
+      cancelRest.current = whenPointerRests(event.currentTarget, () => setOpen(true));
+    },
+    onMouseLeave: () => {
+      if (!pinned.current && !rootRef.current?.contains(document.activeElement)) closeTip();
+    },
+    onPointerDownCapture: () => {
+      markPointerInteraction();
+      if (!isTextTrigger) closeTip();
+    },
+    onClickCapture: (event: MouseEvent<HTMLSpanElement>) => {
+      if (event.detail > 0) markPointerInteraction();
+      if (!isTextTrigger) closeTip();
+      else {
+        pinned.current = !pinned.current;
+        setOpen(pinned.current);
       }
-    >
-      {trigger}
-      {open && (
-        <FloatingLayer
-          anchorRef={rootRef}
-          placement="up"
-          align={align}
-          id={id}
-          role="tooltip"
-          className={cn(contrastTooltipSurfaceClasses, "max-w-[230px] font-normal")}
-        >
-          {content}
-        </FloatingLayer>
-      )}
-    </span>
-  );
+    },
+    onKeyDownCapture: (event: KeyboardEvent<HTMLSpanElement>) => {
+      if (isTextTrigger && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        event.stopPropagation();
+        pinned.current = !pinned.current;
+        setOpen(pinned.current);
+      } else if (event.key === "Escape" && open) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeTip();
+      }
+    },
+    onFocusCapture: (event: FocusEvent<HTMLSpanElement>) => {
+      if (!isPointerFocus(event.nativeEvent)) setOpen(true);
+    },
+    onBlurCapture: () => requestAnimationFrame(() => {
+      if (!rootRef.current?.contains(document.activeElement)) closeTip();
+    }),
+  };
+
+  const body = <>
+    {trigger}
+    {open && content && <FloatingLayer anchorRef={rootRef} placement="up" align={align} id={id} role="tooltip" className={cn(contrastTooltipSurfaceClasses, "max-w-[230px] font-normal")}>
+      {content}
+    </FloatingLayer>}
+  </>;
+
+  return isTextTrigger
+    ? <span {...triggerProps} role="button" tabIndex={0} aria-expanded={open} aria-describedby={open ? id : undefined}>{body}</span>
+    : <span {...triggerProps} role="presentation">{body}</span>;
 }

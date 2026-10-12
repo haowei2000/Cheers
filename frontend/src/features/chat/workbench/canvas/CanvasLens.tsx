@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Boxes, Database, ExternalLink, FileText, Link2, Maximize2, Minus, Plus, RotateCcw, Trash2, Undo2 } from "lucide-react";
@@ -485,11 +485,10 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <Boxes className="h-5 w-5 text-content-muted" />
-        <div className="text-regular font-medium text-content-secondary">Canvas is empty</div>
-        <HelpText>
-          Ask an agent to add nodes, or edit the file directly in Raw. Nodes without a position are arranged
+        <div className="text-regular font-medium text-content-secondary"><HelpLabel help={<>Ask an agent to add nodes, or edit the file directly in Raw. Nodes without a position are arranged
           automatically; dragging one pins it where you put it.
-        </HelpText>
+        </>}>Canvas is empty</HelpLabel></div>
+
       </div>
     );
   }

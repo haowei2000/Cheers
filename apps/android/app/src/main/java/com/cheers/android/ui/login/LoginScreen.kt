@@ -46,7 +46,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.cheers.android.ui.components.HelpText
+import com.cheers.android.ui.components.TextHelp
 import com.cheers.android.R
 import com.cheers.android.di.AppContainer
 import com.cheers.android.ui.theme.LocalCheersColors
@@ -85,16 +85,18 @@ fun LoginScreen(container: AppContainer) {
                 modifier = Modifier.size(56.dp),
             )
             Spacer(Modifier.height(16.dp))
-            Text("Cheers", style = MaterialTheme.typography.titleLarge)
+            TextHelp("Sign in to your workspace") {
+                Text("Cheers", style = MaterialTheme.typography.titleLarge)
+            }
             Spacer(Modifier.height(4.dp))
-            HelpText("Sign in to your workspace")
             Spacer(Modifier.height(24.dp))
 
             OutlinedTextField(
                 value = state.serverUrl,
                 onValueChange = vm::onServerUrlChange,
-                label = { Text("Server URL") },
-                trailingIcon = { HelpText("10.0.2.2 reaches your computer from the Android emulator.") },
+                label = {
+                    TextHelp("10.0.2.2 reaches your computer from the Android emulator.") { Text("Server URL") }
+                },
                 singleLine = true,
                 enabled = !state.loading,
                 colors = fieldColors,

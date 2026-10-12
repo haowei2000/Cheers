@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { IconButton } from "@/components/ui/icon-button";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
@@ -49,10 +49,9 @@ export function BotActivitySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-compact font-medium text-content-secondary">Recent activity</span>
-        <HelpText>
-          every event the bot emitted (newest first)
-        </HelpText>
+        <span className="text-compact font-medium text-content-secondary"><HelpLabel help={<>every event the bot emitted (newest first)
+        </>}>Recent activity</HelpLabel></span>
+
         <IconButton
           label="Refresh bot activity"
           onClick={load}

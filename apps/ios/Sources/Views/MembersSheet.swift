@@ -318,9 +318,8 @@ struct InviteSheet: View {
                 Section {
                     ContentUnavailableView {
                         Label("Find workspace members", systemImage: "person.badge.plus")
-                    } description: {
-                        HelpText("Search by name. Use an invite link to bring in someone new.")
-                    }
+                            .helpExplanation("Search by name. Use an invite link to bring in someone new.")
+                }
                 }
             } else if isSearching {
                 Section { ProgressView("Searching…") }

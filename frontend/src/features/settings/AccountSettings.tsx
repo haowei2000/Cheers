@@ -1,4 +1,3 @@
-import { HelpText } from "@/components/ui/help-text";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -141,11 +140,9 @@ export function EmailAction() {
           onClose={closeDialog}
           maxWidth="max-w-md"
         >
-          <HelpText>
-            We will send a 6-digit verification code to confirm ownership of the email address.
-          </HelpText>
+
           <div className="space-y-3">
-            <Field label="Email address" htmlFor="email-input">
+            <Field hint={<>We will send a 6-digit verification code to confirm ownership of the email address.</>} label="Email address" htmlFor="email-input">
               <div className="flex gap-2">
                 <UiInput
                   id="email-input"

@@ -363,7 +363,7 @@ export function ItemGallery() {
         <h2 id="help-register" className="mb-2 text-section-label">Supplementary help</h2>
         <div className="grid gap-4 lg:grid-cols-3">
           {controlSizes.map((size) => <div key={size} className="space-y-4">
-            <HelpLabel help="Hover, focus or tap the information button. Escape dismisses it.">{size}</HelpLabel>
+            <HelpLabel help="Hover or focus this text; tap to keep its explanation open. Escape dismisses it.">{size}</HelpLabel>
             <Field label="Project folder" htmlFor={`help-project-${size}`} hint="This directory scopes the agent's file access." error="Choose an existing folder.">
               <Input id={`help-project-${size}`} controlSize={size} aria-invalid="true" />
             </Field>

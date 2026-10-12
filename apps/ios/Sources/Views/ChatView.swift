@@ -90,9 +90,8 @@ private struct ChannelMessageSearchSheet: View {
                 if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     ContentUnavailableView {
                         Label("Search messages", systemImage: "magnifyingglass")
-                    } description: {
-                        HelpText("Search the full history of #\(channel.displayName).")
-                    }
+                            .helpExplanation("Search the full history of #\(channel.displayName).")
+                }
                 } else if isSearching && results.isEmpty {
                     ProgressView("Searching…")
                 } else if let errorText, results.isEmpty {
@@ -1411,9 +1410,8 @@ private struct ChannelFilesSheet: View {
                 } else if files.isEmpty {
                     ContentUnavailableView {
                         Label("No channel files", systemImage: "folder")
-                    } description: {
-                        HelpText("Upload a file from the composer to start the library.")
-                    }
+                            .helpExplanation("Upload a file from the composer to start the library.")
+                }
                 } else {
                     List(files) { file in
                         VStack(alignment: .leading, spacing: 8) {

@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cheers.android.di.AppContainer
-import com.cheers.android.ui.components.HelpText
+import com.cheers.android.ui.components.TextHelp
 import com.cheers.android.ui.components.CheersAvatar
 import com.cheers.android.ui.components.SectionHeader
 import com.cheers.android.ui.theme.LocalCheersColors
@@ -146,13 +146,14 @@ fun SettingsScreen(
                         )
                     }
                     Spacer(Modifier.width(10.dp))
+                    TextHelp("Signs you out on this device and revokes your sessions on the server.") {
                     Text(
                         text = "Sign out",
                         style = MaterialTheme.typography.labelLarge,
                         color = cc.danger,
                     )
+                    }
                 }
-                HelpText("Signs you out on this device and revokes your sessions on the server.")
             }
         }
     }

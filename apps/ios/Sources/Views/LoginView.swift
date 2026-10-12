@@ -350,10 +350,8 @@ struct LoginView: View {
                 .tint(Theme.accent)
                 .disabled(isBusy)
                 .accessibilityIdentifier("trust-this-device")
-            HelpText("Use this on your own device. Signing out or revoking the device removes its trust.")
-                .font(.footnote)
-                .foregroundStyle(Theme.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .helpExplanation("Use this on your own device. Signing out or revoking the device removes its trust.")
+
 
             if hasTypedFactor {
                 Button(action: submitFactor) {

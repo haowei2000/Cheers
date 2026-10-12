@@ -1,4 +1,3 @@
-import { HelpText } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -315,7 +314,11 @@ export default function LoginPage() {
           onSubmit={handleFactorSubmit}
           className={publicPanelClass}
         >
-          <Field label={usePasswordFactor ? "Password" : "Verification code"} htmlFor="factor-code">
+          <Field hint={<>{activeCodeSource === "email"
+                  ? "Using the code emailed to you."
+                  : activeCodeSource === "password"
+                    ? "Using your account password."
+                    : "Using your authenticator app or a backup code."}</>} label={usePasswordFactor ? "Password" : "Verification code"} htmlFor="factor-code">
             <Input
               id="factor-code"
               type={usePasswordFactor ? "password" : "text"}
@@ -327,13 +330,7 @@ export default function LoginPage() {
           </Field>
           {otherFamilies.length > 0 && (
             <div className="space-y-2">
-              <HelpText>
-                {activeCodeSource === "email"
-                  ? "Using the code emailed to you."
-                  : activeCodeSource === "password"
-                    ? "Using your account password."
-                    : "Using your authenticator app or a backup code."}
-              </HelpText>
+
               {otherFamilies.map((family) => (
                 <Button
                   key={family}

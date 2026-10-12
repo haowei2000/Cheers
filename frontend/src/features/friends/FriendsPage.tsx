@@ -1,4 +1,5 @@
-import { HelpLabel, HelpText } from "@/components/ui/help-text";
+import { Tip } from "@/components/ui/tip";
+import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -461,13 +462,11 @@ function AddTab() {
 
   return (
     <div>
-      <HelpText>
-        Find people by <span className="text-content-secondary">username</span>,{" "}
-        <span className="text-content-secondary">display name</span>, or exact{" "}
-        <span className="text-content-secondary">user ID</span>.
-      </HelpText>
+
       <div className="mb-4">
-        <InputWithLeadingIcon
+        <Tip className="w-full" content={<>Find people by <span className="text-content-secondary">username</span>,{" "}
+        <span className="text-content-secondary">display name</span>, or exact{" "}
+        <span className="text-content-secondary">user ID</span>.</>}><InputWithLeadingIcon
           leading={<Search className="h-4 w-4" />}
           containerClassName="w-full"
           aria-label="Search users"
@@ -476,7 +475,7 @@ function AddTab() {
           placeholder="Search people..."
           controlSize="regular"
           className="bg-zinc-900"
-        />
+        /></Tip>
       </div>
 
       {busy && <SurfaceSpinner />}

@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { useEffect, useState, useCallback } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
@@ -133,8 +133,7 @@ export function BotsManager() {
             Couldn't load bots — check the gateway connection, then press refresh.
           </p>
         ) : (
-          <p className="text-regular text-content-muted px-1">
-            No bots yet. <HelpText>Click Add bot to create one, then connect it to the machine that will run it.</HelpText>
+          <p className="text-regular text-content-muted px-1"><HelpLabel help={<>Click Add bot to create one, then connect it to the machine that will run it.</>}>No bots yet.</HelpLabel>
           </p>
         )
       ) : (

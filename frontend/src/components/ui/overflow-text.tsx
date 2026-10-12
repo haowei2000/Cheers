@@ -7,10 +7,8 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
-import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
-import { Button } from "./button";
 import { contrastTooltipSurfaceClasses } from "./tooltip-surface";
 import { isPointerFocus, markPointerInteraction, onDisarmHover, whenPointerRests } from "@/lib/hoverIntent";
 
@@ -22,7 +20,7 @@ export interface OverflowTextProps extends Omit<HTMLAttributes<HTMLSpanElement>,
   reveal?: "auto" | "always" | "none";
   children?: ReactNode;
   onOverflowChange?: (overflowing: boolean) => void;
-  /** ItemRow owns its separate touch disclosure action. */
+  /** Allow direct text disclosure; turn off inside an existing row action. */
   touchDisclosure?: boolean;
 }
 
@@ -90,9 +88,10 @@ export function OverflowText({
 
   return (
     <span ref={rootRef} className={cn("relative inline-flex min-w-0 max-w-full items-center", className)} {...props}>
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Hover-only text reveals a tooltip; keyboard disclosure is a native button. */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Hover-only text reveals a tooltip; the text itself supports keyboard and touch disclosure. */}
       <span
         ref={textRef}
+        {...(canReveal && touchDisclosure ? { role: "button" as const, tabIndex: 0, "aria-expanded": open } : {})}
         aria-describedby={open ? id : undefined}
         className={cn(
           "min-w-0 max-w-full",
@@ -113,7 +112,15 @@ export function OverflowText({
         }}
         onClickCapture={() => {
           markPointerInteraction();
-          hide();
+          if (canReveal && touchDisclosure && !textRef.current?.closest("button,a,[role=button]")) setOpen(true);
+          else hide();
+        }}
+        onKeyDown={(event) => {
+          if (canReveal && touchDisclosure && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen((value) => !value);
+          }
         }}
         onFocus={(event) => {
           if (!isPointerFocus(event.nativeEvent) && canReveal) setOpen(true);
@@ -122,19 +129,6 @@ export function OverflowText({
       >
         {children ?? fullText}
       </span>
-      {canReveal && touchDisclosure && (
-        <Button
-          variant="plain"
-          content="icon"
-          controlSize="compact"
-          aria-label={`Show full text: ${fullText}`}
-          aria-expanded={open}
-          className="ml-1 hidden max-md:inline-flex"
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Info className="h-3.5 w-3.5" />
-        </Button>
-      )}
       {canReveal && open && (
         <FloatingLayer
           anchorRef={rootRef}

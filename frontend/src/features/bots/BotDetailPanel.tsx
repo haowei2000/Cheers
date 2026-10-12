@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
@@ -312,11 +312,10 @@ function BotHostsSection({
     <section className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <SectionHead>Hosts</SectionHead>
-          <HelpText>
-            A host is this bot running on a specific device. Each one has its own
+          <SectionHead><HelpLabel help={<>A host is this bot running on a specific device. Each one has its own
             credential, agent, workspace, and connection state. One host is active at a time.
-          </HelpText>
+          </>}>Hosts</HelpLabel></SectionHead>
+
         </div>
         <ActionButton
           action="add"
@@ -327,8 +326,7 @@ function BotHostsSection({
         />
       </div>
       {items.length === 0 && (
-        <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-content-muted">
-          This bot has no hosts yet. <HelpText>Add a host to choose where the bot runs.</HelpText>
+        <p className="rounded-sm bg-zinc-800/60 p-3 text-compact text-content-muted"><HelpLabel help={<>Add a host to choose where the bot runs.</>}>This bot has no hosts yet.</HelpLabel>
         </p>
       )}
       <ItemList presentationLevel="medium" controlSize="regular">
@@ -714,7 +712,7 @@ function BotStatusEditor({
                   placeholder="Messages and selected workspace context are sent to generate replies."
                 />
               </Field>
-              <Field label="Disclosure version">
+              <Field hint={<>Changing the disclosure version requires members to consent again before their next AI-directed message.</>} label="Disclosure version">
                 <Input
                   value={processorPolicyVersion}
                   onChange={(e) => setProcessorPolicyVersion(e.target.value)}
@@ -722,9 +720,7 @@ function BotStatusEditor({
                 />
               </Field>
             </div>
-            <HelpText>
-              Changing the disclosure version requires members to consent again before their next AI-directed message.
-            </HelpText>
+
           </div>
         )}
       </div>
@@ -785,7 +781,8 @@ function BotStatusEditor({
       )}
 
       {promptOpen && (
-        <Dialog title="Status prompt" onClose={() => setPromptOpen(false)} maxWidth="max-w-md">
+        <Dialog title={<HelpLabel help={<>The bot answers this prompt on the schedule and the reply becomes its status.
+            Save the profile to apply your changes.</>}>{"Status prompt"}</HelpLabel>} onClose={() => setPromptOpen(false)} maxWidth="max-w-md">
           <Textarea
             value={promptDraft}
             onChange={(e) => setPromptDraft(e.target.value)}
@@ -793,10 +790,7 @@ function BotStatusEditor({
             rows={4}
             aria-label="Status update prompt"
           />
-          <HelpText>
-            The bot answers this prompt on the schedule and the reply becomes its status.
-            Save the profile to apply your changes.
-          </HelpText>
+
           <div className="flex justify-end gap-2">
             <Button action="cancel" variant="secondary" onClick={() => setPromptOpen(false)}>
               Cancel

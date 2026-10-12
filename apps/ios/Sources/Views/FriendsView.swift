@@ -127,8 +127,7 @@ struct FriendsView: View {
             if friends.isEmpty {
                 ContentUnavailableView {
                     Label("No Friends Yet", systemImage: "person.2")
-                } description: {
-                    HelpText("Add someone by username or user ID to start a conversation.")
+                        .helpExplanation("Add someone by username or user ID to start a conversation.")
                 } actions: {
                     Button("Add Friend", systemImage: "person.badge.plus") {
                         showAddFriend = true
@@ -185,8 +184,7 @@ struct FriendsView: View {
             if incoming.isEmpty && outgoing.isEmpty {
                 ContentUnavailableView {
                     Label("No Friend Requests", systemImage: "person.crop.circle.badge.checkmark")
-                } description: {
-                    HelpText("Incoming and sent requests will appear here.")
+                        .helpExplanation("Incoming and sent requests will appear here.")
                 }
             } else {
                 List {
@@ -254,9 +252,8 @@ struct FriendsView: View {
                         }
                     }
                     .disabled(isBusy || addQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } footer: {
-                    HelpText("Enter an exact username or user ID.")
                 }
+                    .helpExplanation("Enter an exact username or user ID.")
 
                 if let hit = searchHit {
                     Section("Result") {
@@ -308,8 +305,7 @@ struct FriendsView: View {
             if blocked.isEmpty {
                 ContentUnavailableView {
                     Label("No Blocked Users", systemImage: "hand.raised")
-                } description: {
-                    HelpText("People you block will appear here.")
+                        .helpExplanation("People you block will appear here.")
                 }
             } else {
                 List {

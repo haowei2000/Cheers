@@ -1,36 +1,32 @@
 import SwiftUI
 import UIKit
 
-/// Supplementary help stays out of the reading flow. Pointer users can hover;
-/// touch and VoiceOver users can open the same explanation from this button.
-struct HelpText: View {
+/// Existing text owns its explanation. Long press and VoiceOver expose the same
+/// content on touch devices without adding a separate help button.
+private struct HelpExplanation: ViewModifier {
     let content: LocalizedStringKey
     @State private var isPresented = false
 
-    init(_ content: LocalizedStringKey) {
-        self.content = content
+    func body(content view: Content) -> some View {
+        view
+            .help(Text(content))
+            .accessibilityHint(Text(content))
+            .accessibilityAction(named: Text("Show explanation")) { isPresented = true }
+            .onLongPressGesture { isPresented = true }
+            .popover(isPresented: $isPresented) {
+                Text(content)
+                    .font(Theme.utilityFont)
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(Theme.space4)
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .presentationCompactAdaptation(.popover)
+            }
     }
+}
 
-    var body: some View {
-        Button { isPresented.toggle() } label: {
-            Image(systemName: "info.circle")
-                .font(Theme.utilityFont)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Theme.textSecondary)
-        .accessibilityLabel("More information")
-        .accessibilityHint(Text(content))
-        .help(Text(content))
-        .popover(isPresented: $isPresented) {
-            Text(content)
-                .font(Theme.utilityFont)
-                .foregroundStyle(Theme.textPrimary)
-                .padding(Theme.space4)
-                .frame(maxWidth: 320, alignment: .leading)
-                .presentationCompactAdaptation(.popover)
-        }
+extension View {
+    func helpExplanation(_ content: LocalizedStringKey) -> some View {
+        modifier(HelpExplanation(content: content))
     }
 }
 

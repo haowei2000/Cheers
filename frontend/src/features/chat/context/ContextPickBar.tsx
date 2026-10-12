@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { IconButton } from "@/components/ui/icon-button";
@@ -331,7 +331,7 @@ export function ContextPickerButton({
       {open && (
         <PopoverPanel placement="up" align="start" className="w-56 p-1">
           <p className="px-2 py-1 text-minimal uppercase tracking-label text-content-muted">
-            Add to context
+            <HelpLabel help="Or attach a message from its reply action.">Add to context</HelpLabel>
           </p>
           {QUICK.map((q) => {
             const Icon = KIND_ICON[q.kind];
@@ -384,9 +384,7 @@ export function ContextPickerButton({
               )}
             </>
           )}
-          <HelpText>
-            Or attach a message from its reply action.
-          </HelpText>
+
         </PopoverPanel>
       )}
     </div>

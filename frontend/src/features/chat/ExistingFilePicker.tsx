@@ -1,4 +1,4 @@
-import { HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -66,8 +66,7 @@ export function ExistingFilePicker({
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
       ) : files.length === 0 ? (
-        <div className="py-8 text-center text-compact text-content-muted">
-          No files in this channel yet. <HelpText>Upload a file from the composer first.</HelpText>
+        <div className="py-8 text-center text-compact text-content-muted"><HelpLabel help={<>Upload a file from the composer first.</>}>No files in this channel yet.</HelpLabel>
         </div>
       ) : (
         <div className="max-h-[50vh] overflow-auto -mx-1">

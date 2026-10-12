@@ -1,4 +1,3 @@
-import { HelpText } from "@/components/ui/help-text";
 import {
   memo,
   useState,
@@ -977,7 +976,7 @@ function MessageComposerImpl({
           </div>
         )}
         {/* design-system-native: composer-editor */}
-        <textarea
+        <textarea title="Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands."
           ref={textareaRef}
           aria-label="Message"
           rows={1}
@@ -1122,9 +1121,7 @@ function MessageComposerImpl({
           )}
         </div>
       </div>
-      <HelpText>
-        Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands.
-      </HelpText>
+
     </div>
   );
 }

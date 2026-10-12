@@ -1,4 +1,4 @@
-import { HelpLabel, HelpText } from "@/components/ui/help-text";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -489,8 +489,7 @@ export function ConnectorManager() {
         </div>
 
         {instances.length === 0 && (
-          <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-content-muted">
-            No connector is running on this Mac. <HelpText>Add a host or use a pairing code.</HelpText>
+          <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-content-muted"><HelpLabel help={<>Add a host or use a pairing code.</>}>No connector is running on this Mac.</HelpLabel>
           </p>
         )}
 
@@ -640,13 +639,11 @@ export function ConnectorManager() {
 
       {/* ── Modals ── */}
       {modal?.kind === "redeem" && (
-        <Dialog title="I have a code" onClose={() => setModal(null)} maxWidth="max-w-lg">
-          <div className="space-y-3">
-            <HelpText>
-              Paste the one-time code from wherever the bot was created — the
+        <Dialog title={<HelpLabel help={<>Paste the one-time code from wherever the bot was created — the
               Cheers app on your phone, the web UI, or a teammate. This Mac
-              becomes the machine that runs it.
-            </HelpText>
+              becomes the machine that runs it.</>}>{"I have a code"}</HelpLabel>} onClose={() => setModal(null)} maxWidth="max-w-lg">
+          <div className="space-y-3">
+
             <UiInput
               value={pairingCode}
               onChange={(e) => setPairingCode(e.target.value)}
@@ -725,11 +722,9 @@ export function ConnectorManager() {
       )}
 
       {modal?.kind === "workspace" && (
-        <Dialog title={`Workspace — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-lg">
-          <HelpText>
-            Open the agent's own directories in a local editor or Finder — only
-            this desktop app can reach your disk.
-          </HelpText>
+        <Dialog title={<HelpLabel help={<>Open the agent's own directories in a local editor or Finder — only
+            this desktop app can reach your disk.</>}>{`Workspace — ${modal.inst.name}`}</HelpLabel>} onClose={() => setModal(null)} maxWidth="max-w-lg">
+
           {roots === null ? (
             <p className="text-compact text-content-muted">Loading…</p>
           ) : wsDirs.length === 0 ? (
@@ -919,11 +914,10 @@ function AuditTimeline({
         </UiButton>
       </div>
       {shown.length === 0 ? (
-        <HelpText>
-          No audit events yet. Advanced per-command and file detail requires{" "}
+        <HelpLabel help={<> Advanced per-command and file detail requires{" "}
           <code className="bg-zinc-800 rounded-sm px-1">RUST_LOG=debug</code>; default logs still show
           restarts, permission asks/decisions and errors.
-        </HelpText>
+        </>}>No audit events yet.</HelpLabel>
       ) : (
         <div className="space-y-2 max-h-[60vh] overflow-auto pr-1" role="list">
           {shown.map((e, i) => (

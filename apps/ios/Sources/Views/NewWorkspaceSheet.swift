@@ -17,9 +17,8 @@ struct NewWorkspaceSheet: View {
                     TextField("Workspace name", text: $name)
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
-                } footer: {
-                    HelpText("You become the owner. Invite people after the workspace is created.")
                 }
+                    .helpExplanation("You become the owner. Invite people after the workspace is created.")
 
                 if let errorText {
                     Section {
