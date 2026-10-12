@@ -476,7 +476,6 @@ export function ArtifactLens({
         const actionId = boundedText(params.actionId, 80) || "submit";
         const formData = boundedPayload(params.formData ?? params.payload ?? {});
         if (!formData) return;
-        toast.success(`Action submitted: ${actionId}`);
         onFormSubmit?.({ actionId, formData });
       }
     };

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { invokeDesktop } from "@/lib/desktop";
-import { getServerBase, isTauri } from "@/lib/serverConfig";
+import { isTauri } from "@/lib/serverConfig";
+import { openDesktopFile, probeDesktopFile as probeLocal } from "@/lib/desktopResource";
 import { OpenerGlyph } from "./openerIcons";
 
 interface Opener {
@@ -18,17 +19,6 @@ let openersCache: Opener[] | null = null;
 // Last opener the user picked, remembered across the session so the split
 // button's primary action stays on their preferred app.
 let lastOpenerKey: string | null = null;
-
-async function probeLocal(absPath: string): Promise<boolean> {
-  try {
-    return await invokeDesktop<boolean>("local_root_available", {
-      root: absPath,
-      server: getServerBase(),
-    });
-  } catch {
-    return false;
-  }
-}
 
 /**
  * "Open in editor" for a remote-workspace file — the M2 same-machine seam at
@@ -109,17 +99,7 @@ export function LocalOpen({
       // Decide local vs download FRESH at click (never trust a possibly-stale
       // or not-yet-resolved hint): open the real file only if it's genuinely
       // under a local connector root right now.
-      const local = await probeLocal(absPath);
-      if (local) {
-        await invokeDesktop("open_local_path", { path: absPath, opener });
-      } else {
-        const b64 = getBytesB64();
-        if (!b64) {
-          toast.error("File content isn't loaded yet — open the file first");
-          return;
-        }
-        await invokeDesktop("open_remote_file", { filename, contentB64: b64, opener });
-      }
+      await openDesktopFile({ absPath, filename, getBytesB64, opener });
     } catch (e) {
       toast.error(typeof e === "string" ? e : "couldn't open the file");
     }

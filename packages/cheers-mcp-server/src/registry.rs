@@ -465,7 +465,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "set_resource_cards",
                 "Attach resource cards",
-                "Attach one to three read-only Cheers resource cards to your own completed reply. Pass cards_json as a JSON array of {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?}. Replaces any previous cards on that reply.",
+                "Attach one to three read-only Cheers resource cards to your own reply. During streaming, validated cards are staged and published when the reply completes. Pass cards_json as a JSON array of {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?}. Replaces previous cards; do not post a duplicate reply.",
                 SCOPE_MESSAGES_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
@@ -655,6 +655,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
         db("channel.voice.transcript", None),
         db("channel.voice.transcript.by-seq", None),
         db("channel.commands.read", None),
+        db("ui.contract.read", read_tool("read_ui_contract", "Read interactive UI contract", "Read the supported Cheers A2UI version, component catalog, example, and authoring/action guide before creating an interactive Desk resource.", &[])),
         // Browser-WS only.
         db("fs.patch", None),
     ];

@@ -2,6 +2,7 @@ import type { FsClient, SendResourceReq } from "./fsClient";
 import type { RendererExtension } from "./sandbox/rendererExtension";
 import type { ChannelProfile } from "@/api/channelProfiles";
 import type { PresenceFocus } from "../hooks/useChatRealtime";
+import type { ResourceInteraction } from "./interaction";
 
 // The shared context handed to scene navigation, the Raw file browser, and renderer
 // hosts. Paths remain the storage contract; scene items are the default navigation.
@@ -43,6 +44,7 @@ export interface WorkbenchContext {
    *  API). Never sends — the human reviews and presses send; that keystroke is what
    *  turns an extension suggestion into a channel action. */
   composeMessage?: (text: string) => void;
+  requestInteraction?: (event: ResourceInteraction) => Promise<{ msg_id: string }>;
   /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the tree
    *  and reloads a clean open file (unsaved edits are never clobbered). */
   filesTick?: number;

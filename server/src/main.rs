@@ -330,9 +330,14 @@ async fn main() -> anyhow::Result<()> {
 
     let app = router::build(state);
 
-    let addr = format!("0.0.0.0:{}", config.port);
+    // Local worktree/demo processes can bind loopback without exposing their
+    // development credentials on LAN interfaces. Containers retain the default.
+    let bind_address: std::net::IpAddr = std::env::var("BIND_ADDRESS")
+        .unwrap_or_else(|_| "0.0.0.0".into())
+        .parse()?;
+    let addr = std::net::SocketAddr::new(bind_address, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!(addr, "listening");
+    info!(addr = %addr, "listening");
     // ConnectInfo gives handlers the peer socket address — the rate limiter keys
     // on it unless TRUST_PROXY_HEADERS explicitly opts into proxy headers.
     axum::serve(

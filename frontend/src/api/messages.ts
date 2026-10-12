@@ -1,6 +1,8 @@
 import { apiJson } from "./client";
 import type { Message } from "@/types";
 import { parseSuggestedQuestions, type SuggestedQuestion } from "@/features/chat/suggestedQuestions";
+import { parseLocator } from "@/features/chat/locator";
+import type { ResourceInteraction } from "@/features/chat/workbench/interaction";
 
 interface MessagesResponse {
   messages: Message[];
@@ -57,6 +59,20 @@ export async function cancelMessage(
 ): Promise<void> {
   await apiJson(`/channels/${channelId}/messages/${msgId}/cancel`, {
     method: "POST",
+  });
+}
+
+/** Explicit user submission through the existing human message/ACP pipeline. */
+export function sendResourceInteraction(channelId: string, event: ResourceInteraction): Promise<Message> {
+  const source = parseLocator(event.sourceUri);
+  if (source?.kind !== "desk") return Promise.reject(new Error("A Desk resource is required."));
+  const path = source.path;
+  return sendMessage(channelId, `Resource request ${event.actionId}: ${JSON.stringify(event.input)}`, {
+    mention_ids: [event.botId],
+    context_bundle: {
+      items: [{ verb: "fs.read", params: { channel_id: channelId, path }, label: path, kind: "file" }],
+      interaction: event,
+    },
   });
 }
 

@@ -31,6 +31,27 @@ use crate::{
     infra::db::models::{MessageDto, MessageFileRef, MessageMention, MESSAGE_SCHEMA_VERSION},
 };
 
+pub(crate) fn interactive_request_key(
+    params: &CreateMessageParams,
+) -> Result<Option<crate::resource::idempotency::IdempotencyKey>, AppError> {
+    let key = if let Some(event) = params
+        .context_bundle
+        .as_ref()
+        .and_then(|b| b.get("interaction"))
+    {
+        crate::resource::idempotency::IdempotencyKey::from_params(
+            &crate::resource::Principal::user(params.user_id), "ui.request",
+            &json!({"idempotency_key":event["invocationId"],"channel_id":params.channel_id,
+                "content":params.content,"msg_type":params.msg_type.as_deref().unwrap_or("text"),"context_bundle":params.context_bundle,
+                "mention_ids":params.mention_ids,"mention_names":params.mention_names,
+                "file_ids":params.file_ids,"reply_to_msg_id":params.reply_to_msg_id,"session_id":params.session_id})
+        ).map_err(|(_, message)| AppError::Conflict(message))?
+    } else {
+        None
+    };
+    Ok(key)
+}
+
 // ── create_message ────────────────────────────────────────────────────────────
 
 pub struct CreateMessageParams {
@@ -95,6 +116,21 @@ pub async fn create_message(
     if !is_member {
         info!(user_id = %params.user_id, channel_id = %params.channel_id, "create_message denied: user is not a member");
         return Err(AppError::Forbidden("not a channel member".into()));
+    }
+
+    // UI requests are ordinary human messages with a structured context envelope.
+    // Claim their invocation id in the SAME transaction as the message, reusing
+    // the existing idempotency protocol instead of a second action/job store.
+    let idempotency = interactive_request_key(&params)?;
+    if let Some(key) = &idempotency {
+        if let Some(result) = key
+            .replay(db)
+            .await
+            .map_err(|(_, message)| AppError::Conflict(message))?
+        {
+            return serde_json::from_value(result)
+                .map_err(|error| AppError::Internal(error.to_string()));
+        }
     }
 
     // ── 2. 查发送者名字（用于 DTO）───────────────────────────────────────
@@ -168,7 +204,23 @@ pub async fn create_message(
         .as_ref()
         .map(crate::domain::context_bundle::strip_previews);
 
+    let message_files = load_message_files(db, &file_ids).await?;
     let mut tx = db.begin().await.map_err(AppError::Db)?;
+    if let Some(key) = &idempotency {
+        if !key
+            .claim(&mut tx)
+            .await
+            .map_err(|(_, message)| AppError::Conflict(message))?
+        {
+            drop(tx);
+            let replayed = key
+                .replay_claimed(db)
+                .await
+                .map_err(|(_, message)| AppError::Conflict(message))?;
+            return serde_json::from_value(replayed)
+                .map_err(|error| AppError::Internal(error.to_string()));
+        }
+    }
     let seq = channel_seq::allocate(&mut tx, params.channel_id)
         .await
         .map_err(AppError::Db)?;
@@ -199,9 +251,6 @@ pub async fn create_message(
         .await
         .map_err(AppError::Db)?;
 
-    tx.commit().await.map_err(AppError::Db)?;
-    info!(message_id = %msg_id, channel_id = %params.channel_id, "message persisted");
-
     let dto = MessageDto {
         v: MESSAGE_SCHEMA_VERSION,
         msg_id: msg_id.to_string(),
@@ -227,13 +276,23 @@ pub async fn create_message(
                 display_name: None,
             })
             .collect(),
-        files: load_message_files(db, &file_ids).await?,
+        files: message_files,
         created_at: now,
         content_data: None,
         context_bundle: row_bundle.clone(),
         trace_count: Some(0),
         trace_has_failure: Some(false),
     };
+    if let Some(key) = &idempotency {
+        key.complete(
+            &mut tx,
+            &serde_json::to_value(&dto).map_err(|e| AppError::Internal(e.to_string()))?,
+        )
+        .await
+        .map_err(|(_, message)| AppError::Internal(message))?;
+    }
+    tx.commit().await.map_err(AppError::Db)?;
+    info!(message_id = %msg_id, channel_id = %params.channel_id, "message persisted");
 
     // ── 4. 再 fanout 终态帧（已落库，现在安全投递）────────────────────
     let wire = WireFrame::channel(

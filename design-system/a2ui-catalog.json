@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cheers:a2ui:catalog:v1",
+  "catalogId": "urn:cheers:a2ui:catalog:v1",
+  "title": "Cheers A2UI catalog v1",
+  "description": "Bounded custom catalog for A2UI v0.9.1. Registered resource navigation, drafts, structured Bot requests and desktop openers. No scripts, arbitrary commands, theme overrides, or network media. Runtime enforces graph integrity, safe JSON paths and limits.",
+  "components": {
+    "Row": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "component": {
+          "const": "Row"
+        },
+        "children": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "component",
+        "children"
+      ],
+      "additionalProperties": false
+    },
+    "Column": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "component": {
+          "const": "Column"
+        },
+        "children": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "component",
+        "children"
+      ],
+      "additionalProperties": false
+    },
+    "Text": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "component": {
+          "const": "Text"
+        },
+        "text": {
+          "$ref": "#/$defs/dynamicString"
+        }
+      },
+      "required": [
+        "id",
+        "component",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "TextField": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "component": {
+          "const": "TextField"
+        },
+        "label": {
+          "$ref": "#/$defs/dynamicString"
+        },
+        "value": {
+          "$ref": "#/$defs/inputBinding"
+        }
+      },
+      "required": [
+        "id",
+        "component",
+        "label",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "CheckBox": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "component": {
+          "const": "CheckBox"
+        },
+        "label": {
+          "$ref": "#/$defs/dynamicString"
+        },
+        "value": {
+          "$ref": "#/$defs/inputBinding"
+        }
+      },
+      "required": [
+        "id",
+        "component",
+        "label",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Button": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "component": {
+          "const": "Button"
+        },
+        "label": {
+          "$ref": "#/$defs/dynamicString"
+        },
+        "action": {
+          "$ref": "#/$defs/action"
+        }
+      },
+      "required": [
+        "id",
+        "component",
+        "label",
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "functions": {},
+  "$defs": {
+    "inputBinding": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/.+",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "dynamicString": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^/",
+              "maxLength": 1024
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "const": "cheers.open"
+                },
+                "context": {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "$ref": "#/$defs/dynamicString"
+                    }
+                  },
+                  "required": [
+                    "uri"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "context"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "event"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "const": "cheers.compose"
+                },
+                "context": {
+                  "type": "object",
+                  "properties": {
+                    "actionId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/binding"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "actionId",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "context"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "event"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "const": "cheers.request"
+                },
+                "context": {
+                  "type": "object",
+                  "properties": {
+                    "actionId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          {
+                            "$ref": "#/$defs/binding"
+                          }
+                        ]
+                      }
+                    },
+                    "botId": {
+                      "type": "string",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    }
+                  },
+                  "required": [
+                    "actionId",
+                    "payload",
+                    "botId"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "context"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "event"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "const": "cheers.openNative"
+                },
+                "context": {
+                  "type": "object",
+                  "properties": {
+                    "uri": {
+                      "$ref": "#/$defs/dynamicString"
+                    },
+                    "opener": {
+                      "enum": [
+                        "finder",
+                        "vscode",
+                        "zed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "uri",
+                    "opener"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "context"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "event"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "anyComponent": {
+      "oneOf": [
+        {
+          "$ref": "#/components/Row"
+        },
+        {
+          "$ref": "#/components/Column"
+        },
+        {
+          "$ref": "#/components/Text"
+        },
+        {
+          "$ref": "#/components/TextField"
+        },
+        {
+          "$ref": "#/components/CheckBox"
+        },
+        {
+          "$ref": "#/components/Button"
+        }
+      ]
+    }
+  },
+  "presentation": {
+    "wrapper": "Optional views.minimal/views.medium name {surfaceId,root} within the same document. Cheers presentation metadata, not A2UI protocol messages.",
+    "minimal": {
+      "maxSurfaces": 1,
+      "maxComponentVisits": 16,
+      "maxInputs": 3,
+      "maxActions": 2
+    },
+    "fallback": "Small documents use root; larger documents require inline expansion or the full Workbench view."
+  }
+}

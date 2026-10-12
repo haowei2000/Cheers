@@ -1,3 +1,5 @@
+import { ResourceCardProvider } from "./ResourceCardContext";
+import { makeFsClient } from "./workbench/fsClient";
 import { AnnotationProvider } from "@/features/annotations/AnnotationProvider";
 import { PanelWorkspace } from "./workbench/PanelWorkspace";
 import { Button as UiButton } from "@/components/ui/button";
@@ -20,7 +22,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { listMessages, sendMessage } from "@/api/messages";
+import { listMessages, sendMessage, sendResourceInteraction } from "@/api/messages";
 import {
   useContextPickStore,
   toBundle,
@@ -549,6 +551,8 @@ export function ChannelView({
   // windows as full-screen sheets, so there is no geometry to share there.
   const isMobile = useIsMobile();
   const layoutChannelId = channel?.channel_id ?? "";
+  const cardResources = useMemo(() => ({ principalId: user?.user_id, fs: makeFsClient(sendResourceReq, layoutChannelId) }), [sendResourceReq, layoutChannelId, user?.user_id]);
+  const cardFileClient = cardResources.fs;
   const channelLayout = useChannelLayout({
     channelId: layoutChannelId,
     sendResourceReq,
@@ -1132,6 +1136,10 @@ export function ChannelView({
       seq: (p?.seq ?? 0) + 1,
     }));
   }, [setComposePrefill]);
+  const requestInteraction = useCallback((event: Parameters<typeof sendResourceInteraction>[1]) => {
+    if (!channel) return Promise.reject(new Error("The source channel is unavailable."));
+    return sendResourceInteraction(channel.channel_id, event);
+  }, [channel]);
 
   const handleSend = useCallback(
     async (
@@ -1591,6 +1599,9 @@ export function ChannelView({
           await jumpToMessage(item.target.msg_id);
         }
       }}>
+    <ResourceCardProvider key={cardResources.principalId} fs={cardFileClient} channelId={channel.channel_id} filesTick={boardTick.files}
+      openLocator={openLocator} composeMessage={composeMessage}
+      requestInteraction={channel.my_role === "readonly" ? undefined : requestInteraction}>
     <ProfileCardProvider
       members={memberById}
       currentUserId={user?.user_id}
@@ -1676,9 +1687,11 @@ export function ChannelView({
                 channelId={channel.channel_id}
                 sendResourceReq={sendResourceReq}
                 openFilePath={wbTarget}
+                fileClient={cardFileClient}
                 filesTick={boardTick.files}
                 onOpenLocator={openLocator}
                 onCompose={composeMessage}
+                onRequestInteraction={channel.my_role === "readonly" ? undefined : requestInteraction}
                 sendPresenceFocus={sendPresenceFocus}
                 workspaceFocus={workspaceFocus}
                 currentUserId={user?.user_id}
@@ -1959,6 +1972,7 @@ export function ChannelView({
       </div>
       </VoiceToolbarHostProvider>
     </ProfileCardProvider>
+    </ResourceCardProvider>
     </AnnotationProvider>
   );
 }

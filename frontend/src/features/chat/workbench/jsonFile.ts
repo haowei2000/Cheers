@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parse as yamlParse } from "yaml";
 import { ResourceError } from "../hooks/useChatRealtime";
 import type { FsClient } from "./fsClient";
+import { fileResourceStore } from "./fileResource";
 import { applyEdits } from "./yamlDoc";
 import { applyPatchOps, type PatchOp } from "./patchOps";
 import { merge3Way } from "./collab";
@@ -185,6 +186,9 @@ export function useFileSession(
   path: string,
   options?: FileSessionOptions
 ): FileSession {
+  const resources = useMemo(() => fileResourceStore(fs), [fs]);
+  const currentPathRef = useRef(path);
+  currentPathRef.current = path;
   const [buffer, setBuffer] = useState<FileBuffer>(() => emptyBuffer(path));
   const [version, setVersion] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -227,7 +231,8 @@ export function useFileSession(
     async (skipIfDirty = false) => {
       if (!path) return;
       try {
-        const f = await fs.read(path);
+        const f = await resources.read(path);
+        if (currentPathRef.current !== path) return;
         if (skipIfDirty && bufferRef.current.dirty) {
           // Collaborative 3-way merge attempt
           const base = baseTextRef.current;
@@ -260,6 +265,7 @@ export function useFileSession(
         setVersion(f.version);
         setConflictNotice(null);
       } catch (e) {
+        if (currentPathRef.current !== path) return;
         if (e instanceof ResourceError && e.code === "NOT_FOUND") {
           if (skipIfDirty && bufferRef.current.dirty) return;
           write(adoptText(path, bufferRef.current, ""));
@@ -271,12 +277,32 @@ export function useFileSession(
         }
       }
     },
-    [fs, path, write]
+    [resources, path, write]
   );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => resources.subscribe(path, () => {
+    if (currentPathRef.current !== path) return;
+    const snapshot = resources.snapshot(path);
+    if (snapshot.error) {
+      setStatus(errMsg(snapshot.error));
+      if (snapshot.error instanceof ResourceError && snapshot.error.code === "NOT_FOUND" && !bufferRef.current.dirty) {
+        write(adoptText(path, bufferRef.current, ""));
+        baseTextRef.current = "";
+        setVersion(null);
+      }
+      return;
+    }
+    const file = snapshot.file;
+    if (!file || snapshot.loading || bufferRef.current.dirty || file.version === versionRef.current) return;
+    write(adoptText(path, bufferRef.current, file.content));
+    baseTextRef.current = file.content;
+    setVersion(file.version);
+    setConflictNotice(null);
+  }), [resources, path, write]);
 
   // Clean up autoSave timer on unmount
   useEffect(() => {
@@ -299,6 +325,7 @@ export function useFileSession(
     try {
       const currentText = bufferRef.current.text;
       const r = await fs.write(path, currentText, versionRef.current ?? 0);
+      resources.publish(path, { path, content: currentText, version: r.version, is_dir: false });
       write({ ...bufferRef.current, dirty: false });
       baseTextRef.current = currentText;
       setVersion(r.version);
@@ -308,10 +335,11 @@ export function useFileSession(
       if (e instanceof ResourceError && e.code === "VERSION_CONFLICT") {
         // Attempt automatic 3-way merge on write conflict
         try {
-          const latest = await fs.read(path);
+          const latest = await resources.read(path);
           const res = merge3Way(baseTextRef.current, bufferRef.current.text, latest.content);
           if (!res.hasConflict) {
             const retryWrite = await fs.write(path, res.merged, latest.version);
+            resources.publish(path, { path, content: res.merged, version: retryWrite.version, is_dir: false });
             write({ ...adoptText(path, bufferRef.current, res.merged), dirty: false });
             baseTextRef.current = res.merged;
             setVersion(retryWrite.version);
@@ -336,7 +364,7 @@ export function useFileSession(
     } finally {
       setSaving(false);
     }
-  }, [fs, path, load, write]);
+  }, [fs, resources, path, load, write]);
 
   const scheduleAutoSave = useCallback(() => {
     if (!autoSaveEnabled) return;
@@ -381,8 +409,9 @@ export function useFileSession(
         await load();
       } else if (choice === "local") {
         try {
-          const latest = await fs.read(path);
+          const latest = await resources.read(path);
           const r = await fs.write(path, conflictNotice.localText, latest.version);
+          resources.publish(path, { path, content: conflictNotice.localText, version: r.version, is_dir: false });
           write({ ...bufferRef.current, dirty: false });
           baseTextRef.current = conflictNotice.localText;
           setVersion(r.version);
@@ -398,7 +427,7 @@ export function useFileSession(
         setStatus("Conflict markers inserted; please resolve in Raw editor");
       }
     },
-    [conflictNotice, path, write, load, fs]
+    [conflictNotice, path, write, load, fs, resources]
   );
 
   // Structured edit
