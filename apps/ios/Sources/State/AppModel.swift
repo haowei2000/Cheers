@@ -364,7 +364,7 @@ final class AppModel {
             await PushRouter.deleteRegistration(using: api)
             try? await api.logout()
         }
-        clearSession()
+        clearSession(forgetDevice: true)
     }
 
     /// Changes the password and replaces the locally held token. The gateway
@@ -391,7 +391,7 @@ final class AppModel {
     }
 
     /// Local sign-out (used on 401 / invalidated token).
-    func clearSession() {
+    func clearSession(forgetDevice: Bool = false) {
         NavigationCache.removeAll(userId: session?.userId, server: serverURLString)
         socket.disconnect()
         socketConnected = false
@@ -402,7 +402,9 @@ final class AppModel {
         lastSessionRefreshAt = nil
         KeychainStore.remove(Keys.token)
         KeychainStore.remove(Keys.refreshToken)
-        KeychainStore.remove(Keys.trustedDevice)
+        if forgetDevice {
+            KeychainStore.remove(Keys.trustedDevice)
+        }
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: Keys.userId)
         defaults.removeObject(forKey: Keys.displayName)

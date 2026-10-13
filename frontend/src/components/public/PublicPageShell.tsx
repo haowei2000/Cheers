@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
@@ -13,6 +14,7 @@ export const publicLinkClass =
 interface PublicPageShellProps {
   title: string;
   description?: ReactNode;
+  descriptionKind?: "help" | "status";
   eyebrow?: string;
   children: ReactNode;
   width?: "form" | "wide";
@@ -24,6 +26,7 @@ interface PublicPageShellProps {
 export function PublicPageShell({
   title,
   description,
+  descriptionKind = "help",
   eyebrow = "Cheers · Private edition",
   children,
   width = "form",
@@ -46,42 +49,42 @@ export function PublicPageShell({
             {sidebarContent ?? (
               <div className="space-y-6 max-w-xs">
                 <div className="space-y-1">
-                  <p className="font-utility text-compact font-semibold text-content-secondary">
-                    Multi-agent Collaboration
-                  </p>
-                  <p className="font-reading text-compact text-content-muted leading-relaxed">
+                  <p className="font-utility text-compact font-semibold text-content-secondary"><HelpLabel help={<>
                     Coordinate Claude, Codex, and custom bots in real-time threaded channels with shared context.
-                  </p>
+                  </>}>
+                    Multi-agent Collaboration
+                  </HelpLabel></p>
+
                 </div>
 
                 <div className="space-y-1">
-                  <p className="font-utility text-compact font-semibold text-content-secondary">
-                    Interactive Workbench
-                  </p>
-                  <p className="font-reading text-compact text-content-muted leading-relaxed">
+                  <p className="font-utility text-compact font-semibold text-content-secondary"><HelpLabel help={<>
                     Inspect code diffs, run live lenses, preview sandboxed artifacts, and inspect execution traces.
-                  </p>
+                  </>}>
+                    Interactive Workbench
+                  </HelpLabel></p>
+
                 </div>
 
                 <div className="space-y-1">
-                  <p className="font-utility text-compact font-semibold text-content-secondary">
-                    Accountable Execution
-                  </p>
-                  <p className="font-reading text-compact text-content-muted leading-relaxed">
+                  <p className="font-utility text-compact font-semibold text-content-secondary"><HelpLabel help={<>
                     Granular permission prompts, audit trails, and transparent human-in-the-loop control.
-                  </p>
+                  </>}>
+                    Accountable Execution
+                  </HelpLabel></p>
+
                 </div>
               </div>
             )}
           </div>
 
           <div className="max-w-xs border-t border-zinc-800/80 pt-5 mt-8">
-            <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted">
-              A shared desk for people and agents
-            </p>
-            <p className="font-reading mt-2 text-compact leading-relaxed text-content-muted">
+            <p className="font-utility text-minimal font-semibold uppercase tracking-overline text-content-muted"><HelpLabel help={<>
               Self-hosted and private by design. Conversations, files, and actions remain under your control.
-            </p>
+            </>}>
+              A shared desk for people and agents
+            </HelpLabel></p>
+
           </div>
         </aside>
 
@@ -100,9 +103,9 @@ export function PublicPageShell({
                 {eyebrow}
               </p>
               <h1 className="font-masthead mt-2 text-comfortable leading-masthead tracking-masthead text-content-strong">
-                {title}
+                <HelpLabel help={descriptionKind === "help" ? description : undefined}>{title}</HelpLabel>
               </h1>
-              {description && (
+              {description && descriptionKind === "status" && (
                 <p className="font-reading mt-3 max-w-[44ch] text-regular leading-6 text-content-muted">
                   {description}
                 </p>

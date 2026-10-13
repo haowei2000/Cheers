@@ -128,6 +128,7 @@ fn main() {
             deeplink::take_pending_deep_link,
             desktop_auth::desktop_password_login,
             desktop_auth::desktop_verify_factor,
+            desktop_auth::desktop_verify_passkey_factor,
             desktop_auth::desktop_login_flow_passkey_verify,
             desktop_auth::desktop_login_flow_password,
             desktop_auth::desktop_login_flow_code,

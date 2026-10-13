@@ -89,11 +89,12 @@ export function AdminSttSettings() {
     <SettingsSection title="Speech-to-text" icon={AudioLines}>
       <SettingsCard
         title="Transcription service"
+        status="Audio leaves this instance, so only configure a service you trust."
         description={
           <>
             Voice messages and audio files are sent to the configured OpenAI-compatible
             <code className="mx-1 font-utility text-compact text-content-secondary">/audio/transcriptions</code>
-            endpoint. Audio leaves this instance, so only configure a service you trust.
+            endpoint.
           </>
         }
       >
@@ -130,8 +131,9 @@ export function AdminSttSettings() {
           <Field
             label="API key"
             htmlFor="stt-api-key"
+            status={loaded?.api_key_set && !clearKey ? `Saved ${loaded.api_key_hint}` : undefined}
             hint={loaded?.api_key_set && !clearKey
-              ? `Saved ${loaded.api_key_hint} — leave blank to keep it.`
+              ? "Leave blank to keep the saved key."
               : "Leave blank if the service does not require authentication."}
           >
             <Input

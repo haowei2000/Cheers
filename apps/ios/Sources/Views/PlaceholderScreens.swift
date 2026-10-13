@@ -53,9 +53,8 @@ struct NewConversationSheet: View {
                 Toggle(isOn: $voiceEnabled) {
                     Label("Voice", systemImage: "waveform")
                 }
-            } footer: {
-                Text("Add a voice room above the normal chat timeline.")
             }
+                .helpExplanation("Add a voice room above the normal chat timeline.")
 
             Section {
                 Toggle("Private", isOn: $isPrivate)

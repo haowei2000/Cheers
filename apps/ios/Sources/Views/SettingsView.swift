@@ -255,10 +255,7 @@ struct SettingsView: View {
             .listRowBackground(Theme.bgSurface)
         } header: {
             sectionHeader("Account")
-        } footer: {
-            Text("Link Apple or Google to sign in on other devices.")
-                .font(.caption)
-                .foregroundStyle(Theme.textFaint)
+                .helpExplanation("Link Apple or Google to sign in on other devices.")
         }
     }
 
@@ -408,9 +405,8 @@ private struct ProfileEditSheet: View {
                                         .foregroundStyle(Theme.accent)
                                 }
                                 .disabled(isUploadingAvatar)
-                                Text("JPEG or PNG, used across Cheers clients.")
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.textMuted)
+                                .helpExplanation("JPEG or PNG, used across Cheers clients.")
+
                             }
                         }
                         .padding(.vertical, 4)
@@ -726,9 +722,7 @@ private struct SignInMethodsView: View {
 
             if let apple = appleIdentity, !apple.linked {
                 Section {
-                    Text("Authenticate both your current Cheers session and Apple account. Matching email addresses are never linked automatically.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.textSecondary)
+
                     AppleAuthorizationControl { payload in
                         guard let api = app.api else { throw APIError.unauthorized }
                         try await api.linkApple(payload)
@@ -738,6 +732,7 @@ private struct SignInMethodsView: View {
                     .opacity((appleIdentity?.recentAuthentication ?? false) ? 1 : 0.55)
                 } header: {
                     Text("Link Apple")
+                        .helpExplanation("Authenticate both your current Cheers session and Apple account. Matching email addresses are never linked automatically.")
                 } footer: {
                     if appleIdentity?.recentAuthentication == false {
                         Text("Sign in again (within the last 5 minutes), then link Apple.")
@@ -1121,11 +1116,10 @@ struct WorkspaceAdminSheet: View {
                             : inviteIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || isBusy)
                 } header: {
                     Text("Invite member")
-                } footer: {
-                    Text(inviteMemberType == "bot"
+                        .helpExplanation(inviteMemberType == "bot"
                         ? "Bots and people use the same workspace membership. Bots join immediately."
                         : "People remain pending until they accept. Only owners can grant the owner role.")
-                }
+        }
 
                 Section("Members") {
                     if members.isEmpty, errorText == nil { ProgressView() }

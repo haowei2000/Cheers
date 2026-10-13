@@ -1,3 +1,4 @@
+import { Tip } from "@/components/ui/tip";
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
@@ -133,21 +134,16 @@ export function LocalOpen({
       </div>
       {menuOpen && (
         <div className="absolute right-0 top-full mt-1 z-20 rounded-sm bg-zinc-900 shadow-xl shadow-black/40 py-1 min-w-38">
-          {hintLocal === false && (
-            <p className="px-3 py-1 text-minimal text-content-muted border-b border-zinc-800">
-              Remote file — opens a downloaded copy
-            </p>
-          )}
+
           {/* design-system-exempt: menu-option — opener command menu. */}
           {openers.map((op) => (
-            <UiButton action="open" content="iconText" controlWidth="fill" variant="plain"
-              key={op.key}
+            <Tip key={op.key} className="w-full" content={hintLocal === false ? "Remote file — opens a downloaded copy" : undefined}><UiButton action="open" content="iconText" controlWidth="fill" variant="plain"
               onClick={() => void open(op.key)}
               controlSize="regular" className="flex items-center gap-2  text-content-primary hover:bg-zinc-800"
             >
               <OpenerGlyph k={op.key} className="w-4 h-4" />
               {op.label}
-            </UiButton>
+            </UiButton></Tip>
           ))}
         </div>
       )}

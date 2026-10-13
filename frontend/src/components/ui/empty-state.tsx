@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
+import { HelpLabel } from "./help-text";
 import { cn } from "@/lib/cn";
 
 // The canonical empty state (DESIGN.md §2.9): centered icon + primary line +
@@ -23,8 +24,7 @@ export function EmptyState({
       )}
     >
       {Icon && <Icon className="w-5 h-5 text-content-muted mb-2" />}
-      <p className="text-caption">{title}</p>
-      {hint && <p className="text-caption mt-1">{hint}</p>}
+      <HelpLabel className="text-caption" help={hint}>{title}</HelpLabel>
     </div>
   );
 }
