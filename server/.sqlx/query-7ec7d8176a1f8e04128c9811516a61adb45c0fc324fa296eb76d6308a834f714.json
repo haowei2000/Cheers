@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb)\n            || jsonb_build_object(CASE WHEN is_partial THEN 'pending_cards' ELSE 'cards' END, $1::jsonb)\n         WHERE msg_id = $2 AND channel_id = $3 AND sender_type = 'bot' AND sender_id = $4\n           AND msg_type IN ('text', 'normal') AND is_deleted = FALSE\n           AND (is_partial = TRUE OR NULLIF(BTRIM(content), '') IS NOT NULL)\n         RETURNING content_data AS \"content_data!\", is_partial",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content_data!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_partial",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "7ec7d8176a1f8e04128c9811516a61adb45c0fc324fa296eb76d6308a834f714"
+}

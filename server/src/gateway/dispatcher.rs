@@ -270,21 +270,21 @@ async fn create_placeholder(
 ) -> Result<bool, String> {
     // Bot stream placeholders use the same explicit text kind as completed
     // replies. The baseline DB default is legacy `normal`, not `text`.
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type, is_partial, depth, chain_id,
              context_bundle, in_reply_to_msg_id, content_data)
          VALUES ($1, $2, 'bot', $3, '', 'text', TRUE, $4, $5, $6, $7, $8)
          ON CONFLICT (msg_id) DO NOTHING",
+        placeholder_id.to_string(),
+        channel_id.to_string(),
+        bot_id.to_string(),
+        depth,
+        chain_id,
+        context_bundle,
+        trigger_msg_id.to_string(),
+        content_data,
     )
-    .bind(placeholder_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .bind(depth)
-    .bind(chain_id)
-    .bind(context_bundle)
-    .bind(trigger_msg_id.to_string())
-    .bind(content_data)
     .execute(db)
     .await
     .map_err(|e| e.to_string())?;

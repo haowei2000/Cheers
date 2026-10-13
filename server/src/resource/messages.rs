@@ -94,22 +94,24 @@ pub async fn handle_cards_write(
     // New dispatcher placeholders explicitly use `text`.
     // The row lock acquired by UPDATE serializes staging with stream finalization.
     // Partial metadata is not published; handle_done promotes it in its transaction.
-    let updated: Option<(Value, bool)> = sqlx::query_as(
+    let updated = sqlx::query!(
         r#"UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb)
             || jsonb_build_object(CASE WHEN is_partial THEN 'pending_cards' ELSE 'cards' END, $1::jsonb)
          WHERE msg_id = $2 AND channel_id = $3 AND sender_type = 'bot' AND sender_id = $4
            AND msg_type IN ('text', 'normal') AND is_deleted = FALSE
            AND (is_partial = TRUE OR NULLIF(BTRIM(content), '') IS NOT NULL)
-         RETURNING content_data, is_partial"#,
+         RETURNING content_data AS "content_data!", is_partial"#,
+        cards,
+        msg_id.to_string(),
+        channel_id.to_string(),
+        principal.principal_id.to_string(),
     )
-    .bind(cards)
-    .bind(msg_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(principal.principal_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(super::db_err("messages.cards.write"))?;
-    let (content_data, staged) = updated.ok_or_else(|| super::not_found("own bot reply"))?;
+    let row = updated.ok_or_else(|| super::not_found("own bot reply"))?;
+    let content_data = row.content_data;
+    let staged = row.is_partial;
     Ok(
         serde_json::json!({"channel_id":channel_id,"msg_id":msg_id,"content_data":content_data,"staged":staged}),
     )

@@ -1101,18 +1101,18 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
 
     // Validate destination types while holding each source row. Renaming an
     // untyped file must not bypass the same contract checked by writes/patches.
-    let source_files: Vec<(String, String)> = sqlx::query_as(
+    let source_files = sqlx::query!(
         "SELECT path, content FROM context_files WHERE channel_id=$1 AND is_dir=FALSE
          AND (path=$2 OR left(path, char_length($2)+1)=$2 || '/') FOR UPDATE",
+        channel_id.to_string(),
+        &from,
     )
-    .bind(channel_id.to_string())
-    .bind(&from)
     .fetch_all(&mut *tx)
     .await
     .map_err(super::db_err("fs.mv: validate destination"))?;
-    for (path, content) in source_files {
-        let destination = format!("{}{}", to, &path[from.len()..]);
-        validate_interactive_content(&destination, &content)?;
+    for source in source_files {
+        let destination = format!("{}{}", to, &source.path[from.len()..]);
+        validate_interactive_content(&destination, &source.content)?;
     }
 
     let moved = sqlx::query!(
