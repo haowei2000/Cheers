@@ -771,7 +771,15 @@ dependencies = [
 
 [[package]]
 name = "cheers-bridge-protocol"
-version = "0.1.50"
+version = "0.1.51"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "cheers-interactive-core"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -781,6 +789,7 @@ dependencies = [
 name = "cheers-mcp-server"
 version = "0.1.2"
 dependencies = [
+ "cheers-interactive-core",
  "percent-encoding",
  "serde",
  "serde_json",
@@ -3695,6 +3704,7 @@ dependencies = [
  "base64 0.22.1",
  "bcrypt",
  "cheers-bridge-protocol",
+ "cheers-interactive-core",
  "cheers-mcp-server",
  "chrono",
  "dashmap",

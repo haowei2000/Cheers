@@ -7,7 +7,7 @@ import { Folder, Package } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { GlanceRow } from "@/components/ui/glance-row";
-import { makeFsClient, type SendResourceReq } from "./fsClient";
+import { makeFsClient, type SendResourceReq, type FsClient } from "./fsClient";
 import type { WorkbenchContext } from "./context";
 import type { PresenceFocus } from "../hooks/useChatRealtime";
 import { FilePanel } from "./panels/FilePanel";
@@ -40,6 +40,8 @@ interface Props {
   onClose: () => void;
   channelId: string;
   sendResourceReq: SendResourceReq;
+  /** Shared channel client, also used by inline resource cards. */
+  fileClient?: FsClient;
   /** Deep-link: open the browser focused on this path (e.g. a clicked Desk ref). */
   openFilePath?: string;
   /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the
@@ -52,6 +54,7 @@ interface Props {
   /** Prefill the channel composer (a personal renderer capability).
    *  Never sends — owned by ChannelView, which holds the composer. */
   onCompose?: (text: string) => void;
+  onRequestInteraction?: WorkbenchContext["requestInteraction"];
   sendPresenceFocus?: (chanId: string, focus: { bot_id: string; path?: string | null } | null) => void;
   workspaceFocus?: PresenceFocus[];
   currentUserId?: string;
@@ -65,17 +68,19 @@ function WorkbenchDrawerImpl({
   onClose,
   channelId,
   sendResourceReq,
+  fileClient,
   openFilePath,
   filesTick,
   onOpenLocator,
   onCompose,
+  onRequestInteraction,
   sendPresenceFocus,
   workspaceFocus,
   currentUserId,
   memberNames,
 }: Props) {
   const navigate = useNavigate();
-  const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
+  const fs = useMemo(() => fileClient ?? makeFsClient(sendResourceReq, channelId), [fileClient, sendResourceReq, channelId]);
   const profile = useChannelProfile(channelId, open);
 
   const drawerState = useWorkbenchDrawerState({
@@ -123,6 +128,7 @@ function WorkbenchDrawerImpl({
       filesTick,
       openLocator: onOpenLocator,
       composeMessage: onCompose,
+      requestInteraction: onRequestInteraction,
       sendPresenceFocus,
       workspaceFocus,
       currentUserId,
@@ -145,6 +151,7 @@ function WorkbenchDrawerImpl({
       filesTick,
       onOpenLocator,
       onCompose,
+      onRequestInteraction,
       sendPresenceFocus,
       workspaceFocus,
       currentUserId,

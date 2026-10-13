@@ -90,6 +90,9 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
         }
         Some("channel.messages.cards.write") => {
             if let Some(data) = resp.get("data") {
+                if data.get("staged").and_then(Value::as_bool) == Some(true) {
+                    return resp;
+                }
                 if let Some(channel_id) = data
                     .get("channel_id")
                     .and_then(Value::as_str)

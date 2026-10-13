@@ -664,6 +664,7 @@ pub async fn handle_patch(db: &PgPool, principal: &Principal, params: &Value) ->
     let content = row.content.clone();
     let next = apply_structured_ops(&path, &content, ops)?;
     enforce_file_size(&next)?;
+    validate_interactive_content(&path, &next)?;
     let version = sqlx::query!(
         "UPDATE context_files SET content = $3, version = version + 1, updated_at = NOW() WHERE channel_id = $1 AND path = $2 RETURNING version",
         channel_id.to_string(),
@@ -697,6 +698,9 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         .unwrap_or(false);
     let if_version = params.get("if_version").and_then(|v| v.as_i64());
     enforce_file_size(content)?;
+    if !is_dir {
+        validate_interactive_content(&path, content)?;
+    }
 
     let mut tx = db
         .begin()
@@ -918,6 +922,7 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
     } else {
         enforce_channel_file_count(&mut tx, channel_id).await?;
         enforce_file_size(append)?;
+        validate_interactive_content(&path, append)?;
         sqlx::query!(
             "INSERT INTO context_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
@@ -1094,6 +1099,22 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
         ));
     }
 
+    // Validate destination types while holding each source row. Renaming an
+    // untyped file must not bypass the same contract checked by writes/patches.
+    let source_files = sqlx::query!(
+        "SELECT path, content FROM context_files WHERE channel_id=$1 AND is_dir=FALSE
+         AND (path=$2 OR left(path, char_length($2)+1)=$2 || '/') FOR UPDATE",
+        channel_id.to_string(),
+        &from,
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(super::db_err("fs.mv: validate destination"))?;
+    for source in source_files {
+        let destination = format!("{}{}", to, &source.path[from.len()..]);
+        validate_interactive_content(&destination, &source.content)?;
+    }
+
     let moved = sqlx::query!(
         "UPDATE context_files
          SET path = CASE
@@ -1198,6 +1219,7 @@ async fn update_content(
     content: &str,
 ) -> Result<i64, (String, String)> {
     enforce_file_size(content)?;
+    validate_interactive_content(path, content)?;
     Ok(sqlx::query!(
         "UPDATE context_files
          SET content = $3,
@@ -1339,6 +1361,23 @@ pub(crate) fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (St
         ));
     }
     Ok(path)
+}
+
+fn validate_interactive_content(path: &str, content: &str) -> Result<(), (String, String)> {
+    let typed =
+        path.ends_with(".a2ui.json") || path.ends_with(".a2ui.yaml") || path.ends_with(".a2ui.yml");
+    let data = parse_structured(path, content);
+    if typed || data.as_ref().is_some_and(|v| v.get("a2ui").is_some()) {
+        let data = data.ok_or_else(|| {
+            super::resource_error(
+                "INVALID_UI",
+                "interactive resource must be valid JSON or YAML",
+            )
+        })?;
+        cheers_mcp_server::interactive::validate_document(&data)
+            .map_err(|error| super::resource_error("INVALID_UI", error))?;
+    }
+    Ok(())
 }
 
 fn version_conflict(current: i64) -> (String, String) {

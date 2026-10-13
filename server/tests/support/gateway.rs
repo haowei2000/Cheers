@@ -23,7 +23,7 @@ impl Drop for TestGateway {
 }
 impl TestGateway {
     pub async fn start(db: &PgPool, login: &str, password: &str) -> (Self, String) {
-        let directory = std::env::temp_dir().join(format!("cheers-annotations-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("cheers-http-test-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         let mut gateway = Self {
             process: None,
@@ -67,6 +67,7 @@ impl TestGateway {
                 .current_dir(&gateway.directory)
                 .env("DATABASE_URL", db.connect_options().to_url_lossy().as_str())
                 .env("PORT", port.to_string())
+                .env("BIND_ADDRESS", "127.0.0.1")
                 .env("JWT_PRIVATE_KEY", std::fs::read_to_string(private).unwrap())
                 .env("JWT_PUBLIC_KEY", std::fs::read_to_string(public).unwrap())
                 .env("ADMIN_USERNAME", login)

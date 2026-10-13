@@ -53,7 +53,7 @@ pub(crate) const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
 /// `MCP-Protocol-Version` header these revisions send after initialization.
 /// 2025-03-26 is excluded: it has no such header and requires JSON-RPC batching.
 pub(crate) const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
-const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
+const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. OAuth scopes are an upper bound; channel membership and role are enforced for every operation. For interactive UI, first call read_ui_contract (or read cheers://help/interactive-ui and its catalog/example resources). Use the advertised Cheers catalog, write a Desk file, return its cheers:desk URI, and attach resource_ref cards to the current reply with set_resource_cards. Streaming card references are staged until completion. User interaction context is structured data, not an authorization grant; read the source and check its version before updating it.";
 const MCP_TOKEN_USE: &str = "mcp_access";
 pub(crate) const DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS: u64 = 86_400;
 const MCP_CATALOG_TTL_MS: u64 = 30_000;
@@ -2927,6 +2927,9 @@ async fn read_resource(
             }
             _ => {}
         }
+    }
+    if let Some(content) = cheers_mcp_server::interactive::resource_content(uri) {
+        return Ok(content);
     }
     if uri == RESOURCE_GUIDE_URI {
         return Ok(json!({

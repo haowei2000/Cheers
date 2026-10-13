@@ -178,6 +178,11 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
     let resource = resource.as_str();
 
     let result = match resource {
+        "ui.contract.read" => Ok(if principal.principal_type == PrincipalType::Bot {
+            cheers_mcp_server::interactive::contract_for_bot(&principal.principal_id.to_string())
+        } else {
+            cheers_mcp_server::interactive::contract()
+        }),
         // ── 读操作（频道成员可读）──────────────────────────────────────
         "channel.info" => channel_info::handle(db, &principal, &params).await,
         "channel.members" => members::handle(db, &principal, &params).await,

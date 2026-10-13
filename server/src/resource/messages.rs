@@ -90,11 +90,17 @@ pub async fn handle_cards_write(
     let cards = validate_cards_json(cards_json)
         .map_err(|error| super::resource_error("INVALID_PARAMS", error))?;
     authorize_channel_write(db, principal, channel_id).await?;
-    let content_data: Option<Value> = sqlx::query_scalar!(
-        r#"UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('cards', $1::jsonb)
+    // Legacy replies persisted with the baseline `normal` default are also text.
+    // New dispatcher placeholders explicitly use `text`.
+    // The row lock acquired by UPDATE serializes staging with stream finalization.
+    // Partial metadata is not published; handle_done promotes it in its transaction.
+    let updated = sqlx::query!(
+        r#"UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb)
+            || jsonb_build_object(CASE WHEN is_partial THEN 'pending_cards' ELSE 'cards' END, $1::jsonb)
          WHERE msg_id = $2 AND channel_id = $3 AND sender_type = 'bot' AND sender_id = $4
-           AND is_partial = FALSE AND is_deleted = FALSE AND NULLIF(BTRIM(content), '') IS NOT NULL
-         RETURNING content_data AS "value!""#,
+           AND msg_type IN ('text', 'normal') AND is_deleted = FALSE
+           AND (is_partial = TRUE OR NULLIF(BTRIM(content), '') IS NOT NULL)
+         RETURNING content_data AS "content_data!", is_partial"#,
         cards,
         msg_id.to_string(),
         channel_id.to_string(),
@@ -103,8 +109,23 @@ pub async fn handle_cards_write(
     .fetch_optional(db)
     .await
     .map_err(super::db_err("messages.cards.write"))?;
-    let content_data = content_data.ok_or_else(|| super::not_found("own completed bot reply"))?;
-    Ok(serde_json::json!({"channel_id":channel_id,"msg_id":msg_id,"content_data":content_data}))
+    let row = updated.ok_or_else(|| super::not_found("own bot reply"))?;
+    let content_data = row.content_data;
+    let staged = row.is_partial;
+    Ok(
+        serde_json::json!({"channel_id":channel_id,"msg_id":msg_id,"content_data":content_data,"staged":staged}),
+    )
+}
+
+pub fn finalize_card_metadata(mut data: Value, has_text: bool) -> Value {
+    if let Some(object) = data.as_object_mut() {
+        if let Some(cards) = object.remove("pending_cards") {
+            if has_text && cards.is_array() {
+                object.insert("cards".into(), cards);
+            }
+        }
+    }
+    data
 }
 
 pub async fn handle_suggestions_write(
@@ -656,6 +677,20 @@ mod card_tests {
         )
         .unwrap();
         assert_eq!(cards[0]["uri"], "cheers:desk/notes.md#L3");
+    }
+
+    #[test]
+    fn staged_cards_publish_only_with_text_and_preserve_session_metadata() {
+        let cards = serde_json::json!([{"v":1,"kind":"resource_ref","uri":"cheers:plan"}]);
+        let data = serde_json::json!({"session_id":"session-1","pending_cards":cards});
+        let published = super::finalize_card_metadata(data.clone(), true);
+        assert_eq!(published["cards"], cards);
+        assert_eq!(published["session_id"], "session-1");
+        assert!(published.get("pending_cards").is_none());
+        let empty = super::finalize_card_metadata(data, false);
+        assert!(empty.get("pending_cards").is_none());
+        assert!(empty.get("cards").is_none());
+        assert_eq!(empty["session_id"], "session-1");
     }
 
     #[test]

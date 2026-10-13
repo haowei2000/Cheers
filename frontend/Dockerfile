@@ -6,6 +6,7 @@ FROM ${BASE_REGISTRY}/library/node:20-alpine AS builder
 ARG PNPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /repo/frontend
 RUN corepack enable
+COPY packages/cheers-canvas-runtime/ ../packages/cheers-canvas-runtime/
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm config set registry "${PNPM_REGISTRY}" && \
     pnpm install --frozen-lockfile
@@ -23,6 +24,7 @@ COPY frontend/ ./
 # The App Store policy/support pages live in website/ as their single source of
 # truth. Vite copies the selected public pages into dist during closeBundle.
 COPY website/ ../website/
+COPY design-system/a2ui-catalog.json ../design-system/a2ui-catalog.json
 RUN pnpm run build
 
 FROM ${BASE_REGISTRY}/library/nginx:alpine

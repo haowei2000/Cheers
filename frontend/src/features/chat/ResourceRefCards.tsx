@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { ArrowUpRight, Link2 } from "lucide-react";
 import { LocatorOpenContext, canOpenLocator } from "./messageLinks";
+import { ResourceInlinePreview } from "./ResourceInlinePreview";
 
 export interface ResourceRefCard {
   v: 1;
@@ -37,10 +38,10 @@ export function ResourceRefCards({ cards }: { cards: ResourceRefCard[] }) {
   return (
     <div className="mt-2 flex max-w-xl flex-col gap-2" aria-label="Linked resources">
       {cards.map((card) => (
+        <section key={card.uri} className="min-w-0" aria-label={card.title || card.uri}>
         <a
-          key={card.uri}
           href={`#workspace-ref-${encodeURIComponent(card.uri)}`}
-          className="group flex min-h-11 min-w-0 items-center gap-3 rounded-sm bg-control px-3 py-2 font-utility text-content-primary transition-colors hover:bg-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
+          className="group flex min-h-11 min-w-0 items-center gap-3 rounded-sm px-3 py-2 font-utility text-content-primary transition-colors hover:bg-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
           onClick={(event) => { event.preventDefault(); openLocator(card.uri); }}
           aria-label={`Open ${card.title || card.uri}`}
           title={card.uri}
@@ -53,6 +54,8 @@ export function ResourceRefCards({ cards }: { cards: ResourceRefCard[] }) {
           </span>
           <ArrowUpRight className="h-4 w-4 shrink-0 text-content-muted group-hover:text-content-primary" aria-hidden="true" />
         </a>
+        <ResourceInlinePreview uri={card.uri} />
+        </section>
       ))}
     </div>
   );

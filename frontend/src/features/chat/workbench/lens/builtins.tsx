@@ -25,6 +25,7 @@ import { registerLens, type LensProps } from "./registry";
 import { sourcePathKey } from "../annotations";
 import { CanvasLens } from "../canvas/CanvasLens";
 import { ArtifactLens } from "./ArtifactLens";
+import { A2UILens } from "./a2ui/A2UILens";
 import { isComposing } from "@/lib/ime";
 import { WorkbenchItem } from "@/components/ui/item";
 import { ActionButton } from "@/components/ui/action-button";
@@ -966,3 +967,4 @@ registerLens({ id: "codemap", contextPick: "granular", viewOnly: true, render: (
 registerLens({ id: "canvas", contextPick: "granular", savesItself: true, render: (p) => <CanvasLens {...p} /> });
 registerLens({ id: "html", contextPick: "granular", savesItself: false, render: (p) => <ArtifactLens {...p} mode="html" /> });
 registerLens({ id: "react", contextPick: "granular", savesItself: false, render: (p) => <ArtifactLens {...p} mode="react" /> });
+registerLens({ id: "a2ui", contextPick: "granular", viewOnly: true, render: (p) => <A2UILens {...p} /> });

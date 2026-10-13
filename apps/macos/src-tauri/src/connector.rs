@@ -83,6 +83,13 @@ fn connector_home() -> Option<PathBuf> {
 /// App-side settings (which instances start with the app). Lives next to the
 /// connector home, NOT inside it — the connector owns its own directory.
 fn settings_path() -> Option<PathBuf> {
+    if let Ok(home) = env::var("CHEERS_ACP_HOME") {
+        // A worktree/preview connector namespace needs its own app-start list.
+        // Otherwise opening an isolated desktop build restarts production bots.
+        return PathBuf::from(home)
+            .parent()
+            .map(|parent| parent.join("desktop.json"));
+    }
     dirs::home_dir().map(|h| h.join(".cheers/desktop.json"))
 }
 
