@@ -62,7 +62,7 @@ mod tests {
         supplied.insert("includeSources".into(), json!(false));
         assert!(validate_action_input(&tsx_actions[0].payload, &supplied).is_ok());
 
-        supplied.insert("includeSources".into(), json!(true)); // constant mismatch (expected false)
-        assert!(validate_action_input(&tsx_actions[0].payload, &supplied).is_err());
+        supplied.insert("includeSources".into(), json!(true));
+        assert!(validate_action_input(&tsx_actions[0].payload, &supplied).is_ok());
     }
 }

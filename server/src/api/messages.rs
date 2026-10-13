@@ -438,7 +438,11 @@ async fn validate_resource_interaction(
     let action_id = event["actionId"].as_str().unwrap();
     let action = actions
         .iter()
-        .find(|a| a.action_id == action_id)
+        .find(|a| {
+            a.action_id == action_id
+                && a.surface_id.as_deref() == event["surfaceId"].as_str()
+                && a.component_id.as_deref() == event["componentId"].as_str()
+        })
         .ok_or_else(|| AppError::BadRequest("source action not found".into()))?;
 
     if action.name != "cheers.request" || action.bot_id.as_deref() != event["botId"].as_str() {

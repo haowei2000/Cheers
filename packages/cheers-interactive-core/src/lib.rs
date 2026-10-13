@@ -19,7 +19,7 @@ pub const TSX_EXAMPLE: &str = r#"/**
  *     "actionId": "report.prepare",
  *     "name": "cheers.request",
  *     "botId": "00000000-0000-0000-0000-000000000001",
- *     "payload": { "topic": null, "includeSources": false },
+ *     "payload": { "topic": null, "includeSources": null },
  *     "presentation": ["minimal", "medium", "max"],
  *     "version": 1
  *   }
@@ -55,6 +55,14 @@ pub struct ActionDeclaration {
     #[serde(rename = "actionId")]
     pub action_id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "surfaceId")]
+    pub surface_id: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "componentId"
+    )]
+    pub component_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "botId")]
     pub bot_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -539,7 +547,7 @@ pub fn validate_interaction(event: &Value) -> Result<(), &'static str> {
 pub fn extract_a2ui_actions(doc: &Value) -> Result<Vec<ActionDeclaration>, &'static str> {
     let surfaces = validate_document(doc)?;
     let mut declarations = Vec::new();
-    for (_sid, components) in surfaces {
+    for (sid, components) in surfaces {
         for component in components.values() {
             if component.get("component").and_then(Value::as_str) == Some("Button") {
                 if let Some(event) = component.get("action").and_then(|a| a.get("event")) {
@@ -565,6 +573,8 @@ pub fn extract_a2ui_actions(doc: &Value) -> Result<Vec<ActionDeclaration>, &'sta
                             .cloned()
                             .unwrap_or_default();
                         declarations.push(ActionDeclaration {
+                            surface_id: Some(sid.clone()),
+                            component_id: component["id"].as_str().map(String::from),
                             action_id: action_id.to_string(),
                             name: name.to_string(),
                             bot_id,
@@ -654,6 +664,8 @@ fn parse_action_declarations(val: &Value) -> Result<Vec<ActionDeclaration>, &'st
             return Err("invalid version");
         }
         declarations.push(ActionDeclaration {
+            surface_id: Some("root".into()),
+            component_id: Some(action_id.to_string()),
             action_id: action_id.to_string(),
             name: name.to_string(),
             bot_id,
@@ -706,7 +718,7 @@ pub fn extract_action_declarations(
     parsed_data: Option<&Value>,
 ) -> Result<Vec<ActionDeclaration>, &'static str> {
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    if (ext == "json" || ext == "a2ui")
+    if matches!(ext.as_str(), "json" | "a2ui" | "yaml" | "yml")
         && (content.contains("\"a2ui\"") || parsed_data.is_some_and(|d| d.get("a2ui").is_some()))
     {
         if let Some(doc) = parsed_data {
@@ -799,6 +811,42 @@ mod tests {
         assert!(validate_action_input(&tsx_actions[0].payload, &supplied).is_ok());
 
         supplied.insert("includeSources".into(), json!(true));
+        assert!(validate_action_input(&tsx_actions[0].payload, &supplied).is_ok());
+        supplied.insert("includeSources".into(), json!({"nested":true}));
         assert!(validate_action_input(&tsx_actions[0].payload, &supplied).is_err());
+    }
+    #[test]
+    fn yaml_actions_use_the_parsed_document() {
+        let doc = contract()["request_example"].clone();
+        let expected = extract_a2ui_actions(&doc).unwrap();
+        for path in ["forms/report.a2ui.yaml", "forms/report.a2ui.yml"] {
+            let actual = extract_action_declarations(path, "a2ui: v0.9.1", Some(&doc)).unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(actual[0].surface_id.as_deref(), Some("report"));
+            assert_eq!(actual[0].component_id.as_deref(), Some("prepare"));
+        }
+    }
+    #[test]
+    fn repeated_a2ui_action_ids_retain_their_component_and_surface() {
+        let mut doc = contract()["request_example"].clone();
+        let mut other = doc["messages"][1]["updateComponents"]["components"][6].clone();
+        other["id"] = json!("prepare-other");
+        other["action"]["event"]["context"]["payload"]["includeSources"] = json!(true);
+        doc["messages"][1]["updateComponents"]["components"]
+            .as_array_mut()
+            .unwrap()
+            .push(other);
+        let actions = extract_a2ui_actions(&doc).unwrap();
+        let original = actions
+            .iter()
+            .find(|a| a.component_id.as_deref() == Some("prepare"))
+            .unwrap();
+        let other = actions
+            .iter()
+            .find(|a| a.component_id.as_deref() == Some("prepare-other"))
+            .unwrap();
+        assert_eq!(original.action_id, other.action_id);
+        assert_eq!(original.surface_id, other.surface_id);
+        assert_ne!(original.payload, other.payload);
     }
 }

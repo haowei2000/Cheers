@@ -140,7 +140,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "@cheers/canvas-runtime": path.resolve(__dirname, "../packages/cheers-canvas-runtime/src/index.ts"),
     },
   },
   base: process.env.VITE_PUBLIC_BASE_PATH || "/",

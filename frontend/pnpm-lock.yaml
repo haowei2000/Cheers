@@ -11,6 +11,9 @@ importers:
       '@babel/standalone':
         specifier: ^7.29.9
         version: 7.29.9
+      '@cheers/canvas-runtime':
+        specifier: file:../packages/cheers-canvas-runtime
+        version: file:../packages/cheers-canvas-runtime(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@codemirror/commands':
         specifier: ^6.10.4
         version: 6.11.1
@@ -735,6 +738,12 @@ packages:
 
   '@bufbuild/protobuf@1.10.1':
     resolution: {integrity: sha512-wJ8ReQbHxsAfXhrf9ixl0aYbZorRuOWpBNzm8pL8ftmSxQx/wnJD5Eg861NwJU/czy2VXFIebCeZnZrI9rktIQ==}
+
+  '@cheers/canvas-runtime@file:../packages/cheers-canvas-runtime':
+    resolution: {directory: ../packages/cheers-canvas-runtime, type: directory}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
 
   '@codemirror/autocomplete@6.20.3':
     resolution: {integrity: sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g==}
@@ -4579,6 +4588,11 @@ snapshots:
       '@babel/helper-validator-identifier': 7.29.7
 
   '@bufbuild/protobuf@1.10.1': {}
+
+  '@cheers/canvas-runtime@file:../packages/cheers-canvas-runtime(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
 
   '@codemirror/autocomplete@6.20.3':
     dependencies:

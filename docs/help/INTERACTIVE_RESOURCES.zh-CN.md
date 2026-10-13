@@ -105,3 +105,14 @@ msg_id，并说明流式附卡。Agent 必须声明 HTTP MCP 支持，使用现�
 完整视图继续由 Workbench 承载。
 
 协议参考：[A2UI v0.9.1](https://a2ui.org/specification/v0.9.1-a2ui/)。
+
+## TSX 请求确认
+
+沙箱 bridge 请求只提出动作，不直接发送消息。Cheers 在 iframe 外显示动作、目标
+Bot 和输入；用户点击宿主 Request 控件后才发送。Cancel 丢弃提议，来源更新使确认
+失效。失败在当前视图显示，重试沿用 invocationId；成功表示请求已接收，不代表任务
+完成。普通表单与 compose 动作经统一 dispatcher 准备聊天草稿。
+
+iframe 允许脚本和表单事件，不授予同源访问。CSP 继续禁止外部表单提交及网络访问。
+运行时通过 pnpm 本地包依赖安装并解析 React peer dependencies，开发和 Docker
+构建使用同一安装链路。

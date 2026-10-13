@@ -172,3 +172,17 @@ Channel-relative `cheers:desk/…` is still scoped to the current channel. Messa
 cards expose bounded Desk previews and navigate to the complete Workbench view.
 
 Reference: [A2UI v0.9.1](https://a2ui.org/specification/v0.9.1-a2ui/).
+
+## TSX request approval
+
+A sandbox bridge request proposes an action; it does not send a message. Cheers
+shows the action, target Bot and input outside the iframe. Only a trusted click
+on the host Request control sends it. Cancel discards the proposal. Source changes
+invalidate approval. Failures remain visible and retry retains the invocation id;
+success confirms acceptance, not task completion. Standard form submissions and
+compose actions prepare a draft through the shared dispatcher.
+
+The iframe permits scripts and form events without same-origin access. Its CSP
+continues to deny outbound form submissions and network access. The runtime is an
+installed local pnpm dependency with React peer dependencies, shared by development
+and Docker builds.

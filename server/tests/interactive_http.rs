@@ -78,6 +78,13 @@ async fn interactive_http_rejects_forged_stale_requests_and_replays_accepted_rec
         &mut document["messages"][1]["updateComponents"]["components"][6]["action"]["event"];
     action["name"] = json!("cheers.request");
     action["context"]["botId"] = json!(bot);
+    let mut duplicate = document["messages"][1]["updateComponents"]["components"][6].clone();
+    duplicate["id"] = json!("prepare-other");
+    duplicate["action"]["event"]["context"]["payload"]["includeSources"] = json!(true);
+    document["messages"][1]["updateComponents"]["components"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate);
     let written = server::resource::fs::handle_write(&db, &server::resource::Principal::bot(bot), &json!({"channel_id":channel,"path":"forms/report.a2ui.json","content":document.to_string(),"if_version":0})).await.unwrap();
     assert_eq!(written["version"], 1);
     let event = json!({"v":1,"sourceUri":"cheers:desk/forms/report.a2ui.json","sourceVersion":1,"surfaceId":"report","componentId":"prepare","actionId":"report.prepare","botId":bot,"invocationId":Uuid::new_v4(),"input":{"topic":"New topic","includeSources":false}});
@@ -110,6 +117,42 @@ async fn interactive_http_rejects_forged_stale_requests_and_replays_accepted_rec
     let (status, offline) = post(&client, &base, token, &endpoint, body.clone()).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert!(offline.to_string().contains("offline"), "{offline}");
+
+    // Reused action IDs must validate against the submitted component identity.
+    let mut other = body.clone();
+    other["context_bundle"]["interaction"]["componentId"] = json!("prepare-other");
+    other["context_bundle"]["interaction"]["invocationId"] = json!(Uuid::new_v4());
+    assert_eq!(
+        post(&client, &base, token, &endpoint, other.clone())
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    other["context_bundle"]["interaction"]["input"]["includeSources"] = json!(true);
+    let (status, offline) = post(&client, &base, token, &endpoint, other).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(offline.to_string().contains("offline"), "{offline}");
+    let mut wrong_surface = body.clone();
+    wrong_surface["context_bundle"]["interaction"]["surfaceId"] = json!("other");
+    assert_eq!(
+        post(&client, &base, token, &endpoint, wrong_surface)
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+
+    // YAML files must use the same parsed action contract as JSON files.
+    for extension in ["yaml", "yml"] {
+        let path = format!("forms/report.a2ui.{extension}");
+        server::resource::fs::handle_write(&db, &server::resource::Principal::bot(bot),
+            &json!({"channel_id":channel,"path":path,"content":serde_yaml::to_string(&document).unwrap(),"if_version":0})).await.unwrap();
+        let mut yaml = body.clone();
+        yaml["context_bundle"]["interaction"]["sourceUri"] = json!(format!("cheers:desk/{path}"));
+        yaml["context_bundle"]["interaction"]["invocationId"] = json!(Uuid::new_v4());
+        let (status, offline) = post(&client, &base, token, &endpoint, yaml).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(offline.to_string().contains("offline"), "{offline}");
+    }
 
     // Bind an in-process receiver to accept the first request using the same
     // domain pipeline. HTTP then retries after the source revision changes.
@@ -260,13 +303,12 @@ async fn interactive_http_validates_tsx_canvas_actions(db: PgPool) {
         StatusCode::BAD_REQUEST
     );
 
-    // 3. Constant mismatch (includeSources must match boolean false)
-    let mut bad_constant = body.clone();
-    bad_constant["context_bundle"]["interaction"]["input"]["includeSources"] = json!(true);
-    assert_eq!(
-        post(&client, &base, token, &endpoint, bad_constant).await.0,
-        StatusCode::BAD_REQUEST
-    );
+    // 3. Both checkbox states are valid variable input
+    let mut checked = body.clone();
+    checked["context_bundle"]["interaction"]["input"]["includeSources"] = json!(true);
+    let (status, offline) = post(&client, &base, token, &endpoint, checked).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(offline.to_string().contains("offline"), "{offline}");
 
     // 4. Stale version is rejected with Conflict
     let mut stale = body.clone();

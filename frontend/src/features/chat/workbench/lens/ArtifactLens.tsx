@@ -3,6 +3,8 @@ import toast from "react-hot-toast";
 import type { LensProps } from "./registry";
 import { formatLocator, parseLocator, validInspectableId } from "../../locator";
 import type { ResourceInteraction } from "../interaction";
+import { Button } from "@/components/ui/button";
+import { createArtifactRequestGate, type ArtifactRequestState } from "./artifactRequestGate";
 import { inspectableIdLineRange } from "../contextSource";
 import { Code2 } from "lucide-react";
 import { moveCodeCanvasCard } from "./codeCanvasSource";
@@ -80,6 +82,24 @@ export function ArtifactLens({
 }: ArtifactLensProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const content = typeof data === "string" ? data : "";
+  const [requestState, setRequestState] = useState<ArtifactRequestState>({ busy: false });
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const requestGate = useMemo(() => {
+    // Bind approval to the observed source, invalidating it on any revision change.
+    const source = { content, path, sourceVersion };
+    return createArtifactRequestGate((event) => {
+      if (event.sourceVersion !== source.sourceVersion || !source.path) {
+        return Promise.resolve({ ok: false, error: "The source changed. Reload before submitting." });
+      }
+      return onInteraction!({ kind: "request", event });
+    }, setRequestState);
+  }, [content, path, sourceVersion, onInteraction]);
+  useEffect(() => {
+    requestGate.activate();
+    setRequestState({ busy: false });
+    setFeedback(null);
+    return () => requestGate.dispose();
+  }, [requestGate]);
   const [compiled, setCompiled] = useState<{ source: string; code?: string; error?: string } | null>(null);
   useEffect(() => {
     if (mode !== "react") return;
@@ -209,31 +229,62 @@ export function ArtifactLens({
             invocationId: crypto.randomUUID(),
             input: formData,
           };
-          void onInteraction({ kind: "request", event });
+          requestGate.propose(event);
           return;
         }
 
-        onFormSubmit?.({ actionId, formData });
+        if (method === "cheers.request" || declared?.name === "cheers.request") {
+          setFeedback({ ok: false, text: "This request is unavailable. Reload the resource or open it in a supported view." });
+          return;
+        }
+        if (onInteraction?.capabilities.includes("compose")) {
+          void onInteraction({ kind: "compose", actionId, formData }).then((result) => {
+            setFeedback(result.ok
+              ? { ok: true, text: "Draft prepared in the message composer. Review it before sending." }
+              : { ok: false, text: result.error });
+          }).catch((error) => setFeedback({ ok: false, text: String(error) }));
+        } else if (onFormSubmit) {
+          onFormSubmit({ actionId, formData });
+          setFeedback({ ok: true, text: "Form passed to the host." });
+        } else {
+          setFeedback({ ok: false, text: "This view cannot prepare a message draft." });
+        }
       }
     };
 
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [content, inspectorActive, onChange, onFormSubmit, onInteraction, openLocator, path, presentation, readOnly, requestContextPick, sourceVersion]);
+  }, [content, inspectorActive, onChange, onFormSubmit, onInteraction, openLocator, path, presentation, readOnly, requestContextPick, sourceVersion, requestGate]);
 
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- The titled iframe receives an onLoad synchronization callback for the isolated artifact editor. */
   return (
-    <div className="relative h-full w-full overflow-hidden bg-white">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-panel">
+      {/* Form events go through the bridge; CSP blocks outbound submission. */}
       <iframe
         ref={iframeRef}
-        sandbox="allow-scripts"
+        sandbox="allow-scripts allow-forms"
         srcDoc={documentHtml}
         onLoad={() => iframeRef.current?.contentWindow?.postMessage({
           jsonrpc: "2.0", method: "inspector.toggle", params: { enabled: Boolean(inspectorActive), editable: !readOnly },
         }, "*")}
         title={`${mode.toUpperCase()} Canvas`}
-        className="h-full w-full border-0"
+        className="min-h-0 w-full flex-1 border-0"
       />
+      {(requestState.pending || requestState.result || feedback) && <div className="max-h-full shrink-0 overflow-auto">
+        {requestState.pending && <div className="space-y-2 p-3">
+          <p className="text-body break-words">Send {requestState.pending.actionId} to Bot {requestState.pending.botId}?</p>
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words font-code text-regular">{JSON.stringify(requestState.pending.input, null, 2)}</pre>
+          <div className="flex items-center gap-2">
+            <Button action="request" controlSize="compact" loading={requestState.busy} disabled={requestState.busy}
+              onClick={(event) => { void requestGate.confirm(event.nativeEvent.isTrusted); }} />
+            <Button action="cancel" controlSize="compact" disabled={requestState.busy} onClick={() => requestGate.cancel()} />
+          </div>
+      </div>}
+      {requestState.result && <p role={requestState.result.ok ? "status" : "alert"} className={`p-3 ${requestState.result.ok ? "text-body-secondary" : "text-body-error"}`}>
+        {requestState.result.ok ? "Request accepted. The Bot will reply in the channel." : `${requestState.result.error} Retry above, or reload if the source changed.`}
+      </p>}
+      {feedback && <p role={feedback.ok ? "status" : "alert"} className={`p-3 ${feedback.ok ? "text-body-secondary" : "text-body-error"}`}>{feedback.text}</p>}
+      </div>}
     </div>
   );
   /* eslint-enable jsx-a11y/no-noninteractive-element-interactions */

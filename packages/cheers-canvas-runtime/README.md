@@ -2,6 +2,11 @@
 
 Standalone runtime, RPC bridge, view host abstractions, and sandbox containers for Cheers interactive resources (TSX Canvas and A2UI).
 
+Use `artifactCsp()` when constructing sandbox documents. The sandbox permits scripts
+and form events; `form-action 'none'` prevents outbound form submission. Bridge request
+messages are untrusted proposals: hosts must require a trusted host-side approval
+before dispatching authenticated requests. Never treat an iframe message as user consent.
+
 ## Features
 
 - **Action Metadata Extraction**: Parses `@cheers-actions` annotations from TSX/JSX canvas sources.

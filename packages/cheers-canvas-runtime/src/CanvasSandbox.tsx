@@ -135,7 +135,7 @@ export function CanvasSandbox({
     <div className="relative h-full w-full overflow-hidden">
       <iframe
         ref={iframeRef}
-        sandbox="allow-scripts"
+        sandbox="allow-scripts allow-forms"
         srcDoc={srcDoc}
         onLoad={() =>
           iframeRef.current?.contentWindow?.postMessage(
