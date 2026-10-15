@@ -44,13 +44,14 @@ export function extractTsxActions(content: string): DeclaredAction[] {
       const rawName = typeof raw.name === "string" ? raw.name : typeof raw.type === "string" ? raw.type : "";
       let name: DeclaredAction["name"];
       if (rawName === "request" || rawName === "cheers.request") name = "cheers.request";
+      else if (rawName === "execute" || rawName === "cheers.execute") name="cheers.execute";
       else if (rawName === "compose" || rawName === "cheers.compose") name = "cheers.compose";
       else if (rawName === "open" || rawName === "cheers.open") name = "cheers.open";
       else if (rawName === "openNative" || rawName === "cheers.openNative") name = "cheers.openNative";
       else continue;
 
       const botId = typeof raw.botId === "string" && UUID.test(raw.botId) ? raw.botId : undefined;
-      if (name === "cheers.request" && !botId) continue;
+      if ((name === "cheers.request" || name==="cheers.execute") && !botId) continue;
 
       const uri = typeof raw.uri === "string" ? raw.uri : undefined;
       const opener = typeof raw.opener === "string" ? raw.opener : undefined;

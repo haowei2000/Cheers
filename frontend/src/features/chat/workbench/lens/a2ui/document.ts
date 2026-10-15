@@ -8,7 +8,7 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 type Binding = string | boolean | { path: string };
 export type A2UIAction = {
-  event: { name: "cheers.open" | "cheers.compose" | "cheers.request" | "cheers.openNative"; context: Record<string, unknown> };
+  event: { name: "cheers.open" | "cheers.compose" | "cheers.request" | "cheers.openNative" | "cheers.execute"; context: Record<string, unknown> };
 };
 export interface A2UIComponent {
   id: string;
@@ -130,7 +130,7 @@ function parseComponent(raw: unknown, sourcePath: (string | number)[]): A2UIComp
     keys(raw.action, ["event"]);
     requireThat(mapping(raw.action.event), "Only registered event actions are supported.");
     keys(raw.action.event, ["name", "context"]);
-    requireThat(["cheers.open", "cheers.compose", "cheers.request", "cheers.openNative"].includes(String(raw.action.event.name)), "This action binding is not supported.");
+    requireThat(["cheers.open", "cheers.compose", "cheers.request", "cheers.openNative", "cheers.execute"].includes(String(raw.action.event.name)), "This action binding is not supported.");
     requireThat(mapping(raw.action.event.context), "Action context must be an object.");
     if (raw.action.event.name === "cheers.open" || raw.action.event.name === "cheers.openNative") {
       const native = raw.action.event.name === "cheers.openNative";
@@ -139,7 +139,7 @@ function parseComponent(raw: unknown, sourcePath: (string | number)[]): A2UIComp
       if (typeof raw.action.event.context.uri === "string") requireThat(parseLocator(raw.action.event.context.uri), "Invalid resource locator.");
       if (native) requireThat(["finder", "vscode", "zed"].includes(String(raw.action.event.context.opener)), "This native opener is not supported.");
     } else {
-      const request = raw.action.event.name === "cheers.request";
+      const request = raw.action.event.name === "cheers.request" || raw.action.event.name === "cheers.execute";
       keys(raw.action.event.context, request ? ["actionId", "payload", "botId"] : ["actionId", "payload"]);
       if (request) requireThat(typeof raw.action.event.context.botId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw.action.event.context.botId), "Requests need a stable bot id.");
       requireThat(typeof raw.action.event.context.actionId === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/.test(raw.action.event.context.actionId), "Invalid compose action id.");

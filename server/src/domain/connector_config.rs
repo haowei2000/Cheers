@@ -451,6 +451,8 @@ allow_local_file_refs = false
 [accounts.{id}.policy.workspace]
 default_cwd         = "~/.cheers/workspace"
 allowed_roots       = ["~/.cheers/workspace"]
+remote_terminal     = false
+remote_open         = false
 backend_may_set_cwd = true
 
 [accounts.{id}.policy.env]

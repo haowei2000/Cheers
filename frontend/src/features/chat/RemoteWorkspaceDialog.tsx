@@ -1,3 +1,4 @@
+import { RemoteTerminal } from "./RemoteTerminal";
 import { Button as UiButton } from "@/components/ui/button";
 import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { cn } from "@/lib/cn";
@@ -18,6 +19,7 @@ import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
   Bot,
+  Terminal as TerminalIcon,
   File,
   FolderTree,
   Download,
@@ -300,6 +302,7 @@ export function RemoteWorkspaceDialog({
   } | null;
 }) {
   const [bots, setBots] = useState<WorkspaceBot[] | null>(null);
+  const [terminalOpen,setTerminalOpen]=useState(false);
   const [botId, setBotId] = useState<string | null>(initialBotId ?? null);
   const [cwd, setCwd] = useState("");
   const [entries, setEntries] = useState<WorkspaceEntry[] | null>(null);
@@ -1409,7 +1412,7 @@ export function RemoteWorkspaceDialog({
           { id: "history", label: "History", icon: History, selected: leftView === "history", onSelect: () => selectPrimaryView("history") },
         ],
       } : undefined}
-      panelActions={[{
+      panelActions={[...(botId?[{id:"terminal",label:terminalOpen?"Return to files":"Open remote terminal",icon:TerminalIcon,priority:"secondary" as const,onSelect:()=>setTerminalOpen(open=>!open),control:<UiButton action="open" content="icon" controlSize="compact" aria-label="Open remote terminal" onClick={()=>setTerminalOpen(open=>!open)}><TerminalIcon className="h-4 w-4"/></UiButton>}]:[]),{
         id: "refresh",
         label: "Refresh workspace",
         priority: "secondary",
@@ -1510,7 +1513,7 @@ export function RemoteWorkspaceDialog({
         <div className="py-10 text-center font-utility text-compact text-content-muted">
           Select an online bot to browse the workspace on its machine.
         </div>
-      ) : (
+      ) : terminalOpen ? (<RemoteTerminal key={`${botId}:${root}:${cwd}`} channelId={channelId} botId={botId} root={root} path={cwd}/>) : (
         // Desktop: side-by-side tree + editor filling the window height.
         // Mobile: a full-screen sheet, so stack the panes vertically. Either way the
         // panes fill the remaining body height and keep their own internal scroll.

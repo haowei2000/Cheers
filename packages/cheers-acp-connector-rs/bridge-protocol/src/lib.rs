@@ -36,6 +36,32 @@ pub const WS_CLOSE_BOT_UNAVAILABLE: u16 = 4403;
 /// retrying the same handshake can never succeed, the binary must be updated.
 pub const WS_CLOSE_UNSUPPORTED_PROTOCOL: u16 = 4400;
 
+/// A user-approved operation bound to the connector's authenticated host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteExecutionRequest {
+    /// Stable receipt identity, also the terminal session id.
+    pub execution_id: String,
+    /// Expected host from the gateway, checked again by the connector.
+    pub host_id: String,
+    /// User who owns the execution. Other users cannot attach to its terminal.
+    pub user_id: String,
+    /// terminal.start/input/resize/status/cancel or file.open.
+    pub action: String,
+    /// Explicit shell command; absent starts an interactive shell.
+    #[serde(default)] pub command: Option<String>,
+    /// Approved registered opener for file.open.
+    #[serde(default)] pub opener: Option<String>,
+    /// Input bytes encoded as UTF-8; only for terminal.input.
+    #[serde(default)] pub input: Option<String>,
+    /// Output cursor in bytes.
+    #[serde(default)] pub offset: u64,
+    /// PTY columns.
+    #[serde(default)] pub cols: Option<u16>,
+    /// PTY rows.
+    #[serde(default)] pub rows: Option<u16>,
+}
+
 /// Vendor-neutral, display-only fields decoded from optional Agent metadata.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizedPresentation {
@@ -909,6 +935,9 @@ pub enum DataInbound {
     WorkspaceReq {
         req_id: String,
         op: String,
+        /// Host-approved remote desktop/terminal operation; never an ACP agent tool.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        remote_execution: Option<RemoteExecutionRequest>,
         #[serde(default)]
         path: String,
         /// Which allowed root to resolve `path` against (absolute path string).

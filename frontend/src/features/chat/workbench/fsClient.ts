@@ -18,6 +18,9 @@ export interface FsEntry {
 }
 
 export interface FileContent {
+  uri?: string;
+  resource_id?: string;
+  channel_id?: string;
   path: string;
   content: string;
   version: number;

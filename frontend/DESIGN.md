@@ -835,6 +835,31 @@ count. Search retains the content width below; Add is rendered exactly once.
 Groups may wrap on narrow screens. Item-specific operations remain with their
 items, and surfaces outside this scope retain their existing action placement.
 
+### Message resource enclosures
+
+Reply resource cards use `ResourceEnclosure`, a specialized message attachment.
+The shared paper surface, structural top rule, and desktop inset distinguish it
+from the letter body. This is not a management collection item. The resource
+title is a navigation link; preview controls remain outside that link.
+
+Use reading typography for descriptions and document previews, utility typography
+for titles and controls. Minimal previews retain the existing Workbench renderer
+and interaction dispatcher. Details progressively disclose the full URI, source
+version, copy link, and refresh. Preview expands in place. Compact controls retain
+the shared 44px touch targets on narrow screens; the desktop inset disappears.
+
+Routine draft loading and successful sync stay quiet. Offline recovery, conflicts,
+request results, and remote-execution approval remain visible and actionable.
+The local fixture `/dev/enclosures.html` covers documents, A2UI forms, terminal
+drafts, TSX, loading failure, and draft conflict at 390/768/1280px in both themes.
+Its actions create local previews only and do not execute device commands.
+
+Standard resource actions use the shared `ActionButton` `resourceCard` context:
+request (send), copy, open, refresh, and retry are quiet icon buttons, with a
+contextual accessible name and tooltip. Info and preview disclosures use square
+`ControlTrigger` controls. Keep the authored action description visible beside
+the action icon; approval and draft-conflict choices retain explicit text.
+
 ### Tailwind 4 build contract
 
 The frontend uses Tailwind 4 through `@tailwindcss/postcss` and loads the shared

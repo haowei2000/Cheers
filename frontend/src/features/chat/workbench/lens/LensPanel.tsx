@@ -167,6 +167,7 @@ export function LensView({
             data,
             path,
             sourceVersion: session.version ?? undefined,
+            resourceUri:session.resourceUri,
             config,
             onChange: session.setData,
             onOps,

@@ -21,6 +21,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Send,
   Search,
   ShieldCheck,
   ShieldOff,
@@ -39,6 +40,7 @@ import { controlIconClasses, useControlSize } from "./control-size";
 export type CommonActionContext =
   | "windowChrome"
   | "toolbar"
+  | "resourceCard"
   | "disclosure"
   | "inlineEdit"
   | "form"
@@ -102,6 +104,13 @@ type Presentation = {
 };
 
 const commonActionPresentations = {
+  resourceCard: {
+    copy: { content: "icon", icon: Copy, variant: "plain" },
+    open: { content: "icon", icon: ArrowUpRight, variant: "plain" },
+    request: { content: "icon", icon: Send, variant: "plain" },
+    refresh: { content: "icon", icon: RefreshCw, variant: "plain" },
+    retry: { content: "icon", icon: RefreshCw, variant: "plain" },
+  },
   windowChrome: {
     back: { content: "icon", icon: ArrowLeft, variant: "plain" },
     close: { content: "icon", icon: X, variant: "plain" },

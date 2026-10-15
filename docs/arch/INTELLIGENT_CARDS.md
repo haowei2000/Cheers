@@ -504,7 +504,10 @@ and an explicit remote-device action before adding generated component trees.
 Acceptance includes copying a card across channels without retargeting it,
 opening its target from chat/Canvas/raw source, rejecting forged native actions,
 preventing repeated clicks from duplicating one invocation, and rendering useful
-fallbacks for unsupported clients. Runtime feature implementation and verification
-are future work for the full resource runtime. The bounded Workbench A2UI renderer
-and gateway validation, staged cards, ACP request dispatcher and Mac adapter are implemented; see the usage guide
-for their supported catalog and current boundaries.
+fallbacks for unsupported clients. The bounded A2UI/TSX renderers, gateway action validation, staged cards, ACP request
+dispatcher and Mac adapter are implemented. The resource-state follow-up adds a
+shared global descriptor resolver, retained Desk revisions, private CAS drafts and
+device-bound workspace execution with PTY terminals and durable receipts. See
+[the usage guide](../help/INTERACTIVE_RESOURCES.md) for the supported clients,
+policy controls and explicit limits; cross-server federation and native mobile
+terminal surfaces remain future work.

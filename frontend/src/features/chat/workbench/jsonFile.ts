@@ -144,6 +144,7 @@ export interface FileSessionOptions {
 }
 
 export interface FileSession extends FileBuffer {
+  resourceUri?:string;
   path: string;
   /** null => the file does not exist yet (a write with if_version 0 creates it). */
   version: number | null;
@@ -190,6 +191,7 @@ export function useFileSession(
   const currentPathRef = useRef(path);
   currentPathRef.current = path;
   const [buffer, setBuffer] = useState<FileBuffer>(() => emptyBuffer(path));
+  const [resourceUri,setResourceUri]=useState<string>();
   const [version, setVersion] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -222,6 +224,7 @@ export function useFileSession(
     bufferRef.current = emptyBuffer(path);
     setBuffer(bufferRef.current);
     baseTextRef.current = "";
+    setResourceUri(undefined);
     setVersion(null);
     setStatus(null);
     setConflictNotice(null);
@@ -233,6 +236,7 @@ export function useFileSession(
       try {
         const f = await resources.read(path);
         if (currentPathRef.current !== path) return;
+        setResourceUri(f.uri);
         if (skipIfDirty && bufferRef.current.dirty) {
           // Collaborative 3-way merge attempt
           const base = baseTextRef.current;
@@ -466,6 +470,7 @@ export function useFileSession(
 
   return {
     ...buffer,
+    resourceUri,
     path,
     version,
     status,

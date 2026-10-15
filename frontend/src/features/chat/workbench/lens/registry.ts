@@ -27,6 +27,8 @@ export interface LensContextTarget {
 // that makes data-only extensions possible. Adding a NEW kind of UI = add a lens (code);
 // using existing UI = pure data in a manifest (no code).
 export interface LensProps {
+  /** Stable server/resource identity, shared by reply and Workbench view state. */
+  resourceUri?: string;
   data: unknown;
   /** The container controls density; content and interaction contracts are shared. */
   presentation?: PresentationLevel;

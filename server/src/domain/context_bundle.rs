@@ -25,6 +25,7 @@ const MAX_ITEMS: usize = 16;
 /// registry (`server/src/resource/mod.rs`). Write verbs are intentionally
 /// excluded: a context bundle is a read list.
 const READ_VERBS: &[&str] = &[
+    "resource.resolve",
     "channel.info",
     "channel.members",
     "channel.context",

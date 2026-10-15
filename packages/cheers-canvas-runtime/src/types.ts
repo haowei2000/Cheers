@@ -2,7 +2,7 @@ export type PresentationLevel = "minimal" | "medium" | "max";
 
 export interface DeclaredAction {
   actionId: string;
-  name: "cheers.request" | "cheers.compose" | "cheers.open" | "cheers.openNative";
+  name: "cheers.request" | "cheers.compose" | "cheers.open" | "cheers.openNative" | "cheers.execute";
   botId?: string;
   uri?: string;
   opener?: string;
@@ -27,10 +27,11 @@ export type WorkbenchInteraction =
   | { kind: "open"; uri: string }
   | { kind: "compose"; actionId: string; formData: Record<string, unknown> }
   | { kind: "request"; event: ResourceInteraction }
+  | {kind:"execute";event:ResourceInteraction}
   | { kind: "openNative"; uri: string; opener: string };
 
 export type InteractionResult =
-  | { ok: true; outcome: "opened" | "drafted" | "requested" | "local" | "downloaded-copy"; messageId?: string }
+  | { ok: true; outcome: "executing" | "opened" | "drafted" | "requested" | "local" | "downloaded-copy"; messageId?: string; executionId?:string }
   | { ok: false; error: string };
 
 export type InteractionDispatcher = ((intent: WorkbenchInteraction) => Promise<InteractionResult>) & {

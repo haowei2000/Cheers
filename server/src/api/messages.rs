@@ -404,24 +404,26 @@ async fn validate_resource_interaction(
     )
     .await
     .map_err(|(_, message)| AppError::Forbidden(message))?;
-    let Some(cheers_mcp_server::locator::Locator::Desk { path, .. }) =
-        cheers_mcp_server::locator::parse(event["sourceUri"].as_str().unwrap())
-    else {
-        return Err(AppError::BadRequest("Desk resource required".into()));
-    };
+    let uri = event["sourceUri"].as_str().unwrap_or("");
+    let principal = crate::resource::Principal::user(user_id);
+    let resolved =
+        crate::api::resources::desk_resource(&state.db, &principal, uri, Some(channel_id)).await?;
+    if resolved.channel_id != channel_id.to_string()
+        || resolved.version != resolved.latest_version
+        || resolved.deleted
+    {
+        return Err(AppError::Conflict(
+            "The source changed or belongs to another channel.".into(),
+        ));
+    }
+    let path = resolved.path;
     let source = crate::resource::fs::handle_read(
         &state.db,
-        &crate::resource::Principal::user(user_id),
+        &principal,
         &serde_json::json!({"channel_id":channel_id,"path":path}),
     )
     .await
-    .map_err(|(code, message)| {
-        if code == "PERMISSION_DENIED" {
-            AppError::Forbidden(message)
-        } else {
-            AppError::BadRequest(message)
-        }
-    })?;
+    .map_err(|(_, message)| AppError::BadRequest(message))?;
     if source["version"] != event["sourceVersion"] {
         return Err(AppError::Conflict(
             "The interactive resource changed. Reload it before submitting.".into(),

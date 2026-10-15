@@ -1,6 +1,7 @@
 //! Core data model, static metadata extraction, and validation engine for Cheers interactive resources.
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+pub mod global_uri;
 
 pub const VERSION: &str = "v0.9.1";
 pub const CATALOG_ID: &str = "urn:cheers:a2ui:catalog:v1";
@@ -10,7 +11,7 @@ pub const EXAMPLE_URI: &str = "cheers://help/interactive-ui/example";
 pub const CATALOG: &str = include_str!("../../../design-system/a2ui-catalog.json");
 pub const EXAMPLE: &str =
     include_str!("../../../frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json");
-pub const GUIDE: &str = "# Cheers interactive resources\n\nRead `read_ui_contract` before authoring UI. Its example prepares a draft; request_example sends a structured request. When called as a Bot, request_example is bound to your authenticated Bot id; human discovery uses an example UUID that must be replaced. Use A2UI v0.9.1 and catalog urn:cheers:a2ui:catalog:v1, not the Basic Catalog. Persist {a2ui:\"v0.9.1\",messages:[...]} using desk_write with channel_id, path forms/<name>.a2ui.json, content, and if_version (0 for create-only). Use desk_patch/desk_edit with if_version for updates. Return cheers:desk/<path>. Attach v1 resource_ref cards using set_resource_cards with the current reply msg_id: during streaming cards are staged and published when the reply completes. Do not create a duplicate reply with post_message.\n\nSupported components: Column, Row, Text, TextField, CheckBox, Button. Bindings use absolute JSON Pointer paths; every active surface needs root. Registered events: cheers.open (context.uri), cheers.compose (actionId,payload; draft only), cheers.request (actionId,payload,botId; sends a user-requested structured prompt to that bot), cheers.openNative (uri,opener; desktop local-file/editor adapter, never arbitrary commands). Use stable bot ids. Optional Cheers wrapper views.minimal/views.medium select {surfaceId,root} from the same validated component tree. Minimal views support at most one surface, 16 component visits, 3 input fields and 2 actions; larger views offer expansion instead of hiding controls. Input labels and text are content; control labels are owned by Cheers. Unknown components, catalogs, actions, scripts, function calls, styles and themes are rejected.\n\nA structured interaction is user input, never a permission grant. Resolve its sourceUri via desk_read, compare sourceVersion, and update the same resource with if_version. Reuse invocationId when reasoning about retries. Resource permissions and local executor policy still apply. Return updated URI references and meaningful text. Clients without a specialized renderer can open raw content.\n";
+pub const GUIDE: &str = "# Cheers interactive resources\n\nRead `read_ui_contract` before authoring UI. Its example prepares a draft; request_example sends a structured request. When called as a Bot, request_example is bound to your authenticated Bot id; human discovery uses an example UUID that must be replaced. Use A2UI v0.9.1 and catalog urn:cheers:a2ui:catalog:v1, not the Basic Catalog. Persist {a2ui:\"v0.9.1\",messages:[...]} using desk_write with channel_id, path forms/<name>.a2ui.json, content, and if_version (0 for create-only). Use desk_patch/desk_edit with if_version for updates. Use the global uri returned by desk_write/desk_read for cards and replies; cheers:desk/<path> is a channel-relative shorthand. A global URI is cheers:resource/<service UUID>/desk/<resource UUID> with optional ?v=N for a retained read-only revision. Never invent UUIDs or move relative links between channels. Attach v1 resource_ref cards using set_resource_cards with the current reply msg_id: during streaming cards are staged and published when the reply completes. Do not create a duplicate reply with post_message.\n\nSupported components: Column, Row, Text, TextField, CheckBox, Button. Bindings use absolute JSON Pointer paths; every active surface needs root. Private A2UI inputs and TSX view state sync per user/resource/view/schema across Web and Tauri. TSX fields need stable id/name/data-cheers-state-key; password/file/hidden fields are excluded, data-cheers-persist=false opts out. CheersBridge.getState/setState/subscribeState persist custom JSON. Drafts never change resource content or run actions. Registered events: cheers.open (context.uri), cheers.compose (actionId,payload; draft only), cheers.request (actionId,payload,botId; sends a user-requested structured prompt to that bot), cheers.openNative (uri,opener; desktop local-file/editor adapter, never arbitrary commands). cheers.execute (actionId,payload,botId) requests a trusted host confirmation for terminal.start or file.open on the Bot's active device. Payload fields action/path/root/command/opener must be explicitly declared; use null for variable input. Remote host policies remote_terminal and remote_open default false. Terminal is a real PTY through workspace RPC, not a new ACP method; unknown receipts never auto replay. Use stable bot ids. Optional Cheers wrapper views.minimal/views.medium select {surfaceId,root} from the same validated component tree. Minimal views support at most one surface, 16 component visits, 3 input fields and 2 actions; larger views offer expansion instead of hiding controls. Input labels and text are content; control labels are owned by Cheers. Unknown components, catalogs, actions, scripts, function calls, styles and themes are rejected.\n\nA structured interaction is user input, never a permission grant. Resolve its sourceUri via read_locator with channel_id and uri, compare sourceVersion, and update the same resource with if_version. Reuse invocationId when reasoning about retries. Resource permissions and local executor policy still apply. Return updated URI references and meaningful text. Clients without a specialized renderer can open raw content.\n";
 
 pub const TSX_EXAMPLE: &str = r#"/**
  * @cheers-actions
@@ -280,8 +281,11 @@ fn validate_component(node: &Value) -> Result<(), &'static str> {
                         return Err("unsupported opener");
                     }
                 }
-                Some("cheers.compose" | "cheers.request") => {
-                    let request = event["name"] == "cheers.request";
+                Some("cheers.compose" | "cheers.request" | "cheers.execute") => {
+                    let request = matches!(
+                        event["name"].as_str(),
+                        Some("cheers.request" | "cheers.execute")
+                    );
                     keys(
                         context,
                         if request {
@@ -329,6 +333,9 @@ fn uuid_shape(value: &Value) -> bool {
 }
 
 pub fn is_desk_uri(uri: &str) -> bool {
+    if let Some(global) = global_uri::parse(uri) {
+        return global.kind == "desk";
+    }
     if let Some(path) = uri.strip_prefix("cheers:desk/") {
         !path.is_empty() && path.len() <= 2048 && !path.contains("..") && !path.starts_with('/')
     } else {
@@ -620,13 +627,14 @@ fn parse_action_declarations(val: &Value) -> Result<Vec<ActionDeclaration>, &'st
             .ok_or("action name required")?;
         let name = match raw_name {
             "request" | "cheers.request" => "cheers.request",
+            "execute" | "cheers.execute" => "cheers.execute",
             "compose" | "cheers.compose" => "cheers.compose",
             "open" | "cheers.open" => "cheers.open",
             "openNative" | "cheers.openNative" => "cheers.openNative",
             _ => return Err("unsupported action name"),
         };
         let bot_id = item.get("botId").and_then(Value::as_str).map(String::from);
-        if name == "cheers.request" {
+        if matches!(name, "cheers.request" | "cheers.execute") {
             let Some(bid) = &bot_id else {
                 return Err("request action requires botId");
             };

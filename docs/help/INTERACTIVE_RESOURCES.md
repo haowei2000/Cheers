@@ -186,3 +186,67 @@ The iframe permits scripts and form events without same-origin access. Its CSP
 continues to deny outbound form submissions and network access. The runtime is an
 installed local pnpm dependency with React peer dependencies, shared by development
 and Docker builds.
+
+## Global resource identity and private drafts
+
+`desk_write` and `desk_read` return the canonical `uri`. Prefer that exact value
+when attaching cards or sharing across channels:
+`cheers:resource/<service UUID>/desk/<resource UUID>`. Installation identity is
+stored in the gateway database; preserve it on restore, and regenerate it when
+creating an independent installation from a database clone. A URI is an identity,
+not a credential. Resolution always checks the target channel's permissions.
+Foreign installations are identified but require switching servers; federation
+and automatic server discovery are not implemented.
+
+`?v=N` selects a retained Desk revision. Workbench opens it read-only. Revisions
+start when the migration is applied: existing files contribute their current
+version, not earlier historical contents. A deleted file's retained revisions
+remain readable only while the original channel exists and permits access.
+Path aliases (`cheers:desk/...`) remain relative to their original channel.
+Global descriptors also support `inbox`, `msg`, `plan`, `sessions`, `cost`, and
+`activity`; the last four use the channel UUID as their resource ID. REST
+`POST /api/v1/resources/resolve` and the MCP locator resolver share one resolver.
+The channel-bound agent bridge rejects targets outside its bound channel.
+
+A2UI input bindings and TSX private view state are synchronized by user, resource,
+view and schema. They do not modify the resource file. The draft API uses
+`if_revision` compare-and-swap; concurrent edits and source changes require an
+explicit choice. Offline edits remain on the device and never execute on reconnect.
+TSX standard fields need an `id`, `name`, or `data-cheers-state-key`. Password,
+file and hidden inputs are excluded; `data-cheers-persist="false"` opts out.
+For other state use `await CheersBridge.getState()`, `setState(jsonObject)` and
+`subscribeState(listener)`. Store JSON up to 60 KB; do not persist secrets.
+React Web and Tauri share this renderer and state API. Native SwiftUI/Compose
+renderers do not yet implement these draft/terminal surfaces.
+
+## Remote device actions and terminal
+
+The workspace browser's terminal action starts a real PTY on the Bot's active
+connector device. Empty command starts an interactive shell; a command starts a
+shell command in the selected registered directory. Owners or administrators
+need recent authentication to start, type, resize or cancel. The connector must
+explicitly enable `[accounts.<id>.policy.workspace] remote_terminal = true` or
+`remote_open = true`; both default to false and are editable in desktop settings.
+Only registered roots can be selected. A terminal runs with the device account's
+OS permissions; the root constrains its starting directory, not subsequent shell
+commands. Commands are not filesystem-sandboxed.
+
+A2UI `cheers.execute` and TSX `CheersBridge.execute(actionId, payload)` use the
+same dispatcher. Declare `name: "cheers.execute"`, the stable Bot ID, and
+`payload: {action:"terminal.start",path:"",command:null}` in the source action.
+The payload allows only `action`, `path`, `root`, `command`, `opener`; `null`
+declares variable input. `file.open` supports registered `finder`, `vscode`, and
+`zed` openers. The host displays the actual device, directory and command before
+submission. TSX initialization/effects can only propose an action; a trusted
+host click is required. The gateway rechecks source version, exact declaration,
+component identity, current user, active host and invocation ID.
+
+Execution uses the existing authenticated workspace RPC over the connector data
+bridge. It is not a new ACP terminal method or a second task transport. Receipts
+are user-owned and durable, and recent executions can be reopened from the
+terminal entry. Closing the view does not cancel the terminal. Input is serialized;
+uncertain delivery is not replayed. The gateway monitors completion and retains
+up to 256 KB of host output. There are at most eight running terminals per host;
+sessions expire after 15 minutes. Connector/gateway loss can produce `unknown`;
+that status never means safe to rerun. There is no automatic execution recovery
+or exactly-once guarantee for external side effects.

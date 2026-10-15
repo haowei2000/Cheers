@@ -432,7 +432,7 @@ pub async fn validate_workspace_paths(
     clippy::too_many_arguments,
     reason = "workspace RPC policy inputs remain explicit before serialization to the connector"
 )]
-async fn workspace_call(
+pub(crate) async fn workspace_call(
     state: &AppState,
     bot_id: Uuid,
     op: &str,
@@ -597,7 +597,7 @@ pub async fn list_workspace_bots(
     // unique partial index for one active host per bot — so this LEFT JOIN cannot fan
     // a bot out into several rows.
     let rows = sqlx::query!(
-        r#"SELECT b.bot_id, b.username, b.display_name, h.device_name AS "device_name?"
+        r#"SELECT b.bot_id, b.username, b.display_name, h.device_name AS "device_name?", h.host_id AS "host_id?"
          FROM channel_memberships m
          JOIN bot_accounts b ON b.bot_id = m.member_id
          LEFT JOIN connector_hosts h
@@ -608,13 +608,13 @@ pub async fn list_workspace_bots(
          ORDER BY b.username"#,
         channel_id.to_string(),
     )
-    .map(|row| (row.bot_id, row.username, row.display_name, row.device_name))
+    .map(|row| (row.bot_id, row.username, row.display_name, row.device_name, row.host_id))
     .fetch_all(&state.db)
     .await
     .map_err(AppError::Db)?;
 
     let mut bots: Vec<Value> = Vec::with_capacity(rows.len());
-    for (bot_id, username, display_name, host_name) in rows {
+    for (bot_id, username, display_name, host_name, host_id) in rows {
         let parsed = Uuid::parse_str(&bot_id).ok();
         let online = match parsed {
             Some(id) => state.bot_locator.is_online(id).await,
@@ -633,7 +633,13 @@ pub async fn list_workspace_bots(
                 Some(id) => resolve_can_write(&state, &claims, channel_id, id).await,
                 None => false,
             };
+        let can_execute = can_read
+            && crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id)
+                .await
+                .is_ok();
         bots.push(json!({
+            "host_id":if can_read {host_id}else{None},
+            "can_execute":can_execute,
             "bot_id": bot_id,
             "username": username,
             "display_name": display_name,
