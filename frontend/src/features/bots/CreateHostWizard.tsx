@@ -756,7 +756,9 @@ function PairingSection({
     <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-compact font-semibold text-content-secondary">
-          1. One-time pairing code
+          <HelpLabel help="Create a code to register a pending host for this bot. Each code can be used once.">
+            1. One-time pairing code
+          </HelpLabel>
         </span>
         <div className="flex items-center gap-2">
           {pairing && !connected && (
@@ -828,8 +830,7 @@ function PairingSection({
 
       {!pairing && !busy && (
         <p className="text-compact text-content-muted">
-          No live code. Press <span className="text-content-secondary">Create code</span> to
-          register a pending host for this bot.
+          No live code.
         </p>
       )}
     </div>

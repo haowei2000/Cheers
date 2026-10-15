@@ -1,4 +1,5 @@
 import { Input as UiInput } from "@/components/ui/input";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -412,8 +413,7 @@ export function WorkspaceSettingsDialog({
         {(!canManage || members.some((m) => m.member_type === "user" && m.member_id === me?.user_id)) && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
-              <p className="text-regular font-medium text-content-secondary">Leave workspace</p>
-              <p className="text-compact text-content-muted mt-1">Remove yourself from this workspace.</p>
+              <p className="text-regular font-medium text-content-secondary"><HelpLabel help="Remove yourself from this workspace.">Leave workspace</HelpLabel></p>
             </div>
             <Button action="leave" content="iconText"
               variant="secondary"

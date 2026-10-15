@@ -3,6 +3,7 @@ import { ArrowUpRight, Info } from "lucide-react";
 import { ActionButton } from "@/components/ui/action-button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { EditorialIcon } from "@/components/ui/editorial-icons";
+import { Tip } from "@/components/ui/tip";
 import { LocatorOpenContext } from "./messageLinks";
 import { parseLocator } from "./locator";
 
@@ -45,12 +46,14 @@ export function ResourceEnclosure({uri,title,description,number,children}:{uri:s
             <span className="min-w-0 break-words">{label}</span><ArrowUpRight className="h-4 w-4 shrink-0" aria-hidden="true" />
           </a>
         </div>
-        <ControlTrigger controlSize="compact" square title={`Details for ${label}`} aria-label={`Details for ${label}`} aria-expanded={details} aria-controls={detailsId} onClick={()=>setDetails(value=>!value)}>
+        <Tip content={description || "View the resource link and source version."} align="end">
+        <ControlTrigger controlSize="compact" square aria-label={`Details for ${label}`} aria-expanded={details} aria-controls={detailsId} onClick={()=>setDetails(value=>!value)}>
           <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
         </ControlTrigger>
+        </Tip>
       </header>
-      {description&&<p className="px-4 pb-3 font-reading text-regular leading-reading text-content-secondary">{description}</p>}
       {details&&<div id={detailsId} className="mx-4 mb-4 space-y-3 rounded-sm bg-canvas p-3">
+        {description&&<p className="font-reading text-regular leading-reading text-content-secondary">{description}</p>}
         <dl className="space-y-2 text-caption"><div><dt>Resource link</dt><dd className="mt-1 break-all font-code text-compact text-content-secondary">{uri}</dd></div>
           {metadata?.version!==undefined&&<div className="flex gap-2"><dt>Version</dt><dd>{metadata.version}</dd></div>}
         </dl>

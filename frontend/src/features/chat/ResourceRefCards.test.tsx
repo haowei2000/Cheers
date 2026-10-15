@@ -13,7 +13,7 @@ describe("resource reference cards", () => {
     fileResourceStore(fs).publish("forms/report.a2ui.json", { path: "forms/report.a2ui.json", content: JSON.stringify(example), version: 4, is_dir: false });
     const open = vi.fn();
     const html = renderToStaticMarkup(<ResourceCardProvider fs={fs} channelId="channel" filesTick={0} openLocator={open} composeMessage={vi.fn()}>
-      <LocatorOpenContext.Provider value={open}><ResourceRefCards cards={[{ v: 1, kind: "resource_ref", uri: "cheers:desk/forms/report.a2ui.json", title: "Report" }]} /></LocatorOpenContext.Provider>
+      <LocatorOpenContext.Provider value={open}><ResourceRefCards cards={[{ v: 1, kind: "resource_ref", uri: "cheers:desk/forms/report.a2ui.json", title: "Report", description: "Complete this form to prepare your report." }]} /></LocatorOpenContext.Provider>
     </ResourceCardProvider>);
     expect(html).toContain('data-presentation="minimal"');
     expect(html).toContain("Report topic");
@@ -21,6 +21,7 @@ describe("resource reference cards", () => {
     expect(html).not.toContain("Version 4");
     expect(html).toContain("Enclosure 01");
     expect(html).toContain("Details for Report");
+    expect(html).not.toContain("Complete this form to prepare your report."); // Supplementary help is revealed on demand.
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('title="Prepare report request"');
     expect(html).toContain('data-button-content="icon"');

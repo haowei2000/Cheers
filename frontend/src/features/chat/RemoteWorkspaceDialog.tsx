@@ -6,6 +6,7 @@ import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropd
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel, FloatingPanelContextPortal } from "@/components/ui/floating-panel";
 import { EmptyState } from "@/components/ui/empty-state";
+import { HelpLabel } from "@/components/ui/help-text";
 import { PresenceDot } from "@/components/ui/presence-dot";
 import { FsTreeIcon } from "./FsTreeIcon";
 import { LocalOpen } from "@/features/desktop/LocalOpen";
@@ -1925,7 +1926,7 @@ export function RemoteWorkspaceDialog({
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center text-compact text-content-muted p-4">
                   <File className="w-5 h-5 mb-2 text-content-muted/60" aria-hidden="true" />
-                  <span>Select a file on the left to view it</span>
+                  <HelpLabel help="Choose a file from the file list to view its contents.">Select a file</HelpLabel>
                 </div>
               </>
             ) : (
@@ -2052,7 +2053,7 @@ export function RemoteWorkspaceDialog({
                     />
                   ) : (
                     <div className="p-4 text-compact text-content-muted">
-                      Binary file — no preview. Use "Download" above to get it.
+                      <HelpLabel help="Use Download in the toolbar to get this file.">Binary file — no preview.</HelpLabel>
                     </div>
                   )}
                 </div>

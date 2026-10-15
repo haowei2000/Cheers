@@ -560,6 +560,12 @@ Settings-card
 descriptions and empty-state hints follow this contract. Labels, live status,
 errors, irreversible consequences, and screen-reader instructions remain directly
 available. Text inside an already-open help panel stays readable in that panel.
+Resource enclosure descriptions use the existing info control for hover/focus help
+and remain readable inside its expanded Details on touch devices. Keep navigation
+links separate from help triggers. Empty states retain a short visible diagnosis;
+move optional recovery guidance to that diagnosis, not the status itself. Pairing
+expiry, current host identity, granted scopes, and activation consequences remain
+visible whenever they affect the next decision.
 
 `<SectionHead>` (same file) is the in-card divider heading —
 `text-compact font-semibold text-content-muted uppercase tracking-section`, optional

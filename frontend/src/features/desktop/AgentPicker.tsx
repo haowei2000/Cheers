@@ -7,6 +7,7 @@ import { invokeDesktop } from "@/lib/desktop";
 import { avatarSizeClasses } from "@/components/ui/content-size";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { SearchInput } from "@/components/ui/search-input";
+import { HelpLabel } from "@/components/ui/help-text";
 
 /** Mirror of the Rust `DetectedAgent` (connector.rs). */
 export interface DetectedAgent {
@@ -103,9 +104,11 @@ export function AgentPicker({
         <>
           {installedAgents.length === 0 && (
             <p className="text-compact text-content-muted">
-              {allowCustom
-                ? "No ACP agents detected on this Mac. Choose an agent from the registry below to install, or use a custom command."
-                : "No ACP agents detected on this Mac. Choose an agent from the registry below to install."}
+              <HelpLabel help={allowCustom
+                ? "Choose an agent from the registry below to install, or use a custom command."
+                : "Choose an agent from the registry below to install."}>
+                No ACP agents detected on this Mac.
+              </HelpLabel>
             </p>
           )}
 
