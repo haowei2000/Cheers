@@ -18,16 +18,22 @@ COPY packages/cheers-acp-connector-rs/bridge-protocol/Cargo.toml \
      /app/packages/cheers-acp-connector-rs/bridge-protocol/Cargo.toml
 COPY packages/cheers-mcp-server/Cargo.toml \
      /app/packages/cheers-mcp-server/Cargo.toml
+COPY packages/cheers-interactive-core/Cargo.toml \
+     /app/packages/cheers-interactive-core/Cargo.toml
 RUN mkdir -p src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
        /app/packages/cheers-mcp-server/src \
+       /app/packages/cheers-interactive-core/src \
     && echo 'fn main() {}' > src/main.rs \
     && : > src/lib.rs \
     && : > /app/packages/cheers-acp-connector-rs/bridge-protocol/src/lib.rs \
     && echo 'fn main() {}' > /app/packages/cheers-mcp-server/src/main.rs \
     && : > /app/packages/cheers-mcp-server/src/lib.rs \
+    && echo 'fn main() {}' > /app/packages/cheers-interactive-core/src/main.rs \
+    && : > /app/packages/cheers-interactive-core/src/lib.rs \
     && cargo build --release \
     && rm -rf src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
-       /app/packages/cheers-mcp-server/src
+       /app/packages/cheers-mcp-server/src \
+       /app/packages/cheers-interactive-core/src
 
 # ── 2) Real build ────────────────────────────────────────────────────────────
 # Copy the actual sources; only `server` + `cheers-bridge-protocol` recompile
@@ -37,6 +43,9 @@ RUN mkdir -p src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
 COPY packages/cheers-acp-connector-rs/bridge-protocol \
      /app/packages/cheers-acp-connector-rs/bridge-protocol
 COPY packages/cheers-mcp-server /app/packages/cheers-mcp-server
+COPY packages/cheers-interactive-core /app/packages/cheers-interactive-core
+COPY design-system/a2ui-catalog.json /app/design-system/a2ui-catalog.json
+COPY frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json /app/frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json
 COPY server/src ./src
 COPY server/migrations ./migrations
 COPY server/.sqlx ./.sqlx
@@ -53,7 +62,8 @@ COPY server/assets ./assets
 # starts at the RELATIVE path `assets`, so entries print as `assets/...` —
 # the pattern must be 'assets/*' (a '*/assets/*' pattern would never match).
 RUN find src assets /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
-       /app/packages/cheers-mcp-server/src \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
+       /app/packages/cheers-mcp-server/src \
+       /app/packages/cheers-interactive-core/src \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
     && cargo build --release
 
 # ── runtime ──────────────────────────────────────────────────────────────────

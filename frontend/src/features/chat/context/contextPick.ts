@@ -29,6 +29,7 @@ export function contextItemLocator(item: ContextItem): string | null {
     const uri = formatLocator(locator);
     return parseLocator(uri) ? uri : null;
   };
+  if(item.verb==="resource.resolve"&&typeof item.params.uri==="string")return parseLocator(item.params.uri)?item.params.uri:null;
   const path = typeof item.params.path === "string" ? item.params.path : null;
   if (item.verb === "fs.read" && path) {
     const start = typeof item.params.start_line === "number" ? item.params.start_line : undefined;
@@ -60,6 +61,7 @@ export function locatorToContextItem(uri: string, customLabel?: string): Context
   const loc = parseLocator(uri);
   if (!loc) return null;
   switch (loc.kind) {
+    case "resource": return {id:`resource:${formatLocator(loc)}`,verb:"resource.resolve",params:{uri:formatLocator(loc)},label:customLabel??`${loc.resourceKind} ${loc.resourceId}`,kind:loc.resourceKind==="desk"||loc.resourceKind==="inbox"?"file":loc.resourceKind==="msg"?"message":loc.resourceKind};
     case "desk": {
       if (loc.line !== undefined) {
         const item = rangedFileContextItem(loc.path, loc.line, loc.lineEnd ?? loc.line);

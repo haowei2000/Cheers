@@ -38,16 +38,24 @@ pub struct StartRequest {
 #[derive(Deserialize)]
 pub struct PasswordRequest {
     pub password: String,
+    #[serde(default)]
+    pub remember_device: bool,
+    pub trusted_device: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct CodeRequest {
     pub code: String,
+    pub trusted_device: Option<String>,
+    #[serde(default)]
+    pub remember_device: bool,
 }
 
 #[derive(Deserialize)]
 pub struct PasskeyRequest {
     pub credential: PublicKeyCredential,
+    #[serde(default)]
+    pub remember_device: bool,
 }
 
 pub async fn cancel(
@@ -176,6 +184,7 @@ pub async fn start(
 
 pub async fn password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     claims: Option<Extension<Claims>>,
     Path(transaction_id): Path<String>,
     Json(body): Json<PasswordRequest>,
@@ -208,9 +217,12 @@ pub async fn password(
             fail_attempt(&state, &flow, "password").await?;
             return Err(invalid_factor("password"));
         }
-        return complete_verified(&state, flow, "password").await;
+        return complete_verified(&state, flow, "password", body.remember_device).await;
     }
-    complete_primary(&state, flow, "password").await
+    let presented = auth::presented_trusted_device(&headers, body.trusted_device.as_deref());
+    let trusted =
+        auth_sessions::trusted_device_is_valid(&state.db, user_id, presented.as_deref()).await?;
+    complete_primary(&state, flow, "password", trusted, body.remember_device).await
 }
 
 pub async fn send_email(
@@ -267,6 +279,7 @@ pub async fn send_email(
 
 pub async fn verify_email(
     State(state): State<AppState>,
+    headers: HeaderMap,
     claims: Option<Extension<Claims>>,
     Path(transaction_id): Path<String>,
     Json(body): Json<CodeRequest>,
@@ -288,9 +301,12 @@ pub async fn verify_email(
         return Err(invalid_factor("email code"));
     }
     if second_step {
-        return complete_verified(&state, flow, "email").await;
+        return complete_verified(&state, flow, "email", body.remember_device).await;
     }
-    complete_primary(&state, flow, "email").await
+    let presented = auth::presented_trusted_device(&headers, body.trusted_device.as_deref());
+    let trusted =
+        auth_sessions::trusted_device_is_valid(&state.db, user_id, presented.as_deref()).await?;
+    complete_primary(&state, flow, "email", trusted, body.remember_device).await
 }
 
 pub async fn verify_totp(
@@ -317,7 +333,7 @@ pub async fn verify_totp(
         fail_attempt(&state, &flow, "totp").await?;
         return Err(invalid_factor("verification code"));
     }
-    complete_verified(&state, flow, "totp").await
+    complete_verified(&state, flow, "totp", body.remember_device).await
 }
 
 pub async fn passkey_options(
@@ -369,7 +385,7 @@ pub async fn verify_passkey(
         fail_attempt(&state, &flow, "passkey").await?;
         return Err(error);
     }
-    complete_verified(&state, flow, "passkey").await
+    complete_verified(&state, flow, "passkey", body.remember_device).await
 }
 
 async fn load_flow(
@@ -493,6 +509,8 @@ async fn complete_primary(
     state: &AppState,
     flow: Flow,
     factor: &str,
+    trusted: bool,
+    remember_device: bool,
 ) -> Result<Response, AppError> {
     if flow.kind == "login" {
         let user_id = flow
@@ -501,11 +519,11 @@ async fn complete_primary(
             .ok_or_else(|| invalid_factor(factor))?;
         // A passkey assertion is already a possession factor; anything else has
         // to be followed by one of the factors this account armed.
-        if factor != "passkey" && two_factor::methods(&state.db, user_id).await?.any() {
+        if factor != "passkey" && !trusted && two_factor::methods(&state.db, user_id).await?.any() {
             return require_second_factor(state, &flow, factor).await;
         }
     }
-    complete_verified(state, flow, factor).await
+    complete_verified(state, flow, factor, remember_device).await
 }
 
 async fn require_second_factor(
@@ -553,6 +571,7 @@ async fn complete_verified(
     state: &AppState,
     flow: Flow,
     factor: &str,
+    remember_device: bool,
 ) -> Result<Response, AppError> {
     let user_id = flow
         .user_id
@@ -601,14 +620,41 @@ async fn complete_verified(
         flow.context["device_name"].as_str(),
     )
     .await?;
+    let trusted = if remember_device {
+        Some(
+            auth_sessions::issue_trusted_device(
+                &state.db,
+                &user.id,
+                &session.session_id,
+                flow.context["device_name"].as_str(),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let refresh = session.refresh_token.clone();
     let csrf = session.csrf_token.clone();
-    let outcome = auth::session_response(&user, session, flow.client)?;
-    Ok(if flow.client == auth_sessions::ClientType::Web {
+    let mut outcome = auth::session_response(&user, session, flow.client)?;
+    if flow.client != auth_sessions::ClientType::Web {
+        outcome.trusted_device = trusted.clone();
+    }
+    let mut response = if flow.client == auth_sessions::ClientType::Web {
         auth::response_with_session_cookies(outcome, Some(&refresh), Some(&csrf))
     } else {
         Json(outcome).into_response()
-    })
+    };
+    if flow.client == auth_sessions::ClientType::Web {
+        if let Some(trusted) = trusted {
+            response.headers_mut().append(
+                axum::http::header::SET_COOKIE,
+                auth::auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
+                    .parse()
+                    .expect("valid cookie header"),
+            );
+        }
+    }
+    Ok(response)
 }
 
 async fn fail_attempt(state: &AppState, flow: &Flow, factor: &str) -> Result<(), AppError> {

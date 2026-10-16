@@ -90,6 +90,19 @@ fn persist_session(server: &str, outcome: &mut AuthOutcome) -> Result<(), String
 }
 
 async fn post(server: &str, path: &str, body: Value) -> Result<AuthOutcome, String> {
+    post_auth(server, path, body)
+        .await
+        .map_err(|(_, message)| message)
+}
+
+// Keep the HTTP verdict separate from its human-readable detail. A transport
+// failure must never erase credentials, and a rejected session is independent
+// of the device-trust credential.
+async fn post_auth(
+    server: &str,
+    path: &str,
+    body: Value,
+) -> Result<AuthOutcome, (Option<reqwest::StatusCode>, String)> {
     let response = reqwest::Client::new()
         .post(format!("{server}/api/v1{path}"))
         .header(ORIGIN, "tauri://localhost")
@@ -101,7 +114,7 @@ async fn post(server: &str, path: &str, body: Value) -> Result<AuthOutcome, Stri
             // Keep its transport diagnosis (TLS, DNS, timeout, connection)
             // visible to the UI; the request body and its secrets are not part
             // of reqwest's Display output.
-            format!("Could not reach the Cheers server: {error}")
+            (None, format!("Could not reach the Cheers server: {error}"))
         })?;
     if !response.status().is_success() {
         let status = response.status();
@@ -116,12 +129,14 @@ async fn post(server: &str, path: &str, body: Value) -> Result<AuthOutcome, Stri
                     .map(str::to_owned)
             })
             .unwrap_or_else(|| format!("Authentication failed (HTTP {status})"));
-        return Err(detail);
+        return Err((Some(status), detail));
     }
-    response
-        .json::<AuthOutcome>()
-        .await
-        .map_err(|_| "The server returned an invalid authentication response".into())
+    response.json::<AuthOutcome>().await.map_err(|_| {
+        (
+            None,
+            "The server returned an invalid authentication response".into(),
+        )
+    })
 }
 
 async fn post_value(server: &str, path: &str, body: Value) -> Result<Value, String> {
@@ -364,16 +379,39 @@ pub async fn desktop_verify_factor(
 }
 
 #[tauri::command]
+pub async fn desktop_verify_passkey_factor(
+    server_base: String,
+    transaction_id: String,
+    credential: Value,
+    remember_device: Option<bool>,
+) -> Result<AuthOutcome, String> {
+    let server = origin(&server_base)?;
+    let mut outcome = post(
+        &server,
+        "/auth/2fa/passkey/verify",
+        json!({
+            "transaction_id": transaction_id,
+            "credential": credential,
+            "remember_device": remember_device.unwrap_or(false),
+        }),
+    )
+    .await?;
+    persist_session(&server, &mut outcome)?;
+    Ok(outcome)
+}
+
+#[tauri::command]
 pub async fn desktop_login_flow_passkey_verify(
     server_base: String,
     transaction_id: String,
     credential: Value,
+    remember_device: Option<bool>,
 ) -> Result<AuthOutcome, String> {
     let server = origin(&server_base)?;
     let mut outcome = post(
         &server,
         &format!("/auth/flows/{transaction_id}/passkey/verify"),
-        json!({ "credential": credential }),
+        json!({ "credential": credential, "remember_device": remember_device.unwrap_or(false), "trusted_device": keychain_get(&server, "trusted") }),
     )
     .await?;
     persist_session(&server, &mut outcome)?;
@@ -385,12 +423,13 @@ pub async fn desktop_login_flow_password(
     server_base: String,
     transaction_id: String,
     password: String,
+    remember_device: Option<bool>,
 ) -> Result<AuthOutcome, String> {
     let server = origin(&server_base)?;
     let mut outcome = post(
         &server,
         &format!("/auth/flows/{transaction_id}/password"),
-        json!({ "password": password }),
+        json!({ "password": password, "remember_device": remember_device.unwrap_or(false), "trusted_device": keychain_get(&server, "trusted") }),
     )
     .await?;
     persist_session(&server, &mut outcome)?;
@@ -403,6 +442,7 @@ pub async fn desktop_login_flow_code(
     transaction_id: String,
     method: String,
     code: String,
+    remember_device: Option<bool>,
 ) -> Result<AuthOutcome, String> {
     let suffix = match method.as_str() {
         "email" => "email/verify",
@@ -413,7 +453,7 @@ pub async fn desktop_login_flow_code(
     let mut outcome = post(
         &server,
         &format!("/auth/flows/{transaction_id}/{suffix}"),
-        json!({ "code": code }),
+        json!({ "code": code, "remember_device": remember_device.unwrap_or(false), "trusted_device": keychain_get(&server, "trusted") }),
     )
     .await?;
     persist_session(&server, &mut outcome)?;
@@ -451,12 +491,16 @@ pub async fn desktop_oauth_handoff(
 
 #[tauri::command]
 pub async fn desktop_refresh_session(server_base: String) -> Result<Option<AuthOutcome>, String> {
+    // Main and quick-panel windows share Keychain refresh tokens. Serialize
+    // their rotations so simultaneous opens cannot trigger reuse revocation.
+    static REFRESH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = REFRESH_LOCK.lock().await;
     let server = origin(&server_base)?;
     let Some(refresh) = keychain_get(&server, "refresh") else {
         return Ok(None);
     };
     let csrf = keychain_get(&server, "csrf");
-    match post(
+    match post_auth(
         &server,
         "/auth/refresh",
         json!({"refresh_token": refresh, "csrf_token": csrf}),
@@ -467,9 +511,12 @@ pub async fn desktop_refresh_session(server_base: String) -> Result<Option<AuthO
             persist_session(&server, &mut outcome)?;
             Ok(Some(outcome))
         }
-        Err(error) => {
-            clear_keychain(&server);
-            Err(error)
+        Err((status, message)) => {
+            if status == Some(reqwest::StatusCode::UNAUTHORIZED) {
+                let _ = delete_generic_password(KEYCHAIN_SERVICE, &account(&server, "refresh"));
+                let _ = delete_generic_password(KEYCHAIN_SERVICE, &account(&server, "csrf"));
+            }
+            Err(message)
         }
     }
 }
@@ -508,6 +555,21 @@ pub fn desktop_open_oauth_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_auth_outcomes_never_expose_persisted_secrets_to_webview() {
+        let outcome: AuthOutcome = serde_json::from_value(json!({
+            "status": "authenticated", "access_token": "short-lived",
+            "refresh_token": "refresh-secret", "csrf_token": "csrf-secret",
+            "trusted_device": "device-secret"
+        }))
+        .unwrap();
+        let public = serde_json::to_value(outcome).unwrap();
+        assert_eq!(public["access_token"], "short-lived");
+        for key in ["refresh_token", "csrf_token", "trusted_device"] {
+            assert!(public.get(key).is_none());
+        }
+    }
 
     #[test]
     fn server_origin_is_strict() {

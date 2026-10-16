@@ -25,6 +25,7 @@ const MAX_ITEMS: usize = 16;
 /// registry (`server/src/resource/mod.rs`). Write verbs are intentionally
 /// excluded: a context bundle is a read list.
 const READ_VERBS: &[&str] = &[
+    "resource.resolve",
     "channel.info",
     "channel.members",
     "channel.context",
@@ -128,7 +129,13 @@ pub fn sanitize_human_bundle(raw: &Value) -> Option<Value> {
     let items = raw
         .get("items")
         .and_then(Value::as_array)
-        .or_else(|| raw.as_array())?;
+        .or_else(|| raw.as_array())
+        .map(Vec::as_slice)
+        .or_else(|| {
+            raw.get("interaction")
+                .filter(|event| cheers_mcp_server::interactive::validate_interaction(event).is_ok())
+                .map(|_| &[][..])
+        })?;
 
     let mut out: Vec<Value> = Vec::new();
     for item in items {
@@ -163,10 +170,17 @@ pub fn sanitize_human_bundle(raw: &Value) -> Option<Value> {
         out.push(Value::Object(clean));
     }
 
-    if out.is_empty() {
+    let interaction = raw
+        .get("interaction")
+        .filter(|value| cheers_mcp_server::interactive::validate_interaction(value).is_ok());
+    if out.is_empty() && interaction.is_none() {
         return None;
     }
-    Some(json!({ "origin": "human", "items": out }))
+    let mut bundle = json!({ "origin": "human", "items": out });
+    if let Some(event) = interaction {
+        bundle["interaction"] = event.clone();
+    }
+    Some(bundle)
 }
 
 /// Return a copy of `bundle` with every item's `preview` removed — the
@@ -247,6 +261,14 @@ pub async fn finalize_bundle_for_target(
     dedup_items_by_verb_params(&mut kept);
     let mut top = bundle.as_object().cloned().unwrap_or_default();
     top.insert("items".into(), Value::Array(kept));
+    if top
+        .get("interaction")
+        .and_then(|v| v.get("botId"))
+        .and_then(Value::as_str)
+        != Some(target.principal_id.to_string().as_str())
+    {
+        top.remove("interaction");
+    }
     Value::Object(top)
 }
 

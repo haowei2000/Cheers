@@ -73,7 +73,7 @@ curl -s -XPOST localhost:8000/api/v1/auth/login \
 ## 3. Web frontend
 
 ```bash
-cd frontend && npm install && npm run dev            # http://localhost:5173
+cd frontend && pnpm install && pnpm dev              # http://localhost:5173
 ```
 
 Vite proxies `/api` and `/ws` to the gateway, so the browser is same-origin.

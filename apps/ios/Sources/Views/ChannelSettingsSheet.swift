@@ -81,9 +81,8 @@ struct ChannelSettingsSheet: View {
                 if canManage && !channel.isDM {
                     Section {
                         Toggle("Public channel", isOn: $isPublic)
-                    } footer: {
-                        Text("Anyone in the workspace can join. Invite links require this.")
                     }
+                        .helpExplanation("Anyone in the workspace can join. Invite links require this.")
                 }
 
                 if !channel.isDM {

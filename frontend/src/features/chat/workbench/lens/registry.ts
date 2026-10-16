@@ -2,6 +2,8 @@ import type { MouseEvent, ReactNode } from "react";
 import type { PatchOp } from "../patchOps";
 import type { ContextItem } from "@/features/chat/context/contextPick";
 import type { ContextAction } from "@/components/ui/context-actions";
+import type { InteractionDispatcher } from "../interaction";
+import type { PresentationLevel } from "@/components/ui/presentation";
 
 export interface LensContextTarget {
   label: string;
@@ -25,9 +27,15 @@ export interface LensContextTarget {
 // that makes data-only extensions possible. Adding a NEW kind of UI = add a lens (code);
 // using existing UI = pure data in a manifest (no code).
 export interface LensProps {
+  /** Stable server/resource identity, shared by reply and Workbench view state. */
+  resourceUri?: string;
   data: unknown;
+  /** The container controls density; content and interaction contracts are shared. */
+  presentation?: PresentationLevel;
   /** Channel file rendered by this lens, when there is one. */
   path?: string;
+  /** Resource revision observed by the shared file session. */
+  sourceVersion?: number;
   config: unknown;
   onChange: (next: unknown) => void;
   /** Structured edit, for a lens that knows WHICH part changed. Preferred over
@@ -48,6 +56,8 @@ export interface LensProps {
   inspectorActive?: boolean;
   /** Callback for interactive form submissions inside the lens */
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
+  /** Host-owned interaction boundary; renderers never execute commands directly. */
+  onInteraction?: InteractionDispatcher;
 }
 
 export interface Lens {

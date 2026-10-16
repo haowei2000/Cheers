@@ -8,6 +8,7 @@ import { parsePersonalExtension } from "./extensions/parseOffThread";
 import { isPersonalExtensionDisabled } from "./extensions/runtime";
 import type { RendererExtension } from "./sandbox/rendererExtension";
 import { listPersonalExtensions } from "@/lib/desktop";
+import { resolveDeskResource } from "@/api/resources";
 import { parseLocator } from "../locator";
 import {
   WB_DOC,
@@ -69,10 +70,14 @@ export function useWorkbenchDrawerState({
   }, []);
 
   useEffect(() => {
+    let active=true;
     if (openFilePath) {
       const locator = openFilePath.startsWith("cheers:") ? parseLocator(openFilePath) : null;
-      setFocus(locator?.kind === "desk" ? locator.path : openFilePath);
+      if(locator?.kind==="resource") {
+        void resolveDeskResource(openFilePath).then(resource=>{if(active)setFocus(resource.path);}).catch(error=>{if(active)setNotice(errMsg(error));});
+      } else setFocus(locator?.kind === "desk" ? locator.path : openFilePath);
     }
+    return()=>{active=false;};
   }, [openFilePath]);
 
   // Never leak a focus/selection across channels.

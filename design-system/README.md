@@ -91,7 +91,7 @@ URL because its React, TypeScript, and Tailwind imports require transformation.
 Start it from the repository root with:
 
 ```bash
-cd frontend && npm run item-gallery
+cd frontend && pnpm item-gallery
 ```
 
 Then open <http://127.0.0.1:4175/dev/item-gallery.html>. If the HTML file is

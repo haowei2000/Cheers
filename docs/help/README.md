@@ -24,6 +24,7 @@ This directory contains user-facing, administrator-facing, and operations-facing
 | Troubleshooter | [Troubleshooting Q&A](技术排查Q&A.md) | Health checks, logs, database, Bot no-response, preview failures |
 
 - [Channel annotations](annotations.md): shared, persisted file and agent-event notes.
+- [Interactive resources](INTERACTIVE_RESOURCES.md): model-authored Workbench cards, MCP discovery, ACP requests and Mac file handoff.
 
 ## Current Defaults
 

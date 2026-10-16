@@ -19,6 +19,7 @@
 // rejected) — "strict generation, tolerant parsing".
 
 export type Locator =
+  | { kind:"resource"; serviceId:string; resourceKind:"desk"|"inbox"|"msg"|"plan"|"sessions"|"cost"|"activity"; resourceId:string; version?:number; line?:number; lineEnd?:number; inspectableId?:string }
   | { kind: "desk"; path: string; line?: number; lineEnd?: number; inspectableId?: string }
   | { kind: "ws"; bot: string; path: string; line?: number; lineEnd?: number }
   | { kind: "msg"; messageId: string }
@@ -71,6 +72,18 @@ export function parseLocator(uri: string): Locator | null {
   if (typeof uri !== "string") return null;
   if (uri.length > MAX_LOCATOR_LENGTH) return null;
   if (!uri.startsWith(LOCATOR_SCHEME)) return null;
+  if (uri.startsWith("cheers:resource/")) {
+    const uuid="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+    const match=uri.match(new RegExp(`^cheers:resource/(${uuid})/(desk|inbox|msg|plan|sessions|cost|activity)/(${uuid})(?:\\?v=([1-9][0-9]*))?(?:#(.+))?$`));
+    if (!match || ((match[4]||match[5]) && match[2]!=="desk")) return null;
+    const version=match[4]?Number(match[4]):undefined;
+    if(version!==undefined && !Number.isSafeInteger(version)) return null;
+    const anchor=match[5] && !match[5].startsWith("^")?parseAnchor(match[5]):null;
+    const inspectableId=match[5]?.startsWith("^")?match[5].slice(1):undefined;
+    if(anchor && (anchor.line>0xffffffff || (anchor.lineEnd??0)>0xffffffff))return null;
+    if(match[5] && !(anchor || (inspectableId && validInspectableId(inspectableId)))) return null;
+    return {kind:"resource",serviceId:match[1].toLowerCase(),resourceKind:match[2] as "desk",resourceId:match[3].toLowerCase(),version,...anchor,inspectableId};
+  }
   // single-token by design: whitespace/control chars can't appear in a valid locator
   // eslint-disable-next-line no-control-regex
   if (/[\s\u0000-\u001f\u007f]/.test(uri)) return null;
@@ -142,6 +155,7 @@ function anchorSuffix(line?: number, lineEnd?: number): string {
  * fixtures/locator/corpus.json so the two cannot drift. */
 export function formatLocator(loc: Locator): string {
   switch (loc.kind) {
+    case "resource": return `cheers:resource/${loc.serviceId}/${loc.resourceKind}/${loc.resourceId}${loc.version?`?v=${loc.version}`:""}${loc.inspectableId?`#^${loc.inspectableId}`:anchorSuffix(loc.line,loc.lineEnd)}`;
     case "desk":
       return `${LOCATOR_SCHEME}desk/${loc.path}${loc.inspectableId ? `#^${loc.inspectableId}` : anchorSuffix(loc.line, loc.lineEnd)}`;
     case "ws":

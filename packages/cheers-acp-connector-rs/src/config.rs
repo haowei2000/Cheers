@@ -145,6 +145,10 @@ pub struct PromptPolicy {
 
 #[derive(Debug, Clone)]
 pub struct WorkspacePolicy {
+    /// Explicit host opt-in. Commands run with the host account's OS permissions.
+    pub remote_terminal: bool,
+    /// Explicit host opt-in to open allow-listed files in registered applications.
+    pub remote_open: bool,
     pub default_cwd: Option<PathBuf>,
     pub backend_may_set_cwd: bool,
     pub allowed_roots: Vec<PathBuf>,
@@ -466,6 +470,10 @@ impl Default for RawPromptPolicy {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawWorkspacePolicy {
+    #[serde(default)]
+    remote_terminal: bool,
+    #[serde(default)]
+    remote_open: bool,
     #[serde(default)]
     default_cwd: Option<String>,
     #[serde(default)]
@@ -865,6 +873,8 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             allow_local_file_refs: raw.prompt.allow_local_file_refs,
         },
         workspace: WorkspacePolicy {
+            remote_terminal: raw.workspace.remote_terminal,
+            remote_open: raw.workspace.remote_open,
             default_cwd,
             backend_may_set_cwd: raw.workspace.backend_may_set_cwd,
             allowed_roots: workspace_roots,

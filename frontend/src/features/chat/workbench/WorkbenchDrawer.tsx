@@ -7,7 +7,7 @@ import { Folder, Package } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { GlanceRow } from "@/components/ui/glance-row";
-import { makeFsClient, type SendResourceReq } from "./fsClient";
+import { makeFsClient, type SendResourceReq, type FsClient } from "./fsClient";
 import type { WorkbenchContext } from "./context";
 import type { PresenceFocus } from "../hooks/useChatRealtime";
 import { FilePanel } from "./panels/FilePanel";
@@ -16,6 +16,7 @@ import { useChannelProfile } from "@/hooks/useChannelProfile";
 import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
 import "@/features/chat/panels/builtin/githubCode";
 import "./lens/builtins";
+import { resolveDeskResource } from "@/api/resources";
 import { parseLocator } from "../locator";
 import {
   appendCollectionTab,
@@ -40,6 +41,8 @@ interface Props {
   onClose: () => void;
   channelId: string;
   sendResourceReq: SendResourceReq;
+  /** Shared channel client, also used by inline resource cards. */
+  fileClient?: FsClient;
   /** Deep-link: open the browser focused on this path (e.g. a clicked Desk ref). */
   openFilePath?: string;
   /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the
@@ -52,6 +55,7 @@ interface Props {
   /** Prefill the channel composer (a personal renderer capability).
    *  Never sends — owned by ChannelView, which holds the composer. */
   onCompose?: (text: string) => void;
+  onRequestInteraction?: WorkbenchContext["requestInteraction"];
   sendPresenceFocus?: (chanId: string, focus: { bot_id: string; path?: string | null } | null) => void;
   workspaceFocus?: PresenceFocus[];
   currentUserId?: string;
@@ -65,17 +69,30 @@ function WorkbenchDrawerImpl({
   onClose,
   channelId,
   sendResourceReq,
+  fileClient,
   openFilePath,
   filesTick,
   onOpenLocator,
   onCompose,
+  onRequestInteraction,
   sendPresenceFocus,
   workspaceFocus,
   currentUserId,
   memberNames,
 }: Props) {
   const navigate = useNavigate();
-  const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
+  const fs = useMemo(() => {
+    const locator=openFilePath?parseLocator(openFilePath):null;
+    if(locator?.kind!=="resource"||locator.resourceKind!=="desk")return fileClient??makeFsClient(sendResourceReq,channelId);
+    return makeFsClient(async(verb,params)=>{
+      if(locator.version!==undefined&&verb!=="fs.read"&&verb!=="fs.ls")throw new Error("Historical resource revisions are read-only. Open the current URI to edit.");
+      if(verb==="fs.read") {
+        const resource=await resolveDeskResource(openFilePath!);
+        if(params.path===resource.path)return resource;
+      }
+      return sendResourceReq(verb,params);
+    },channelId);
+  }, [fileClient, sendResourceReq, channelId,openFilePath]);
   const profile = useChannelProfile(channelId, open);
 
   const drawerState = useWorkbenchDrawerState({
@@ -118,11 +135,12 @@ function WorkbenchDrawerImpl({
       openTarget: drawerState.focus,
       openInspectableId: (() => {
         const locator = openFilePath?.startsWith("cheers:") ? parseLocator(openFilePath) : null;
-        return locator?.kind === "desk" && locator.path === drawerState.focus ? locator.inspectableId : undefined;
+        return locator?.kind === "resource" ? locator.inspectableId : locator?.kind === "desk" && locator.path === drawerState.focus ? locator.inspectableId : undefined;
       })(),
       filesTick,
       openLocator: onOpenLocator,
       composeMessage: onCompose,
+      requestInteraction: onRequestInteraction,
       sendPresenceFocus,
       workspaceFocus,
       currentUserId,
@@ -145,6 +163,7 @@ function WorkbenchDrawerImpl({
       filesTick,
       onOpenLocator,
       onCompose,
+      onRequestInteraction,
       sendPresenceFocus,
       workspaceFocus,
       currentUserId,

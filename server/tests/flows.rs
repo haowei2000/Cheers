@@ -669,6 +669,26 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
         "placeholder content_data carries session_id for reply reuse"
     );
 
+    add_member(&db, ch, bot, "bot").await;
+    let cards = serde_json::json!([{"v":1,"kind":"resource_ref","uri":"cheers:desk/forms/report.a2ui.json"}]);
+    let attach =
+        serde_json::json!({"channel_id":ch,"msg_id":placeholder,"cards_json":cards.to_string()});
+    let other_bot = Uuid::new_v4();
+    add_member(&db, ch, other_bot, "bot").await;
+    let denied =
+        server::resource::messages::handle_cards_write(&db, &Principal::bot(other_bot), &attach)
+            .await;
+    assert!(
+        denied.is_err(),
+        "another bot cannot attach cards to this reply"
+    );
+    let staged = server::resource::messages::handle_cards_write(&db, &Principal::bot(bot), &attach)
+        .await
+        .unwrap();
+    assert_eq!(staged["staged"], true);
+    assert_eq!(staged["content_data"]["pending_cards"], cards);
+    assert!(staged["content_data"].get("cards").is_none());
+
     // done 帧 → finalize。
     let frame = serde_json::json!({ "msg_id": placeholder.to_string(), "content": "hello" });
     stream::handle_done(&registry, &fanout, &db, &locator, bot, "", &frame)
@@ -703,6 +723,18 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
             .and_then(|v| v.as_str()),
         Some(session.to_string().as_str()),
         "finalize must keep content_data.session_id"
+    );
+
+    let finalized = content_data_after.as_ref().unwrap();
+    assert_eq!(finalized["cards"], cards);
+    assert!(finalized.get("pending_cards").is_none());
+    let published =
+        server::resource::messages::handle_cards_write(&db, &Principal::bot(bot), &attach)
+            .await
+            .unwrap();
+    assert_eq!(
+        published["staged"], false,
+        "late card writes update the finalized reply"
     );
 
     // 迟到的第二个 done：DB 守卫拦截 → Err。
@@ -4051,6 +4083,159 @@ async fn channel_message_count(db: &PgPool, channel_id: Uuid) -> i64 {
         .fetch_one(db)
         .await
         .unwrap()
+}
+
+#[sqlx::test]
+async fn interactive_files_validate_writes_and_renames(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let contract = dispatch(
+        &db,
+        Principal::bot(bot),
+        &req("ui.contract.read", serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(contract["ok"], true, "{contract}");
+    assert_eq!(
+        contract["data"]["request_example"]["messages"][1]["updateComponents"]["components"][6]
+            ["action"]["event"]["context"]["botId"],
+        bot.to_string()
+    );
+    let example = &contract["data"]["example"];
+    let write = |path: &str, content: String| {
+        req(
+            "fs.write",
+            serde_json::json!({"channel_id":ch,"path":path,"content":content,"if_version":0}),
+        )
+    };
+    let good = dispatch(
+        &db,
+        Principal::bot(bot),
+        &write("forms/report.a2ui.json", example.to_string()),
+    )
+    .await;
+    assert_eq!(good["ok"], true, "{good}");
+    let mut bad = example.clone();
+    bad["messages"][1]["updateComponents"]["components"][0]["children"] =
+        serde_json::json!(["root"]);
+    let rejected = dispatch(
+        &db,
+        Principal::bot(bot),
+        &write("forms/bad.a2ui.json", bad.to_string()),
+    )
+    .await;
+    assert_eq!(rejected["error"]["code"], "INVALID_UI", "{rejected}");
+    let plain = dispatch(
+        &db,
+        Principal::bot(bot),
+        &write("untyped.txt", "invalid JSON".into()),
+    )
+    .await;
+    assert_eq!(plain["ok"], true, "{plain}");
+    let renamed = dispatch(&db, Principal::bot(bot), &req("fs.mv", serde_json::json!({"channel_id":ch,"from":"untyped.txt","to":"forms/renamed.a2ui.json"}))).await;
+    assert_eq!(renamed["error"]["code"], "INVALID_UI", "{renamed}");
+}
+
+#[sqlx::test]
+async fn interactive_request_retries_dispatch_once_and_keep_structured_context(db: PgPool) {
+    use server::gateway::registry::BotRegistry;
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, user, "user").await;
+    add_member(&db, ch, bot, "bot").await;
+    let locator = InProcessBotLocator::new();
+    let (control_tx, mut control_rx) = tokio::sync::mpsc::channel(16);
+    let (data_tx, _data_rx) = tokio::sync::mpsc::channel(16);
+    let _connection = locator.bind_control(bot, Uuid::new_v4(), control_tx);
+    locator.bind_data(bot, Uuid::new_v4(), data_tx);
+    let bot_locator: Arc<dyn BotLocator> = locator.clone();
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let event = serde_json::json!({"v":1,"sourceUri":"cheers:desk/forms/report.a2ui.json","sourceVersion":1,
+        "surfaceId":"report","componentId":"submit","actionId":"report.prepare","botId":bot,
+        "invocationId":Uuid::new_v4(),"input":{"topic":"UI","sources":true}});
+    let bundle = server::domain::context_bundle::sanitize_human_bundle(
+        &serde_json::json!({"items":[],"interaction":event}),
+    )
+    .unwrap();
+    let params = |content: &str| CreateMessageParams {
+        user_id: user,
+        channel_id: ch,
+        content: content.into(),
+        context_bundle: Some(bundle.clone()),
+        msg_type: None,
+        reply_to_msg_id: None,
+        file_ids: vec![],
+        mention_ids: vec![bot],
+        mention_names: vec![],
+        session_id: None,
+        msg_id: None,
+    };
+    let receipts = futures_util::future::join_all((0..4).map(|_| {
+        messages::create_message(
+            &db,
+            &fanout,
+            &registry,
+            &bot_locator,
+            params("Resource request"),
+        )
+    }))
+    .await
+    .into_iter()
+    .map(Result::unwrap)
+    .collect::<Vec<_>>();
+    let first = &receipts[0];
+    assert!(
+        receipts
+            .iter()
+            .all(|receipt| receipt.msg_id == first.msg_id),
+        "concurrent duplicate invocations share one receipt"
+    );
+    let task = control_rx.recv().await.unwrap();
+    assert_eq!(
+        task["context_bundle"]["interaction"], event,
+        "the existing ACP task must carry the typed event"
+    );
+    // An accepted request remains retriable after the bot disconnects.
+    locator.unbind(bot);
+    let retry = messages::create_message(
+        &db,
+        &fanout,
+        &registry,
+        &bot_locator,
+        params("Resource request"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(first.msg_id, retry.msg_id);
+    assert!(
+        control_rx.try_recv().is_err(),
+        "a replay must not dispatch another task"
+    );
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM messages WHERE channel_id=$1 AND sender_type='user'",
+    )
+    .bind(ch.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    assert!(
+        messages::create_message(
+            &db,
+            &fanout,
+            &registry,
+            &bot_locator,
+            params("Changed input")
+        )
+        .await
+        .is_err(),
+        "an invocation id cannot be reused for different input"
+    );
 }
 
 #[sqlx::test]

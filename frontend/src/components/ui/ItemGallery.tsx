@@ -26,6 +26,8 @@ import { ButtonGroup } from "@/components/ui/button-group";
 import { AdaptiveControlGroup } from "@/components/ui/adaptive-control-group";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
+import { HelpLabel } from "@/components/ui/help-text";
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { MenuOption } from "@/components/ui/menu-option";
@@ -91,7 +93,7 @@ const traceGalleryEvents: TraceEvent[] = [
     v: 1, id: "gallery-shell", event_id: "gallery-shell", msg_id: "gallery-message", channel_id: "gallery-channel",
     trace_seq: 2, kind: "trace", phase: "tool_call", status: "in_progress", is_terminal: false,
     created_at: "2026-08-12T07:44:01Z",
-    data: { presentation: { v: 2, event_type: "shell_command", family: "shell", operation: "run", confidence: "explicit", matched_by: "gallery", command: "npm run typecheck" } },
+    data: { presentation: { v: 2, event_type: "shell_command", family: "shell", operation: "run", confidence: "explicit", matched_by: "gallery", command: "pnpm typecheck" } },
   },
 ];
 
@@ -354,6 +356,23 @@ export function ItemGallery() {
             <MetricCard label="Online" value={4} tone="success" />
             <MetricCard label="Waiting" value={2} tone="warning" />
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="help-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="help-register" className="mb-2 text-section-label">Supplementary help</h2>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {controlSizes.map((size) => <div key={size} className="space-y-4">
+            <HelpLabel help="Hover or focus this text; tap to keep its explanation open. Escape dismisses it.">{size}</HelpLabel>
+            <Field label="Project folder" htmlFor={`help-project-${size}`} hint="This directory scopes the agent's file access." error="Choose an existing folder.">
+              <Input id={`help-project-${size}`} controlSize={size} aria-invalid="true" />
+            </Field>
+            <CheckboxField label="Trust this device" hint="Your device credential can be revoked." error="Verification is required." controlSize={size} />
+            <CheckboxField label="Include resolved items" controlSize={size} checked readOnly />
+            <CheckboxField label="Select all projects" controlSize={size} indeterminate readOnly />
+            <CheckboxField label="Use owner defaults" controlSize={size} disabled checked readOnly />
+            <CheckboxField label="Allow access to the selected project folder and all of its nested working directories" controlSize={size} />
+          </div>)}
         </div>
       </section>
 

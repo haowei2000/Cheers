@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE resource_view_drafts SET data=$6,source_version=$5,revision=revision+1,updated_at=NOW() WHERE user_id=$1 AND resource_id=$2 AND view_id=$3 AND schema_version=$4 AND revision=$7 RETURNING revision",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "revision",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "813459139a009edb32b94961090a0043c8ebf2a0de04fb29c1cef5d6d3305b57"
+}

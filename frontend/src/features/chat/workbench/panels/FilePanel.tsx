@@ -951,12 +951,6 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       onSelectAnnotation={setActiveAnnotationId}
                       onRevealSource={(line) => { showRaw(selected, true); setRevealLine(line); }}
                       inspectorActive={isInspectorActive}
-                      onFormSubmit={(data) => {
-                        const summary = Object.entries(data.formData)
-                          .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-                          .join(", ");
-                        ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
-                      }}
                       onFailure={(rendererId, reason) => {
                         const updatedFailed = [...new Set([...(failedRenderers[selected] ?? []), rendererId])];
                         setFailedRenderers((current) => ({

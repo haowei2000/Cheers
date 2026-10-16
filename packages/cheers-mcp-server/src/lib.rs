@@ -2,6 +2,7 @@ use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
 use url::Url;
 
+pub mod interactive;
 pub mod locator;
 pub mod registry;
 pub mod tools;
@@ -52,13 +53,33 @@ pub struct ResourceUriError {
 }
 
 pub fn resource_definitions() -> Vec<Value> {
-    vec![json!({
+    let mut resources = vec![json!({
         "uri": RESOURCE_GUIDE_URI,
         "name": "Cheers resource guide",
         "title": "Cheers resource guide",
         "description": "Available channel resource URI templates and their permission boundary.",
         "mimeType": "text/markdown"
-    })]
+    })];
+    for (uri, title, mime) in [
+        (
+            interactive::GUIDE_URI,
+            "Interactive UI authoring guide",
+            "text/markdown",
+        ),
+        (
+            interactive::CATALOG_URI,
+            "Cheers A2UI component catalog",
+            "application/json",
+        ),
+        (
+            interactive::EXAMPLE_URI,
+            "Interactive resource example",
+            "application/json",
+        ),
+    ] {
+        resources.push(json!({"uri":uri,"name":title,"title":title,"mimeType":mime}));
+    }
+    resources
 }
 
 pub fn resource_template_definitions() -> Vec<Value> {
@@ -338,7 +359,7 @@ mod tests {
             // Resolves a cheers: URI. SCOPE_READ grants nothing the tools above did not
             // already: every resource a locator can name is one of them. Asserted by
             // locator::tests::the_locator_tool_grants_no_more_than_the_tools_it_stands_in_for.
-            | "read_locator" => Some(SCOPE_READ),
+            | "read_locator" | "read_ui_contract" => Some(SCOPE_READ),
             "post_message" | "set_suggested_questions" | "set_resource_cards" => Some(SCOPE_MESSAGES_WRITE),
             "inbox_deliver" => Some(SCOPE_FILES_WRITE),
             "desk_write"

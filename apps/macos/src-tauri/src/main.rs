@@ -54,6 +54,14 @@ fn toggle_quick_panel(app: &tauri::AppHandle) {
 }
 
 fn main() {
+    // Optional packaging-time namespace for local preview builds. This preserves
+    // isolation when Finder launches the bundle without a shell environment.
+    // An explicit runtime override takes precedence; official builds omit it.
+    if std::env::var_os("CHEERS_ACP_HOME").is_none() {
+        if let Some(home) = option_env!("CHEERS_DESKTOP_ACP_HOME") {
+            std::env::set_var("CHEERS_ACP_HOME", home);
+        }
+    }
     tauri::Builder::default()
         // Must be first: a second launch surfaces the existing window instead
         // of racing plugin state.
@@ -120,6 +128,7 @@ fn main() {
             deeplink::take_pending_deep_link,
             desktop_auth::desktop_password_login,
             desktop_auth::desktop_verify_factor,
+            desktop_auth::desktop_verify_passkey_factor,
             desktop_auth::desktop_login_flow_passkey_verify,
             desktop_auth::desktop_login_flow_password,
             desktop_auth::desktop_login_flow_code,

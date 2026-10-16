@@ -3,9 +3,18 @@
 version = 4
 
 [[package]]
+name = "cheers-interactive-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cheers-mcp-server"
 version = "0.1.2"
 dependencies = [
+ "cheers-interactive-core",
  "percent-encoding",
  "serde",
  "serde_json",

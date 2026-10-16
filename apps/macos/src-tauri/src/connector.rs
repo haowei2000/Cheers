@@ -83,6 +83,13 @@ fn connector_home() -> Option<PathBuf> {
 /// App-side settings (which instances start with the app). Lives next to the
 /// connector home, NOT inside it — the connector owns its own directory.
 fn settings_path() -> Option<PathBuf> {
+    if let Ok(home) = env::var("CHEERS_ACP_HOME") {
+        // A worktree/preview connector namespace needs its own app-start list.
+        // Otherwise opening an isolated desktop build restarts production bots.
+        return PathBuf::from(home)
+            .parent()
+            .map(|parent| parent.join("desktop.json"));
+    }
     dirs::home_dir().map(|h| h.join(".cheers/desktop.json"))
 }
 
@@ -1142,20 +1149,27 @@ pub fn connector_write_onboarded(
     config_toml: String,
     token: String,
     token_file: String,
+    workspace_path: Option<String>,
+    instance_name: Option<String>,
 ) -> Result<String, String> {
     // Resolve the adapter to an absolute path BEFORE writing (and error early
     // if it isn't installed, so we don't leave a crash-looping config behind).
     let config_toml = normalize_desktop_connector_config(&config_toml)?;
+    let config_toml = onboard_workspace(&config_toml, &account_id, workspace_path.as_deref())?;
+    let (config_toml, token_file) = match instance_name.as_deref() {
+        Some(name) => onboard_instance(&config_toml, &account_id, name)?,
+        None => (config_toml, token_file),
+    };
 
     let base = dirs::home_dir()
         .map(|h| h.join(".cheers"))
         .ok_or("no home directory")?;
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
 
-    // account_id forms the config filename — it must be a plain label, never a
-    // path. token_file is gateway-chosen ("secrets/<id>.token"): keep it
+    // The instance (or legacy account) label forms the config filename.
+    // Keep token_file ("secrets/<id>.token")
     // relative and confine it under ~/.cheers/ (no absolute, no `..`).
-    let safe_id = safe_name(&account_id);
+    let safe_id = safe_name(instance_name.as_deref().unwrap_or(&account_id));
     let tf = PathBuf::from(&token_file);
     if tf.is_absolute()
         || tf
@@ -1186,6 +1200,65 @@ pub fn connector_write_onboarded(
     ensure_workspace_dirs(&config_toml);
 
     Ok(config_path.to_string_lossy().into_owned())
+}
+
+/// Each Host owns its own credential and session state, even for the same Bot.
+fn onboard_instance(
+    config: &str,
+    account_id: &str,
+    name: &str,
+) -> Result<(String, String), String> {
+    let name = safe_name(name);
+    let token_file = format!("secrets/{name}.token");
+    let mut doc: toml_edit::DocumentMut = config
+        .parse()
+        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    if doc
+        .get("accounts")
+        .and_then(|accounts| accounts.get(account_id))
+        .is_none()
+    {
+        return Err("Bot account is missing from the host configuration".into());
+    }
+    doc["daemon"]["name"] = toml_edit::value(name.as_str());
+    doc["daemon"]["state_path"] = toml_edit::value(format!("state-{name}.json"));
+    doc["daemon"]["log_dir"] = toml_edit::value(format!("logs-{name}"));
+    doc["accounts"][account_id]["bridge"]["token_file"] = toml_edit::value(token_file.as_str());
+    Ok((doc.to_string(), token_file))
+}
+
+/// Scope a new host to the directory explicitly selected in the native picker.
+/// Validate before saving credentials; never broaden access to the home directory.
+fn onboard_workspace(
+    config: &str,
+    account_id: &str,
+    selected: Option<&str>,
+) -> Result<String, String> {
+    let Some(selected) = selected.filter(|path| !path.is_empty()) else {
+        return Ok(config.to_string());
+    };
+    let path = Path::new(selected);
+    if !path.is_absolute() || !path.is_dir() {
+        return Err("Choose an existing project folder".into());
+    }
+    let path =
+        fs::canonicalize(path).map_err(|error| format!("Cannot access project folder: {error}"))?;
+    let mut doc: toml_edit::DocumentMut = config
+        .parse()
+        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    if doc
+        .get("accounts")
+        .and_then(|accounts| accounts.get(account_id))
+        .is_none()
+    {
+        return Err("Bot account is missing from the host configuration".into());
+    }
+    let mut roots = toml_edit::Array::new();
+    roots.push(path.to_string_lossy().as_ref());
+    doc["accounts"][account_id]["policy"]["workspace"]["allowed_roots"] = toml_edit::value(roots);
+    doc["accounts"][account_id]["policy"]["workspace"]["default_cwd"] =
+        toml_edit::value(path.to_string_lossy().as_ref());
+    Ok(doc.to_string())
 }
 
 /// Create the workspace directories a freshly-onboarded config references so a
@@ -1432,6 +1505,10 @@ pub struct ConfigFields {
     pub default_cwd: Option<String>,
     /// permission.auto_allow — approve tool calls without asking.
     pub auto_allow: bool,
+    #[serde(default)]
+    pub remote_terminal: bool,
+    #[serde(default)]
+    pub remote_open: bool,
     // ── more ──
     pub env_inherit: bool,
     pub env_allow: Vec<String>,
@@ -1501,6 +1578,8 @@ pub fn connector_config_read_fields(path: String) -> Result<ConfigFields, String
         allowed_roots: arr(ws, "allowed_roots"),
         default_cwd: s(ws, "default_cwd"),
         auto_allow: boolean(perm, "auto_allow", false),
+        remote_terminal: boolean(ws, "remote_terminal", false),
+        remote_open: boolean(ws, "remote_open", false),
         env_inherit: boolean(env, "inherit", false),
         env_allow: arr(env, "allow"),
         forward_to_backend: boolean(perm, "forward_to_backend", true),
@@ -1569,6 +1648,8 @@ pub fn connector_config_write_fields(path: String, fields: ConfigFields) -> Resu
 
     // Permission.
     doc["accounts"][id]["policy"]["permission"]["auto_allow"] = value(fields.auto_allow);
+    doc["accounts"][id]["policy"]["workspace"]["remote_terminal"] = value(fields.remote_terminal);
+    doc["accounts"][id]["policy"]["workspace"]["remote_open"] = value(fields.remote_open);
     doc["accounts"][id]["policy"]["permission"]["forward_to_backend"] =
         value(fields.forward_to_backend);
     doc["accounts"][id]["policy"]["permission"]["wait_timeout_ms"] = value(fields.wait_timeout_ms);
@@ -2245,6 +2326,54 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multiple_hosts_for_one_bot_never_share_credentials_or_state() {
+        let config = "[daemon]\nname = \"helper\"\n[accounts.helper.bridge]\ntoken_file = \"secrets/helper.token\"\n";
+        let (first, first_token) = onboard_instance(config, "helper", "helper-host-one").unwrap();
+        let (second, second_token) = onboard_instance(config, "helper", "helper-host-two").unwrap();
+        let first: toml::Value = first.parse().unwrap();
+        let second: toml::Value = second.parse().unwrap();
+        assert_ne!(first_token, second_token);
+        assert_ne!(
+            first["daemon"]["state_path"],
+            second["daemon"]["state_path"]
+        );
+        assert_eq!(
+            first["accounts"]["helper"]["bridge"]["token_file"].as_str(),
+            Some(first_token.as_str())
+        );
+        assert!(onboard_instance(config, "missing", "host").is_err());
+    }
+
+    #[test]
+    fn onboarding_scopes_only_the_selected_existing_project() {
+        let root = std::env::temp_dir().join(format!("cheers-onboard-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let config = "[accounts.helper.policy.workspace]\nallowed_roots = [\"/old\"]\ndefault_cwd = \"/old\"\n[accounts.helper.policy.permission]\nauto_allow = false\n";
+        let result = onboard_workspace(config, "helper", root.to_str()).unwrap();
+        let parsed: toml::Value = result.parse().unwrap();
+        let canonical = fs::canonicalize(&root).unwrap();
+        assert_eq!(
+            parsed["accounts"]["helper"]["policy"]["workspace"]["allowed_roots"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            parsed["accounts"]["helper"]["policy"]["workspace"]["default_cwd"].as_str(),
+            canonical.to_str()
+        );
+        assert_eq!(
+            parsed["accounts"]["helper"]["policy"]["permission"]["auto_allow"].as_bool(),
+            Some(false)
+        );
+        assert!(onboard_workspace(config, "helper", Some("relative/path")).is_err());
+        assert!(onboard_workspace(config, "missing", root.to_str()).is_err());
+        assert_eq!(onboard_workspace(config, "helper", None).unwrap(), config);
+        fs::remove_dir(root).unwrap();
+    }
 
     #[test]
     fn parse_ps_group_sums_and_finds_leader() {

@@ -20,6 +20,8 @@ integration = []
 # build uses the repo-root context to include it (see server/Dockerfile).
 cheers-bridge-protocol = { path = "../packages/cheers-acp-connector-rs/bridge-protocol" }
 cheers-mcp-server = { path = "../packages/cheers-mcp-server" }
+cheers-interactive-core = { path = "../packages/cheers-interactive-core" }
+
 # ── 运行时 ──────────────────────────────────────────────────────────────────
 tokio        = { version = "1",   features = ["full"] }
 axum         = { version = "0.7", features = ["ws", "macros"] }

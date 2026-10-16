@@ -1,3 +1,5 @@
+import { ResourceCardProvider } from "./ResourceCardContext";
+import { makeFsClient } from "./workbench/fsClient";
 import { AnnotationProvider } from "@/features/annotations/AnnotationProvider";
 import { PanelWorkspace } from "./workbench/PanelWorkspace";
 import { Button as UiButton } from "@/components/ui/button";
@@ -20,7 +22,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { listMessages, sendMessage } from "@/api/messages";
+import { listMessages, sendMessage, sendResourceInteraction } from "@/api/messages";
 import {
   useContextPickStore,
   toBundle,
@@ -98,6 +100,7 @@ import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { LocatorOpenContext } from "./messageLinks";
 import { ProfileCardProvider } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
+import { resolveResource } from "@/api/resources";
 import { parseLocator } from "./locator";
 import { locateWorkspaceFile } from "./wsLocate";
 import { useAuthStore } from "@/stores/authStore";
@@ -549,6 +552,8 @@ export function ChannelView({
   // windows as full-screen sheets, so there is no geometry to share there.
   const isMobile = useIsMobile();
   const layoutChannelId = channel?.channel_id ?? "";
+  const cardResources = useMemo(() => ({ principalId: user?.user_id, fs: makeFsClient(sendResourceReq, layoutChannelId) }), [sendResourceReq, layoutChannelId, user?.user_id]);
+  const cardFileClient = cardResources.fs;
   const channelLayout = useChannelLayout({
     channelId: layoutChannelId,
     sendResourceReq,
@@ -1032,6 +1037,19 @@ export function ChannelView({
         setRefError(`Unrecognized locator:\n${uri.slice(0, 200)}`);
         return;
       }
+      if (loc.kind === "resource") {
+        try {
+          const target=await resolveResource(uri);
+          if(target.channel_id!==channel.channel_id) {
+            sessionStorage.setItem(`cheers:resource-focus:${target.channel_id}`,uri);
+            await selectChannel(target.channel_id);
+          } else if(target.kind==="desk") {setWbTarget(uri);setWbOpen(true);}
+          else if(target.kind==="inbox") {setFilesFocus(target.resource_id);setFilesOpen(true);}
+          else if(target.kind==="msg") {void jumpToMessage(target.resource_id);}
+          else {openBoard(target.kind);}
+        } catch(error){setRefError(String(error));}
+        return;
+      }
       if (loc.kind === "desk") {
         setWbTarget(loc.inspectableId ? uri : loc.path);
         setWbOpen(true);
@@ -1043,7 +1061,7 @@ export function ChannelView({
         return;
       }
       if (loc.kind === "msg") {
-        setRefError("Message locators (cheers:msg/…) aren't supported yet.");
+        void jumpToMessage(loc.messageId);
         return;
       }
       if (loc.kind !== "ws") {
@@ -1114,6 +1132,9 @@ export function ChannelView({
     [
       channel,
       botLabels,
+      selectChannel,
+      jumpToMessage,
+      setWbTarget,
       openBoard,
       setFilesFocus,
       setFilesOpen,
@@ -1122,6 +1143,13 @@ export function ChannelView({
       setWsOpen,
     ],
   );
+
+  useEffect(()=>{
+    if(!channel)return;
+    const key=`cheers:resource-focus:${channel.channel_id}`;
+    const uri=sessionStorage.getItem(key);
+    if(uri){sessionStorage.removeItem(key);void openLocator(uri);}
+  },[channel,openLocator]);
 
   // A renderer plugin suggested a message (cheers:compose). Prefill only — the human
   // reviews, edits, and presses send; that keystroke is what makes it a channel action.
@@ -1132,6 +1160,12 @@ export function ChannelView({
       seq: (p?.seq ?? 0) + 1,
     }));
   }, [setComposePrefill]);
+  const requestInteraction = useCallback(async (event: Parameters<typeof sendResourceInteraction>[1]) => {
+    if (!channel) return Promise.reject(new Error("The source channel is unavailable."));
+    const source=parseLocator(event.sourceUri);
+    const sourceChannel=source?.kind==="resource"?(await resolveResource(event.sourceUri)).channel_id:channel.channel_id;
+    return sendResourceInteraction(sourceChannel, event);
+  }, [channel]);
 
   const handleSend = useCallback(
     async (
@@ -1591,6 +1625,9 @@ export function ChannelView({
           await jumpToMessage(item.target.msg_id);
         }
       }}>
+    <ResourceCardProvider key={cardResources.principalId} fs={cardFileClient} channelId={channel.channel_id} filesTick={boardTick.files ?? 0}
+      openLocator={openLocator} composeMessage={composeMessage}
+      requestInteraction={channel.my_role === "readonly" ? undefined : requestInteraction}>
     <ProfileCardProvider
       members={memberById}
       currentUserId={user?.user_id}
@@ -1676,9 +1713,11 @@ export function ChannelView({
                 channelId={channel.channel_id}
                 sendResourceReq={sendResourceReq}
                 openFilePath={wbTarget}
+                fileClient={cardFileClient}
                 filesTick={boardTick.files}
                 onOpenLocator={openLocator}
                 onCompose={composeMessage}
+                onRequestInteraction={channel.my_role === "readonly" ? undefined : requestInteraction}
                 sendPresenceFocus={sendPresenceFocus}
                 workspaceFocus={workspaceFocus}
                 currentUserId={user?.user_id}
@@ -1959,6 +1998,7 @@ export function ChannelView({
       </div>
       </VoiceToolbarHostProvider>
     </ProfileCardProvider>
+    </ResourceCardProvider>
     </AnnotationProvider>
   );
 }

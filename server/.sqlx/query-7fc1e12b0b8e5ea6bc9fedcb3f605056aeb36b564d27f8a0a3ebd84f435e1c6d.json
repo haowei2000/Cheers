@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE resource_executions SET status='cancelled',updated_at=NOW() WHERE execution_id=$1 AND status='accepted'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7fc1e12b0b8e5ea6bc9fedcb3f605056aeb36b564d27f8a0a3ebd84f435e1c6d"
+}

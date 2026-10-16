@@ -154,7 +154,7 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 
 Cheers runs three ways — see the [Deployment Guide](docs/help/deployment.md) for all three:
 
-1. **From source** — `cargo run` + `npm run dev` with backing services in Docker (development).
+1. **From source** — `cargo run` + `pnpm dev` with backing services in Docker (development).
 2. **Docker Compose** — one host, all containers (self-hosting, demos). Quick Start below.
 3. **Helm / Kubernetes** — cluster workloads (production, scale-out); chart in `deploy/helm/cheers`.
 
@@ -202,8 +202,8 @@ cargo run
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 ## Bots

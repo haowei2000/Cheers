@@ -12,6 +12,7 @@ import type { LensContextTarget } from "./registry";
 import { getLens } from "./registry";
 import { inspectableIdLineRange, sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
 import { LensAnnotationOverlay } from "./LensAnnotationOverlay";
+import type { InteractionDispatcher } from "../interaction";
 
 // One built-in lens over one file SESSION. The session is owned by the host, because the
 // host is what shows the file's other view: Raw and Preview must be the same buffer, the
@@ -30,6 +31,7 @@ export function LensView({
   openLocator,
   inspectorActive,
   onFormSubmit,
+  onInteraction,
 }: {
   session: FileSession;
   lensId: string;
@@ -52,6 +54,7 @@ export function LensView({
   openLocator?: (uri: string) => void;
   inspectorActive?: boolean;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
+  onInteraction?: InteractionDispatcher;
 }) {
   const lens = getLens(lensId);
   const { open } = useContextActions();
@@ -163,6 +166,8 @@ export function LensView({
           lens.render({
             data,
             path,
+            sourceVersion: session.version ?? undefined,
+            resourceUri:session.resourceUri,
             config,
             onChange: session.setData,
             onOps,
@@ -171,6 +176,7 @@ export function LensView({
             openLocator,
             inspectorActive,
             onFormSubmit,
+            onInteraction,
           })
         ) : (
           <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
@@ -214,6 +220,7 @@ export function LensPanel({
   openLocator,
   inspectorActive,
   onFormSubmit,
+  onInteraction,
 }: {
   fs: FsClient;
   path: string;
@@ -224,6 +231,7 @@ export function LensPanel({
   openLocator?: (uri: string) => void;
   inspectorActive?: boolean;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
+  onInteraction?: InteractionDispatcher;
 }) {
   const session = useFileSession(fs, path);
   // Live-push: the Desk changed on the server (a bot finished writing) — re-pull so the
@@ -247,6 +255,7 @@ export function LensPanel({
       openLocator={openLocator}
       inspectorActive={inspectorActive}
       onFormSubmit={onFormSubmit}
+      onInteraction={onInteraction}
     />
   );
 }

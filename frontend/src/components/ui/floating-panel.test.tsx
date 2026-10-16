@@ -99,7 +99,9 @@ describe("FloatingPanel visibility", () => {
     );
 
     expect(markup).toContain("No files yet");
-    expect(markup).toContain("Upload a file to get started.");
+    expect(markup).not.toContain("Upload a file to get started.");
+    expect(markup).toContain('data-managed-tooltip="true"');
+    expect(markup).not.toContain("lucide-info");
     expect(markup).not.toContain("stale child content");
   });
 });

@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import {
   AnnotationIcon,
   CollectionIcon,
@@ -224,10 +225,9 @@ export function SceneWorkbench({
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <CollectionIcon className="h-5 w-5 text-content-muted" />
         <div>
-          <div className="text-regular font-medium text-content-secondary">Choose a Collection</div>
-          <p className="mt-1 max-w-sm text-compact leading-5 text-content-muted">
-            Collections turn workspace data into focused Tabs. Unsupported files remain available in Raw workspace files.
-          </p>
+          <div className="text-regular font-medium text-content-secondary"><HelpLabel help={<>Collections turn workspace data into focused Tabs. Unsupported files remain available in Raw workspace files.
+          </>}>Choose a Collection</HelpLabel></div>
+
         </div>
         {available.length > 0 && (
           <ResponsiveActionButton
@@ -372,10 +372,9 @@ export function SceneWorkbench({
         {coord.activePaths.length === 0 ? (
           <div className="flex h-full flex-1 flex-col items-center justify-center gap-2 px-5 text-center text-compact text-content-muted">
             <FileQuestion className="h-5 w-5 text-content-muted" aria-hidden="true" />
-            <span className="text-regular font-medium text-content-secondary">No native Tabs in this Collection.</span>
-            <span className="max-w-xs text-compact leading-4 text-content-muted">
-              Unsupported files stay hidden here and remain available from Raw workspace files.
-            </span>
+            <span className="text-regular font-medium text-content-secondary"><HelpLabel help={<>Unsupported files stay hidden here and remain available from Raw workspace files.
+            </>}>No native Tabs in this Collection.</HelpLabel></span>
+
             <Button
               action="open"
               type="button"
@@ -440,12 +439,6 @@ export function SceneWorkbench({
                               onSelectAnnotation={coord.setActiveAnnotationId}
                         onRevealSource={(line) => { coord.showRaw(selectedPath, true); coord.setRevealLine(line); }}
                         inspectorActive={coord.isInspectorActive}
-                        onFormSubmit={(data) => {
-                          const summary = Object.entries(data.formData)
-                            .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-                            .join(", ");
-                          ctx.composeMessage?.(`[Action ${data.actionId}] ${summary}`);
-                        }}
                         onFailure={(rendererId, reason) => {
                           const updatedFailed = [...new Set([...(coord.failedRenderers[selectedPath] ?? []), rendererId])];
                           coord.setFailedRenderers((current) => ({

@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { IconButton } from "@/components/ui/icon-button";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
@@ -48,10 +49,9 @@ export function BotActivitySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-compact font-medium text-content-secondary">Recent activity</span>
-        <span className="text-compact text-content-muted">
-          every event the bot emitted (newest first)
-        </span>
+        <span className="text-compact font-medium text-content-secondary"><HelpLabel help={<>every event the bot emitted (newest first)
+        </>}>Recent activity</HelpLabel></span>
+
         <IconButton
           label="Refresh bot activity"
           onClick={load}
@@ -63,7 +63,7 @@ export function BotActivitySection({ botId }: { botId: string }) {
       </div>
       {events.length === 0 ? (
         <p className="text-compact text-content-muted">
-          {loading ? "Loading…" : "No events recorded yet — prompt the bot to see its activity."}
+          {loading ? "Loading…" : "No events recorded yet."}
         </p>
       ) : (
         <ItemList presentationLevel="medium" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
