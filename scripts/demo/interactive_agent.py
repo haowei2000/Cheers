@@ -107,12 +107,12 @@ def prompt(session_id, params):
     interaction = re.search(r'<interaction trust="user-data">(.*?)</interaction>', content, re.S)
     if interaction:
         event = json.loads(html.unescape(interaction[1]))
-        path = event["sourceUri"].removeprefix("cheers:desk/").split("#")[0]
-        source = tool(session, "desk_read", {"channel_id": channel, "path": path})
+        source = tool(session, "read_locator", {"channel_id": channel, "uri":event["sourceUri"]})
+        path = source["path"]
         if source["version"] != event["sourceVersion"]:
             message = "资源版本已变化，请刷新卡片后重试。"
         else:
-            document = source["data"]
+            document = source.get("data") or json.loads(source["content"])
             for node in document["messages"][1]["updateComponents"]["components"]:
                 if node["id"] == "status":
                     node["text"] = f"状态：演示处理完成 · 主题：{event['input'].get('topic', '')}"
@@ -125,12 +125,23 @@ def prompt(session_id, params):
     else:
         contract = tool(session, "read_ui_contract", {})
         documents = demo_documents(contract)
-        for path, document in documents.items():
-            write(session, channel, path, document)
+        bot = contract["request_example"]["messages"][1]["updateComponents"]["components"][6]["action"]["event"]["context"]["botId"]
+        documents["demo/terminal.a2ui.json"] = {"a2ui":"v0.9.1","messages":[
+            {"version":"v0.9.1","createSurface":{"surfaceId":"terminal","catalogId":contract["catalog_id"]}},
+            {"version":"v0.9.1","updateComponents":{"surfaceId":"terminal","components":[
+                {"id":"root","component":"Column","children":["note","command","run"]},
+                text_node("note","真实远程终端 · 需确认目标设备。命令使用该设备账户权限。"),
+                {"id":"command","component":"TextField","label":"命令（可跨设备恢复草稿）","value":{"path":"/command"}},
+                {"id":"run","component":"Button","label":"运行终端命令","action":{"event":{"name":"cheers.execute","context":{"actionId":"terminal.run","botId":bot,"payload":{"action":"terminal.start","path":"","command":{"path":"/command"}}}}}}
+            ]}},
+            {"version":"v0.9.1","updateDataModel":{"surfaceId":"terminal","path":"/","value":{"command":"printf 'Cheers terminal ready\\n'"}}}
+        ]}
+        identities = {path:write(session, channel, path, document)["uri"] for path,document in documents.items()}
         more = "其它" in html.unescape(content)
         paths = [("demo/notes.md", "普通文档预览"), ("demo/safe-source.html", "HTML 源码安全预览")] if more else [
             ("demo/report.a2ui.json", "报告申请 · 可直接提交"), ("demo/complex.a2ui.json", "复杂表单 · 在回复内展开"), ("demo/native.a2ui.json", "桌面打开 · Finder 副本")]
-        cards = [{"v": 1, "kind": "resource_ref", "uri": f"cheers:desk/{path}", "title": title} for path, title in paths]
+        if "终端" in html.unescape(content): paths=[("demo/terminal.a2ui.json","真实终端 · 设备确认"),("demo/report.a2ui.json","跨设备草稿 · 报告申请")]
+        cards = [{"v": 1, "kind": "resource_ref", "uri": identities[path], "title": title} for path, title in paths]
         message = "已生成本地演示数据。小表单可直接操作，复杂表单可展开，桌面动作会打开下载副本。此 Bot 是确定性 ACP 测试 agent，不调用外部模型。"
     tool(session, "set_resource_cards", {"channel_id": channel, "msg_id": msg, "cards_json": json.dumps(cards, ensure_ascii=False)})
     emit({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": session_id,

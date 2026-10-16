@@ -408,6 +408,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
         // SCOPE_READ grants nothing new: every resource a locator resolves to is already
         // exposed by a read-only tool at this same scope, asserted by
         // `tests::the_locator_tool_grants_no_more_than_the_tools_it_stands_in_for`.
+        db("resource.resolve", None),
         ResourceSpec {
             resource: "locator.read",
             routing: Routing::Normalized,

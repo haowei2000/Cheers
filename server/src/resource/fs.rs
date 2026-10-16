@@ -60,11 +60,28 @@ pub async fn handle_ls(db: &PgPool, principal: &Principal, params: &Value) -> Re
 
 /// `fs.read` — read one file.
 pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    if let Some(uri) = params.get("uri").and_then(Value::as_str) {
+        let source = crate::api::resources::desk_resource(db, principal, uri, None)
+            .await
+            .map_err(|e| super::resource_error("RESOURCE_ERROR", e.to_string()))?;
+        if params["channel_id"].as_str() != Some(source.channel_id.as_str()) {
+            return Err(super::resource_error(
+                "PERMISSION_DENIED",
+                "Resource belongs to another channel; use its original channel scope.",
+            ));
+        }
+        let data = parse_structured(&source.path, &source.content);
+        let mut value = serde_json::to_value(source)
+            .map_err(|e| super::resource_error("RESOURCE_ERROR", e.to_string()))?;
+        value["data"] = data.unwrap_or(Value::Null);
+        return Ok(value);
+    }
+
     let (channel_id, path) = extract_channel_path(params, false)?;
     authorize_channel_read(db, principal, channel_id).await?;
 
     let row = sqlx::query!(
-        "SELECT path, content, version, is_dir, created_at, updated_at
+        "SELECT file_id, path, content, version, is_dir, created_at, updated_at
          FROM context_files
          WHERE channel_id = $1 AND path = $2",
         channel_id.to_string(),
@@ -97,7 +114,12 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         None
     };
 
+    let service = crate::api::resources::service_id(db)
+        .await
+        .map_err(|e| super::resource_error("RESOURCE_ERROR", e.to_string()))?;
     Ok(json!({
+        "uri": cheers_interactive_core::global_uri::format(&service,"desk",&row.file_id,None),
+        "resource_id":row.file_id,
         "channel_id": channel_id,
         "path": row.path.clone(),
         "content": content,
@@ -781,6 +803,17 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         json!({"path": path, "version": version, "is_dir": is_dir}),
     )
     .await?;
+    let identity = sqlx::query!(
+        "SELECT file_id FROM context_files WHERE channel_id=$1 AND path=$2",
+        channel_id.to_string(),
+        path
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(super::db_err("fs.write: resource identity"))?;
+    let service = crate::api::resources::service_id(db)
+        .await
+        .map_err(|e| super::resource_error("INTERNAL", e.to_string()))?;
     tx.commit()
         .await
         .map_err(super::db_err("fs.write: commit tx"))?;
@@ -790,6 +823,8 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         "path": path,
         "version": version,
         "channel_seq": seq,
+        "uri":cheers_interactive_core::global_uri::format(&service,"desk",&identity.file_id,None),
+        "resource_id":identity.file_id,
     }))
 }
 

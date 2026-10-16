@@ -16,6 +16,7 @@ import { useChannelProfile } from "@/hooks/useChannelProfile";
 import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
 import "@/features/chat/panels/builtin/githubCode";
 import "./lens/builtins";
+import { resolveDeskResource } from "@/api/resources";
 import { parseLocator } from "../locator";
 import {
   appendCollectionTab,
@@ -80,7 +81,18 @@ function WorkbenchDrawerImpl({
   memberNames,
 }: Props) {
   const navigate = useNavigate();
-  const fs = useMemo(() => fileClient ?? makeFsClient(sendResourceReq, channelId), [fileClient, sendResourceReq, channelId]);
+  const fs = useMemo(() => {
+    const locator=openFilePath?parseLocator(openFilePath):null;
+    if(locator?.kind!=="resource"||locator.resourceKind!=="desk")return fileClient??makeFsClient(sendResourceReq,channelId);
+    return makeFsClient(async(verb,params)=>{
+      if(locator.version!==undefined&&verb!=="fs.read"&&verb!=="fs.ls")throw new Error("Historical resource revisions are read-only. Open the current URI to edit.");
+      if(verb==="fs.read") {
+        const resource=await resolveDeskResource(openFilePath!);
+        if(params.path===resource.path)return resource;
+      }
+      return sendResourceReq(verb,params);
+    },channelId);
+  }, [fileClient, sendResourceReq, channelId,openFilePath]);
   const profile = useChannelProfile(channelId, open);
 
   const drawerState = useWorkbenchDrawerState({
@@ -123,7 +135,7 @@ function WorkbenchDrawerImpl({
       openTarget: drawerState.focus,
       openInspectableId: (() => {
         const locator = openFilePath?.startsWith("cheers:") ? parseLocator(openFilePath) : null;
-        return locator?.kind === "desk" && locator.path === drawerState.focus ? locator.inspectableId : undefined;
+        return locator?.kind === "resource" ? locator.inspectableId : locator?.kind === "desk" && locator.path === drawerState.focus ? locator.inspectableId : undefined;
       })(),
       filesTick,
       openLocator: onOpenLocator,

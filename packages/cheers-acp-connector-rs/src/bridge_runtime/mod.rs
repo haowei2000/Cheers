@@ -36,6 +36,8 @@ const WATCH_MAX_COALESCE: Duration = Duration::from_secs(3);
 /// Max changed paths carried in a single `workspace_event`.
 const WATCH_PATHS_CAP: usize = 50;
 
+mod remote_execution;
+
 use crate::acp_runtime::create_runtime;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
@@ -207,6 +209,7 @@ impl AccountRuntime {
             }
         };
         let security = bridge.data_hello().acp_security.clone();
+        let host_id = bridge.control_hello().host_id.clone();
         // Extract channel_id → channel_name map from membership snapshot
         // before it's consumed by spawn_bridge_io.
         let channel_names: std::collections::HashMap<String, String> = bridge
@@ -243,6 +246,7 @@ impl AccountRuntime {
         ));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
+            host_id,
             account_id: self.account_id,
             config: self.config,
             identity,
@@ -416,6 +420,7 @@ struct GitPageParams {
 /// Owned, validated wire inputs for one workspace operation. Keeping the frame
 /// fields together prevents the dispatch boundary from becoming position-based.
 struct WorkspaceRequest {
+    remote_execution: Option<cheers_bridge_protocol::RemoteExecutionRequest>,
     op: String,
     rel: String,
     root: Option<String>,
@@ -566,6 +571,7 @@ fn parse_name_status(raw: &str) -> Vec<Value> {
 }
 
 struct RuntimeContext {
+    host_id: Option<String>,
     account_id: String,
     config: AccountConfig,
     /// Who this connector is signed in as (from the control hello); injected
@@ -856,6 +862,7 @@ impl RuntimeContext {
                 }
             }
             DataInbound::WorkspaceReq {
+                remote_execution,
                 req_id,
                 op,
                 path,
@@ -874,6 +881,7 @@ impl RuntimeContext {
                 tokio::spawn(async move {
                     let frame = match runtime
                         .handle_workspace_req(WorkspaceRequest {
+                            remote_execution,
                             op,
                             rel: path,
                             root,
@@ -959,6 +967,7 @@ impl RuntimeContext {
         request: WorkspaceRequest,
     ) -> Result<Value, (String, String, Option<Value>)> {
         let WorkspaceRequest {
+            remote_execution,
             op,
             rel,
             root,
@@ -1024,6 +1033,8 @@ impl RuntimeContext {
             };
             let effective = self.effective_roots(session_roots, true);
             return Ok(json!({
+                "remote_terminal":ws.remote_terminal,
+                "remote_open":ws.remote_open,
                 "allowed_roots": to_strings(&ws.allowed_roots),
                 "effective_roots": to_strings(&effective),
                 "default_cwd": ws
@@ -1035,6 +1046,34 @@ impl RuntimeContext {
                 "max_read_bytes": MAX_READ,
                 "max_write_bytes": MAX_WRITE,
             }));
+        }
+
+        // Existing terminals keep their identity even if the cwd is moved or deleted.
+        if op == "remote_execute"
+            && remote_execution
+                .as_ref()
+                .is_some_and(|r| r.action != "terminal.start" && r.action != "file.open")
+        {
+            let request =
+                remote_execution.ok_or_else(|| err("E_INVALID", "Missing execution".into()))?;
+            if self.host_id.as_deref() != Some(request.host_id.as_str()) {
+                return Err(err("E_HOST_CHANGED", "The target host changed".into()));
+            }
+            let registry = self.shared.remote.clone();
+            let terminal_allowed = self.config.policy.workspace.remote_terminal;
+            return tokio::task::spawn_blocking(move || {
+                registry.handle(
+                    request,
+                    std::path::Path::new(""),
+                    std::path::Path::new(""),
+                    terminal_allowed,
+                    false,
+                    &Default::default(),
+                )
+            })
+            .await
+            .map_err(|e| err("E_EXECUTION", e.to_string()))?
+            .map_err(|e| err("E_EXECUTION", e.to_string()));
         }
 
         // Effective roots: narrow to the session's root set when provided, else the
@@ -1098,6 +1137,34 @@ impl RuntimeContext {
             None => root_canon.join(rel.trim_start_matches('/')),
         };
 
+        if op == "remote_execute" {
+            let request = remote_execution
+                .ok_or_else(|| err("E_INVALID", "Remote execution payload required".into()))?;
+            if self.host_id.as_deref() != Some(request.host_id.as_str()) {
+                return Err(err(
+                    "E_HOST_CHANGED",
+                    "The target host changed. Select the device again.".into(),
+                ));
+            }
+            let registry = self.shared.remote.clone();
+            let allowed = &self.config.policy.workspace;
+            let terminal_allowed = allowed.remote_terminal;
+            let open_allowed = allowed.remote_open;
+            let env = self.config.agent.env.clone();
+            return tokio::task::spawn_blocking(move || {
+                registry.handle(
+                    request,
+                    &target,
+                    &root_canon,
+                    terminal_allowed,
+                    open_allowed,
+                    &env,
+                )
+            })
+            .await
+            .map_err(|e| err("E_EXECUTION", e.to_string()))?
+            .map_err(|e| err("E_EXECUTION", e.to_string()));
+        }
         match op {
             "ls" => {
                 let dir = tokio::fs::canonicalize(&target)
@@ -2950,6 +3017,7 @@ impl TurnSlots {
 }
 
 struct SharedRuntimeState {
+    remote: Arc<remote_execution::RemoteRegistry>,
     /// Multi-index active-run registry; one lock preserves atomic insert/remove.
     runs: Mutex<RunRegistry>,
     /// Human interaction waiters are independent of streaming and workspace work.
@@ -3010,6 +3078,7 @@ impl SharedRuntimeState {
     /// Creates independent lock domains with the initial membership snapshot.
     fn new(channel_names: HashMap<String, String>, max_concurrent: usize) -> Self {
         Self {
+            remote: Arc::new(remote_execution::RemoteRegistry::default()),
             runs: Mutex::new(RunRegistry::default()),
             interactions: Mutex::new(InteractionRegistry::default()),
             session_locks: Mutex::new(HashMap::new()),
@@ -3674,6 +3743,7 @@ max_concurrent = {max_concurrent}
         ));
         let context = Arc::new(RuntimeContext {
             account_id: "test".to_string(),
+            host_id: None,
             config,
             identity: test_identity(),
             mcp_url: "https://example.invalid/mcp".to_string(),

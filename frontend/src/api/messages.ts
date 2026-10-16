@@ -65,12 +65,12 @@ export async function cancelMessage(
 /** Explicit user submission through the existing human message/ACP pipeline. */
 export function sendResourceInteraction(channelId: string, event: ResourceInteraction): Promise<Message> {
   const source = parseLocator(event.sourceUri);
-  if (source?.kind !== "desk") return Promise.reject(new Error("A Desk resource is required."));
-  const path = source.path;
+  if (source?.kind !== "desk" && !(source?.kind === "resource" && source.resourceKind==="desk")) return Promise.reject(new Error("A Desk resource is required."));
+  const path = source.kind==="desk"?source.path:event.sourceUri;
   return sendMessage(channelId, `Resource request ${event.actionId}: ${JSON.stringify(event.input)}`, {
     mention_ids: [event.botId],
     context_bundle: {
-      items: [{ verb: "fs.read", params: { channel_id: channelId, path }, label: path, kind: "file" }],
+      items: source.kind==="desk"?[{ verb: "fs.read", params: { channel_id: channelId, path }, label: path, kind: "file" }]:[],
       interaction: event,
     },
   });

@@ -2,6 +2,7 @@ import { AlertTriangle, Hourglass, Laptop, PackageCheck, ShieldCheck } from "luc
 import { Banner } from "@/components/ui/banner";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { HelpLabel } from "@/components/ui/help-text";
 import {
   expandedPermissions,
   installDisposition,
@@ -36,9 +37,8 @@ export function ExtensionInstallDialog({
     <div className="flex items-start gap-3 rounded-sm bg-zinc-950/40 px-3 py-3">
       {temporary ? <Hourglass className="mt-1 h-4 w-4 text-warning-300" /> : <Laptop className="mt-1 h-4 w-4 text-success-300" />}
       <div className="min-w-0 flex-1">
-        <p className="text-regular font-medium text-content-primary">{manifest.title} · {manifest.version}</p>
+        <p className="text-regular font-medium text-content-primary"><HelpLabel help={manifest.description}>{manifest.title} · {manifest.version}</HelpLabel></p>
         <p className="mt-1 text-compact text-content-muted">{scope} · {candidate.sourceLabel}</p>
-        {manifest.description && <p className="mt-2 text-compact text-content-secondary">{manifest.description}</p>}
       </div>
     </div>
 

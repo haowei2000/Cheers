@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id FROM file_records WHERE file_id=$1 AND status IN ('uploaded','converted') AND (expires_at IS NULL OR expires_at>NOW())",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a3cbc82c385be6a2346d3cc6915373f68fb7c989db22319db35742f0743fd4e6"
+}

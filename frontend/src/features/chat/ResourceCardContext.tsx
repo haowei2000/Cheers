@@ -5,11 +5,12 @@ import { createResourceInteractionDispatcher } from "./workbench/nativeResource"
 
 export const ResourceCardContext = createContext<{
   fs: FsClient;
+  channelId: string;
   interactions: InteractionDispatcher;
   filesTick: number;
 } | null>(null);
 
-export function ResourceCardProvider({ fs, channelId, filesTick, openLocator, composeMessage, requestInteraction, children }: {
+export function ResourceCardProvider({ fs, channelId, filesTick = 0, openLocator, composeMessage, requestInteraction, children }: {
   fs: FsClient;
   channelId: string;
   filesTick: number;
@@ -20,6 +21,6 @@ export function ResourceCardProvider({ fs, channelId, filesTick, openLocator, co
 }) {
   const interactions = useMemo(() => createResourceInteractionDispatcher({ fs, channelId, openLocator, composeMessage, requestInteraction }),
     [fs, channelId, openLocator, composeMessage, requestInteraction]);
-  const value = useMemo(() => ({ fs, interactions, filesTick }), [fs, interactions, filesTick]);
+  const value = useMemo(() => ({ fs, interactions, filesTick, channelId }), [fs, interactions, filesTick, channelId]);
   return <ResourceCardContext.Provider value={value}>{children}</ResourceCardContext.Provider>;
 }

@@ -15,9 +15,10 @@ export type WorkbenchInteraction =
   | { kind: "open"; uri: string }
   | { kind: "compose"; actionId: string; formData: Record<string, unknown> }
   | { kind: "request"; event: ResourceInteraction }
+  | {kind:"execute";event:ResourceInteraction}
   | { kind: "openNative"; uri: string; opener: string };
 export type InteractionResult =
-  | { ok: true; outcome: "opened" | "drafted" | "requested" | "local" | "downloaded-copy"; messageId?: string }
+  | { ok: true; outcome: "executing" | "opened" | "drafted" | "requested" | "local" | "downloaded-copy"; messageId?: string;executionId?:string }
   | { ok: false; error: string };
 export type InteractionDispatcher = ((intent: WorkbenchInteraction) => Promise<InteractionResult>) & {
   capabilities: readonly WorkbenchInteraction["kind"][];
@@ -38,12 +39,14 @@ export function createInteractionDispatcher(host: {
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
   requestInteraction?: (event: ResourceInteraction) => Promise<{ msg_id: string }>;
   openNative?: (uri: string, opener: string) => Promise<"local" | "downloaded-copy">;
+  executeRemote?: (event:ResourceInteraction)=>Promise<{executionId:string}>;
 }): InteractionDispatcher {
   const capabilities: WorkbenchInteraction["kind"][] = [];
   if (host.openLocator) capabilities.push("open");
   if (host.composeMessage || host.onFormSubmit) capabilities.push("compose");
   if (host.requestInteraction) capabilities.push("request");
   if (host.openNative) capabilities.push("openNative");
+  if(host.executeRemote)capabilities.push("execute");
   const dispatch = async (intent: WorkbenchInteraction): Promise<InteractionResult> => {
     try {
       if (!capabilities.includes(intent.kind)) throw new Error("This interaction is unavailable in this view.");
@@ -56,14 +59,16 @@ export function createInteractionDispatcher(host: {
         await host.openLocator!(intent.uri);
         return { ok: true, outcome: "opened" };
       }
-      if (intent.kind === "request") {
+      if (intent.kind === "request" || intent.kind === "execute") {
         const event = intent.event;
-        if (parseLocator(event.sourceUri)?.kind !== "desk" || event.v !== 1 ||
+        const source=parseLocator(event.sourceUri);
+        if (!(source?.kind === "desk" || (source?.kind === "resource" && source.resourceKind==="desk")) || event.v !== 1 ||
           !Number.isSafeInteger(event.sourceVersion) || event.sourceVersion < 1 ||
           !validInspectableId(event.surfaceId) || !validInspectableId(event.componentId) ||
           !ACTION_ID.test(event.actionId) || !UUID.test(event.botId) || !UUID.test(event.invocationId)) {
           throw new Error("The resource interaction context is invalid.");
         }
+        if(intent.kind==="execute")return {ok:true,outcome:"executing",...(await host.executeRemote!({...event,input:jsonInputs(event.input)}))};
         const result = await host.requestInteraction!({ ...event, input: jsonInputs(event.input) });
         return { ok: true, outcome: "requested", messageId: result.msg_id };
       }

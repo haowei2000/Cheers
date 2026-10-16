@@ -1505,6 +1505,10 @@ pub struct ConfigFields {
     pub default_cwd: Option<String>,
     /// permission.auto_allow — approve tool calls without asking.
     pub auto_allow: bool,
+    #[serde(default)]
+    pub remote_terminal: bool,
+    #[serde(default)]
+    pub remote_open: bool,
     // ── more ──
     pub env_inherit: bool,
     pub env_allow: Vec<String>,
@@ -1574,6 +1578,8 @@ pub fn connector_config_read_fields(path: String) -> Result<ConfigFields, String
         allowed_roots: arr(ws, "allowed_roots"),
         default_cwd: s(ws, "default_cwd"),
         auto_allow: boolean(perm, "auto_allow", false),
+        remote_terminal: boolean(ws, "remote_terminal", false),
+        remote_open: boolean(ws, "remote_open", false),
         env_inherit: boolean(env, "inherit", false),
         env_allow: arr(env, "allow"),
         forward_to_backend: boolean(perm, "forward_to_backend", true),
@@ -1642,6 +1648,8 @@ pub fn connector_config_write_fields(path: String, fields: ConfigFields) -> Resu
 
     // Permission.
     doc["accounts"][id]["policy"]["permission"]["auto_allow"] = value(fields.auto_allow);
+    doc["accounts"][id]["policy"]["workspace"]["remote_terminal"] = value(fields.remote_terminal);
+    doc["accounts"][id]["policy"]["workspace"]["remote_open"] = value(fields.remote_open);
     doc["accounts"][id]["policy"]["permission"]["forward_to_backend"] =
         value(fields.forward_to_backend);
     doc["accounts"][id]["policy"]["permission"]["wait_timeout_ms"] = value(fields.wait_timeout_ms);

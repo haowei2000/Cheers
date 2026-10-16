@@ -116,3 +116,40 @@ Bot 和输入；用户点击宿主 Request 控件后才发送。Cancel 丢弃提
 iframe 允许脚本和表单事件，不授予同源访问。CSP 继续禁止外部表单提交及网络访问。
 运行时通过 pnpm 本地包依赖安装并解析 React peer dependencies，开发和 Docker
 构建使用同一安装链路。
+
+## 全局身份、跨设备草稿及远程执行
+
+`desk_write`、`desk_read` 返回 `uri`：优先把原值用于回复和附卡。
+格式为 `cheers:resource/<服务 UUID>/desk/<资源 UUID>`，不依赖当前频道或路径。
+服务身份保存在数据库；恢复备份时保留，克隆为独立服务时应重新生成。
+URI 不授予权限，解析仍检查来源频道。其他服务的 URI 需要切换服务打开，尚无联邦解析或自动服务发现。
+附件、消息及 plan/sessions/cost/activity 支持同一全局描述符；后四者以频道 UUID 为资源 ID。
+REST `/api/v1/resources/resolve` 和 MCP locator 共用解析器，受频道约束的 Agent 不可跨频道读取。
+
+`?v=N` 打开保留版本，Workbench 只读。迁移只收录现有文件的当前版本及以后版本，
+不会恢复迁移前的历史。删除文件后保留版本仍受原频道权限约束，频道删除则一并清除。
+旧 `cheers:desk/...` 是来源频道的相对路径，不应复制到其他频道作为全局链接。
+
+A2UI 只同步输入绑定，TSX 同步私有表单与自定义视图状态。隔离键是用户/资源/视图/schema，
+不会改写资源文件。`if_revision` 乐观锁防止覆盖另一设备草稿；来源更新或并发编辑要求明确选择。
+离线保留本地输入，恢复连接不会自动执行。TSX 字段需稳定 id/name/data-cheers-state-key，
+password/file/hidden 默认不保存，`data-cheers-persist="false"` 可关闭。
+自定义状态使用 CheersBridge.getState/setState/subscribeState，JSON 上限 60 KB，请勿保存秘密。
+React Web 和 Tauri 共用实现，SwiftUI/Compose 原生页面尚未接入这些草稿及终端视图。
+
+工作区浏览器增加终端入口：空命令打开真实交互 shell，填写命令则在指定设备执行。
+需要 Bot 所有者或管理员身份，启动、输入、调整窗口及取消需要近期认证。
+设备 connector 的 workspace 策略需启用 remote_terminal / remote_open，默认关闭；桌面设置可修改。
+注册根路径限制起始目录，不是命令沙箱；shell 后续操作拥有设备账户的操作系统权限。
+
+A2UI cheers.execute 和 TSX CheersBridge.execute 使用同一 dispatcher，源文件声明稳定 Bot ID、
+actionId 和 payload，例如 `{action:"terminal.start",path:"",command:null}`；null 表示变量输入。
+payload 仅接受 action/path/root/command/opener；file.open 仅支持 finder/vscode/zed。
+宿主确认实际设备、目录及命令；TSX 初始化或 effect 只能提议，必须由宿主可信点击确认。
+后端校验源版本、声明、组件身份、用户权限、活跃设备及 invocationId。
+
+执行复用既有 workspace RPC 与 connector data bridge，不新增 ACP terminal 方法。
+回执归当前用户持久保存，最近执行可重新打开；关闭视图不取消终端。
+输入按序发送，不重放结果不确定的输入。后端持续跟踪完成，保留最多 256 KB 输出。
+每设备最多八个运行中终端，15 分钟到期。连接器或网关丢失时可能显示 unknown，
+不会自动重跑，也不保证外部副作用恰好执行一次。

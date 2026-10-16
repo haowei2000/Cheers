@@ -644,7 +644,9 @@ export function ConnectorManager() {
               becomes the machine that runs it.</>}>{"I have a code"}</HelpLabel>} onClose={() => setModal(null)} maxWidth="max-w-lg">
           <div className="space-y-3">
 
+            <Field label="Pairing code" htmlFor="connector-pairing-code" hint="Codes are single-use and expire after about 15 minutes.">
             <UiInput
+              id="connector-pairing-code"
               value={pairingCode}
               onChange={(e) => setPairingCode(e.target.value)}
               placeholder="agbpair_…"
@@ -652,9 +654,9 @@ export function ConnectorManager() {
               controlSize="regular"
               className="font-code"
             />
+            </Field>
             <p className="text-compact text-content-muted">
-              Codes are single-use and expire after about 15 minutes. Using one
-              activates this host, so the bot's previously active
+              Using this code activates this host, so the bot's previously active
               host will stop.
             </p>
             <div className="flex justify-end gap-2">
@@ -729,8 +731,9 @@ export function ConnectorManager() {
             <p className="text-compact text-content-muted">Loading…</p>
           ) : wsDirs.length === 0 ? (
             <p className="text-compact text-content-muted">
-              No workspace roots on disk (check the config's{" "}
-              <code className="bg-zinc-800 rounded-sm px-1">[policy.workspace]</code>).
+              <HelpLabel help={<>Check <code>[policy.workspace]</code> in the connector config.</>}>
+                No workspace roots on disk.
+              </HelpLabel>
             </p>
           ) : (
             <div className="space-y-3">

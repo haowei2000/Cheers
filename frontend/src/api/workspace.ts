@@ -2,6 +2,8 @@ import { apiFetch, apiJson } from "./client";
 
 /** A bot in the channel whose connector can serve a remote workspace. */
 export interface WorkspaceBot {
+  host_id?:string|null;
+  can_execute?:boolean;
   bot_id: string;
   username: string;
   display_name: string | null;
@@ -383,6 +385,8 @@ export async function getGitCommitFiles(
 /* ── Workspace policy metadata (allowed roots / cwd / git availability) ──────── */
 
 export interface WorkspaceMeta {
+  remote_terminal?:boolean;
+  remote_open?:boolean;
   /** The connector's hard clamp: every browse/read/write stays inside these. */
   allowed_roots: string[];
   /** The roots actually browsable in the current scope (session ∩ allowed). */

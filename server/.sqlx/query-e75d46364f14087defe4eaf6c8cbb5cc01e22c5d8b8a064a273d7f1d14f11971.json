@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE resource_executions SET status='unknown',updated_at=NOW() WHERE execution_id=$1 AND status IN ('accepted','running') AND updated_at < NOW()-INTERVAL '60 seconds'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e75d46364f14087defe4eaf6c8cbb5cc01e22c5d8b8a064a273d7f1d14f11971"
+}

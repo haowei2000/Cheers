@@ -1,5 +1,7 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { useResourceDraft,ResourceDraftFeedback } from "../../useResourceDraft";
+import { ExecutionTerminal } from "../../../RemoteTerminal";
+import { ActionButton } from "@/components/ui/action-button";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
@@ -12,8 +14,17 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
   const prefix = useId();
   const controlSize = host.presentation === "minimal" ? "compact" : "regular";
   const spacing = host.presentation === "minimal" ? "gap-2" : "gap-4";
-  const [draft, setDraft] = useState(surface.data);
+  const inputs=useMemo(()=>[...surface.components.values()].filter(node=>node.component==="TextField"||node.component==="CheckBox"),[surface]);
+  const initialInputs=Object.fromEntries(inputs.map(node=>[(node.value as {path:string}).path,readBinding(node.value,surface.data)]));
+  const shape=inputs.map(node=>`${node.component}:${(node.value as {path:string}).path}`).sort().join("|");
+  let schemaHash=2166136261;for(const char of shape)schemaHash=Math.imul(schemaHash^char.charCodeAt(0),16777619);
+  const savedDraft=useResourceDraft(host.resourceUri,host.sourceVersion,`a2ui:${surface.id}:${(schemaHash>>>0).toString(16)}`,initialInputs);
+  const draft=useMemo(()=>inputs.reduce((data,node)=>{
+    const path=(node.value as {path:string}).path;const value=savedDraft.data[path];
+    return (node.component==="CheckBox"?typeof value==="boolean":typeof value==="string")?setDataPath(data,path,value):data;
+  },surface.data),[inputs,surface.data,savedDraft.data]);
   const [feedback, setFeedback] = useState<{ error: boolean; text: string } | null>(null);
+  const [executionId,setExecutionId]=useState<string>();
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
   const invocations = useRef(new Map<string, string>());
@@ -24,7 +35,7 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
   const change = (node: A2UIComponent, value: string | boolean) => {
     try {
       const path = (node.value as { path: string }).path;
-      setDraft(setDataPath(draft, path, value));
+      savedDraft.setData({...savedDraft.data,[path]:value});
       setFeedback(null);
     } catch (error) {
       setFeedback({ error: true, text: error instanceof Error ? error.message : "The input could not be updated." });
@@ -42,7 +53,7 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
       const payload = event.context.payload as Record<string, unknown>;
       const formData = Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, readBinding(value, draft)]));
       intent = { kind: "compose", actionId: String(context.actionId), formData };
-      if (event.name === "cheers.request") {
+      if (event.name === "cheers.request" || event.name === "cheers.execute") {
         if (!host.path || !host.sourceVersion) {
           setFeedback({ error: true, text: "Save and reload this resource before sending a request." });
           return;
@@ -50,7 +61,7 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
         const identity = JSON.stringify([node.id, host.sourceVersion, formData]);
         const invocationId = invocations.current.get(identity) ?? crypto.randomUUID();
         invocations.current.set(identity, invocationId);
-        intent = { kind: "request", event: { v: 1, sourceUri: formatLocator({ kind: "desk", path: host.path }), sourceVersion: host.sourceVersion,
+        intent = { kind: event.name==="cheers.execute"?"execute":"request", event: { v: 1, sourceUri: host.resourceUri ?? formatLocator({ kind: "desk", path: host.path }), sourceVersion: host.sourceVersion,
           surfaceId: surface.id, componentId: node.id, actionId: String(context.actionId), botId: String(context.botId), invocationId, input: formData } };
       }
     }
@@ -65,10 +76,12 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
       busy.current = false;
       setPending(false);
     }
+    if(result?.ok&&result.executionId)setExecutionId(result.executionId);
     setFeedback(!result
       ? { error: true, text: "This interaction is unavailable in this view." }
       : result.ok
         ? { error: false, text: result.outcome === "drafted" ? "Draft added to the chat composer. Review it before sending."
+          : result.outcome === "executing" ? "Execution accepted. Its terminal and status appear here."
           : result.outcome === "requested" ? "Request sent to the Bot. Its resource update will appear here."
           : result.outcome === "local" ? "Original file opened on this device."
           : result.outcome === "downloaded-copy" ? "Downloaded copy opened. Edits in the external application do not sync back."
@@ -96,8 +109,7 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
       const available = host.onInteraction?.capabilities.includes(kind);
       content = <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="break-words font-reading text-regular leading-reading text-content-secondary">{label}</span>
-        <Button action={kind === "open" || kind === "openNative" ? "open" : "request"} variant={host.presentation === "minimal" || kind === "open" || kind === "openNative" ? "plain" : "emphasis"} controlSize={controlSize} aria-label={label || "Card action"} disabled={!available || pending} loading={pending} onClick={() => void activate(node)} />
-        {kind === "request" && <span className="text-body-secondary">Sends a request to the declared Bot.</span>}
+        <ActionButton context="resourceCard" action={kind === "open" || kind === "openNative" ? "open" : "request"} controlSize={controlSize} accessibleLabel={label || "Card action"} disabled={!available || pending} loading={pending} onClick={() => void activate(node)} />
         {!available && <span className="text-body-secondary">This action is unavailable on this client.</span>}
       </div>;
     }
@@ -111,6 +123,8 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
   };
   return <section aria-label={`Interactive surface ${surface.id}`} className="space-y-4">
     {render(root)}
+    {executionId&&<ExecutionTerminal executionId={executionId}/>}
+    <ResourceDraftFeedback draft={savedDraft} />
     {feedback && <p role={feedback.error ? "alert" : "status"} className={feedback.error ? "text-body-error" : "text-body-secondary"}>{feedback.text}</p>}
   </section>;
 }

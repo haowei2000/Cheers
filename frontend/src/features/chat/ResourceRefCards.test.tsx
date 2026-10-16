@@ -13,13 +13,19 @@ describe("resource reference cards", () => {
     fileResourceStore(fs).publish("forms/report.a2ui.json", { path: "forms/report.a2ui.json", content: JSON.stringify(example), version: 4, is_dir: false });
     const open = vi.fn();
     const html = renderToStaticMarkup(<ResourceCardProvider fs={fs} channelId="channel" filesTick={0} openLocator={open} composeMessage={vi.fn()}>
-      <LocatorOpenContext.Provider value={open}><ResourceRefCards cards={[{ v: 1, kind: "resource_ref", uri: "cheers:desk/forms/report.a2ui.json", title: "Report" }]} /></LocatorOpenContext.Provider>
+      <LocatorOpenContext.Provider value={open}><ResourceRefCards cards={[{ v: 1, kind: "resource_ref", uri: "cheers:desk/forms/report.a2ui.json", title: "Report", description: "Complete this form to prepare your report." }]} /></LocatorOpenContext.Provider>
     </ResourceCardProvider>);
     expect(html).toContain('data-presentation="minimal"');
     expect(html).toContain("Report topic");
     expect(html).toContain('type="checkbox"');
-    expect(html).toContain("Version 4");
+    expect(html).not.toContain("Version 4");
+    expect(html).toContain("Enclosure 01");
+    expect(html).toContain("Details for Report");
+    expect(html).not.toContain("Complete this form to prepare your report."); // Supplementary help is revealed on demand.
     expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('title="Prepare report request"');
+    expect(html).toContain('data-button-content="icon"');
+    expect(html).not.toContain(">Request</");
     expect(html.indexOf("</a>")).toBeLessThan(html.indexOf("<input"));
     expect(html).not.toContain("Prepare a report"); // The declared summary excludes the full heading.
   });
@@ -45,7 +51,7 @@ describe("resource reference cards", () => {
       <LocatorOpenContext.Provider value={vi.fn()}><ResourceRefCards cards={cards} /></LocatorOpenContext.Provider>,
     );
     expect(markup).toContain("Notes");
-    expect(markup).toContain("cheers:desk/notes.md#L3");
+    expect(markup).toContain(encodeURIComponent("cheers:desk/notes.md#L3"));
     expect(markup).not.toContain("javascript:");
   });
   it("renders an isolated TSX canvas in the reply preview", () => {
@@ -64,6 +70,6 @@ export default function Calc() { return <div>Calculator</div>; }
     </ResourceCardProvider>);
     expect(html).toContain("<iframe");
     expect(html).toContain('title="REACT Canvas"');
-    expect(html).toContain("Version 1");
+    expect(html).not.toContain("Version 1");
   });
 });

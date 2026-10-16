@@ -234,6 +234,41 @@ export const BRIDGE_SCRIPT = `
     }
   });
 
+  let savedState = null;
+  const stateListeners = new Set();
+  const stateWaiters = [];
+  let restoringFields = false;
+  const fieldKey = (field) => field.id || field.name || field.getAttribute("data-cheers-state-key");
+  const draftFields = () => [...document.querySelectorAll("input,textarea,select")].filter(f =>
+    fieldKey(f) && !["password","file","hidden"].includes(f.type) && f.getAttribute("data-cheers-persist") !== "false");
+  document.addEventListener("input", () => {
+    if (restoringFields) return;
+    const fields = Object.fromEntries(draftFields().map(f => [fieldKey(f),
+      f.type === "checkbox" || f.type === "radio" ? f.checked : f.value]));
+    parent.postMessage({jsonrpc:"2.0",method:"view.fields.write",params:{data:fields}},"*");
+  },true);
+  window.addEventListener("message", event => {
+    if(event.source !== parent || event.data?.method !== "view.state.restore" || !event.data.params?.ready) return;
+    const data=event.data.params.data || {};
+    savedState=data.custom || {};
+    restoringFields=true;
+    for(const field of draftFields()) {
+      const key=fieldKey(field);
+      const value=Object.prototype.hasOwnProperty.call(data.fields??{},key)?data.fields[key]:undefined;
+      if(value === undefined) continue;
+      if(field.type === "checkbox" || field.type === "radio") {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"checked").set.call(field,value===true);
+      } else {
+        const prototype=field.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : field.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(prototype,"value").set.call(field,String(value));
+      }
+      field.dispatchEvent(new Event("input",{bubbles:true}));
+      field.dispatchEvent(new Event("change",{bubbles:true}));
+    }
+    restoringFields=false;
+    stateWaiters.splice(0).forEach(resolve=>resolve(savedState));
+    stateListeners.forEach(listener=>listener(savedState));
+  });
   // Global Bridge SDK for components
   const bridge = {
     submit: (formData, actionId = "submit") => {
@@ -242,6 +277,10 @@ export const BRIDGE_SCRIPT = `
     trigger: (actionId, payload = {}) => {
       parent.postMessage({ jsonrpc: "2.0", method: "action.trigger", params: { actionId, payload } }, "*");
     },
+    getState: () => savedState !== null ? Promise.resolve(savedState) : new Promise((resolve,reject) => { if(stateWaiters.length < 100)stateWaiters.push(resolve); else reject(new Error("Too many pending state requests")); }),
+    setState: (data) => parent.postMessage({jsonrpc:"2.0",method:"view.state.write",params:{data}},"*"),
+    subscribeState: (listener) => { if(stateListeners.size>=128)throw new Error("Too many state listeners"); stateListeners.add(listener); return () => stateListeners.delete(listener); },
+    execute: (actionId,payload = {}) => parent.postMessage({jsonrpc:"2.0",method:"cheers.execute",params:{actionId,payload}},"*"),
     request: (actionId, payload = {}) => {
       parent.postMessage({ jsonrpc: "2.0", method: "cheers.request", params: { actionId, payload } }, "*");
     }
