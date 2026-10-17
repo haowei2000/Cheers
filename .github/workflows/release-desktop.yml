@@ -61,7 +61,7 @@ jobs:
             apps/macos/src-tauri
             packages/cheers-acp-connector-rs
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.32.1
 
