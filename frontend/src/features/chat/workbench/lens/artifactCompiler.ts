@@ -1,4 +1,5 @@
 import * as Babel from "@babel/standalone";
+import type { PluginAPI, PluginObject } from "@babel/core";
 import { MAX_ARTIFACT_SOURCE_LENGTH } from "./artifactLimits";
 
 /** Compile code as data. The returned JavaScript is executed only inside the iframe. */
@@ -10,9 +11,9 @@ export function compileArtifactTsx(source: string): string {
     .replace(/^[ \t]*export[ \t]+default[ \t]+/gm, "window.__CHEERS_ROOT_COMPONENT__ = ")
     .replace(/^[ \t]*export[ \t]+(const|function|let|var|class)[ \t]+/gm, "$1 ");
 
-  const sourceLocationPlugin = ({ types }: { types: typeof Babel.packages.types }) => ({
+  const sourceLocationPlugin = ({ types }: PluginAPI): PluginObject => ({
     visitor: {
-      JSXOpeningElement(path: { node: import("@babel/types").JSXOpeningElement }) {
+      JSXOpeningElement(path) {
         const name = path.node.name;
         if (!types.isJSXIdentifier(name) || !/^[a-z]/.test(name.name)) return;
         if (path.node.attributes.some((attribute) => types.isJSXAttribute(attribute)
@@ -27,10 +28,13 @@ export function compileArtifactTsx(source: string): string {
     },
   });
 
-  return Babel.transform(sanitized, {
+  const result = Babel.transform(sanitized, {
     filename: "artifact.tsx",
     sourceType: "script",
-    presets: ["react", "typescript"],
+    // The isolated iframe provides React globals and has no module loader.
+    presets: [["react", { runtime: "classic" }], "typescript"],
     plugins: [sourceLocationPlugin],
-  }).code ?? "";
+  });
+  if (result?.code == null) throw new Error("Preview compilation did not produce JavaScript");
+  return result.code;
 }

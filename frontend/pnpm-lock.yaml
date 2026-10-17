@@ -120,18 +120,15 @@ importers:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
-      '@babel/types':
-        specifier: ^7.29.7
-        version: 7.29.7
+      '@babel/core':
+        specifier: ^8.0.7
+        version: 8.0.7
       '@eslint/js':
         specifier: ^9.39.5
         version: 9.39.5
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3
-      '@types/babel__standalone':
-        specifier: ^7.1.9
-        version: 7.1.9
       '@types/node':
         specifier: ^26.2.0
         version: 26.6.4
@@ -1734,9 +1731,6 @@ packages:
 
   '@types/babel__generator@7.27.0':
     resolution: {integrity: sha512-ufFd2Xi92OAVPYsy+P4n7/U7e68fex0+Ee8gSG9KX7eo084CWiQ4sdxktvdl0bOPupXtVJPY19zk6EwWqUQ8lg==}
-
-  '@types/babel__standalone@7.1.9':
-    resolution: {integrity: sha512-IcCNPLqpevUD7UpV8QB0uwQPOyoOKACFf0YtYWRHcmxcakaje4Q7dbG2+jMqxw/I8Zk0NHvEps66WwS7z/UaaA==}
 
   '@types/babel__template@7.4.4':
     resolution: {integrity: sha512-h/NUaSyG5EyxBIp8YRxo4RMe2/qQgvyowRwVMzhYhBCONbW8PUsg4lkFMrhgZhUe5z3L3MiLDuvyJ/CaPa2A8A==}
@@ -5652,15 +5646,6 @@ snapshots:
   '@types/babel__generator@7.27.0':
     dependencies:
       '@babel/types': 7.29.8
-
-  '@types/babel__standalone@7.1.9':
-    dependencies:
-      '@babel/parser': 7.29.7
-      '@babel/types': 7.29.7
-      '@types/babel__core': 7.20.5
-      '@types/babel__generator': 7.27.0
-      '@types/babel__template': 7.4.4
-      '@types/babel__traverse': 7.28.0
 
   '@types/babel__template@7.4.4':
     dependencies:
