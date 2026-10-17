@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO resource_executions(execution_id,user_id,channel_id,bot_id,host_id,invocation_id,request) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(user_id,invocation_id) DO NOTHING RETURNING execution_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "execution_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "96c9158868db1fce69ec8d01b870c4f42ad844c37aec5037cce845327fe7614d"
+}

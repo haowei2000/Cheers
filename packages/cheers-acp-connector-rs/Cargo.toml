@@ -7,7 +7,7 @@ members = [".", "bridge-protocol"]
 
 [package]
 name = "cce-acp-connector"
-version = "0.1.50"
+version = "0.1.52"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
@@ -16,6 +16,7 @@ name = "cce-acp-connector"
 path = "src/main.rs"
 
 [dependencies]
+portable-pty = "0.9"
 # Official ACP runtime and protocol types, consumed through the main crate's
 # schema re-export. The connector remains on stable wire protocol
 # v1; only the SDK's v1 `unstable_elicitation` API surface is enabled so Cheers

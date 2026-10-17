@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Bell, History, RefreshCw, Shield } from "lucide-react";
@@ -102,8 +103,8 @@ export default function ActivityPage() {
           </IconButton>
           <Bell className="h-4 w-4 text-accent-400" aria-hidden="true" />
           <div>
-            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">Activity</h1>
-            <p className="mt-1 hidden text-minimal text-content-muted sm:block">Approvals, invitations, and audit log</p>
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>Approvals, invitations, and audit log</>}>Activity</HelpLabel></h1>
+
           </div>
           <div className="ml-auto flex items-center gap-2">{headerActions}</div>
         </header>

@@ -94,17 +94,8 @@ export function ServerCard() {
   return (
     <SettingsCard
       title="Server"
-      description={
-        <>
-          <span className="block truncate">{base ?? "same origin"}</span>
-          {!isTauri() && (
-            <span className="mt-2 block">
-              Web clients use this origin. Switch servers from the desktop app or by
-              opening a different gateway URL.
-            </span>
-          )}
-        </>
-      }
+      status={base ?? "same origin"}
+      description={!isTauri() ? "Web clients use this origin. Switch servers from the desktop app or by opening a different gateway URL." : undefined}
       actions={isTauri() && !changing ? (
         <ActionButton action="switch" context="settings"
           accessibleLabel="Choose another server"
@@ -125,6 +116,7 @@ export function ServerCard() {
               setCandidate(event.target.value);
               setCheckedBase(null);
               setError(null);
+
             }}
             onKeyDown={(event) => event.key === "Enter" && !checking && void checkServer()}
             placeholder="https://example.com"
@@ -259,12 +251,13 @@ export function AppUpdateCard() {
   return (
     <SettingsCard
       title="App updates"
-      description={
+      description="Check GitHub for a newer signed desktop build."
+      status={
         <>
           {currentVersion ? `Installed ${currentVersion}. ` : null}
           {update
             ? `Version ${update.version} is available — installing restarts Cheers.`
-            : "Check GitHub for a newer signed desktop build."}
+            : null}
         </>
       }
       actions={
@@ -343,10 +336,10 @@ export function PushNotificationsCard() {
   return (
     <SettingsCardSection
       title="Push notifications"
+      status={status === "denied" ? "Blocked in your browser’s site settings." : undefined}
       description={
         <>
           Approval requests and @mentions reach this device even when Cheers isn't open.
-          {status === "denied" && " Currently blocked in your browser's site settings."}
         </>
       }
       icon={Bell}

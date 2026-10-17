@@ -59,6 +59,7 @@ describe("Desktop window capability", () => {
     const requiredCommands = [
       "desktop_password_login",
       "desktop_verify_factor",
+      "desktop_verify_passkey_factor",
       "desktop_login_flow_passkey_verify",
       "desktop_login_flow_password",
       "desktop_login_flow_code",

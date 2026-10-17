@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest";
 import { ActionButton } from "./action-button";
 
 describe("ActionButton", () => {
+  it.each(["request", "copy", "open", "refresh", "retry"] as const)("keeps card %s icon-only with an accessible name and tooltip", (action) => {
+    const markup = renderToStaticMarkup(<ActionButton action={action} context="resourceCard" controlSize="compact" accessibleLabel={`${action} report`} />);
+    expect(markup).toContain('data-button-content="icon"');
+    expect(markup).toContain(`aria-label="${action} report"`);
+    expect(markup).toContain(`title="${action} report"`);
+    expect(markup).not.toContain('data-button-slot="label"');
+  });
   it("keeps full-form save visible and primary", () => {
     const markup = renderToStaticMarkup(
       <ActionButton action="save" context="form" accessibleLabel="Save profile" />,

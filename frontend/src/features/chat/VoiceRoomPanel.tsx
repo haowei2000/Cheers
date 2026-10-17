@@ -1,3 +1,4 @@
+import { Tip } from "@/components/ui/tip";
 import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -397,10 +398,8 @@ export function VoiceRoomPanel({
 
         {consentRequired && connected && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-elevation-edge/40 bg-control/40 px-3 py-2 text-compact">
-            <p className="min-w-0 flex-1 text-content-secondary">
-              Live captions send final spoken text to this channel; audio is not recorded.
-            </p>
-            <UiButton action="accept" variant="primary"
+
+            <Tip content={<>Live captions send final spoken text to this channel; audio is not recorded.</>}><UiButton action="accept" variant="primary"
               type="button"
               disabled={consenting}
               onClick={() => void grantConsent()}
@@ -408,7 +407,7 @@ export function VoiceRoomPanel({
             >
               {consenting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
               Accept &amp; speak
-            </UiButton>
+            </UiButton></Tip>
             <UiButton action="cancel" variant="secondary"
               type="button"
               disabled={consenting}

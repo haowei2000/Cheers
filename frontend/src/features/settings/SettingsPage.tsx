@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -125,8 +126,8 @@ export default function SettingsPage() {
           </IconButton>
           <Sliders className="h-4 w-4 text-accent-400" aria-hidden="true" />
           <div>
-            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">Settings</h1>
-            <p className="mt-1 hidden text-minimal text-content-muted sm:block">Preferences and workspace configuration</p>
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>Preferences and workspace configuration</>}>Settings</HelpLabel></h1>
+
           </div>
         </header>
       </RouteChromeHeader>

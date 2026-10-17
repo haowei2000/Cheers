@@ -247,6 +247,21 @@ pub async fn send_message(
     if body.content.trim().is_empty() {
         return Err(AppError::BadRequest("content cannot be empty".into()));
     }
+    if let Some(event) = body
+        .context_bundle
+        .as_ref()
+        .and_then(|bundle| bundle.get("interaction"))
+    {
+        cheers_mcp_server::interactive::validate_interaction(event)
+            .map_err(|error| AppError::BadRequest(error.into()))?;
+        crate::resource::authorize_channel_write(
+            &state.db,
+            &crate::resource::Principal::user(user_id),
+            channel_id,
+        )
+        .await
+        .map_err(|(_, message)| AppError::Forbidden(message))?;
+    }
 
     // Block enforcement on an *existing* DM: create_dm gates opening a DM, but a
     // block placed afterwards must also stop further sends. If this is a 1:1 DM
@@ -283,24 +298,42 @@ pub async fn send_message(
     };
 
     let mention_ids_for_push = body.mention_ids.clone();
+    let params = CreateMessageParams {
+        user_id,
+        channel_id,
+        content: body.content,
+        msg_type: body.msg_type,
+        reply_to_msg_id: body.reply_to_msg_id,
+        file_ids: body.file_ids,
+        mention_ids: body.mention_ids,
+        mention_names: body.mention_names,
+        session_id: body.session_id,
+        context_bundle,
+        msg_id: None,
+    };
+    if let Some(event) = params
+        .context_bundle
+        .as_ref()
+        .and_then(|bundle| bundle.get("interaction"))
+    {
+        let replay = match messages::interactive_request_key(&params)? {
+            Some(key) => key
+                .replay(&state.db)
+                .await
+                .map_err(|(_, message)| AppError::Conflict(message))?
+                .is_some(),
+            None => false,
+        };
+        if !replay {
+            validate_resource_interaction(&state, user_id, channel_id, &params, event).await?;
+        }
+    }
     let dto = messages::create_message(
         &state.db,
         &state.fanout,
         &state.stream_registry,
         &state.bot_locator,
-        CreateMessageParams {
-            user_id,
-            channel_id,
-            content: body.content,
-            msg_type: body.msg_type,
-            reply_to_msg_id: body.reply_to_msg_id,
-            file_ids: body.file_ids,
-            mention_ids: body.mention_ids,
-            mention_names: body.mention_names,
-            session_id: body.session_id,
-            context_bundle,
-            msg_id: None,
-        },
+        params,
     )
     .await?;
 
@@ -340,6 +373,96 @@ pub async fn send_message(
     Ok((StatusCode::CREATED, Json(dto)))
 }
 
+async fn validate_resource_interaction(
+    state: &AppState,
+    user_id: Uuid,
+    channel_id: Uuid,
+    request: &CreateMessageParams,
+    event: &serde_json::Value,
+) -> Result<(), AppError> {
+    cheers_mcp_server::interactive::validate_interaction(event)
+        .map_err(|error| AppError::BadRequest(error.into()))?;
+    if request.msg_type.as_deref().unwrap_or("text") != "text" {
+        return Err(AppError::BadRequest(
+            "resource requests must be text messages".into(),
+        ));
+    }
+    let bot_id = Uuid::parse_str(event["botId"].as_str().unwrap())
+        .map_err(|_| AppError::BadRequest("invalid target bot".into()))?;
+    if request.mention_ids != vec![bot_id]
+        || !request.mention_names.is_empty()
+        || request.session_id.is_some()
+    {
+        return Err(AppError::BadRequest(
+            "resource requests must target exactly the declared bot".into(),
+        ));
+    }
+    crate::resource::authorize_channel_write(
+        &state.db,
+        &crate::resource::Principal::bot(bot_id),
+        channel_id,
+    )
+    .await
+    .map_err(|(_, message)| AppError::Forbidden(message))?;
+    let uri = event["sourceUri"].as_str().unwrap_or("");
+    let principal = crate::resource::Principal::user(user_id);
+    let resolved =
+        crate::api::resources::desk_resource(&state.db, &principal, uri, Some(channel_id)).await?;
+    if resolved.channel_id != channel_id.to_string()
+        || resolved.version != resolved.latest_version
+        || resolved.deleted
+    {
+        return Err(AppError::Conflict(
+            "The source changed or belongs to another channel.".into(),
+        ));
+    }
+    let path = resolved.path;
+    let source = crate::resource::fs::handle_read(
+        &state.db,
+        &principal,
+        &serde_json::json!({"channel_id":channel_id,"path":path}),
+    )
+    .await
+    .map_err(|(_, message)| AppError::BadRequest(message))?;
+    if source["version"] != event["sourceVersion"] {
+        return Err(AppError::Conflict(
+            "The interactive resource changed. Reload it before submitting.".into(),
+        ));
+    }
+    let content = source["content"].as_str().unwrap_or("");
+    let actions = cheers_mcp_server::interactive::extract_action_declarations(
+        &path,
+        content,
+        source.get("data"),
+    )
+    .map_err(|error| AppError::BadRequest(error.into()))?;
+
+    let action_id = event["actionId"].as_str().unwrap();
+    let action = actions
+        .iter()
+        .find(|a| {
+            a.action_id == action_id
+                && a.surface_id.as_deref() == event["surfaceId"].as_str()
+                && a.component_id.as_deref() == event["componentId"].as_str()
+        })
+        .ok_or_else(|| AppError::BadRequest("source action not found".into()))?;
+
+    if action.name != "cheers.request" || action.bot_id.as_deref() != event["botId"].as_str() {
+        return Err(AppError::BadRequest(
+            "interaction does not match the source action".into(),
+        ));
+    }
+
+    let supplied = event["input"]
+        .as_object()
+        .ok_or_else(|| AppError::BadRequest("interaction input must be an object".into()))?;
+    cheers_mcp_server::interactive::validate_action_input(&action.payload, supplied).map_err(
+        |_| AppError::BadRequest("interaction inputs do not match the source payload".into()),
+    )?;
+
+    Ok(())
+}
+
 /// Drop every `workspace.file` item whose owning bot the caller isn't granted
 /// `workspace/read` on — the same gate that guarded browsing it. A snapshot the
 /// caller couldn't read (or fabricated) never rides along. Non-workspace items
@@ -372,7 +495,7 @@ async fn authorize_workspace_items(
         }
         kept.push(item);
     }
-    if kept.is_empty() {
+    if kept.is_empty() && bundle.get("interaction").is_none() {
         return None;
     }
     bundle

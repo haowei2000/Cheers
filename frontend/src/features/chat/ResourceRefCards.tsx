@@ -1,6 +1,7 @@
 import { useContext } from "react";
-import { ArrowUpRight, Link2 } from "lucide-react";
+import { ResourceEnclosure } from "./ResourceEnclosure";
 import { LocatorOpenContext, canOpenLocator } from "./messageLinks";
+import { ResourceInlinePreview } from "./ResourceInlinePreview";
 
 export interface ResourceRefCard {
   v: 1;
@@ -35,24 +36,11 @@ export function ResourceRefCards({ cards }: { cards: ResourceRefCard[] }) {
   const openLocator = useContext(LocatorOpenContext);
   if (!cards.length || !openLocator) return null;
   return (
-    <div className="mt-2 flex max-w-xl flex-col gap-2" aria-label="Linked resources">
-      {cards.map((card) => (
-        <a
-          key={card.uri}
-          href={`#workspace-ref-${encodeURIComponent(card.uri)}`}
-          className="group flex min-h-11 min-w-0 items-center gap-3 rounded-sm bg-control px-3 py-2 font-utility text-content-primary transition-colors hover:bg-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
-          onClick={(event) => { event.preventDefault(); openLocator(card.uri); }}
-          aria-label={`Open ${card.title || card.uri}`}
-          title={card.uri}
-        >
-          <Link2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-regular font-semibold">{card.title || card.uri}</span>
-            {card.description && <span className="block truncate text-compact text-content-secondary">{card.description}</span>}
-            {card.title && <span className="block truncate font-code text-compact text-content-muted">{card.uri}</span>}
-          </span>
-          <ArrowUpRight className="h-4 w-4 shrink-0 text-content-muted group-hover:text-content-primary" aria-hidden="true" />
-        </a>
+    <div className="resource-enclosures my-4 flex min-w-0 max-w-xl flex-col gap-4" aria-label="Linked resources">
+      {cards.map((card,index) => (
+        <ResourceEnclosure key={card.uri} uri={card.uri} title={card.title} description={card.description} number={index+1}>
+          <ResourceInlinePreview uri={card.uri} />
+        </ResourceEnclosure>
       ))}
     </div>
   );

@@ -20,6 +20,8 @@ import { LensPanel, LensView } from "../lens/LensPanel";
 import { SandboxRenderer } from "../sandbox/SandboxRenderer";
 import type { RendererDesc } from "./registry";
 import { EXTENSION_CHANNEL_RESOURCES } from "../extensions/package";
+import toast from "react-hot-toast";
+import { createResourceInteractionDispatcher } from "../nativeResource";
 
 const CodeEditor = lazy(() => import("../CodeEditor").then((module) => ({ default: module.CodeEditor })));
 
@@ -222,6 +224,22 @@ export function RendererHost({
 }) {
   const [retryKey, setRetryKey] = useState(0);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const dispatchInteraction = useMemo(() => createResourceInteractionDispatcher({
+    channelId: ctx.channelId, fs: ctx.fs,
+    openLocator: ctx.openLocator,
+    composeMessage: ctx.composeMessage,
+    onFormSubmit,
+    requestInteraction: ctx.requestInteraction,
+  }), [ctx.openLocator, ctx.composeMessage, ctx.requestInteraction, ctx.channelId, ctx.fs, onFormSubmit]);
+  const openResource = async (uri: string) => {
+    const result = await dispatchInteraction({ kind: "open", uri });
+    if (!result.ok) toast.error(result.error);
+  };
+  const submitForm = (data: { actionId: string; formData: Record<string, unknown> }) => {
+    void dispatchInteraction({ kind: "compose", ...data }).then((result) => {
+      if (!result.ok) toast.error(result.error);
+    });
+  };
 
   const handleRetry = useCallback(() => {
     setRuntimeError(null);
@@ -306,11 +324,11 @@ export function RendererHost({
           path={path}
           channelId={ctx.channelId}
           readChannel={readChannel}
-          onOpen={ctx.openLocator}
+          onOpen={openResource}
           onCompose={ctx.composeMessage}
           onFailure={(reason) => handleFailure(renderer.id, reason)}
           onAnnotate={annotations?.onAnnotate}
-          onFormSubmit={onFormSubmit}
+          onFormSubmit={submitForm}
           inspectorActive={inspectorActive}
           active={ctx.active}
         />
@@ -346,9 +364,10 @@ export function RendererHost({
           activeAnnotationId={activeAnnotationId}
           onSelectAnnotation={onSelectAnnotation}
           onRevealSource={onRevealSource}
-          openLocator={ctx.openLocator}
+          openLocator={openResource}
           inspectorActive={inspectorActive}
-          onFormSubmit={onFormSubmit}
+          onFormSubmit={submitForm}
+          onInteraction={dispatchInteraction}
         />
       ) : (
         <LensPanel
@@ -359,9 +378,10 @@ export function RendererHost({
           config={config}
           channelId={ctx.channelId}
           reloadTick={ctx.filesTick}
-          openLocator={ctx.openLocator}
+          openLocator={openResource}
           inspectorActive={inspectorActive}
-          onFormSubmit={onFormSubmit}
+          onFormSubmit={submitForm}
+          onInteraction={dispatchInteraction}
         />
       )}
     </RendererErrorBoundary>

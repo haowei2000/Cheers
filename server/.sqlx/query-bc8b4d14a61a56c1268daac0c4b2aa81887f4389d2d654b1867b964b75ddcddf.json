@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT path, content FROM context_files WHERE channel_id=$1 AND is_dir=FALSE\n         AND (path=$2 OR left(path, char_length($2)+1)=$2 || '/') FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "path",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "content",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bc8b4d14a61a56c1268daac0c4b2aa81887f4389d2d654b1867b964b75ddcddf"
+}

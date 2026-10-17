@@ -21,7 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.cheers.android.ui.components.CheersIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cheers.android.di.AppContainer
+import com.cheers.android.ui.components.TextHelp
 import com.cheers.android.ui.components.CheersAvatar
 import com.cheers.android.ui.components.SectionHeader
 import com.cheers.android.ui.theme.LocalCheersColors
@@ -57,7 +58,7 @@ fun SettingsScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    CheersIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -145,18 +146,14 @@ fun SettingsScreen(
                         )
                     }
                     Spacer(Modifier.width(10.dp))
+                    TextHelp("Signs you out on this device and revokes your sessions on the server.") {
                     Text(
                         text = "Sign out",
                         style = MaterialTheme.typography.labelLarge,
                         color = cc.danger,
                     )
+                    }
                 }
-                Text(
-                    text = "Signs you out on this device and revokes your sessions on the server.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = cc.textMuted,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
             }
         }
     }

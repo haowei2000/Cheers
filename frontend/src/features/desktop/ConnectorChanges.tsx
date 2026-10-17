@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { ItemGroup, ItemList, WorkbenchItem } from "@/components/ui/item";
 import { PresenceDot } from "@/components/ui/presence-dot";
+import { HelpLabel } from "@/components/ui/help-text";
 import { invokeDesktop } from "@/lib/desktop";
 import {
   connectorWatchStart,
@@ -27,7 +28,7 @@ interface Opener {
 /** Colorize a unified diff into per-line spans (no external diff lib). */
 function DiffView({ diff }: { diff: string }) {
   if (!diff.trim()) {
-    return <p className="text-compact text-content-muted px-2 py-1">No textual diff (binary or unchanged).</p>;
+    return <p className="text-compact text-content-muted px-2 py-1"><HelpLabel help="The file is binary or its text is unchanged.">No textual diff.</HelpLabel></p>;
   }
   return (
     <pre className="text-compact bg-zinc-950 rounded-sm p-2 overflow-auto max-h-72 leading-reading">
@@ -146,7 +147,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
   if (!git.is_repo) {
     return (
       <p className="text-compact text-content-muted">
-        This workspace isn't a git repository — no changes to track.
+        <HelpLabel help="Initialize or open a Git repository to track changes.">Not a Git repository.</HelpLabel>
       </p>
     );
   }

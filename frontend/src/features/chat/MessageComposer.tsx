@@ -979,7 +979,7 @@ function MessageComposerImpl({
           </div>
         )}
         {/* design-system-native: composer-editor */}
-        <textarea
+        <textarea title="Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands."
           ref={textareaRef}
           aria-label="Message"
           rows={1}
@@ -1126,9 +1126,7 @@ function MessageComposerImpl({
           )}
         </div>
       </div>
-      <p className="sr-only">
-        Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands.
-      </p>
+
     </div>
   );
 }

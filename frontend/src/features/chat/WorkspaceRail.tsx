@@ -11,6 +11,8 @@ import { EditorialIcon } from "@/components/ui/editorial-icons";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
 import { disablePush } from "@/lib/push";
+import { logout as logoutApi } from "@/api/auth";
+import { messageOf } from "@/lib/notify";
 import { NewWorkspaceDialog } from "./NewWorkspaceDialog";
 import { NotificationCenter } from "./NotificationCenter";
 import type { Workspace } from "@/types";
@@ -104,6 +106,12 @@ export function WorkspaceRail({
     // Drop the push subscription while the auth token is still valid — a
     // signed-out browser must not keep receiving lock-screen notifications.
     await disablePush().catch(() => {});
+    try {
+      await logoutApi();
+    } catch (error) {
+      toast.error(messageOf(error));
+      return;
+    }
     logout();
     toast.success("Logged out");
     navigate("/login", { replace: true });

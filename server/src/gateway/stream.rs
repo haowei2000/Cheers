@@ -339,6 +339,29 @@ pub async fn handle_done(
             .map_err(crate::gateway::log_db_err(
                 "stream.done: allocate channel_seq",
             ))?;
+    let metadata = sqlx::query!(
+        "SELECT content_data FROM messages WHERE msg_id = $1 AND is_partial = TRUE FOR UPDATE",
+        msg_id.to_string(),
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(crate::gateway::log_db_err(
+        "stream.done: lock card metadata",
+    ))?;
+    if let Some(data) = metadata.and_then(|row| row.content_data) {
+        let finalized =
+            crate::resource::messages::finalize_card_metadata(data, !content.trim().is_empty());
+        sqlx::query!(
+            "UPDATE messages SET content_data = $2 WHERE msg_id = $1",
+            msg_id.to_string(),
+            finalized,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(crate::gateway::log_db_err(
+            "stream.done: publish card metadata",
+        ))?;
+    }
     let details = sqlx::query!(
         "UPDATE messages
          SET channel_seq = $1,
