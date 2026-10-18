@@ -1,5 +1,7 @@
 import {
   Component,
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -18,9 +20,10 @@ import { LensPanel, LensView } from "../lens/LensPanel";
 import { SandboxRenderer } from "../sandbox/SandboxRenderer";
 import type { RendererDesc } from "./registry";
 import { EXTENSION_CHANNEL_RESOURCES } from "../extensions/package";
-import { CodeEditor } from "../CodeEditor";
 import toast from "react-hot-toast";
 import { createResourceInteractionDispatcher } from "../nativeResource";
+
+const CodeEditor = lazy(() => import("../CodeEditor").then((module) => ({ default: module.CodeEditor })));
 
 // The channel.* read verbs a renderer extension may call (host API). READ-ONLY and low/medium
 // sensitivity. NOTE: a sandboxed iframe is isolated for tokens/DOM but NOT for network — a
@@ -159,14 +162,16 @@ export function RendererFallbackView({
       </div>
       <div className="flex-1 min-h-0">
         {session ? (
-          <CodeEditor
-            value={session.text}
-            onChange={session.editText}
-            path={path}
-            notes={fileNotes}
-            activeAnnotationId={activeAnnotationId}
-            onSelectAnnotation={onSelectAnnotation}
-          />
+          <Suspense fallback={<div className="h-full" aria-busy="true" />}>
+            <CodeEditor
+              value={session.text}
+              onChange={session.editText}
+              path={path}
+              notes={fileNotes}
+              activeAnnotationId={activeAnnotationId}
+              onSelectAnnotation={onSelectAnnotation}
+            />
+          </Suspense>
         ) : (
           <div className="p-4 text-content-muted text-compact">
             Source editor unavailable for standalone view.

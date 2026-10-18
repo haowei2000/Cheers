@@ -460,6 +460,16 @@ export function RemoteWorkspaceDialog({
   const liveRef = useRef({ cwd, file, dirty, leftView, diff, git, treeRoot });
   liveRef.current = { cwd, file, dirty, leftView, diff, git, treeRoot };
 
+  // Every foreground action that replaces the editor's file or browse context uses
+  // the same guard. Read from the live mirror so callbacks never rely on stale state.
+  const confirmDiscardDirtyBuffer = useCallback((destination: string) => {
+    const current = liveRef.current;
+    if (!current.dirty || !current.file) return true;
+    return window.confirm(
+      `Discard unsaved changes to ${current.file.filename} before ${destination}?`
+    );
+  }, []);
+
   useEffect(() => {
     let alive = true;
     listWorkspaceBots(channelId)
@@ -487,9 +497,10 @@ export function RemoteWorkspaceDialog({
   // cleaned error message on failure (null on success) so a caller that OWNS
   // error semantics (manual refreshAll) can still surface a swallowed failure.
   const loadDir = useCallback(
-    async (path: string, opts?: { background?: boolean }): Promise<string | null> => {
+    async (path: string, opts?: { background?: boolean; confirmed?: boolean }): Promise<string | null> => {
       if (!botId) return null;
       const bg = opts?.background === true;
+      if (!bg && !opts?.confirmed && !confirmDiscardDirtyBuffer("opening this folder")) return null;
       // Foreground navigation opens a new epoch (superseding everything in flight);
       // a background re-pull rides the current one and yields to any newer action.
       const ep = bg ? epochRef.current : ++epochRef.current;
@@ -534,7 +545,7 @@ export function RemoteWorkspaceDialog({
         if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
-    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch, noteConnHealth]
+    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch, noteConnHealth, confirmDiscardDirtyBuffer]
   );
 
   // `background` = a live-refresh of an already-open CLEAN file: swap the content
@@ -544,6 +555,12 @@ export function RemoteWorkspaceDialog({
     async (path: string, opts?: { background?: boolean }) => {
       if (!botId) return;
       const bg = opts?.background === true;
+      if (!bg && liveRef.current.dirty && liveRef.current.file?.path === path) return;
+      if (
+        !bg &&
+        liveRef.current.file?.path !== path &&
+        !confirmDiscardDirtyBuffer("opening another file")
+      ) return;
       const ep = bg ? epochRef.current : ++epochRef.current;
       if (!bg) {
         setBusy(true);
@@ -578,7 +595,7 @@ export function RemoteWorkspaceDialog({
             }
           } else {
             // A directory clicked via deep-link: fall back to listing it.
-            await loadDir(path, opts);
+            await loadDir(path, { background: bg, confirmed: true });
           }
         } else if (!bg) {
           setErr(cleanErr(e));
@@ -587,7 +604,7 @@ export function RemoteWorkspaceDialog({
         if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
-    [channelId, botId, loadDir, rootParam, effectiveSessionId]
+    [channelId, botId, loadDir, rootParam, effectiveSessionId, confirmDiscardDirtyBuffer]
   );
 
   // Fetch git state for the *current directory's* repo. Supplementary: a non-repo
@@ -969,6 +986,7 @@ export function RemoteWorkspaceDialog({
   // (the current cwd may not exist under the other root set). Nulling `entries`
   // re-triggers the mount effect above, which re-lists the root with the new scope.
   const toggleScoped = useCallback(() => {
+    if (!confirmDiscardDirtyBuffer("changing the workspace scope")) return;
     setScoped((s) => !s);
     setEntries(null);
     setTreeRoot(null);
@@ -982,12 +1000,13 @@ export function RemoteWorkspaceDialog({
     setLogDone(false);
     setRoot(null); // the other scope has a different effective root set
     setRootSessionId(null);
-  }, []);
+  }, [confirmDiscardDirtyBuffer]);
 
   // Switch the browse to another root option (null = Auto): reset like a scope flip. A
   // session-workdir option also scopes the browse to its owning session (via
   // rootSessionId → effectiveSessionId) so the connector accepts the workdir as a root.
   const selectRoot = useCallback((opt: RootOption | null) => {
+    if (!confirmDiscardDirtyBuffer("changing the workspace root")) return;
     setRoot(opt?.path ?? null);
     setRootSessionId(opt?.sessionId ?? null);
     setEntries(null);
@@ -1000,7 +1019,7 @@ export function RemoteWorkspaceDialog({
     setDiff(null);
     setLog(null);
     setLogDone(false);
-  }, []);
+  }, [confirmDiscardDirtyBuffer]);
 
   // Live-push: the "workspace" board ticked → an agent finished a turn and may have
   // changed files on its machine. Debounce-refetch (full: a tick carries no paths);
@@ -1281,6 +1300,8 @@ export function RemoteWorkspaceDialog({
           disabled: !bot.online || bot.can_read === false,
         }))}
         onSelect={(value) => {
+          if (value === (botId ?? "")) return;
+          if (!confirmDiscardDirtyBuffer("switching bots")) return;
           setBotId(value || null);
           setEntries(null);
           setCwd("");
@@ -1386,12 +1407,7 @@ export function RemoteWorkspaceDialog({
       // Guard against silently discarding edits to a file on the bot's machine:
       // a dirty buffer must confirm before the panel closes (X, backdrop, Esc).
       onClose={() => {
-        if (
-          dirty &&
-          file &&
-          !window.confirm(`Discard unsaved changes to ${file.filename}?`)
-        )
-          return;
+        if (!confirmDiscardDirtyBuffer("closing the workspace")) return;
         onClose();
       }}
       storageKey="cheers.float.workspace"

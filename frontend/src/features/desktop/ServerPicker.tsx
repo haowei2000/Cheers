@@ -46,7 +46,7 @@ export function ServerPicker() {
       <div className="w-full max-w-sm bg-zinc-900 rounded-sm p-6">
         <p className="text-regular font-medium text-content-secondary flex items-center gap-2"><HelpLabel help={<>
           The address of the Cheers deployment this app should talk to. You can
-          change it later in Settings → Account.
+          change it later in Settings → General.
         </>}>
           <Server className="w-4 h-4 text-accent-400" /> Connect to a Cheers server
         </HelpLabel></p>
