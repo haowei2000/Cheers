@@ -1023,3 +1023,13 @@ button:not(:disabled) {
 .public-edition input:focus {
   --tw-ring-color: rgb(var(--tone-zinc-300));
 }
+
+/* Specialized message enclosures use paper, a structural top rule and an inset. */
+.resource-enclosures { margin-inline-start: 1rem; }
+.resource-enclosure { border-block-start: 1px solid rgb(var(--text-muted) / 0.3); }
+@media (max-width: 767px) {
+  .resource-enclosures { margin-inline-start: 0; }
+}
+@media (prefers-contrast: more) {
+  .resource-enclosure { border-block-start-color: rgb(var(--text-secondary)); }
+}

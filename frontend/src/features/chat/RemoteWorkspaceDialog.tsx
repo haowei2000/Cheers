@@ -1,3 +1,4 @@
+import { RemoteTerminal } from "./RemoteTerminal";
 import { Button as UiButton } from "@/components/ui/button";
 import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { cn } from "@/lib/cn";
@@ -5,6 +6,7 @@ import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropd
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel, FloatingPanelContextPortal } from "@/components/ui/floating-panel";
 import { EmptyState } from "@/components/ui/empty-state";
+import { HelpLabel } from "@/components/ui/help-text";
 import { PresenceDot } from "@/components/ui/presence-dot";
 import { FsTreeIcon } from "./FsTreeIcon";
 import { LocalOpen } from "@/features/desktop/LocalOpen";
@@ -18,6 +20,7 @@ import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
   Bot,
+  Terminal as TerminalIcon,
   File,
   FolderTree,
   Download,
@@ -300,6 +303,7 @@ export function RemoteWorkspaceDialog({
   } | null;
 }) {
   const [bots, setBots] = useState<WorkspaceBot[] | null>(null);
+  const [terminalOpen,setTerminalOpen]=useState(false);
   const [botId, setBotId] = useState<string | null>(initialBotId ?? null);
   const [cwd, setCwd] = useState("");
   const [entries, setEntries] = useState<WorkspaceEntry[] | null>(null);
@@ -456,6 +460,16 @@ export function RemoteWorkspaceDialog({
   const liveRef = useRef({ cwd, file, dirty, leftView, diff, git, treeRoot });
   liveRef.current = { cwd, file, dirty, leftView, diff, git, treeRoot };
 
+  // Every foreground action that replaces the editor's file or browse context uses
+  // the same guard. Read from the live mirror so callbacks never rely on stale state.
+  const confirmDiscardDirtyBuffer = useCallback((destination: string) => {
+    const current = liveRef.current;
+    if (!current.dirty || !current.file) return true;
+    return window.confirm(
+      `Discard unsaved changes to ${current.file.filename} before ${destination}?`
+    );
+  }, []);
+
   useEffect(() => {
     let alive = true;
     listWorkspaceBots(channelId)
@@ -483,9 +497,10 @@ export function RemoteWorkspaceDialog({
   // cleaned error message on failure (null on success) so a caller that OWNS
   // error semantics (manual refreshAll) can still surface a swallowed failure.
   const loadDir = useCallback(
-    async (path: string, opts?: { background?: boolean }): Promise<string | null> => {
+    async (path: string, opts?: { background?: boolean; confirmed?: boolean }): Promise<string | null> => {
       if (!botId) return null;
       const bg = opts?.background === true;
+      if (!bg && !opts?.confirmed && !confirmDiscardDirtyBuffer("opening this folder")) return null;
       // Foreground navigation opens a new epoch (superseding everything in flight);
       // a background re-pull rides the current one and yields to any newer action.
       const ep = bg ? epochRef.current : ++epochRef.current;
@@ -530,7 +545,7 @@ export function RemoteWorkspaceDialog({
         if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
-    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch, noteConnHealth]
+    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch, noteConnHealth, confirmDiscardDirtyBuffer]
   );
 
   // `background` = a live-refresh of an already-open CLEAN file: swap the content
@@ -540,6 +555,12 @@ export function RemoteWorkspaceDialog({
     async (path: string, opts?: { background?: boolean }) => {
       if (!botId) return;
       const bg = opts?.background === true;
+      if (!bg && liveRef.current.dirty && liveRef.current.file?.path === path) return;
+      if (
+        !bg &&
+        liveRef.current.file?.path !== path &&
+        !confirmDiscardDirtyBuffer("opening another file")
+      ) return;
       const ep = bg ? epochRef.current : ++epochRef.current;
       if (!bg) {
         setBusy(true);
@@ -574,7 +595,7 @@ export function RemoteWorkspaceDialog({
             }
           } else {
             // A directory clicked via deep-link: fall back to listing it.
-            await loadDir(path, opts);
+            await loadDir(path, { background: bg, confirmed: true });
           }
         } else if (!bg) {
           setErr(cleanErr(e));
@@ -583,7 +604,7 @@ export function RemoteWorkspaceDialog({
         if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
-    [channelId, botId, loadDir, rootParam, effectiveSessionId]
+    [channelId, botId, loadDir, rootParam, effectiveSessionId, confirmDiscardDirtyBuffer]
   );
 
   // Fetch git state for the *current directory's* repo. Supplementary: a non-repo
@@ -965,6 +986,7 @@ export function RemoteWorkspaceDialog({
   // (the current cwd may not exist under the other root set). Nulling `entries`
   // re-triggers the mount effect above, which re-lists the root with the new scope.
   const toggleScoped = useCallback(() => {
+    if (!confirmDiscardDirtyBuffer("changing the workspace scope")) return;
     setScoped((s) => !s);
     setEntries(null);
     setTreeRoot(null);
@@ -978,12 +1000,13 @@ export function RemoteWorkspaceDialog({
     setLogDone(false);
     setRoot(null); // the other scope has a different effective root set
     setRootSessionId(null);
-  }, []);
+  }, [confirmDiscardDirtyBuffer]);
 
   // Switch the browse to another root option (null = Auto): reset like a scope flip. A
   // session-workdir option also scopes the browse to its owning session (via
   // rootSessionId → effectiveSessionId) so the connector accepts the workdir as a root.
   const selectRoot = useCallback((opt: RootOption | null) => {
+    if (!confirmDiscardDirtyBuffer("changing the workspace root")) return;
     setRoot(opt?.path ?? null);
     setRootSessionId(opt?.sessionId ?? null);
     setEntries(null);
@@ -996,7 +1019,7 @@ export function RemoteWorkspaceDialog({
     setDiff(null);
     setLog(null);
     setLogDone(false);
-  }, []);
+  }, [confirmDiscardDirtyBuffer]);
 
   // Live-push: the "workspace" board ticked → an agent finished a turn and may have
   // changed files on its machine. Debounce-refetch (full: a tick carries no paths);
@@ -1277,6 +1300,8 @@ export function RemoteWorkspaceDialog({
           disabled: !bot.online || bot.can_read === false,
         }))}
         onSelect={(value) => {
+          if (value === (botId ?? "")) return;
+          if (!confirmDiscardDirtyBuffer("switching bots")) return;
           setBotId(value || null);
           setEntries(null);
           setCwd("");
@@ -1382,12 +1407,7 @@ export function RemoteWorkspaceDialog({
       // Guard against silently discarding edits to a file on the bot's machine:
       // a dirty buffer must confirm before the panel closes (X, backdrop, Esc).
       onClose={() => {
-        if (
-          dirty &&
-          file &&
-          !window.confirm(`Discard unsaved changes to ${file.filename}?`)
-        )
-          return;
+        if (!confirmDiscardDirtyBuffer("closing the workspace")) return;
         onClose();
       }}
       storageKey="cheers.float.workspace"
@@ -1409,7 +1429,7 @@ export function RemoteWorkspaceDialog({
           { id: "history", label: "History", icon: History, selected: leftView === "history", onSelect: () => selectPrimaryView("history") },
         ],
       } : undefined}
-      panelActions={[{
+      panelActions={[...(botId?[{id:"terminal",label:terminalOpen?"Return to files":"Open remote terminal",icon:TerminalIcon,priority:"secondary" as const,onSelect:()=>setTerminalOpen(open=>!open),control:<UiButton action="open" content="icon" controlSize="compact" aria-label="Open remote terminal" onClick={()=>setTerminalOpen(open=>!open)}><TerminalIcon className="h-4 w-4"/></UiButton>}]:[]),{
         id: "refresh",
         label: "Refresh workspace",
         priority: "secondary",
@@ -1510,7 +1530,7 @@ export function RemoteWorkspaceDialog({
         <div className="py-10 text-center font-utility text-compact text-content-muted">
           Select an online bot to browse the workspace on its machine.
         </div>
-      ) : (
+      ) : terminalOpen ? (<RemoteTerminal key={`${botId}:${root}:${cwd}`} channelId={channelId} botId={botId} root={root} path={cwd}/>) : (
         // Desktop: side-by-side tree + editor filling the window height.
         // Mobile: a full-screen sheet, so stack the panes vertically. Either way the
         // panes fill the remaining body height and keep their own internal scroll.
@@ -1922,7 +1942,7 @@ export function RemoteWorkspaceDialog({
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center text-compact text-content-muted p-4">
                   <File className="w-5 h-5 mb-2 text-content-muted/60" aria-hidden="true" />
-                  <span>Select a file on the left to view it</span>
+                  <HelpLabel help="Choose a file from the file list to view its contents.">Select a file</HelpLabel>
                 </div>
               </>
             ) : (
@@ -2049,7 +2069,7 @@ export function RemoteWorkspaceDialog({
                     />
                   ) : (
                     <div className="p-4 text-compact text-content-muted">
-                      Binary file — no preview. Use "Download" above to get it.
+                      <HelpLabel help="Use Download in the toolbar to get this file.">Binary file — no preview.</HelpLabel>
                     </div>
                   )}
                 </div>

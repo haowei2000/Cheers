@@ -1,15 +1,15 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
+import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   User,
-  Bot,
   Blocks,
   Users,
   LogOut,
   AudioLines,
   ShieldAlert,
   Info,
-  Server,
   CalendarClock,
   Palette,
   ArrowLeft,
@@ -19,7 +19,6 @@ import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { logout as logoutApi } from "@/api/auth";
 import { disablePush } from "@/lib/push";
 import { isTauri } from "@/lib/serverConfig";
-import { ActionButton } from "@/components/ui/action-button";
 import { IconButton } from "@/components/ui/icon-button";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { ScheduledMessagesManager } from "@/features/scheduled/ScheduledMessagesManager";
@@ -51,6 +50,7 @@ import { SettingsCard, SettingsCardSection, SettingsSection } from "@/components
 
 type SectionId =
   | "profile"
+  | "general"
   | "appearance"
   | "bots"
   | "server"
@@ -71,9 +71,8 @@ const NAV: {
   desktopOnly?: boolean;
 }[] = [
   { id: "profile", label: "Profile", icon: User },
+  { id: "general", label: "General", icon: Sliders },
   { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "bots", label: "Bots", icon: Bot },
-  { id: "server", label: "Server", icon: Server },
   { id: "about", label: "About", icon: Info, desktopOnly: true },
   { id: "workbench", label: "Workbench extensions", icon: Blocks },
   { id: "scheduled", label: "Scheduled tasks", icon: CalendarClock },
@@ -82,19 +81,6 @@ const NAV: {
   { id: "reports", label: "Safety reports", icon: ShieldAlert, adminOnly: true },
   { id: "account", label: "Account", icon: LogOut },
 ];
-
-function BotsMovedCard() {
-  const navigate = useNavigate();
-  return (
-    <SettingsSection title="Bots" icon={Bot}>
-      <SettingsCard
-        title="Bots live in Fleet"
-        description="Create and manage bots from Fleet — the primary home for your agent roster."
-        actions={<ActionButton action="open" context="settings" accessibleLabel="Open Fleet" onClick={() => navigate("/fleet")} />}
-      />
-    </SettingsSection>
-  );
-}
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -111,9 +97,17 @@ export default function SettingsPage() {
   // section is deep-linkable, and Back steps between sections. Fall back to the
   // first section for an unknown or admin-gated path.
   const requested = (params["*"] ?? "").split("/")[0];
-  const section: SectionId = items.some((n) => n.id === requested)
-    ? (requested as SectionId)
+  const resolvedRequested = requested === "server" ? "general" : requested;
+  const section: SectionId = requested === "bots"
+    ? "bots"
+    : items.some((n) => n.id === resolvedRequested)
+    ? (resolvedRequested as SectionId)
     : "profile";
+  useEffect(() => {
+    if (section === "bots") navigate("/fleet", { replace: true });
+  }, [navigate, section]);
+
+  if (section === "bots") return null;
 
   return (
     // h-full + internal scroll: the app root is overflow-hidden, so the page must own
@@ -132,8 +126,8 @@ export default function SettingsPage() {
           </IconButton>
           <Sliders className="h-4 w-4 text-accent-400" aria-hidden="true" />
           <div>
-            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">Settings</h1>
-            <p className="mt-1 hidden text-minimal text-content-muted sm:block">Preferences and workspace configuration</p>
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>Preferences and workspace configuration</>}>Settings</HelpLabel></h1>
+
           </div>
         </header>
       </RouteChromeHeader>
@@ -165,7 +159,9 @@ export default function SettingsPage() {
         {/* Active section */}
         <div className="flex-1 min-w-0">
           <ContentActionScope>
-          {section === "profile" && (
+          {/* Keep the editor mounted while navigating settings sections so an
+              in-progress profile draft survives the section change. */}
+          <div hidden={section !== "profile"}>
             <SettingsSection title="Profile" icon={User}>
               <SettingsCard
                 title="Public profile"
@@ -174,22 +170,21 @@ export default function SettingsPage() {
                 <ProfileEditCard />
               </SettingsCard>
             </SettingsSection>
-          )}
+          </div>
 
           {section === "appearance" && <AppearanceCard />}
 
-          {section === "bots" && <BotsMovedCard />}
-
-          {section === "server" && (
-            <SettingsSection title="Server" icon={Server}>
+          {section === "general" && (
+            <SettingsSection title="General" icon={Sliders}>
               <ServerCard />
+              <LaunchAtLoginCard />
+              <PushNotificationsCard />
             </SettingsSection>
           )}
 
           {section === "about" && (
             <SettingsSection title="About" icon={Info}>
               <AppUpdateCard />
-              <LaunchAtLoginCard />
               <LegalLinks />
             </SettingsSection>
           )}
@@ -222,8 +217,6 @@ export default function SettingsPage() {
                   <DevicesSessionsCard />
 
                   <ExternalAIPermissionsCard />
-
-                  <PushNotificationsCard />
 
                   <SettingsCardSection
                     title="Account access"

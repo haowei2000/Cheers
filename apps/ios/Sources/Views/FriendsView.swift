@@ -127,8 +127,7 @@ struct FriendsView: View {
             if friends.isEmpty {
                 ContentUnavailableView {
                     Label("No Friends Yet", systemImage: "person.2")
-                } description: {
-                    Text("Add someone by username or user ID to start a conversation.")
+                        .helpExplanation("Add someone by username or user ID to start a conversation.")
                 } actions: {
                     Button("Add Friend", systemImage: "person.badge.plus") {
                         showAddFriend = true
@@ -183,11 +182,10 @@ struct FriendsView: View {
     private var requestsList: some View {
         Group {
             if incoming.isEmpty && outgoing.isEmpty {
-                ContentUnavailableView(
-                    "No Friend Requests",
-                    systemImage: "person.crop.circle.badge.checkmark",
-                    description: Text("Incoming and sent requests will appear here.")
-                )
+                ContentUnavailableView {
+                    Label("No Friend Requests", systemImage: "person.crop.circle.badge.checkmark")
+                        .helpExplanation("Incoming and sent requests will appear here.")
+                }
             } else {
                 List {
                     if !incoming.isEmpty {
@@ -254,9 +252,8 @@ struct FriendsView: View {
                         }
                     }
                     .disabled(isBusy || addQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } footer: {
-                    Text("Enter an exact username or user ID.")
                 }
+                    .helpExplanation("Enter an exact username or user ID.")
 
                 if let hit = searchHit {
                     Section("Result") {
@@ -306,11 +303,10 @@ struct FriendsView: View {
     private var blockedList: some View {
         Group {
             if blocked.isEmpty {
-                ContentUnavailableView(
-                    "No Blocked Users",
-                    systemImage: "hand.raised",
-                    description: Text("People you block will appear here.")
-                )
+                ContentUnavailableView {
+                    Label("No Blocked Users", systemImage: "hand.raised")
+                        .helpExplanation("People you block will appear here.")
+                }
             } else {
                 List {
                     ForEach(blocked) { user in

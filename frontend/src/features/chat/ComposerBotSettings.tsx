@@ -118,7 +118,11 @@ function BotInlineSettings({
   const hasMode = controls.allowed_modes.length > 0;
   if (!hasMode && controls.config_options.length === 0) return null;
 
-  async function apply(fn: () => Promise<void>, optimistic: () => void) {
+  async function apply(
+    fn: () => Promise<void>,
+    optimistic: () => void,
+    rollback: () => void,
+  ) {
     setBusy(true);
     optimistic();
     try {
@@ -129,6 +133,10 @@ function BotInlineSettings({
       onApplied?.();
       toast.success("Applied");
     } catch (e) {
+      // Keep the control aligned with the server's effective value after a
+      // rejected update; the overlay only exists to make successful changes
+      // feel immediate.
+      rollback();
       notify.error(messageOf(e));
     } finally {
       setBusy(false);
@@ -167,7 +175,8 @@ function BotInlineSettings({
               const v = e.target.value;
               apply(
                 () => setSessionMode(channelId, bot.botId, target, v),
-                () => setLocalMode(v)
+                () => setLocalMode(v),
+                () => setLocalMode(mode),
               );
             }}
             className={canMode ? selOn : selOff}
@@ -208,7 +217,8 @@ function BotInlineSettings({
                 const v = e.target.value;
                 apply(
                   () => setSessionConfigOption(channelId, bot.botId, target, opt.id, v),
-                  () => setLocalCfg((c) => ({ ...c, [opt.id]: v }))
+                  () => setLocalCfg((c) => ({ ...c, [opt.id]: v })),
+                  () => setLocalCfg((c) => ({ ...c, [opt.id]: cur })),
                 );
               }}
               className={canCfg ? selOn : selOff}

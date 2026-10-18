@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT service_id FROM resource_service_identity WHERE singleton=TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "service_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "85ca0834380679be71449ef447aaeb79ce9b12821ca0f8166aeba2f11b862310"
+}

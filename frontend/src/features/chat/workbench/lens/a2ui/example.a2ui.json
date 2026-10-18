@@ -1,0 +1,130 @@
+{
+  "a2ui": "v0.9.1",
+  "messages": [
+    {
+      "version": "v0.9.1",
+      "createSurface": {
+        "surfaceId": "report",
+        "catalogId": "urn:cheers:a2ui:catalog:v1"
+      }
+    },
+    {
+      "version": "v0.9.1",
+      "updateComponents": {
+        "surfaceId": "report",
+        "components": [
+          {
+            "id": "root",
+            "component": "Column",
+            "children": [
+              "title",
+              "description",
+              "topic",
+              "includeSources",
+              "actions"
+            ]
+          },
+          {
+            "id": "title",
+            "component": "Text",
+            "text": "Prepare a report"
+          },
+          {
+            "id": "description",
+            "component": "Text",
+            "text": "Choose your inputs, then prepare a draft for the agent. Nothing is sent automatically."
+          },
+          {
+            "id": "topic",
+            "component": "TextField",
+            "label": "Report topic",
+            "value": {
+              "path": "/report/topic"
+            }
+          },
+          {
+            "id": "includeSources",
+            "component": "CheckBox",
+            "label": "Include sources",
+            "value": {
+              "path": "/report/includeSources"
+            }
+          },
+          {
+            "id": "actions",
+            "component": "Row",
+            "children": [
+              "prepare",
+              "open"
+            ]
+          },
+          {
+            "id": "prepare",
+            "component": "Button",
+            "label": "Prepare report request",
+            "action": {
+              "event": {
+                "name": "cheers.compose",
+                "context": {
+                  "actionId": "report.prepare",
+                  "payload": {
+                    "topic": {
+                      "path": "/report/topic"
+                    },
+                    "includeSources": {
+                      "path": "/report/includeSources"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "open",
+            "component": "Button",
+            "label": "Open the report source",
+            "action": {
+              "event": {
+                "name": "cheers.open",
+                "context": {
+                  "uri": {
+                    "path": "/report/source"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "summary",
+            "component": "Column",
+            "children": [
+              "topic",
+              "includeSources",
+              "prepare"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "version": "v0.9.1",
+      "updateDataModel": {
+        "surfaceId": "report",
+        "path": "/",
+        "value": {
+          "report": {
+            "topic": "Resource-oriented UI",
+            "includeSources": true,
+            "source": "cheers:desk/reports/source.md"
+          }
+        }
+      }
+    }
+  ],
+  "views": {
+    "minimal": {
+      "surfaceId": "report",
+      "root": "summary"
+    }
+  }
+}

@@ -161,6 +161,23 @@ fn resolve_frame(resource: &str, params: &Value) -> Result<(String, Value), (Str
     Ok((resolved.to_string(), resolved_params))
 }
 
+async fn resolve_resource(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let channel = params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| resource_error("INVALID_PARAMS", "channel_id required"))?;
+    crate::api::resources::resolve_descriptor(
+        db,
+        principal,
+        params.get("uri").and_then(Value::as_str).unwrap_or(""),
+        Some(channel),
+        Some(channel),
+    )
+    .await
+    .map_err(|e| resource_error("RESOURCE_ERROR", e.to_string()))
+}
+
 /// resource_req 的入口分发器。
 /// 收到帧后按 resource 字段路由到对应 handler。
 pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value {
@@ -178,6 +195,12 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
     let resource = resource.as_str();
 
     let result = match resource {
+        "resource.resolve" => resolve_resource(db, &principal, &params).await,
+        "ui.contract.read" => Ok(if principal.principal_type == PrincipalType::Bot {
+            cheers_mcp_server::interactive::contract_for_bot(&principal.principal_id.to_string())
+        } else {
+            cheers_mcp_server::interactive::contract()
+        }),
         // ── 读操作（频道成员可读）──────────────────────────────────────
         "channel.info" => channel_info::handle(db, &principal, &params).await,
         "channel.members" => members::handle(db, &principal, &params).await,

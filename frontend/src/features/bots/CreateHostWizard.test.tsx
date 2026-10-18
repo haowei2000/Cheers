@@ -87,13 +87,14 @@ const mockGuidance = {
 } as PairingGuidance;
 
 describe("CreateHostWizard", () => {
-  it("renders 2-step navigation indicator and step 0", () => {
+  it("prioritizes agent and project setup on this Mac", () => {
     const markup = renderToStaticMarkup(
       <CreateHostWizard bots={[mockBot]} onDone={() => undefined} onClose={() => undefined} />,
     );
 
-    expect(markup).toContain(">Bot &amp; agent<");
-    expect(markup).toContain(">Install &amp; connect<");
+    expect(markup).toContain("Connect bot and project");
+    expect(markup).toContain("Project folder");
+    expect(markup).toContain("Set up on another computer");
     expect(markup).not.toContain("Choose method");
     expect(markup).not.toContain("Run installer");
 

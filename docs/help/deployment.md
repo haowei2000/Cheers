@@ -6,7 +6,7 @@ Cheers can be run three ways. Pick by goal:
 
 | Method | Best for | How the gateway & frontend run |
 |---|---|---|
-| **1. From source** | Active development, debugging | `cargo run` + `npm run dev` on your machine; backing services in Docker |
+| **1. From source** | Active development, debugging | `cargo run` + `pnpm dev` on your machine; backing services in Docker |
 | **2. Docker Compose** | Single-host self-hosting, demos | All services as containers on one host |
 | **3. Helm / Kubernetes** | Clusters, production, scale-out | All services as Kubernetes workloads |
 
@@ -146,7 +146,7 @@ docker compose up -d postgres rustfs
 cd server && cargo run
 
 # 4) In another terminal, the frontend dev server (hot reload)
-cd frontend && npm install && npm run dev     # → http://localhost:5173
+cd frontend && pnpm install && pnpm dev       # → http://localhost:5173
 ```
 
 The Vite dev server proxies `/api` and `/ws` to the gateway at

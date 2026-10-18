@@ -104,6 +104,8 @@ const mentionRank = (c: MentionCandidate): number =>
 interface Props {
   channelId?: string;
   channelName?: string;
+  /** A fixed Session destination overrides @mention routing for this draft. */
+  sessionTargetName?: string;
   disabled?: boolean;
   mentionables?: MentionCandidate[];
   /** Slash-commands advertised by the channel's bots (⑦ command palette). */
@@ -155,6 +157,7 @@ interface PickerState {
 function MessageComposerImpl({
   channelId,
   channelName,
+  sessionTargetName,
   disabled,
   mentionables = [],
   commands = [],
@@ -976,7 +979,7 @@ function MessageComposerImpl({
           </div>
         )}
         {/* design-system-native: composer-editor */}
-        <textarea
+        <textarea title="Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands."
           ref={textareaRef}
           aria-label="Message"
           rows={1}
@@ -993,7 +996,9 @@ function MessageComposerImpl({
           placeholder={
             disabled
               ? "Select a channel to start chatting"
-              : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
+              : sessionTargetName
+                ? `Message ${channelName ? `#${channelName}` : "..."} — sends to @${sessionTargetName}; @mentions ignored`
+                : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
           // text-comfortable (16px) below md stops iOS Safari's auto-zoom on focus.
           className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 font-reading text-comfortable leading-reading text-content-primary outline-none placeholder:font-ui placeholder-zinc-400 md:text-regular"
@@ -1121,9 +1126,7 @@ function MessageComposerImpl({
           )}
         </div>
       </div>
-      <p className="sr-only">
-        Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands.
-      </p>
+
     </div>
   );
 }

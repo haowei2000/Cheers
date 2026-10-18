@@ -97,7 +97,6 @@ export const ViewBoardScopeSelector = memo(function ViewBoardScopeSelector({
   return (
     <div className="flex min-w-0 items-center gap-1">
       <DropdownSelect
-        content="icon"
         leading={
           <ListFilter
             className="h-3.5 w-3.5 shrink-0 text-content-muted"

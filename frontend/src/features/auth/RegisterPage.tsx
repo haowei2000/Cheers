@@ -162,6 +162,7 @@ export default function RegisterPage() {
   return (
     <PublicPageShell
       title="Create your account"
+      descriptionKind={inviteToken ? "status" : "help"}
       description={inviteToken
         ? "You've been invited — your new account will join the workspace automatically."
         : "Create an identity for conversations shared by people and agents."}

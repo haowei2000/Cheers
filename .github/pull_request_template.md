@@ -17,8 +17,8 @@
 
 - [ ] Unit tests added/updated
 - [ ] Local `pytest` passed in full
-- [ ] Front-end `npm run build` no error reported
-- [ ] When it comes to npm packages, the `npm run lint` / `npm test` / `npm run build` of the corresponding package has passed
+- [ ] Front-end `pnpm build` no error reported
+- [ ] Front-end `pnpm lint` / `pnpm test` / `pnpm build` passed
 
 ## Database migration
 

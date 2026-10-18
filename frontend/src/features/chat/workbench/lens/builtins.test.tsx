@@ -150,7 +150,7 @@ describe("read-only lenses hide their edit affordances", () => {
 
 describe("official built-in lens context contract", () => {
   it("requires granular context conversion from every registered lens", () => {
-    expect(lensIds().sort()).toEqual(["canvas", "chart", "codemap", "html", "kanban", "markdown", "react", "table"]);
+    expect(lensIds().sort()).toEqual(["a2ui", "canvas", "chart", "codemap", "html", "kanban", "markdown", "react", "table"]);
     for (const id of lensIds()) expect(getLens(id)?.contextPick).toBe("granular");
   });
 
@@ -223,7 +223,7 @@ describe("resilient rendering when data is empty or malformed", () => {
     ]);
 
     expect(() => render("chart", null)).not.toThrow();
-    expect(render("chart", null)).toContain("Empty");
+    expect(render("chart", null)).toContain("No metric curves");
     expect(() => render("chart", { series: "not-array" })).not.toThrow();
     expect(() => render("chart", { series: [{ points: [[1, 2]] }], xLabel: { not: "string" } as unknown as string })).not.toThrow();
   });

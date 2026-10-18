@@ -14,14 +14,16 @@ describe("CheckboxField", () => {
     expect(markup).toContain(`for="${id}"`);
   });
 
-  it("exposes errors semantically and keeps supporting copy in the hit target", () => {
+  it("keeps errors visible and offers supplementary help on the label", () => {
     const markup = renderToStaticMarkup(
       <CheckboxField label="Permission" hint="Applies after saving" error="Required" />,
     );
 
     expect(markup).toContain('aria-invalid="true"');
     expect(markup).toContain('role="alert"');
-    expect(markup).toContain("Applies after saving");
+    expect(markup).not.toContain("Applies after saving");
+    expect(markup).toContain('tabindex="0"');
+    expect(markup).not.toContain("lucide-info");
   });
 
   it("registers the indeterminate visual state", () => {

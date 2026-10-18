@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { useState } from "react";
 import { Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,13 +44,13 @@ export function ServerPicker() {
   return (
     <div className="h-full bg-zinc-950 flex items-center justify-center p-6">
       <div className="w-full max-w-sm bg-zinc-900 rounded-sm p-6">
-        <p className="text-regular font-medium text-content-secondary flex items-center gap-2">
-          <Server className="w-4 h-4 text-accent-400" /> Connect to a Cheers server
-        </p>
-        <p className="text-compact text-content-muted mt-1 mb-4">
+        <p className="text-regular font-medium text-content-secondary flex items-center gap-2"><HelpLabel help={<>
           The address of the Cheers deployment this app should talk to. You can
-          change it later in Settings → Account.
-        </p>
+          change it later in Settings → General.
+        </>}>
+          <Server className="w-4 h-4 text-accent-400" /> Connect to a Cheers server
+        </HelpLabel></p>
+
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}

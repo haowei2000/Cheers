@@ -254,7 +254,7 @@ pub(crate) fn presented_trusted_device(
     parse_cookie(headers, "cheers_trusted_device")
 }
 
-fn auth_cookie(name: &str, value: &str, http_only: bool, max_age: i64) -> String {
+pub(crate) fn auth_cookie(name: &str, value: &str, http_only: bool, max_age: i64) -> String {
     let http_only = if http_only { "; HttpOnly" } else { "" };
     format!("{name}={value}; Max-Age={max_age}; Path=/; Secure{http_only}; SameSite=Lax")
 }

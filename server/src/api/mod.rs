@@ -28,6 +28,8 @@ pub mod oauth;
 pub mod pairing;
 pub mod passkey;
 pub mod push;
+pub mod remote_executions;
+pub mod resources;
 pub mod scheduled_messages;
 pub mod session_control;
 pub mod stt_settings;

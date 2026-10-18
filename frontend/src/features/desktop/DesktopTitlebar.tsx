@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode, type RefCallback } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefCallback } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Radar,
+  Search,
   Settings,
   Shield,
   Users,
@@ -115,6 +116,8 @@ type SearchEntry = {
 function DesktopSearch({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => searchRef.current?.focus(), []);
   const { workspaces, personalWorkspace, channels, selectedWorkspaceId } = useChatStore(
     useShallow((state) => ({
       workspaces: state.workspaces,
@@ -169,6 +172,7 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
     <Dialog title="Search Cheers" onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-3">
         <SearchInput
+          ref={searchRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search pages, workspaces, and channels…"
@@ -272,6 +276,7 @@ export function DesktopTitlebar({
         windowState={windowState}
         panes={panes}
         onToggleSidebar={onToggleSidebar}
+        onSearch={() => setSearchOpen(true)}
         onNavigateUp={() => {
           if (parentPath) navigate(parentPath);
         }}
@@ -294,6 +299,7 @@ export function DesktopTitlebarChrome({
   panes,
   sidebarOpen,
   onToggleSidebar,
+  onSearch,
   onNavigateUp,
   actionsRef,
 }: {
@@ -309,6 +315,7 @@ export function DesktopTitlebarChrome({
   /** Compatibility input for focused renderer tests; frames pass `panes`. */
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  onSearch?: () => void;
   onNavigateUp: () => void;
   actionsRef?: RefCallback<HTMLElement>;
 }) {
@@ -366,6 +373,15 @@ export function DesktopTitlebarChrome({
         <IconButton label="Up one level" controlSize="regular" disabled={!canNavigateUp} onClick={onNavigateUp}>
           <ArrowLeft className={controlIconClasses.regular} aria-hidden="true" />
         </IconButton>
+        {authenticated && (
+          <IconButton
+            label={`Search Cheers (${platform === "macos" ? "Command" : "Control"}+K)`}
+            controlSize="regular"
+            onClick={onSearch ?? (() => undefined)}
+          >
+            <Search className={controlIconClasses.regular} aria-hidden="true" />
+          </IconButton>
+        )}
       </nav>
       <div {...dragRegion} className="relative z-10 flex h-full min-w-0 flex-1 items-center justify-center px-3">
         <div {...dragRegion} className="flex min-w-0 items-center gap-2 text-regular">

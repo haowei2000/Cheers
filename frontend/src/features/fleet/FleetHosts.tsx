@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { Laptop } from "lucide-react";
 
 import { isTauri } from "@/lib/serverConfig";
@@ -31,8 +32,8 @@ export function FleetHosts({
       {isTauri() && (
         <section className="space-y-3">
           <div>
-            <h2 className="font-utility text-compact font-semibold uppercase tracking-overline text-content-muted">This Mac</h2>
-            <p className="mt-1 text-compact text-content-muted">Local connector processes, logs, workspaces, and runtime health.</p>
+            <h2 className="font-utility text-compact font-semibold uppercase tracking-overline text-content-muted"><HelpLabel help={<>Local connector processes, logs, workspaces, and runtime health.</>}>This Mac</HelpLabel></h2>
+
           </div>
           <ConnectorManager />
         </section>

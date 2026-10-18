@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -161,8 +162,8 @@ export default function FleetPage() {
         </UiButton>
         <Radar className="h-4 w-4 text-accent-400" aria-hidden="true" />
         <div>
-          <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">Fleet</h1>
-          <p className="mt-1 hidden text-minimal text-content-muted sm:block">Personal bot cockpit</p>
+          <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>Personal bot cockpit</>}>Fleet</HelpLabel></h1>
+
         </div>
       </header>
     </RouteChromeHeader>

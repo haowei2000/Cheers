@@ -308,6 +308,7 @@ pub(crate) fn auth_acknowledged_frame(
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WorkspaceReqExtra {
+    remote_execution: Option<proto::RemoteExecutionRequest>,
     content_b64: Option<String>,
     staged: Option<bool>,
     limit: Option<u32>,
@@ -340,6 +341,7 @@ pub(crate) fn workspace_req_frame(
     extra: WorkspaceReqExtra,
 ) -> Value {
     frame_value(&proto::DataInbound::WorkspaceReq {
+        remote_execution: extra.remote_execution,
         req_id: req_id.to_string(),
         op: op.to_string(),
         path: path.to_string(),

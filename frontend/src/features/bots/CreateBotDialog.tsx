@@ -16,8 +16,8 @@ export function CreateBotDialog({
   onClose: () => void;
   onCreated: (bot: BotItem) => void;
 }) {
-  const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [username, setUsername] = useState(() => `assistant-${crypto.randomUUID().slice(0, 8)}`);
+  const [displayName, setDisplayName] = useState("My assistant");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Only after the field has been left or submitted: complaining about "r" while
@@ -58,21 +58,17 @@ export function CreateBotDialog({
       maxWidth="max-w-lg"
     >
       <div className="space-y-4">
-        <div className="rounded-sm bg-indigo-950/35 px-3 py-3 text-compact text-accent-100">
-          A bot is a durable identity — an agent only runs once a device is connected to it.
-          Next you'll pick that device; you can close that step and connect one later.
-        </div>
-        {error && <p className="text-compact text-danger-400 wrap-break-word">{error}</p>}
+        {error && <p className="text-body-error" role="alert">{error}</p>}
+        <Field label="Bot name" htmlFor={displayNameId} hint="Choose a name. Next, connect your agent and project on the computer that will run this bot.">
+          <Input id={displayNameId} value={displayName} onChange={(event) => setDisplayName(event.target.value)} controlSize="regular" />
+        </Field>
+        <details>
+          <summary className="cursor-pointer text-body-secondary">Customize the @mention username</summary>
         <Field
           label="Username"
           htmlFor={usernameId}
-          hint={
-            showUsernameProblem ? (
-              <span className="text-danger-400">{usernameProblem}</span>
-            ) : (
-              "Used as @mention and as the connector's account id — letters, digits, hyphen, underscore."
-            )
-          }
+          error={showUsernameProblem ? usernameProblem : undefined}
+          hint="Used as @mention and as the connector's account id — letters, digits, hyphen, underscore."
         >
           <Input
             id={usernameId}
@@ -85,9 +81,7 @@ export function CreateBotDialog({
             aria-invalid={showUsernameProblem || undefined}
           />
         </Field>
-        <Field label="Display name" htmlFor={displayNameId}>
-          <Input id={displayNameId} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Research Assistant" controlSize="regular" />
-        </Field>
+        </details>
         <div className="flex justify-end gap-2">
           <Button action="cancel" variant="secondary" onClick={onClose} disabled={busy} />
           <Button action="create" onClick={() => void submit()} disabled={busy || usernameProblem !== null} loading={busy} />

@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT execution_id,status,request,created_at FROM resource_executions WHERE user_id=$1 AND channel_id=$2 AND bot_id=$3 ORDER BY created_at DESC LIMIT 30",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "execution_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "request",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c1a43383dce4dff50822c9c36131b8ae3dc42b2a025bd2692ac926e0f6f60ec1"
+}

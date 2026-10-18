@@ -255,6 +255,23 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces",
             get(api::workspaces::list_workspaces).post(api::workspaces::create_workspace),
         )
+        .route("/api/v1/resources/resolve", post(api::resources::resolve))
+        .route(
+            "/api/v1/resources/executions",
+            get(api::remote_executions::history),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/remote-executions",
+            post(api::remote_executions::start),
+        )
+        .route(
+            "/api/v1/resources/executions/:execution_id",
+            post(api::remote_executions::control),
+        )
+        .route(
+            "/api/v1/resources/draft",
+            get(api::resources::read_draft).put(api::resources::write_draft),
+        )
         // static segments → match before :workspace_id
         .route(
             "/api/v1/workspaces/personal",

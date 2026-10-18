@@ -257,6 +257,141 @@
       "uri": "cheers:sess-1:user-2:nonce-3",
       "why": "A LiveKit participant identity.",
       "parses": false
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=2",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=2"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee#^topic",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee#^topic"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=2#L3-L9",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=2#L3-L9"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/inbox/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/inbox/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/msg/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/msg/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/plan/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/plan/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/sessions/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/sessions/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/cost/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/cost/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/activity/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "why": "Stable installation/resource identity uses one authorized resolver.",
+      "parses": true,
+      "resource": "resource.resolve",
+      "params": {
+        "channel_id": "c-1",
+        "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/activity/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+      }
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=0",
+      "why": "Global references use bounded canonical versions and anchors.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=+1",
+      "why": "Global references use bounded canonical versions and anchors.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=01",
+      "why": "Global references use bounded canonical versions and anchors.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=9007199254740992",
+      "why": "Global references use bounded canonical versions and anchors.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee#^_invalid",
+      "why": "Global references use bounded canonical versions and anchors.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee#L4294967296",
+      "why": "Global references use bounded canonical versions and anchors.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:resource/11111111-2222-3333-4444-555555555555/desk/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?v=1&v=2",
+      "why": "Global references use bounded canonical versions and anchors.",
+      "parses": false
     }
   ]
 }

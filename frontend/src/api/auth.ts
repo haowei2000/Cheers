@@ -1,6 +1,7 @@
 import { apiJson, currentAccessToken } from "./client";
 import { getServerBase, isTauri } from "@/lib/serverConfig";
 import { invokeDesktop } from "@/lib/desktop";
+import { useAuthStore } from "@/stores/authStore";
 
 export interface LoginResponse {
   status?: "authenticated" | "factor_required";
@@ -156,16 +157,17 @@ export function loginFlowPasskeyOptions(transactionId: string): Promise<Record<s
 
 export function verifyLoginFlowPassword(
   transactionId: string,
-  password: string
+  password: string,
+  rememberDevice = true
 ): Promise<LoginResponse> {
   if (isTauri()) {
     const serverBase = getServerBase();
     if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
-    return invokeDesktop("desktop_login_flow_password", { serverBase, transactionId, password });
+    return invokeDesktop("desktop_login_flow_password", { serverBase, transactionId, password, rememberDevice });
   }
   return apiJson(`/auth/flows/${transactionId}/password`, {
     method: "POST",
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ password, remember_device: rememberDevice }),
   });
 }
 
@@ -181,23 +183,25 @@ export function sendLoginFlowEmail(transactionId: string): Promise<Record<string
 export function verifyLoginFlowCode(
   transactionId: string,
   method: "email" | "totp" | "recovery_code",
-  code: string
+  code: string,
+  rememberDevice = true
 ): Promise<LoginResponse> {
   if (isTauri()) {
     const serverBase = getServerBase();
     if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
-    return invokeDesktop("desktop_login_flow_code", { serverBase, transactionId, method, code });
+    return invokeDesktop("desktop_login_flow_code", { serverBase, transactionId, method, code, rememberDevice });
   }
   const suffix = method === "email" ? "email/verify" : "totp/verify";
   return apiJson(`/auth/flows/${transactionId}/${suffix}`, {
     method: "POST",
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, remember_device: rememberDevice }),
   });
 }
 
 export function verifyLoginFlowPasskey(
   transactionId: string,
-  credential: Record<string, unknown>
+  credential: Record<string, unknown>,
+  rememberDevice = true
 ): Promise<LoginResponse> {
   if (isTauri()) {
     const serverBase = getServerBase();
@@ -206,11 +210,12 @@ export function verifyLoginFlowPasskey(
       serverBase,
       transactionId,
       credential,
+      rememberDevice,
     });
   }
   return apiJson(`/auth/flows/${transactionId}/passkey/verify`, {
     method: "POST",
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({ credential, remember_device: rememberDevice }),
   });
 }
 
@@ -469,6 +474,16 @@ export async function passkeyFactorVerify(input: {
   credential: Record<string, unknown>;
   remember_device?: boolean;
 }): Promise<LoginResponse> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (!serverBase) throw new Error("Choose a Cheers server first");
+    return invokeDesktop("desktop_verify_passkey_factor", {
+      serverBase,
+      transactionId: input.transaction_id,
+      credential: input.credential,
+      rememberDevice: input.remember_device ?? false,
+    });
+  }
   return apiJson("/auth/2fa/passkey/verify", {
     method: "POST",
     body: JSON.stringify(input),
@@ -628,7 +643,6 @@ export async function logout(): Promise<{ ok: boolean }> {
   if (isTauri()) {
     const serverBase = getServerBase();
     if (serverBase) {
-      const { useAuthStore } = await import("@/stores/authStore");
       await invokeDesktop("desktop_logout_session", {
         serverBase,
         accessToken: useAuthStore.getState().token,
