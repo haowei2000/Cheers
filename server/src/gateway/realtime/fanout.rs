@@ -184,10 +184,9 @@ impl InProcessFanout {
 
     /// 浏览器订阅某频道后，注册 channel 级发送端。
     pub fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
-        self.channels
-            .entry(channel_id)
-            .or_default()
-            .push(ConnSender { conn_id, tx });
+        let mut senders = self.channels.entry(channel_id).or_default();
+        senders.retain(|sender| sender.conn_id != conn_id);
+        senders.push(ConnSender { conn_id, tx });
     }
 
     /// 浏览器退订某频道或断线时，移除对应发送端。
@@ -195,6 +194,8 @@ impl InProcessFanout {
         if let Some(mut senders) = self.channels.get_mut(&channel_id) {
             senders.retain(|s| s.conn_id != conn_id);
         }
+        self.conn_focus
+            .remove_if(&conn_id, |_, focus| focus.channel_id == channel_id);
     }
 
     /// 成员资格被撤销（管理员移除 / 自己退出）：把该用户的**所有**连接从该频道
@@ -209,11 +210,21 @@ impl InProcessFanout {
                     .unwrap_or(true)
             });
         }
+        self.conn_focus.retain(|conn_id, focus| {
+            focus.channel_id != channel_id
+                || self
+                    .conn_users
+                    .get(conn_id)
+                    .map(|uid| *uid != user_id)
+                    .unwrap_or(true)
+        });
     }
 
     /// 频道被删除：丢弃整张订阅表（否则残留到各连接断线为止）。
     pub fn drop_channel(&self, channel_id: Uuid) {
         self.channels.remove(&channel_id);
+        self.conn_focus
+            .retain(|_, focus| focus.channel_id != channel_id);
     }
 
     /// 浏览器断线时，移除该连接的所有注册（含关闭信号端）。
@@ -244,13 +255,19 @@ impl InProcessFanout {
         self.conn_focus.remove(&conn_id);
     }
 
-    /// 频道内所有在看焦点：`(user_id, bot_id, path)`。经 conn_users 映射回 user_id。
+    /// 频道内已订阅连接的在看焦点：`(user_id, bot_id, path)`。经 conn_users 映射回 user_id。
     /// 不去重（同一用户多连接可重复；前端去重）。
     pub fn channel_focus(&self, channel_id: Uuid) -> Vec<(Uuid, Uuid, Option<String>)> {
+        let Some(subscribers) = self.channels.get(&channel_id) else {
+            return Vec::new();
+        };
+        let subscribed: std::collections::HashSet<Uuid> =
+            subscribers.iter().map(|sender| sender.conn_id).collect();
+        drop(subscribers);
         let mut out = Vec::new();
         for entry in self.conn_focus.iter() {
             let focus = entry.value();
-            if focus.channel_id != channel_id {
+            if focus.channel_id != channel_id || !subscribed.contains(entry.key()) {
                 continue;
             }
             if let Some(uid) = self.conn_users.get(entry.key()) {
@@ -410,7 +427,8 @@ mod tests {
         let bot = Uuid::new_v4();
         let (tx, _rx) = mpsc::channel::<WireFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
-        fanout.register_user(user, conn, tx, close_tx);
+        fanout.register_user(user, conn, tx.clone(), close_tx);
+        fanout.subscribe_channel(channel, conn, tx);
 
         fanout.set_focus(conn, channel, bot, Some("src/lib.rs".into()));
         let focus = fanout.channel_focus(channel);
@@ -433,10 +451,48 @@ mod tests {
         let channel = Uuid::new_v4();
         let (tx, _rx) = mpsc::channel::<WireFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
-        fanout.register_user(user, conn, tx, close_tx);
+        fanout.register_user(user, conn, tx.clone(), close_tx);
+        fanout.subscribe_channel(channel, conn, tx);
         fanout.set_focus(conn, channel, Uuid::new_v4(), None);
         assert_eq!(fanout.channel_focus(channel).len(), 1);
         fanout.clear_focus(conn);
+        assert!(fanout.channel_focus(channel).is_empty());
+    }
+
+    #[tokio::test]
+    async fn focus_requires_a_live_subscription_and_keeps_other_channels_independent() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let conn = Uuid::new_v4();
+        let channel = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
+        fanout.register_user(user, conn, tx.clone(), close_tx);
+        fanout.set_focus(conn, channel, Uuid::new_v4(), None);
+        assert!(fanout.channel_focus(channel).is_empty());
+
+        fanout.subscribe_channel(channel, conn, tx.clone());
+        fanout.subscribe_channel(other, conn, tx.clone());
+        assert_eq!(fanout.channel_focus(channel).len(), 1);
+        fanout.subscribe_channel(channel, conn, tx.clone());
+        assert_eq!(fanout.channel_focus(channel).len(), 1);
+        fanout.unsubscribe_channel(other, conn);
+        assert_eq!(fanout.channel_focus(channel).len(), 1);
+        fanout.unsubscribe_channel(channel, conn);
+        assert!(fanout.channel_focus(channel).is_empty());
+
+        fanout.subscribe_channel(channel, conn, tx.clone());
+        assert!(fanout.channel_focus(channel).is_empty());
+        fanout.set_focus(conn, channel, Uuid::new_v4(), None);
+        fanout.unsubscribe_user_channel(channel, user);
+        assert!(fanout.channel_focus(channel).is_empty());
+        fanout.subscribe_channel(channel, conn, tx.clone());
+        assert!(fanout.channel_focus(channel).is_empty());
+        fanout.set_focus(conn, channel, Uuid::new_v4(), None);
+        fanout.drop_channel(channel);
+        assert!(fanout.channel_focus(channel).is_empty());
+        fanout.subscribe_channel(channel, conn, tx);
         assert!(fanout.channel_focus(channel).is_empty());
     }
 

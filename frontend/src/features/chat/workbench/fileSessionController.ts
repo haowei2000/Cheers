@@ -1,4 +1,4 @@
-import { ResourceError } from "../hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import { merge3Way } from "./collab";
 import {
   adoptText, canEditData, canPatch, editData, editText, emptyBuffer, errMsg,

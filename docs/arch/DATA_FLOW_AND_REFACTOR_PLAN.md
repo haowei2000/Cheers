@@ -93,7 +93,9 @@
 | `unsubscribe` | `channel_id` | 退订 |
 | `ping` | — | 应用层心跳 |
 
-**Backend → 客户端（控制回执）**：`auth_ok{user_id}` / `auth_err{reason}` / `subscribed` / `unsubscribed` / `pong` / `error{detail}`
+**Backend → 客户端（控制回执）**：`auth_ok{user_id}` / `auth_err{reason}` / `subscribed` / `subscription_error{channel_id,code,reason}` / `unsubscribed` / `pong` / `error{detail}`
+
+浏览器由 `frontend/src/lib/realtimeTransport.ts` 持有一条认证连接。聊天、Fleet 通过引用计数共享频道订阅，用户通知与后台资源 RPC 各自持有连接租约。频道订阅失败仅返回对应频道的 `subscription_error`，不影响其他频道和用户事件；重复订阅也重新校验成员资格。
 
 **Backend → 客户端（事件帧，WireFrame 信封，`realtime/frame.rs`）**
 
@@ -110,7 +112,7 @@
 
 - **终态帧**：`message` / `message_done` / `message_deleted` —— 必须先落 PG 再广播，承诺不丢（不变量 I6；背压破约已由 R3 修复）。
 - **流式帧**：`message_stream` —— 不落库、可丢，靠 `message_done` 全量自愈。
-- 关闭码：`4401` 鉴权失败 / `4403` 非频道成员 / `4408` 背压关闭。
+- 关闭码：`4401` 鉴权失败 / `4408` 背压关闭。非频道成员收到 `subscription_error`，连接保持打开。
 
 ### 2.3 Bot 面帧表（`gateway/ws/agent_bridge.rs`）
 
@@ -174,7 +176,7 @@
   │── {type:subscribe, ch} ──▶│ subscribe() ──────────────▶ 成员资格：LRU(4096,TTL) 命中?
   │                           │                           │   miss → 查 channel_memberships
   │◀─ {type:subscribed} ──────│                           │ 通过 → 注册 channel 级发送端
-  │              （非成员 → 关闭码 4403）                   │
+  │◀─ {type:subscription_error,channel_id,code,reason} ──────│ 非成员 / 授权查询失败
 ```
 
 - 每连接一条 `mpsc::channel<WireFrame>(256)` 发送队列；WS 读循环与队列消费在同一 `tokio::select!`。

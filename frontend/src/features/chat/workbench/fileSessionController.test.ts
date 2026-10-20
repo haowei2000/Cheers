@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ResourceError } from "../hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import type { FileContent, FsClient } from "./fsClient";
 import { createFileSessionController, fileSessionController } from "./fileSessionController";
 import { fileResourceStore } from "./fileResource";

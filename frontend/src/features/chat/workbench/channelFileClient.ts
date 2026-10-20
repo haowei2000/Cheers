@@ -1,5 +1,5 @@
 import { clientSessionGeneration } from "@/lib/clientSession";
-import { ResourceError } from "../hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import { fileResourceStore } from "./fileResource";
 import { makeFsClient, type FsClient, type SendResourceReq } from "./fsClient";
 import { parseLocator } from "../locator";

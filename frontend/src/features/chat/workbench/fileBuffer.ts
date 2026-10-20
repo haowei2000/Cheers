@@ -1,5 +1,5 @@
 import { parse as yamlParse } from "yaml";
-import { ResourceError } from "../hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import type { FsClient } from "./fsClient";
 import { applyEdits } from "./yamlDoc";
 import { applyPatchOps, type PatchOp } from "./patchOps";

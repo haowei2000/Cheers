@@ -63,7 +63,9 @@
 
 **鉴权超时**：进入 `CONNECTED` 后 N 秒（默认 10s）内未收到合法 `auth` 帧，Backend 主动关闭（code 4401）。
 
-**Token 续期**：`AUTHED`/`ACTIVE` 状态下客户端可再次发 `{type:"auth", token}` 刷新会话过期时间，不影响已订阅频道。
+**Token 续期**：`AUTHED`/`ACTIVE` 状态下客户端可再次发 `{type:"auth", token}` 刷新会话过期时间，不影响已订阅频道。新 token 必须属于原认证用户；切换账号必须建立新连接，跨账号续期返回 `auth_err` 并关闭连接（4401）。
+
+**浏览器连接归属**：`frontend/src/lib/realtimeTransport.ts` 统一管理认证、重连、用户事件和资源请求。聊天页与 Fleet 按频道持有引用计数订阅，最后一个消费者离开才发送 `unsubscribe`。用户通知不依赖打开频道；资源请求也持有独立连接租约，断线时失败且不自动重放写入。重连后用户事件在 `auth_ok`、频道事件在 `subscribed` 后各自通过 REST 补齐。
 
 ---
 
@@ -95,10 +97,13 @@
 { "type": "auth_ok",  "user_id": "<uuid>" }
 { "type": "auth_err", "reason": "expired|invalid|..." }   // 随后关闭连接
 { "type": "subscribed",   "channel_id": "<uuid>" }
+{ "type": "subscription_error", "channel_id": "<uuid>", "code": "PERMISSION_DENIED|INTERNAL_ERROR", "reason": "..." }
 { "type": "unsubscribed", "channel_id": "<uuid>" }
 { "type": "pong" }
 { "type": "error", "data": { "detail": "...", "code": "..." } }
 ```
+
+订阅失败只影响对应频道，保留连接、用户通知及其他已授权订阅。重复 `subscribe` 仍重新校验成员资格，失败后移除该连接的旧频道订阅。客户端可再次发送 `subscribe` 重试。
 
 ---
 
@@ -303,9 +308,10 @@ realtime::fanout:
 | Code | 含义 |
 |------|------|
 | 4401 | 鉴权超时 / auth 失败 |
-| 4403 | 无权订阅该频道 |
 | 1013 / 4408 | 背压：终态帧队列满，请重连 + REST 补齐 |
 | 1011 | 服务端内部错误 |
+
+频道订阅失败使用 §3 的 `subscription_error` 回执，不关闭共享连接。
 
 ---
 

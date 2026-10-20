@@ -1,16 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { buildWsUrl } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
-import { ReadinessWaiters, type ReadinessWait } from "./readinessWaiters";
-import type { Message, TraceEvent, VoiceTranscriptSegment, WsEvent } from "@/types";
+import type { Message, TraceEvent, VoiceTranscriptSegment } from "@/types";
 import { normalizeTraceEvent } from "../traceEvent";
-import { clientSessionGeneration } from "@/lib/clientSession";
+import { realtimeTransport, sendResourceRequest, type RealtimeFrame, type RealtimeStatus } from "@/lib/realtimeTransport";
 
-/** Live-connection state for the open channel, driving the tier-M banner:
- *  connecting → first attempt (no banner; the channel is still loading anyway),
- *  online → subscribed, reconnecting → dropped and retrying with backoff,
- *  offline → retry budget exhausted (manual `reconnectNow` is the exit). */
-export type RealtimeStatus = "connecting" | "online" | "reconnecting" | "offline";
+export type { RealtimeStatus } from "@/lib/realtimeTransport";
 
 /** Workspace-presence entry inside a `presence` frame: WHO is currently viewing
  *  WHICH bot's workspace, and at what `path` (a file, else a directory/cwd). */
@@ -83,259 +77,10 @@ interface Callbacks {
   }) => void;
 }
 
-const BASE_DELAY = 1000;
-const MAX_DELAY = 30000;
-const MAX_RETRIES = 10;
-/** How long an idle (no subscriber) socket is kept alive before closing — long
- *  enough to survive a channel switch or a brief navigation away from chat. */
-const IDLE_CLOSE_DELAY = 30000;
-
-// ── Resource req/res over the same channel socket (workbench fs/channel access) ──
-
-const RESOURCE_REQ_TIMEOUT = 15000;
-
-/** Result payload of a resource_req on success (handler `data`). */
-export type ResourceData = unknown;
-
-/** Thrown when a resource_req fails (rejected by dispatch_user or transport). */
-export class ResourceError extends Error {
-  code: string;
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = "ResourceError";
-    this.code = code;
-  }
-}
-
-interface ResourceRes {
-  ok: boolean;
-  data?: unknown;
-  code?: string;
-  error?: string;
-}
-
-interface PendingReq {
-  resolve: (data: ResourceData) => void;
-  reject: (err: ResourceError) => void;
-  timer: ReturnType<typeof setTimeout>;
-  cancelReady: () => void;
-}
-
-// Backend browser WS protocol:
-//   1. Connect to /ws
-//   2. Client → {"type":"auth","token":"..."}
-//   3. Server → {"type":"auth_ok","user_id":"..."}
-//   4. Client → {"type":"subscribe","channel_id":"..."}
-//   5. Server → {"type":"subscribed","channel_id":"..."}
-//   6. Broadcast frames arrive tagged with channel_id
-//
-// The socket is a MODULE-LEVEL SINGLETON shared across channel switches
-// (Discord-style): switching channels sends unsubscribe(old) + subscribe(new)
-// on the live connection instead of tearing it down and paying a fresh
-// TCP/TLS/WS + auth handshake per switch. Only one ChannelView mounts at a
-// time, so a single active subscription is all the state we need.
-
-/** The one mounted channel subscriber (ChannelView's realtime hook instance). */
-interface ActiveSub {
-  channelId: string;
-  cbs: React.MutableRefObject<Callbacks>;
-  setStatus: (s: RealtimeStatus) => void;
-}
-
-let ws: WebSocket | null = null;
-let wsToken: string | null = null;
-let authed = false;
-let retryCount = 0;
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let idleTimer: ReturnType<typeof setTimeout> | null = null;
-let active: ActiveSub | null = null;
-// The server rejected our token (auth_err): reconnecting with the same token
-// would just loop, so stop; the session-expired takeover is the exit.
-let authFailed = false;
-
-// Callers waiting for the socket to be usable — OPEN *and* authenticated. A resource
-// request that arrived while the socket was still coming up used to reject on the spot
-// with DISCONNECTED, and "still coming up" is the normal state right after a page load,
-// a reconnect, or waking from background — exactly when the Workbench mounts and asks
-// for its file tree. The request already carries a 15s budget; spending the first
-// moments of it on a socket that is actively connecting is what that budget is for.
-//
-// A request owns a cancel handle for its waiter. Timeout and every socket-close path
-// remove it, while auth success/error releases the complete current set.
-const readyWaiters = new ReadinessWaiters();
-
-function socketReady(): boolean {
-  return Boolean(ws && ws.readyState === WebSocket.OPEN && authed);
-}
-
-function releaseReadyWaiters(error?: Error): void {
-  readyWaiters.release(error);
-}
-
-let refreshingAuth: Promise<string | null> | null = null;
-
-function handleAuthError() {
-  clearRetryTimer();
-  if (refreshingAuth) return;
-  refreshingAuth = useAuthStore
-    .getState()
-    .restoreSession()
-    .then((token) => {
-      refreshingAuth = null;
-      if (token) {
-        authFailed = false;
-        ensureSocket(token);
-        return token;
-      } else {
-        authFailed = true;
-        releaseReadyWaiters(new ResourceError("DISCONNECTED", "not authenticated"));
-        useAuthStore.getState().markSessionExpired();
-        ws?.close();
-        return null;
-      }
-    })
-    .catch(() => {
-      refreshingAuth = null;
-      authFailed = true;
-      releaseReadyWaiters(new ResourceError("DISCONNECTED", "not authenticated"));
-      useAuthStore.getState().markSessionExpired();
-      ws?.close();
-      return null;
-    });
-}
-
-function whenSocketReady(): ReadinessWait {
-  if (socketReady()) return { promise: Promise.resolve(), cancel: () => {} };
-  if (authFailed)
-    return {
-      promise: Promise.reject(new ResourceError("DISCONNECTED", "not authenticated")),
-      cancel: () => {},
-    };
-  // Waiting is only worth anything if something is coming. A socket that closed while
-  // the tab was in the background leaves nothing running to reopen it until the channel
-  // effect happens to re-fire, so a caller would sit out its whole budget and time out.
-  // Asking for a resource IS a reason to have a socket: nudge one up immediately and reset backoff.
-  const token = wsToken || useAuthStore.getState().token;
-  if (token && (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING)) {
-    clearRetryTimer();
-    retryCount = 0;
-    ensureSocket(token);
-  }
-  return readyWaiters.wait();
-}
-const pendingReqs = new Map<string, PendingReq>();
-
-function rejectAllPending(err: ResourceError) {
-  for (const p of pendingReqs.values()) {
-    clearTimeout(p.timer);
-    p.cancelReady();
-    p.reject(err);
-  }
-  pendingReqs.clear();
-}
-
-function clearRetryTimer() {
-  if (retryTimer) {
-    clearTimeout(retryTimer);
-    retryTimer = null;
-  }
-}
-
-function closeSocket() {
-  clearRetryTimer();
-  if (idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
-  }
-  const s = ws;
-  ws = null;
-  authed = false;
-  if (s) {
-    // Detach handlers so the close doesn't schedule a reconnect.
-    s.onclose = null;
-    s.onerror = null;
-    s.onmessage = null;
-    s.onopen = null;
-    try {
-      s.close();
-    } catch {
-      /* already closed */
-    }
-  }
-  const error = new ResourceError("DISCONNECTED", "socket closed");
-  rejectAllPending(error);
-  releaseReadyWaiters(error);
-}
-
-function sendFrame(frame: Record<string, unknown>): boolean {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-  ws.send(JSON.stringify(frame));
-  return true;
-}
-
-function subscribeActive() {
-  if (active && authed) {
-    sendFrame({ type: "subscribe", channel_id: active.channelId });
-  }
-}
-
-function handleFrame(event: WsEvent & { channel_id?: string }) {
-  // Resource req/res correlation (workbench fs/channel access over this socket).
-  if ((event as { type?: string }).type === "resource_res") {
-    const res = event as unknown as ResourceRes & { req_id?: string };
-    const pending = res.req_id ? pendingReqs.get(res.req_id) : undefined;
-    if (pending && res.req_id) {
-      pendingReqs.delete(res.req_id);
-      clearTimeout(pending.timer);
-      if (res.ok) pending.resolve(res.data);
-      else {
-        const errorMsg = typeof res.error === "string"
-          ? res.error
-          : res.error && typeof res.error === "object"
-            ? (res.error as { message?: string }).message || JSON.stringify(res.error)
-            : "resource error";
-        pending.reject(
-          new ResourceError(res.code ?? "ERROR", errorMsg)
-        );
-      }
-    }
-    return;
-  }
-
+/** Channel event interpretation stays with chat; authentication, routing and RPC
+ * correlation belong to the app-wide transport. */
+function handleChannelFrame(event: RealtimeFrame, cbs: Callbacks) {
   const { type, data } = event;
-
-  // Protocol control frames — handle then return
-  if (type === "auth_ok") {
-    authed = true;
-    retryCount = 0;
-    subscribeActive();
-    releaseReadyWaiters();
-    return;
-  }
-  if (type === "auth_err") {
-    handleAuthError();
-    return;
-  }
-  if (type === "subscribed") {
-    // Only the ack for the CURRENT channel flips us online — a stale ack from a
-    // channel we already left (switch mid-handshake) must not fire onReady.
-    if (active && event.channel_id === active.channelId) {
-      active.setStatus("online");
-      // (Re)subscribe ack — trigger REST since-seq catch-up to heal any gap
-      // from a dropped connection (write-before-deliver self-heal).
-      active.cbs.current.onReady?.();
-    }
-    return;
-  }
-  if (type === "unsubscribed" || type === "pong") {
-    return;
-  }
-
-  // Broadcast frames — drop anything for a channel we're no longer viewing
-  // (frames can still arrive between our unsubscribe and the server ack).
-  if (!active) return;
-  if (event.channel_id && event.channel_id !== active.channelId) return;
-  const cbs = active.cbs.current;
 
   if (type === "message") {
     cbs.onMessage(data as unknown as Message);
@@ -421,213 +166,33 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
   }
 }
 
-/** Open (or reuse) the singleton socket for `token`. No-op while a healthy
- *  socket for the same token is open or connecting. */
-function ensureSocket(token: string) {
-  if (authFailed && wsToken === token) return;
-  if (
-    ws &&
-    wsToken === token &&
-    (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
-  ) {
-    return;
-  }
-  closeSocket();
-  wsToken = token;
-  authFailed = false;
-
-  const socket = new WebSocket(buildWsUrl("/ws"));
-  ws = socket;
-  authed = false;
-
-  socket.onopen = () => {
-    // Phase 1: authenticate
-    socket.send(JSON.stringify({ type: "auth", token }));
-  };
-
-  socket.onmessage = (ev) => {
-    let event: WsEvent & { channel_id?: string };
-    try {
-      event = JSON.parse(ev.data as string) as WsEvent & { channel_id?: string };
-    } catch {
-      return;
-    }
-    handleFrame(event);
-  };
-
-  socket.onclose = (ev) => {
-    if (ws !== socket) return; // superseded by a newer socket
-    ws = null;
-    authed = false;
-    // Reject any in-flight resource requests bound to this socket.
-    rejectAllPending(new ResourceError("DISCONNECTED", "socket closed"));
-    if (ev.code === 4401) {
-      handleAuthError();
-      return;
-    }
-    if (authFailed || refreshingAuth) return;
-    // No subscriber → reconnect lazily on the next attach instead of burning
-    // the retry budget while nobody is looking at a channel.
-    if (!active) return;
-    if (retryCount >= MAX_RETRIES) {
-      active.setStatus("offline");
-      return;
-    }
-    active.setStatus("reconnecting");
-    const delay = Math.min(BASE_DELAY * 2 ** retryCount, MAX_DELAY);
-    retryCount += 1;
-    retryTimer = setTimeout(() => {
-      if (wsToken) ensureSocket(wsToken);
-    }, delay);
-  };
-
-  socket.onerror = () => {
-    socket.close();
-  };
-}
-
-/** Mount a channel subscription on the shared socket. Reuses a live authed
- *  socket by just swapping subscriptions; otherwise (re)connects. */
-function attach(sub: ActiveSub, token: string) {
-  if (idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
-  }
-  const prev = active;
-  active = sub;
-  if (wsToken !== token) {
-    // Token changed (re-login) — the old socket's auth is stale.
-    authFailed = false;
-    ensureSocket(token);
-    return;
-  }
-  if (ws && ws.readyState === WebSocket.OPEN && authed) {
-    if (prev && prev.channelId !== sub.channelId) {
-      sendFrame({ type: "unsubscribe", channel_id: prev.channelId });
-    }
-    sendFrame({ type: "subscribe", channel_id: sub.channelId });
-    return;
-  }
-  // Socket connecting / mid-auth: auth_ok will subscribe the active channel.
-  // Socket dead: reconnect (a pending backoff timer keeps its own schedule).
-  if (!ws && !retryTimer) ensureSocket(token);
-}
-
-/** Unmount the channel subscription. The socket is kept warm for a grace
- *  period so a channel switch (detach→attach) never pays a reconnect. */
-function detach(sub: ActiveSub) {
-  if (active !== sub) return; // superseded by a newer attach
-  sendFrame({ type: "unsubscribe", channel_id: sub.channelId });
-  active = null;
-  clearRetryTimer();
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    idleTimer = null;
-    if (!active) closeSocket();
-  }, IDLE_CLOSE_DELAY);
-}
-
-/** App-wide resource RPC client. It has no view-local state; keeping its identity
- * stable also lets channel resource sessions survive navigation/remounts. */
-export function sendResourceRequest(resource: string, params: Record<string, unknown>): Promise<ResourceData> {
-  const generation = clientSessionGeneration();
-  return new Promise<ResourceData>((resolve, reject) => {
-    const reqId = crypto.randomUUID();
-    const readiness = whenSocketReady();
-    // The request budget also removes its readiness waiter, so a long offline
-    // session cannot retain one closure per timed-out resource request.
-    const timer = setTimeout(() => {
-      pendingReqs.delete(reqId);
-      readiness.cancel();
-      reject(new ResourceError("TIMEOUT", "resource request timed out"));
-    }, RESOURCE_REQ_TIMEOUT);
-    pendingReqs.set(reqId, {
-      resolve,
-      reject,
-      timer,
-      cancelReady: readiness.cancel,
-    });
-
-    void readiness.promise.then(
-      () => {
-        // The budget may have run out while we waited, in which case the request has
-        // already been rejected and must not also be sent.
-        if (!pendingReqs.has(reqId)) return;
-        if (generation !== clientSessionGeneration()) {
-          clearTimeout(timer);
-          pendingReqs.delete(reqId);
-          reject(new ResourceError("DISCONNECTED", "session changed before the resource request was sent"));
-          return;
-        }
-        if (sendFrame({ type: "resource_req", req_id: reqId, resource, params })) return;
-        clearTimeout(timer);
-        pendingReqs.delete(reqId);
-        reject(new ResourceError("DISCONNECTED", "socket not connected"));
-      },
-      (error: Error) => {
-        clearTimeout(timer);
-        pendingReqs.delete(reqId);
-        reject(error);
-      }
-    );
-  });
-}
-
 export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   const token = useAuthStore((s) => s.token);
   const cbsRef = useRef(cbs);
   cbsRef.current = cbs;
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
 
-  // Recovery: the exponential-backoff loop caps out after MAX_RETRIES (~2.5min),
-  // which after a laptop sleep or a network blip would otherwise leave the channel
-  // silently frozen forever. Coming back online, refocusing the tab, or the
-  // banner's "Retry now" is the escape hatch — reset the retry budget and
-  // reconnect now if the socket has died.
-  const reconnectNow = useCallback(() => {
-    if (authFailed || !token) return;
-    if (ws && (ws.readyState === WebSocket.OPEN && authed || ws.readyState === WebSocket.CONNECTING)) return;
-    clearRetryTimer();
-    retryCount = 0;
-    if (channelId) setStatus("reconnecting");
-    ensureSocket(token);
-  }, [token, channelId]);
-
   useEffect(() => {
     if (!channelId || !token) return;
-    setStatus("connecting"); // fresh subscription — don't carry a stale banner across channels
-    const sub: ActiveSub = { channelId, cbs: cbsRef, setStatus };
-    attach(sub, token);
-
-    const revive = () => {
-      if (document.visibilityState === "hidden") return;
-      reconnectNow();
-    };
-    window.addEventListener("online", revive);
-    document.addEventListener("visibilitychange", revive);
-
+    setStatus("connecting");
+    const transport = realtimeTransport();
+    const unsubscribe = transport.subscribeChannels([channelId], {
+      onFrame: (frame) => handleChannelFrame(frame, cbsRef.current),
+      onReady: () => cbsRef.current.onReady?.(),
+      onStatus: setStatus,
+    });
     return () => {
-      window.removeEventListener("online", revive);
-      document.removeEventListener("visibilitychange", revive);
-      detach(sub);
+      // Fleet may retain this channel subscription after chat detaches.
+      transport.sendPresenceFocus(channelId, null);
+      unsubscribe();
     };
-  }, [channelId, token, reconnectNow]);
+  }, [channelId, token]);
 
-  // Logout: the token is gone — a still-authed idle socket must not linger.
-  useEffect(() => {
-    if (!token) closeSocket();
-  }, [token]);
-
-  // Broadcast the caller's workspace focus (which bot's workspace / which path they're
-  // viewing) so peers see it in the next `presence` snapshot. `focus === null` clears it
-  // (dialog closed / bot switched). Best-effort: a no-op if the socket isn't open —
-  // the gateway re-derives presence on the next (re)subscribe anyway.
+  const reconnectNow = useCallback(() => realtimeTransport().reconnectNow(), []);
   const sendPresenceFocus = useCallback(
     (chanId: string, focus: { bot_id: string; path?: string | null } | null) => {
-      sendFrame({ type: "presence_focus", channel_id: chanId, focus });
-    },
-    []
+      realtimeTransport().sendPresenceFocus(chanId, focus);
+    }, []
   );
-
   return { sendResourceReq: sendResourceRequest, sendPresenceFocus, status, reconnectNow };
 }

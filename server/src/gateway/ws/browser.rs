@@ -20,7 +20,6 @@ use crate::{
 
 // ── 关闭码 ────────────────────────────────────────────────────────────────────
 const CLOSE_AUTH_FAIL: u16 = 4401;
-const CLOSE_NOT_MEMBER: u16 = 4403;
 const CLOSE_BACKPRESSURE: u16 = 4408;
 
 /// 鉴权超时：10 秒内未收到合法 auth 帧则关闭。
@@ -76,12 +75,27 @@ struct FocusPayload {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ServerControl {
-    AuthOk { user_id: Uuid },
-    AuthErr { reason: String },
-    Subscribed { channel_id: Uuid },
-    Unsubscribed { channel_id: Uuid },
+    AuthOk {
+        user_id: Uuid,
+    },
+    AuthErr {
+        reason: String,
+    },
+    Subscribed {
+        channel_id: Uuid,
+    },
+    SubscriptionError {
+        channel_id: Uuid,
+        code: &'static str,
+        reason: String,
+    },
+    Unsubscribed {
+        channel_id: Uuid,
+    },
     Pong,
-    Error { detail: String },
+    Error {
+        detail: String,
+    },
 }
 
 // ── Axum upgrade handler ──────────────────────────────────────────────────────
@@ -274,8 +288,8 @@ async fn auth_phase(socket: &mut WebSocket, state: &AppState) -> Option<Claims> 
 // ── 客户端帧处理 ──────────────────────────────────────────────────────────────
 
 /// Handle one client frame. Returns `false` when the server has sent a Close
-/// frame and the connection loop must terminate (auth revoked mid-connection,
-/// or a subscribe by a non-member); `true` keeps the connection open.
+/// frame and the connection loop must terminate (auth revoked mid-connection);
+/// channel subscription failures leave the other subscriptions open.
 async fn handle_client_frame(
     text: &str,
     user_id: Uuid,
@@ -305,7 +319,14 @@ async fn handle_client_frame(
             // 续期失败即关闭：客户端递上来的就是「此会话已吊销」的证明，绝不能
             // 只回 AuthErr 而让旧 socket 连同其订阅继续存活（覆盖没有走
             // kick_user 的吊销路径，例如运维直接改库 bump token_version）。
-            match verify_token(&token, state).await {
+            let verified = verify_token(&token, state).await.and_then(|claims| {
+                if claims.sub.parse::<Uuid>().ok() == Some(user_id) {
+                    Ok(claims)
+                } else {
+                    Err("cannot change authenticated user")
+                }
+            });
+            match verified {
                 Ok(_) => {
                     send_control(socket, &ServerControl::AuthOk { user_id }).await;
                 }
@@ -324,11 +345,10 @@ async fn handle_client_frame(
         }
 
         ClientFrame::Subscribe { channel_id } => {
-            if subscribed.contains(&channel_id) {
-                // 已订阅，直接回执（幂等）
-                send_control(socket, &ServerControl::Subscribed { channel_id }).await;
-                return true;
-            }
+            // Reauthorize even repeated subscriptions: membership revocation
+            // removes registry entries independently of this local list. The
+            // registry is idempotent, preserving an authorized connection's focus.
+            let was_subscribed = subscribed.contains(&channel_id);
 
             match state
                 .conn_manager
@@ -336,13 +356,33 @@ async fn handle_client_frame(
                 .await
             {
                 Ok(()) => {
-                    subscribed.push(channel_id);
+                    if !was_subscribed {
+                        subscribed.push(channel_id);
+                    }
                     send_control(socket, &ServerControl::Subscribed { channel_id }).await;
                     broadcast_presence(state, channel_id).await;
                 }
-                Err(_) => {
-                    close(socket, CLOSE_NOT_MEMBER, "not a channel member").await;
-                    return false;
+                Err(reason) => {
+                    state.conn_manager.unsubscribe(conn_id, channel_id);
+                    subscribed.retain(|&id| id != channel_id);
+                    // One stale Fleet/view channel must not close the shared
+                    // authenticated socket, user notifications, or other channels.
+                    send_control(
+                        socket,
+                        &ServerControl::SubscriptionError {
+                            channel_id,
+                            code: if reason == "not a channel member" {
+                                "PERMISSION_DENIED"
+                            } else {
+                                "INTERNAL_ERROR"
+                            },
+                            reason: reason.to_string(),
+                        },
+                    )
+                    .await;
+                    if was_subscribed {
+                        broadcast_presence(state, channel_id).await;
+                    }
                 }
             }
         }

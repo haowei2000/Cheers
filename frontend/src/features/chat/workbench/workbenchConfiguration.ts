@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import { ResourceError } from "../hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import { fileResourceStore } from "./fileResource";
 import type { FsClient } from "./fsClient";
 import { WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
