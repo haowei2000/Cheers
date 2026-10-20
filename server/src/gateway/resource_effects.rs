@@ -50,7 +50,12 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
     if frame.get("resource").and_then(Value::as_str) == Some("workspace.read") {
         return broker_workspace_read(state, principal, frame).await;
     }
-    let resp = resource::dispatch(&state.db, principal, frame).await;
+    let resp = match principal.principal_type {
+        resource::PrincipalType::User => {
+            resource::dispatch_user(&state.db, principal.principal_id, frame).await
+        }
+        resource::PrincipalType::Bot => resource::dispatch(&state.db, principal, frame).await,
+    };
 
     // Effects run only for a write that actually landed.
     if resp.get("ok").and_then(Value::as_bool) != Some(true) {

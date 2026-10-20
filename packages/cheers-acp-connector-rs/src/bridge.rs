@@ -736,6 +736,7 @@ mod fixture_tests {
                     task_scope_id: None,
                     cwd: Some("/workspace".into()),
                     additional_dirs: vec![],
+                    session_config: None,
                     extra: Default::default(),
                 },
                 runtime: RuntimeDescriptor {

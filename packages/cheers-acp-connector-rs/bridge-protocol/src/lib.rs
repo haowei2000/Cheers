@@ -49,17 +49,23 @@ pub struct RemoteExecutionRequest {
     /// terminal.start/input/resize/status/cancel or file.open.
     pub action: String,
     /// Explicit shell command; absent starts an interactive shell.
-    #[serde(default)] pub command: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
     /// Approved registered opener for file.open.
-    #[serde(default)] pub opener: Option<String>,
+    #[serde(default)]
+    pub opener: Option<String>,
     /// Input bytes encoded as UTF-8; only for terminal.input.
-    #[serde(default)] pub input: Option<String>,
+    #[serde(default)]
+    pub input: Option<String>,
     /// Output cursor in bytes.
-    #[serde(default)] pub offset: u64,
+    #[serde(default)]
+    pub offset: u64,
     /// PTY columns.
-    #[serde(default)] pub cols: Option<u16>,
+    #[serde(default)]
+    pub cols: Option<u16>,
     /// PTY rows.
-    #[serde(default)] pub rows: Option<u16>,
+    #[serde(default)]
+    pub rows: Option<u16>,
 }
 
 /// Vendor-neutral, display-only fields decoded from optional Agent metadata.
@@ -398,8 +404,23 @@ pub struct RuntimeSessionControlSession {
     /// The session's ACP `additionalDirectories`, re-validated against `allowed_roots`.
     #[serde(default)]
     pub additional_dirs: Vec<String>,
+    /// Persisted session overrides, replayed when the runtime session is created/loaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_config: Option<SessionConfigOverrides>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
+}
+
+/// Gateway-owned desired overrides for one Cheers session. The revision orders
+/// task snapshots and immediate updates so a queued task cannot restore stale values.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionConfigOverrides {
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub config_options: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -596,6 +617,8 @@ pub enum ControlInbound {
         #[serde(default)]
         additional_dirs: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         binding_config: Option<Value>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session: Option<RuntimeSessionRef>,
@@ -666,6 +689,8 @@ pub enum ControlInbound {
         config_id: String,
         value: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         updated_at: Option<String>,
     },
     // Session-targeted mode change (ACP session/set_mode). Distinct from the
@@ -682,6 +707,8 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_session_key: Option<String>,
         mode: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         updated_at: Option<String>,
     },

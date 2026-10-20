@@ -317,39 +317,28 @@ async fn authorize_targets(
     user_id: Uuid,
     input: &ScheduledMessageInput,
 ) -> Result<(), AppError> {
-    let is_member: bool = sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
-         WHERE channel_id=$1 AND member_id=$2 AND member_type='user') AS "value!" "#,
-        input.channel_id.to_string(),
-        user_id.to_string(),
+    let role =
+        super::message_policy::authorize_human_send(&state.db, user_id, input.channel_id).await?;
+    let mentions =
+        super::mentions::validate_mention_ids(&state.db, input.channel_id, &input.mention_ids)
+            .await
+            .map_err(super::messages::mention_parse_error_to_app)?;
+    let bots =
+        super::messages::resolve_bot_triggers(&state.db, input.channel_id, &mentions, None).await;
+    let bots = super::messages::filter_writable_bots(&state.db, input.channel_id, bots).await;
+    let bots = super::message_policy::filter_prompt_bots(
+        &state.db,
+        user_id,
+        input.channel_id,
+        &role,
+        bots,
     )
-    .fetch_one(&state.db)
     .await?;
-    if !is_member {
-        return Err(AppError::Forbidden("not a channel member".into()));
-    }
-    for mention_id in &input.mention_ids {
-        let exists: bool = sqlx::query_scalar!(
-            r#"SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
-             WHERE channel_id=$1 AND member_id=$2) AS "value!" "#,
-            input.channel_id.to_string(),
-            mention_id.to_string(),
-        )
-        .fetch_one(&state.db)
-        .await?;
-        if !exists {
-            return Err(AppError::BadRequest(format!(
-                "mentioned member {mention_id} is not in the channel"
-            )));
-        }
-    }
-    crate::api::compliance::ensure_message_consents(
-        state,
+    super::message_policy::ensure_bot_consents(
+        &state.db,
         &user_id.to_string(),
         input.channel_id,
-        &input.mention_ids,
-        &[],
-        None,
+        &bots,
     )
     .await
 }
@@ -701,15 +690,6 @@ fn retryable_before_persist(error: &AppError) -> bool {
 }
 
 async fn execute(state: &AppState, task: &ClaimedTask, trigger: &str) -> Result<String, AppError> {
-    crate::api::compliance::ensure_message_consents(
-        state,
-        &task.created_by.to_string(),
-        task.channel_id,
-        &task.mention_ids,
-        &[],
-        None,
-    )
-    .await?;
     let message = create_message(
         &state.db,
         &state.fanout,

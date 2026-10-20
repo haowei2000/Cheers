@@ -43,7 +43,8 @@ use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
     ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
     ElicitationResolution, PermissionOption, PermissionResolution, RuntimeSessionAckSession,
-    RuntimeSessionControlSession, ServerCapabilities, BRIDGE_PROTOCOL_VERSION,
+    RuntimeSessionControlSession, ServerCapabilities, SessionConfigOverrides,
+    BRIDGE_PROTOCOL_VERSION,
 };
 use crate::bridge_session::{
     connect_control_stream, connect_data_stream, BridgeReady, BridgeSession, BridgeSessionConfig,
@@ -243,6 +244,7 @@ impl AccountRuntime {
         let shared = Arc::new(SharedRuntimeState::new(
             channel_names,
             self.config.policy.prompt.max_concurrent,
+            &self.config.agent,
         ));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
@@ -638,6 +640,7 @@ impl RuntimeContext {
                 cwd,
                 additional_dirs,
                 context_bundle,
+                session_config,
                 ..
             } => {
                 let task = TaskCommand {
@@ -653,6 +656,7 @@ impl RuntimeContext {
                     cwd,
                     additional_dirs,
                     context_bundle,
+                    session_config,
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -696,6 +700,7 @@ impl RuntimeContext {
                     cwd: None,
                     additional_dirs: Vec::new(),
                     context_bundle: None,
+                    session_config: None,
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -739,6 +744,7 @@ impl RuntimeContext {
                     cwd: None,
                     additional_dirs: Vec::new(),
                     context_bundle: None,
+                    session_config: None,
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -782,26 +788,61 @@ impl RuntimeContext {
                 provider_session_key,
                 config_id,
                 value,
+                session_config,
                 ..
             } => {
-                self.handle_config_option_set(
-                    request_id,
-                    session_id,
-                    provider_session_key,
-                    config_id,
-                    value,
+                self.remember_session_config(
+                    provider_session_key.as_deref(),
+                    session_config.as_ref(),
                 )
-                .await?;
+                .await;
+                let runtime = self.clone();
+                // Session ordering may wait for an active prompt. Keep the input
+                // loop free to deliver that prompt's permission/elicitation replies.
+                tokio::spawn(async move {
+                    if let Err(error) = runtime
+                        .handle_config_option_set(
+                            request_id,
+                            session_id,
+                            provider_session_key,
+                            config_id,
+                            value,
+                            session_config,
+                        )
+                        .await
+                    {
+                        tracing::warn!(%error, "session config change failed");
+                    }
+                });
             }
             ControlInbound::ModeSet {
                 request_id,
                 session_id,
                 provider_session_key,
                 mode,
+                session_config,
                 ..
             } => {
-                self.handle_mode_set(request_id, session_id, provider_session_key, mode)
-                    .await?;
+                self.remember_session_config(
+                    provider_session_key.as_deref(),
+                    session_config.as_ref(),
+                )
+                .await;
+                let runtime = self.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = runtime
+                        .handle_mode_set(
+                            request_id,
+                            session_id,
+                            provider_session_key,
+                            mode,
+                            session_config,
+                        )
+                        .await
+                    {
+                        tracing::warn!(%error, "session mode change failed");
+                    }
+                });
             }
             ControlInbound::PermissionResolution { resolution, .. } => {
                 self.handle_permission_resolution(resolution).await?;
@@ -2287,6 +2328,13 @@ impl RuntimeContext {
         task: &TaskCommand,
         options: SessionStartOptions,
     ) -> anyhow::Result<String> {
+        if let Some(desired) = &task.session_config {
+            self.shared
+                .session_configs
+                .lock()
+                .await
+                .remember(&task.provider_session_key, desired.clone());
+        }
         let existing = self
             .state
             .lock()
@@ -2300,6 +2348,8 @@ impl RuntimeContext {
                     adapter.load_session(&session_id, options.clone()).await
                 };
                 if let Ok(loaded) = load_result {
+                    self.reconcile_session_config(&task.provider_session_key, &session_id)
+                        .await?;
                     self.report_session_snapshot(&loaded.metadata).await;
                     // Re-stamp the mapping so its TTL measures idleness rather
                     // than age: a channel in daily use writes nothing here
@@ -2374,6 +2424,8 @@ impl RuntimeContext {
                 &task.provider_session_key,
                 &new_session.session_id,
             )
+            .await?;
+        self.reconcile_session_config(&task.provider_session_key, &new_session.session_id)
             .await?;
         // A proactive claim evaluation has no gateway CheersSession to update.
         // Reporting its ACP-only key made the gateway try to resolve a
@@ -2489,6 +2541,7 @@ impl RuntimeContext {
                     cwd: session.cwd.clone(),
                     additional_dirs: session.additional_dirs.clone(),
                     context_bundle: None,
+                    session_config: session.session_config.clone(),
                 };
                 let options = self.session_start_options(&task).await;
                 self.ensure_acp_session(&task, options).await.map(|id| {
@@ -3018,6 +3071,8 @@ impl TurnSlots {
 
 struct SharedRuntimeState {
     remote: Arc<remote_execution::RemoteRegistry>,
+    /// Bot defaults and monotonic per-session desired-state snapshots.
+    session_configs: Mutex<config::DesiredSessionConfigs>,
     /// Multi-index active-run registry; one lock preserves atomic insert/remove.
     runs: Mutex<RunRegistry>,
     /// Human interaction waiters are independent of streaming and workspace work.
@@ -3076,8 +3131,13 @@ struct InteractionRegistry {
 
 impl SharedRuntimeState {
     /// Creates independent lock domains with the initial membership snapshot.
-    fn new(channel_names: HashMap<String, String>, max_concurrent: usize) -> Self {
+    fn new(
+        channel_names: HashMap<String, String>,
+        max_concurrent: usize,
+        agent: &crate::config::StdioAgentConfig,
+    ) -> Self {
         Self {
+            session_configs: Mutex::new(config::DesiredSessionConfigs::new(agent)),
             remote: Arc::new(remote_execution::RemoteRegistry::default()),
             runs: Mutex::new(RunRegistry::default()),
             interactions: Mutex::new(InteractionRegistry::default()),
@@ -3335,6 +3395,8 @@ struct TaskCommand {
     /// via its Cheers resource tools — NOT inlined like `pinned`. `None` when the
     /// message carried no bundle.
     context_bundle: Option<Value>,
+    /// Authoritative gateway snapshot, absent only for old peers/private turns.
+    session_config: Option<SessionConfigOverrides>,
 }
 
 fn silent_result(
@@ -3526,8 +3588,11 @@ mod tests {
     /// 只实现 run_task 真正触达的方法；其余留 unimplemented!，一旦被调用就是
     /// 测试覆盖面变了，应当显式面对而不是静默返回默认值。
     struct FakeAdapter {
-        prompt_client: Arc<GatedPromptClient>,
+        prompt_client: Arc<dyn PromptClient>,
         sessions: AtomicU64,
+        load_sessions: bool,
+        native_model_only: bool,
+        config_calls: Arc<Mutex<Vec<String>>>,
     }
 
     #[async_trait::async_trait]
@@ -3553,6 +3618,10 @@ mod tests {
             _options: SessionStartOptions,
         ) -> anyhow::Result<SessionStartResult> {
             let n = self.sessions.fetch_add(1, Ordering::SeqCst);
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("new:acp-session-{n}"));
             Ok(SessionStartResult {
                 session_id: format!("acp-session-{n}"),
                 metadata: json!({}),
@@ -3560,10 +3629,20 @@ mod tests {
         }
         async fn load_session(
             &mut self,
-            _session_id: &str,
+            session_id: &str,
             _options: SessionStartOptions,
         ) -> anyhow::Result<SessionLoadResult> {
-            unimplemented!("fixture agent does not advertise loadSession")
+            assert!(
+                self.load_sessions,
+                "fixture agent does not advertise loadSession"
+            );
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("load:{session_id}"));
+            Ok(SessionLoadResult {
+                metadata: json!({}),
+            })
         }
         async fn cancel(&mut self, _session_id: &str) -> anyhow::Result<()> {
             Ok(())
@@ -3571,16 +3650,28 @@ mod tests {
         async fn set_config_option(
             &mut self,
             _session_id: &str,
-            _config_id: &str,
-            _value: &str,
+            config_id: &str,
+            value: &str,
         ) -> anyhow::Result<Value> {
-            unimplemented!("fixture exposes no config options")
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("option:{config_id}={value}"));
+            if self.native_model_only && config_id == "model" {
+                return Err(anyhow!("method not found"));
+            }
+            Ok(json!({}))
         }
-        async fn set_mode(&mut self, _session_id: &str, _mode: &str) -> anyhow::Result<()> {
-            unimplemented!("fixture exposes no modes")
+        async fn set_mode(&mut self, _session_id: &str, mode: &str) -> anyhow::Result<()> {
+            self.config_calls.lock().await.push(format!("mode:{mode}"));
+            Ok(())
         }
-        async fn set_model(&mut self, _session_id: &str, _model_id: &str) -> anyhow::Result<()> {
-            unimplemented!("fixture exposes no models")
+        async fn set_model(&mut self, _session_id: &str, model_id: &str) -> anyhow::Result<()> {
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("native-model:{model_id}"));
+            Ok(())
         }
         async fn apply_settings(
             &mut self,
@@ -3598,7 +3689,7 @@ mod tests {
             // loadSession off keeps every turn on the new_session path, so the
             // fixture needs no session persistence.
             AgentCapabilities {
-                load_session: false,
+                load_session: self.load_sessions,
                 prompt_image: false,
                 prompt_audio: false,
                 mcp_http: true,
@@ -3726,6 +3817,9 @@ max_concurrent = {max_concurrent}
         let adapter: Box<dyn RuntimeAdapter> = Box::new(FakeAdapter {
             prompt_client: prompt_client.clone(),
             sessions: AtomicU64::new(0),
+            load_sessions: false,
+            native_model_only: false,
+            config_calls: Arc::new(Mutex::new(Vec::new())),
         });
         let config = fixture_config(dir, max_concurrent).await;
         let TestIo {
@@ -3740,6 +3834,7 @@ max_concurrent = {max_concurrent}
         let shared = Arc::new(SharedRuntimeState::new(
             HashMap::new(),
             config.policy.prompt.max_concurrent,
+            &config.agent,
         ));
         let context = Arc::new(RuntimeContext {
             account_id: "test".to_string(),
@@ -3783,7 +3878,195 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         }
+    }
+
+    async fn config_runtime(
+        dir: &Path,
+    ) -> (
+        Arc<RuntimeContext>,
+        Arc<Mutex<Vec<String>>>,
+        watch::Sender<Option<PromptOutcome>>,
+        RuntimeTaps,
+    ) {
+        let (mut runtime, _, release, taps) = fixture_runtime(dir, PromptGate::First, 4).await;
+        let context = Arc::get_mut(&mut runtime).unwrap();
+        context.config.agent.agent_native_permission_mode = Some("bot-mode".into());
+        context.config.agent.config_options =
+            Some(json!({"model":"bot-model", "reasoning_effort":"low"}));
+        context.config.policy.config.allowed_config_options =
+            vec!["model".into(), "reasoning_effort".into()];
+        context.config.policy.permission.allowed_modes =
+            vec!["bot-mode".into(), "session-mode".into()];
+        *context.shared.session_configs.lock().await =
+            config::DesiredSessionConfigs::new(&context.config.agent);
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let requester = context.adapter.lock().await.prompt_client();
+        *context.adapter.lock().await = Box::new(FakeAdapter {
+            prompt_client: requester,
+            sessions: AtomicU64::new(0),
+            load_sessions: true,
+            native_model_only: true,
+            config_calls: calls.clone(),
+        });
+        (runtime, calls, release, taps)
+    }
+
+    fn session_override(revision: u64, model: &str) -> SessionConfigOverrides {
+        SessionConfigOverrides {
+            revision,
+            permission_mode: Some("session-mode".into()),
+            config_options: BTreeMap::from([("model".into(), model.into())]),
+        }
+    }
+
+    #[tokio::test]
+    async fn desired_session_config_survives_new_load_and_connector_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, calls, _release, _taps) = config_runtime(dir.path()).await;
+        let mut task = fixture_task("configured-channel");
+        // This snapshot also covers a setting changed while the connector was offline.
+        task.session_config = Some(session_override(3, "session-model"));
+        let options = runtime.session_start_options(&task).await;
+        let id = runtime.ensure_acp_session(&task, options).await.unwrap();
+        let applied = vec![
+            "mode:session-mode",
+            "option:model=session-model",
+            "native-model:session-model",
+            "option:reasoning_effort=low",
+        ];
+        assert_eq!(&calls.lock().await[1..], &applied);
+        calls.lock().await.clear();
+        let options = runtime.session_start_options(&task).await;
+        assert_eq!(
+            runtime.ensure_acp_session(&task, options).await.unwrap(),
+            id
+        );
+        assert_eq!(calls.lock().await[0], format!("load:{id}"));
+        assert_eq!(&calls.lock().await[1..], &applied);
+
+        // Re-create all in-memory orchestration state, retaining only the real
+        // session-state file and the gateway's authoritative task snapshot.
+        let (restarted, calls, _release2, _taps2) = config_runtime(dir.path()).await;
+        restarted.state.lock().await.load().await.unwrap();
+        let options = restarted.session_start_options(&task).await;
+        assert_eq!(
+            restarted.ensure_acp_session(&task, options).await.unwrap(),
+            id
+        );
+        assert_eq!(calls.lock().await[0], format!("load:{id}"));
+        assert_eq!(&calls.lock().await[1..], &applied);
+    }
+
+    #[tokio::test]
+    async fn immediate_session_config_before_creation_beats_older_queued_task_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, calls, _release, mut taps) = config_runtime(dir.path()).await;
+        let mut task = fixture_task("configured-channel");
+        runtime
+            .handle_config_option_set(
+                "change".into(),
+                None,
+                Some(task.provider_session_key.clone()),
+                "model".into(),
+                "latest-model".into(),
+                Some(session_override(5, "latest-model")),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            taps._control.recv().await,
+            Some(ControlOutbound::ConfigOptionStatus { ok: true, .. })
+        ));
+        assert!(
+            calls.lock().await.is_empty(),
+            "pre-creation desired state needs no ACP request"
+        );
+        task.session_config = Some(session_override(4, "stale-model"));
+        let options = runtime.session_start_options(&task).await;
+        runtime.ensure_acp_session(&task, options).await.unwrap();
+        assert!(calls
+            .lock()
+            .await
+            .contains(&"native-model:latest-model".to_string()));
+        assert!(!calls
+            .lock()
+            .await
+            .iter()
+            .any(|call| call.contains("stale-model")));
+    }
+
+    #[tokio::test]
+    async fn session_snapshot_cannot_escape_local_policy() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, calls, _release, _taps) = config_runtime(dir.path()).await;
+        let mut task = fixture_task("configured-channel");
+        let mut desired = session_override(1, "allowed-model");
+        desired.permission_mode = Some("unrestricted-mode".into());
+        desired
+            .config_options
+            .insert("sandbox".into(), "unrestricted".into());
+        task.session_config = Some(desired);
+        let options = runtime.session_start_options(&task).await;
+        runtime.ensure_acp_session(&task, options).await.unwrap();
+        let calls = calls.lock().await;
+        assert!(calls.contains(&"mode:bot-mode".to_string()));
+        assert!(calls.contains(&"native-model:allowed-model".to_string()));
+        assert!(!calls.iter().any(|call| call.contains("unrestricted")));
+    }
+
+    #[tokio::test]
+    async fn config_change_waiting_for_a_prompt_does_not_block_bridge_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, calls, release, mut taps) = config_runtime(dir.path()).await;
+        let task = fixture_task("configured-channel");
+        let key = task.provider_session_key.clone();
+        let turn = tokio::spawn(runtime.clone().run_task(task, None));
+        // The run registry is inserted immediately before the fixture prompt parks.
+        while runtime
+            .shared
+            .runs
+            .lock()
+            .await
+            .by_provider_key
+            .get(&key)
+            .is_none()
+        {
+            tokio::task::yield_now().await;
+        }
+        timeout(
+            Duration::from_secs(1),
+            runtime.clone().handle_control(ControlInbound::ModeSet {
+                v: BRIDGE_PROTOCOL_VERSION,
+                request_id: "change".into(),
+                session_id: None,
+                provider_session_key: Some(key),
+                mode: "session-mode".into(),
+                session_config: Some(session_override(2, "new-model")),
+                updated_at: None,
+            }),
+        )
+        .await
+        .expect("input must remain available for permission replies")
+        .unwrap();
+        release.send(Some(PromptOutcome::Finish)).unwrap();
+        turn.await.unwrap().unwrap();
+        let ack = timeout(Duration::from_secs(1), taps._control.recv())
+            .await
+            .unwrap();
+        assert!(matches!(
+            ack,
+            Some(ControlOutbound::ConfigOptionStatus { ok: true, .. })
+        ));
+        assert_eq!(
+            calls.lock().await.last().unwrap(),
+            "option:reasoning_effort=low"
+        );
+        assert!(calls
+            .lock()
+            .await
+            .contains(&"native-model:new-model".to_string()));
     }
 
     /// 验收矩阵 #4：并发度打满时，排队的回合要让频道看见"排队中"，而不是静默等待。
@@ -4089,6 +4372,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         };
         let prompt = build_prompt(
             &task,
@@ -4172,6 +4456,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         }
     }
 
@@ -4512,6 +4797,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         };
         let prompt = build_prompt(
             &task,
@@ -4553,6 +4839,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         };
         let prompt = build_prompt(
             &task,
@@ -4590,6 +4877,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         }
     }
 

@@ -777,15 +777,9 @@ pub async fn init_project(
             mention_ids,
             mention_names: vec![],
             session_id: None,
-            context_bundle: Some(json!({
-                "integration": {
-                    "id": binding.integration_id,
-                    "kind": binding.external_kind,
-                    "external_id": binding.external_id,
-                    "action": "project_init",
-                    "resource": facts,
-                }
-            })),
+            // Integration facts are already rendered in the prompt. Message context
+            // carries read references or typed interactions, not a second facts copy.
+            context_bundle: None,
             msg_id: None,
         },
     )

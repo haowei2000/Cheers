@@ -3,9 +3,22 @@
 Rust local daemon for the Cheers ACP connector.
 
 This binary owns daemon lifecycle commands: `start`, `stop`, `restart`,
-`status`, and `logs`. Its `run` command validates the local TOML security
+`status`, `list`, and `logs`. Its `run` command validates the local TOML security
 config, starts the Rust BridgeRuntime, and connects Agent Bridge to a local ACP
 agent through the configured adapter.
+
+For desktop supervision or scripts, use `cce-acp-connector list --json` or
+`cce-acp-connector --name helper status --json`. Both return a versioned report
+(`schema_version: 1`, `instances: [...]`). The CLI validates process identity
+before setting `running`; a reused PID does not count as a running daemon.
+An unsuccessful command means status is unavailable, so callers must not treat
+it as a list of stopped instances.
+
+Bot defaults and persisted session overrides are reconciled after every ACP
+session create/load and after an immediate session change. Gateway task snapshots
+restore overrides made offline or before the first runtime session exists.
+Monotonic revisions prevent an older queued task from restoring stale settings;
+local host policy still clamps every session override.
 
 Every session receives the canonical Gateway HTTP MCP URL from the authenticated
 Bridge hello, and the Connector requires `mcpCapabilities.http=true`.

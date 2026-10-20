@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 /// 消息领域逻辑。
 ///
 /// 核心流程（写后投递原则）：
-///   1. 验成员资格
+///   1. 验写权限、屏蔽、consent 与目标 bot
 ///   2. INSERT message → PG
 ///   3. fanout::broadcast（终态帧，先落库再投递）
 ///   4. 解析 bot 触发条件
@@ -88,63 +88,32 @@ pub async fn create_message(
     fanout: &Arc<dyn Fanout>,
     stream_registry: &StreamRegistry,
     bot_locator: &Arc<dyn BotLocator>,
-    params: CreateMessageParams,
+    mut params: CreateMessageParams,
 ) -> Result<MessageDto, AppError> {
     info!(user_id = %params.user_id, channel_id = %params.channel_id, "create_message start");
 
+    let sender_role =
+        super::message_policy::authorize_human_send(db, params.user_id, params.channel_id).await?;
+    if params.content.trim().is_empty() {
+        return Err(AppError::BadRequest("content cannot be empty".into()));
+    }
+    if let Some(event) = params
+        .context_bundle
+        .as_ref()
+        .and_then(|bundle| bundle.get("interaction"))
+    {
+        cheers_mcp_server::interactive::validate_interaction(event)
+            .map_err(|error| AppError::BadRequest(error.into()))?;
+    }
+    params.context_bundle = params
+        .context_bundle
+        .as_ref()
+        .and_then(super::context_bundle::sanitize_human_bundle);
     let file_ids = normalize_file_ids(&params.file_ids);
     if !file_ids.is_empty() {
         validate_file_ids(db, params.user_id, params.channel_id, &file_ids).await?;
     }
 
-    // ── 1. 验成员资格 ─────────────────────────────────────────────────────
-    let is_member = sqlx::query!(
-        "SELECT EXISTS(
-            SELECT 1 AS present FROM channel_memberships
-            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
-        ) AS ok",
-        params.channel_id.to_string(),
-        params.user_id.to_string(),
-    )
-    .fetch_one(db)
-    .await
-    .map_err(AppError::Db)?
-    .ok
-    .clone()
-    .unwrap_or(false);
-
-    if !is_member {
-        info!(user_id = %params.user_id, channel_id = %params.channel_id, "create_message denied: user is not a member");
-        return Err(AppError::Forbidden("not a channel member".into()));
-    }
-
-    // UI requests are ordinary human messages with a structured context envelope.
-    // Claim their invocation id in the SAME transaction as the message, reusing
-    // the existing idempotency protocol instead of a second action/job store.
-    let idempotency = interactive_request_key(&params)?;
-    if let Some(key) = &idempotency {
-        if let Some(result) = key
-            .replay(db)
-            .await
-            .map_err(|(_, message)| AppError::Conflict(message))?
-        {
-            return serde_json::from_value(result)
-                .map_err(|error| AppError::Internal(error.to_string()));
-        }
-    }
-
-    // ── 2. 查发送者名字（用于 DTO）───────────────────────────────────────
-    let sender_name: Option<String> = sqlx::query!(
-        "SELECT display_name FROM users WHERE user_id = $1",
-        params.user_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .and_then(|r| r.display_name.clone());
-
-    // ── 3. 先落库（写后投递：INSERT 成功才广播）────────────────────────
     // Names first (group tokens like @all/@bots expand here — the same path bots
     // use via post_message), then the explicit ids, merged & deduped. A human
     // @all is a deliberate one-shot fan-out (no amplification), bounded by the
@@ -168,6 +137,78 @@ pub async fn create_message(
     }
     debug!(channel_id = %params.channel_id, mentions = mentions.len(), "mentions resolved (names + ids)");
 
+    let targeted_session = match params.session_id {
+        Some(sid) => {
+            let (bot, key) =
+                sessions::resolve_channel_session(db, &params.channel_id.to_string(), sid)
+                    .await
+                    .map_err(|_| {
+                        AppError::BadRequest("session not found in this channel".into())
+                    })?;
+            Some((bot, sid, key))
+        }
+        None => None,
+    };
+    let bots = match &targeted_session {
+        Some((bot, _, _)) => vec![*bot],
+        None => {
+            resolve_bot_triggers(db, params.channel_id, &mentions, params.reply_to_msg_id).await
+        }
+    };
+    // readonly 角色的 bot 不派发：它在 resource 层本就发不出消息，唤醒只会
+    // 产生一个必然失败的回合。消息本身照常入库。
+    let bots = filter_writable_bots(db, params.channel_id, bots).await;
+    let bots = super::message_policy::filter_prompt_bots(
+        db,
+        params.user_id,
+        params.channel_id,
+        &sender_role,
+        bots,
+    )
+    .await?;
+    super::message_policy::ensure_bot_consents(
+        db,
+        &params.user_id.to_string(),
+        params.channel_id,
+        &bots,
+    )
+    .await?;
+
+    // UI requests are ordinary human messages with a structured context envelope.
+    // Claim their invocation id in the SAME transaction as the message, reusing
+    // the existing idempotency protocol instead of a second action/job store.
+    let idempotency = interactive_request_key(&params)?;
+    if let Some(key) = &idempotency {
+        if let Some(result) = key
+            .replay(db)
+            .await
+            .map_err(|(_, message)| AppError::Conflict(message))?
+        {
+            return serde_json::from_value(result)
+                .map_err(|error| AppError::Internal(error.to_string()));
+        }
+    }
+
+    // A replay retains its accepted receipt after a source edit or bot disconnect,
+    // but current membership, blocking, and consent still apply above.
+    if let Some(event) = params
+        .context_bundle
+        .as_ref()
+        .and_then(|bundle| bundle.get("interaction"))
+    {
+        super::message_policy::validate_resource_interaction(db, &params, event).await?;
+    }
+
+    let sender_name: Option<String> = sqlx::query!(
+        "SELECT display_name FROM users WHERE user_id = $1",
+        params.user_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.display_name.clone());
+
     // A human @mention is a request to start work, not merely decorative text.
     // Reject before allocating a sequence or persisting anything when its target
     // bot cannot receive a task. This keeps a failed trigger out of every
@@ -175,13 +216,14 @@ pub async fn create_message(
     // Only an eligible dispatch target can reject a human send. In particular,
     // readonly bot members are intentionally not woken, so @all must still post
     // when one of those passive members is offline.
-    let mentioned_bots = mentions
+    let mentioned_bots: Vec<Uuid> = mentions
         .iter()
         .filter(|mention| matches!(mention.member_type, mentions::MemberType::Bot))
         .map(|mention| mention.member_id)
+        .chain(targeted_session.iter().map(|(bot, _, _)| *bot))
         .collect();
     let mut offline_bots = Vec::new();
-    for bot_id in filter_writable_bots(db, params.channel_id, mentioned_bots).await {
+    for bot_id in mentioned_bots.into_iter().filter(|id| bots.contains(id)) {
         if !bot_locator.is_online(bot_id).await {
             offline_bots.push(bot_id);
         }
@@ -197,8 +239,8 @@ pub async fn create_message(
 
     // Member-facing copy: strip inline snapshots so `preview.text` never reaches
     // channel members / history (they only ever see chip labels). The full copy —
-    // `params.context_bundle`, already sanitized by `sanitize_human_bundle` in the
-    // API layer — is delivered ONLY to the @mentioned target bot's task frame.
+    // `params.context_bundle`, already sanitized by the shared message
+    // command — is delivered ONLY to the @mentioned target bot's task frame.
     let row_bundle = params
         .context_bundle
         .as_ref()
@@ -325,30 +367,6 @@ pub async fn create_message(
     fanout.broadcast_channel(params.channel_id, wire).await;
     info!(message_id = %msg_id, channel_id = %params.channel_id, "message fanout broadcast dispatched");
 
-    // ── 5. 解析 bot 触发，派发 task ───────────────────────────────────
-    // A `session_id` targets a specific "other" session in this channel; it
-    // overrides mention-based routing and determines which bot is prompted.
-    let targeted_session = match params.session_id {
-        Some(sid) => {
-            let (bot, key) =
-                sessions::resolve_channel_session(db, &params.channel_id.to_string(), sid)
-                    .await
-                    .map_err(|_| {
-                        AppError::BadRequest("session not found in this channel".into())
-                    })?;
-            Some((bot, sid, key))
-        }
-        None => None,
-    };
-    let bots = match &targeted_session {
-        Some((bot, _, _)) => vec![*bot],
-        None => {
-            resolve_bot_triggers(db, params.channel_id, &mentions, params.reply_to_msg_id).await
-        }
-    };
-    // readonly 角色的 bot 不派发：它在 resource 层本就发不出消息，唤醒只会
-    // 产生一个必然失败的回合。消息本身照常入库。
-    let bots = filter_writable_bots(db, params.channel_id, bots).await;
     info!(message_id = %msg_id, matched_bots = bots.len(), "resolved bot triggers");
 
     // Root a bot@bot chain at this user message so the whole cascade it spawns is
@@ -365,48 +383,10 @@ pub async fn create_message(
             }
         }
     };
-    // Sender's channel role (for the INITIATE matrix); default 'member'.
-    let sender_role: String = sqlx::query!(
-        "SELECT role FROM channel_memberships
-         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
-        params.channel_id.to_string(),
-        params.user_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .and_then(|r| Some(r.role.clone()))
-    .unwrap_or_else(|| "member".to_string());
     // Shared across all bots triggered by THIS message so identical trigger
     // attachments / pinned files are fetched from S3 once, not once per bot.
     let media_cache = dispatcher::MediaCache::default();
     for bot_id in bots {
-        // Event-policy INITIATE gate (docs/arch/ACP_EVENT_TAXONOMY.md): may THIS user
-        // trigger a `prompt` for THIS bot here? The message still posts to the channel;
-        // we only skip waking the bot. Fail-open on a rules error (membership already
-        // passed, and absence-of-policy = allowed).
-        let may_prompt = crate::domain::acp_policy::allows(
-            db,
-            &bot_id.to_string(),
-            &params.channel_id.to_string(),
-            &params.user_id.to_string(),
-            &sender_role,
-            "session/prompt",
-            crate::domain::bot_event_policy::Capability::Initiate,
-        )
-        .await
-        .unwrap_or(true);
-        if !may_prompt {
-            info!(
-                bot_id = %bot_id,
-                user_id = %params.user_id,
-                role = %sender_role,
-                "INITIATE(prompt) denied by bot_event_policy; message posted, bot not triggered"
-            );
-            continue;
-        }
-
         // Resolve the session to prompt. A targeted "other" session reuses its
         // own key (cheers:session:{id}); otherwise the channel PRIMARY session:
         // the `role='primary'` BINDING is authoritative (set_primary_session can
@@ -639,7 +619,7 @@ async fn validate_file_ids(
 ///   4. 返回空 → 静默（消息仍记录）。
 ///
 /// `mentions` 由 `create_message` 在消息事务内写入前扫描并验证，无额外查询。
-async fn resolve_bot_triggers(
+pub(crate) async fn resolve_bot_triggers(
     db: &PgPool,
     channel_id: Uuid,
     mentions: &[crate::domain::mentions::Mention],
@@ -740,7 +720,7 @@ pub(crate) async fn filter_writable_bots(
     }
 }
 
-fn mention_parse_error_to_app(error: MentionParseError) -> AppError {
+pub(crate) fn mention_parse_error_to_app(error: MentionParseError) -> AppError {
     match error {
         MentionParseError::Db(error) => AppError::Db(error),
         other => AppError::BadRequest(other.to_string()),

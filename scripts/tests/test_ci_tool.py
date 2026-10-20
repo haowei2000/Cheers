@@ -1,5 +1,7 @@
-import importlib.util
+import copy
 import hashlib
+import importlib.util
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -43,6 +45,36 @@ class PlanTests(unittest.TestCase):
                 ["packages/cheers-acp-connector-rs/bridge-protocol/src/lib.rs"],
             ),
             {"gateway", "plugin"},
+        )
+
+    def test_shared_rust_libraries_select_every_consumer(self):
+        for package in ("cheers-interactive-core", "cheers-mcp-server"):
+            path = f"packages/{package}/src/lib.rs"
+            with self.subTest(package=package):
+                self.assertEqual(self.selected("ci", [path]), {"gateway", "plugin"})
+                self.assertEqual(self.selected("cd", [path]), {"gateway"})
+
+    def test_canvas_runtime_selects_frontend_builds(self):
+        path = "packages/cheers-canvas-runtime/src/index.ts"
+        for workflow in ("ci", "cd"):
+            with self.subTest(workflow=workflow):
+                self.assertEqual(self.selected(workflow, [path]), {"frontend"})
+
+    def test_embedded_rust_inputs_select_consumers(self):
+        cases = {
+            "design-system/a2ui-catalog.json": {"gateway", "frontend", "plugin", "ios"},
+            "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json": {
+                "gateway", "frontend", "plugin"
+            },
+            "fixtures/locator/corpus.json": {"gateway", "plugin"},
+        }
+        for path, selected in cases.items():
+            with self.subTest(path=path):
+                self.assertEqual(self.selected("ci", [path]), selected)
+                self.assertIn("gateway", self.selected("cd", [path]))
+        self.assertEqual(
+            self.selected("cd", ["design-system/a2ui-catalog.json"]),
+            {"gateway", "frontend"},
         )
 
     def test_website_change_rebuilds_frontend_in_ci_and_cd(self):
@@ -133,6 +165,111 @@ class MetricsTests(unittest.TestCase):
 class AuditTests(unittest.TestCase):
     def test_repository_workflows_match_the_dependency_map(self):
         self.assertEqual(ci_tool.audit(ci_tool.load_config()), [])
+
+    def test_audit_catches_missing_local_manifest_dependencies(self):
+        cases = (
+            ("ci", "gateway", "packages/cheers-mcp-server/**"),
+            ("cd", "gateway", "packages/cheers-interactive-core/**"),
+            ("ci", "plugin", "packages/cheers-interactive-core/**"),
+            ("ci", "frontend", "packages/cheers-canvas-runtime/**"),
+            ("cd", "frontend", "packages/cheers-canvas-runtime/**"),
+        )
+        for workflow, lane, pattern in cases:
+            with self.subTest(workflow=workflow, lane=lane, pattern=pattern):
+                config = copy.deepcopy(ci_tool.load_config())
+                config["workflows"][workflow]["lanes"][lane].remove(pattern)
+                self.assertIn(
+                    f"{workflow}.{lane}: missing local build dependency {pattern}",
+                    ci_tool.audit(config),
+                )
+
+    def test_audit_catches_missing_compiler_include_inputs(self):
+        for path in (
+            "design-system/a2ui-catalog.json",
+            "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
+        ):
+            with self.subTest(path=path):
+                config = copy.deepcopy(ci_tool.load_config())
+                config["workflows"]["cd"]["lanes"]["gateway"].remove(path)
+                self.assertIn(
+                    f"cd.gateway: missing embedded build input {path}",
+                    ci_tool.audit(config),
+                )
+
+    def test_audit_preserves_frontend_asset_dependencies(self):
+        for pattern in ("website/**", "design-system/**"):
+            with self.subTest(pattern=pattern):
+                config = copy.deepcopy(ci_tool.load_config())
+                config["workflows"]["cd"]["lanes"]["frontend"].remove(pattern)
+                self.assertIn(
+                    f"cd.frontend: missing build dependency {pattern}",
+                    ci_tool.audit(config),
+                )
+
+    def test_discovers_transitive_and_target_specific_dependencies_from_manifests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = {
+                "app/Cargo.toml": '[target.\'cfg(unix)\'.dependencies]\nfirst = { path = "../first" }\n',
+                "first/Cargo.toml": '[dependencies]\nsecond = { path = "../second" }\n',
+                "second/Cargo.toml": '[package]\nname = "second"\n',
+                "second/src/lib.rs": 'const DATA: &str = include_str!("../../catalog.json");\n',
+                "catalog.json": "{}",
+                "web/package.json": '{"dependencies":{"runtime":"file:../runtime"}}',
+                "runtime/package.json": '{"dependencies":{"shared":"link:../shared"}}',
+                "shared/package.json": "{}",
+            }
+            for name, content in files.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+            self.assertEqual(
+                ci_tool.local_build_inputs(root, ("app/Cargo.toml",)),
+                ({"app", "first", "second"}, {"catalog.json"}),
+            )
+            self.assertEqual(
+                ci_tool.local_build_inputs(root, ("web/package.json",)),
+                ({"web", "runtime", "shared"}, set()),
+            )
+            config = {"workflows": {"ci": {"lanes": {"gateway": ["app/**", "first/**", "second/Cargo.toml"]}}}}
+            errors = ci_tool.audit_build_dependencies(config, root, {"gateway": ("app/Cargo.toml",)})
+            self.assertIn("ci.gateway: missing local build dependency second/**", errors)
+            self.assertIn("ci.gateway: missing embedded build input catalog.json", errors)
+
+
+@unittest.skipUnless(shutil.which("helm"), "Helm is required to validate rendered deployments")
+class HelmDeploymentContractTests(unittest.TestCase):
+    chart = MODULE_PATH.parents[1] / "deploy" / "helm" / "cheers"
+
+    def render(self, overlay=None, *settings):
+        command = ["helm", "template", "ci-contract", str(self.chart)]
+        if overlay:
+            command.extend(["-f", str(self.chart / overlay)])
+        for setting in ("secrets.create=false", "secrets.existingSecret=ci-test", *settings):
+            command.extend(["--set", setting])
+        return subprocess.run(command, text=True, capture_output=True, check=False)
+
+    def test_default_dev_and_prod_keep_one_gateway_without_rollout_overlap(self):
+        for overlay in (None, "values-dev.yaml", "values-prod.yaml"):
+            with self.subTest(overlay=overlay):
+                result = self.render(overlay)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                gateway = next(
+                    document for document in result.stdout.split("\n---\n")
+                    if "# Source: cheers/templates/gateway.yaml\n" in document
+                    and "\nkind: Deployment\n" in document
+                )
+                self.assertIn("\n  replicas: 1\n", gateway)
+                self.assertIn("\n  strategy:\n    type: Recreate\n", gateway)
+                self.assertNotIn("rollingUpdate:", gateway)
+                self.assertNotIn("# Source: cheers/templates/redis.yaml", result.stdout)
+
+    def test_multiple_gateways_are_rejected_even_with_redis_enabled(self):
+        for redis in ("false", "true"):
+            with self.subTest(redis=redis):
+                result = self.render("values-prod.yaml", "gateway.replicaCount=2", f"redis.enabled={redis}")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("replicaCount", result.stderr)
 
 
 class DeploymentTriggerTests(unittest.TestCase):

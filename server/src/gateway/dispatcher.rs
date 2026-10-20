@@ -88,6 +88,12 @@ pub async fn dispatch(
     params: DispatchParams,
     media_cache: &MediaCache,
 ) -> DispatchResult {
+    // Resolve desired configuration before creating a turn. A failed metadata
+    // read must not run the agent under a fallback model or permission mode.
+    let workspace = match load_session_settings(db, &params.provider_session_key).await {
+        Ok(settings) => settings,
+        Err(error) => return DispatchResult::DbError(error.to_string()),
+    };
     // ── 原子创建占位（先落库）────────────────────────────────────────────────
     // 占位 id 由 (trigger_msg_id, bot_id) 确定性派生（I4）：同一输入永远同一 UUID。
     // R5：不再用前置 SELECT 判幂等（与 INSERT 非原子，并发双触发会两边都通过，
@@ -174,7 +180,6 @@ pub async fn dispatch(
     }
     // Per-session ACP root set (cwd + additionalDirectories) stored on the session
     // row; absent → the connector falls back to its default_cwd.
-    let workspace = load_session_workspace(db, &params.provider_session_key).await;
     let task_frame = build_task_frame(
         task_id,
         params.channel_id,
@@ -683,40 +688,57 @@ pub(crate) async fn remove_placeholder(
     Ok(Some(FailedPlaceholder { channel_id }))
 }
 
-/// A session's ACP root set: `(cwd, additional_dirs)` — the effective root set is
-/// `[cwd, ...additional_dirs]`. `None` cwd ⇒ the connector uses its `default_cwd`.
-type SessionWorkspace = (Option<String>, Vec<String>);
+/// Workspace roots plus the gateway's persisted session-specific desired config.
+/// Missing snapshots are omitted rather than interpreted as a reset by connectors.
+type SessionSettings = (
+    Option<String>,
+    Vec<String>,
+    Option<cheers_bridge_protocol::SessionConfigOverrides>,
+);
 
-/// Read a session's stored `metadata.workspace` (the per-session ACP `cwd` +
-/// `additionalDirectories`). Missing row / key ⇒ `(None, [])`, so the connector
-/// falls back to its default_cwd. Best-effort: any DB error degrades to the default.
-async fn load_session_workspace(db: &PgPool, provider_session_key: &str) -> SessionWorkspace {
-    let ws = sqlx::query!(
-        "SELECT metadata->'workspace' AS ws FROM cheers_sessions
-         WHERE provider_session_key = $1 LIMIT 1",
+async fn load_session_settings(
+    db: &PgPool,
+    provider_session_key: &str,
+) -> Result<SessionSettings, crate::errors::AppError> {
+    let metadata = sqlx::query_scalar!(
+        "SELECT metadata FROM cheers_sessions WHERE provider_session_key = $1 LIMIT 1",
         provider_session_key,
     )
     .fetch_optional(db)
-    .await
-    .ok()
+    .await?
     .flatten()
-    .and_then(|r| r.ws.clone());
-    match ws {
-        Some(ws) => {
-            let cwd = ws.get("cwd").and_then(Value::as_str).map(str::to_string);
-            let additional_dirs = ws
-                .get("additional_dirs")
-                .and_then(Value::as_array)
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            (cwd, additional_dirs)
-        }
-        None => (None, Vec::new()),
-    }
+    .unwrap_or_else(|| json!({}));
+    session_settings_from_metadata(&metadata)
+}
+
+fn session_settings_from_metadata(
+    metadata: &Value,
+) -> Result<SessionSettings, crate::errors::AppError> {
+    let workspace = metadata.get("workspace");
+    let cwd = workspace
+        .and_then(|ws| ws.get("cwd"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let additional_dirs = workspace
+        .and_then(|ws| ws.get("additional_dirs"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let session_config = metadata
+        .get("session_config")
+        .map(|value| {
+            serde_json::from_value::<cheers_bridge_protocol::SessionConfigOverrides>(value.clone())
+        })
+        .transpose()
+        .map_err(|error| {
+            crate::errors::AppError::Internal(format!("invalid session config snapshot: {error}"))
+        })?;
+    Ok((cwd, additional_dirs, session_config))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -730,7 +752,7 @@ fn build_task_frame(
     provider_session_key: &str,
     session_id: Option<Uuid>,
     task_context: TaskContext,
-    workspace: SessionWorkspace,
+    workspace: SessionSettings,
 ) -> Value {
     let trigger = if depth > 0 {
         "bot_message"
@@ -738,7 +760,7 @@ fn build_task_frame(
         "user_message"
     };
 
-    let (cwd, additional_dirs) = workspace;
+    let (cwd, additional_dirs, session_config) = workspace;
     use cheers_bridge_protocol as proto;
     // wire-compat: msg_id duplicates trigger_msg_id, and the nested session ref
     // repeats session identifiers — deployed connectors read both shapes.
@@ -790,6 +812,7 @@ fn build_task_frame(
         // pure session/new argument, immutable for the session's lifetime).
         cwd,
         additional_dirs,
+        session_config,
         binding_config: None,
         session: Some(proto::RuntimeSessionRef {
             id: session_id.map(|id| id.to_string()),
@@ -839,9 +862,49 @@ mod tests {
                 pinned: vec!["Always answer in English.".to_string()],
                 context_bundle: None,
             },
-            (Some("/workspace".to_string()), vec!["/data".to_string()]),
+            (Some("/workspace".to_string()), vec!["/data".to_string()], None),
         );
         assert_matches_fixture(&frame, "control/to_connector/task.json", &["enqueued_at"]);
+    }
+
+    #[test]
+    fn task_settings_snapshot_preserves_persisted_overrides_and_workspace() {
+        let (cwd, roots, desired) = session_settings_from_metadata(&json!({
+            "workspace": {"cwd":"/repo", "additional_dirs":["/shared"]},
+            "session_config": {"revision":7, "permission_mode":"read-only",
+                "config_options":{"model":"session-model", "reasoning_effort":"high"}},
+        }))
+        .unwrap();
+        assert_eq!(cwd.as_deref(), Some("/repo"));
+        assert_eq!(roots, ["/shared"]);
+        let desired = desired.unwrap();
+        assert_eq!(desired.revision, 7);
+        assert_eq!(desired.permission_mode.as_deref(), Some("read-only"));
+        assert_eq!(desired.config_options["model"], "session-model");
+        assert_eq!(desired.config_options["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn legacy_session_overrides_without_a_revision_are_replayed() {
+        let (_, _, desired) = session_settings_from_metadata(&json!({
+            "session_config": {"config_options":{"model":"saved-before-upgrade"}},
+        }))
+        .unwrap();
+        let desired = desired.unwrap();
+        assert_eq!(desired.revision, 0);
+        assert_eq!(desired.config_options["model"], "saved-before-upgrade");
+        assert!(session_settings_from_metadata(&json!({}))
+            .unwrap()
+            .2
+            .is_none());
+    }
+
+    #[test]
+    fn malformed_session_config_does_not_degrade_to_bot_defaults() {
+        assert!(session_settings_from_metadata(&json!({
+            "session_config": {"config_options":{"model":42}},
+        }))
+        .is_err());
     }
 
     /// I4：同一 (trigger, bot) 必派生同一占位 id（重投收敛同一占位）。

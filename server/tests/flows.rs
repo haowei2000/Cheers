@@ -3787,8 +3787,8 @@ async fn fs_read_line_range_slice(db: PgPool) {
 }
 
 /// AUTHZ: a human-attached bundle with an inline snapshot is persisted PREVIEW-
-/// STRIPPED (members/history never carry snapshot content); create_message keeps
-/// the full copy only for the task-frame dispatch. Fix B, docs/design/RESOURCE_CONTEXT.md.
+/// Human context carries references, never inline snapshots. Every producer
+/// normalizes the same current contract before persistence and dispatch.
 #[sqlx::test]
 async fn human_bundle_persists_without_preview(db: PgPool) {
     let ws = seed_workspace(&db).await;
@@ -3799,14 +3799,16 @@ async fn human_bundle_persists_without_preview(db: PgPool) {
     let registry = StreamRegistry::new();
     let bot_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
 
-    // Full (already sanitized) bundle with a workspace snapshot preview.
+    // Untrusted input: keep the supported read reference and its label, strip
+    // inline content, and reject the retired snapshot and write-resource forms.
     let bundle = serde_json::json!({
-        "origin": "human",
+        "origin": "bot",
         "items": [{
-            "verb": "workspace.file", "kind": "file", "label": "m.rs",
+            "verb": "workspace.read", "kind": "file", "label": "m.rs",
             "params": { "bot_id": Uuid::new_v4().to_string(), "path": "m.rs" },
             "preview": { "text": "SECRET CONTENT" }
-        }]
+        }, { "verb": "workspace.file", "preview": { "text": "SECRET CONTENT" } },
+           { "verb": "fs.write", "params": { "path": "m.rs" } }]
     });
     let dto = messages::create_message(
         &db,
@@ -3838,6 +3840,8 @@ async fn human_bundle_persists_without_preview(db: PgPool) {
             .await
             .unwrap();
     let stored = stored.expect("bundle stored");
+    assert_eq!(stored["origin"], "human");
+    assert_eq!(stored["items"].as_array().unwrap().len(), 1);
     assert!(
         stored["items"][0].get("preview").is_none(),
         "row strips preview: {stored}"
@@ -4155,9 +4159,16 @@ async fn interactive_request_retries_dispatch_once_and_keep_structured_context(d
     let bot_locator: Arc<dyn BotLocator> = locator.clone();
     let fanout = fanout();
     let registry = StreamRegistry::new();
+    let document = cheers_mcp_server::interactive::contract_for_bot(&bot.to_string())
+        ["request_example"]
+        .clone();
+    server::resource::fs::handle_write(
+        &db, &Principal::bot(bot),
+        &serde_json::json!({"channel_id":ch,"path":"forms/report.a2ui.json","content":document.to_string(),"if_version":0}),
+    ).await.unwrap();
     let event = serde_json::json!({"v":1,"sourceUri":"cheers:desk/forms/report.a2ui.json","sourceVersion":1,
-        "surfaceId":"report","componentId":"submit","actionId":"report.prepare","botId":bot,
-        "invocationId":Uuid::new_v4(),"input":{"topic":"UI","sources":true}});
+        "surfaceId":"report","componentId":"prepare","actionId":"report.prepare","botId":bot,
+        "invocationId":Uuid::new_v4(),"input":{"topic":"UI","includeSources":true}});
     let bundle = server::domain::context_bundle::sanitize_human_bundle(
         &serde_json::json!({"items":[],"interaction":event}),
     )
@@ -4236,6 +4247,51 @@ async fn interactive_request_retries_dispatch_once_and_keep_structured_context(d
         .is_err(),
         "an invocation id cannot be reused for different input"
     );
+}
+
+#[sqlx::test]
+async fn inactive_authors_cannot_post_through_background_message_producers(db: PgPool) {
+    let workspace = seed_workspace(&db).await;
+    let channel = seed_channel(&db, workspace).await;
+    let user = seed_user(&db).await;
+    add_member(&db, channel, user, "user").await;
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
+    for (suspended, deleted) in [(true, false), (false, true)] {
+        sqlx::query("UPDATE users SET is_suspended=$2,is_deleted=$3 WHERE user_id=$1")
+            .bind(user.to_string())
+            .bind(suspended)
+            .bind(deleted)
+            .execute(&db)
+            .await
+            .unwrap();
+        let result = messages::create_message(
+            &db,
+            &fanout,
+            &registry,
+            &locator,
+            CreateMessageParams {
+                user_id: user,
+                channel_id: channel,
+                content: "background send".into(),
+                msg_type: None,
+                reply_to_msg_id: None,
+                file_ids: vec![],
+                mention_ids: vec![],
+                mention_names: vec![],
+                session_id: None,
+                context_bundle: None,
+                msg_id: None,
+            },
+        )
+        .await;
+        assert!(
+            matches!(result, Err(server::errors::AppError::Forbidden(_))),
+            "background producers must recheck the author's current account state"
+        );
+    }
+    assert_eq!(channel_message_count(&db, channel).await, 0);
 }
 
 #[sqlx::test]

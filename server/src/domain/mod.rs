@@ -25,6 +25,7 @@ pub mod integrations;
 pub mod invitable;
 pub mod mcp_check;
 pub mod mentions;
+pub mod message_policy;
 pub mod messages;
 pub mod plan_store;
 pub mod scheduled_messages;

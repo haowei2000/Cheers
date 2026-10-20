@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "replicaCount": {
+          "type": "integer",
+          "enum": [1],
+          "description": "Exactly one gateway is supported: realtime and connector sessions are process-local. Redis does not enable multi-instance routing."
+        }
+      }
+    }
+  }
+}

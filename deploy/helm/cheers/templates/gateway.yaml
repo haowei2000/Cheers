@@ -7,6 +7,10 @@ metadata:
     app.kubernetes.io/component: gateway
 spec:
   replicas: {{ .Values.gateway.replicaCount }}
+  # Realtime sessions and pending connector RPCs live in this process. Stop the
+  # old gateway before starting its replacement, including during upgrades.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "cheers.selectorLabels" (dict "ctx" . "component" "gateway") | nindent 6 }}

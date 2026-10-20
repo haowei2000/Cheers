@@ -350,6 +350,11 @@ fn fallback_message_value(channel_id: Uuid) -> Value {
 }
 
 pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    if principal.principal_type != PrincipalType::Bot {
+        return Err(super::permission_denied(
+            "channel.messages.create is a bot resource; send human messages through the messages API",
+        ));
+    }
     // Perf instrumentation: total time spent in the DB-only create handler (authz +
     // mention resolution + tx). Broadcast/bot-trigger happen at the WS boundary and
     // are timed separately in agent_bridge — see docs on the post_message hot path.

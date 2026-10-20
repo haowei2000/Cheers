@@ -4,6 +4,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { ReadinessWaiters, type ReadinessWait } from "./readinessWaiters";
 import type { Message, TraceEvent, VoiceTranscriptSegment, WsEvent } from "@/types";
 import { normalizeTraceEvent } from "../traceEvent";
+import { clientSessionGeneration } from "@/lib/clientSession";
 
 /** Live-connection state for the open channel, driving the tier-M banner:
  *  connecting → first attempt (no banner; the channel is still loading anyway),
@@ -526,6 +527,52 @@ function detach(sub: ActiveSub) {
   }, IDLE_CLOSE_DELAY);
 }
 
+/** App-wide resource RPC client. It has no view-local state; keeping its identity
+ * stable also lets channel resource sessions survive navigation/remounts. */
+export function sendResourceRequest(resource: string, params: Record<string, unknown>): Promise<ResourceData> {
+  const generation = clientSessionGeneration();
+  return new Promise<ResourceData>((resolve, reject) => {
+    const reqId = crypto.randomUUID();
+    const readiness = whenSocketReady();
+    // The request budget also removes its readiness waiter, so a long offline
+    // session cannot retain one closure per timed-out resource request.
+    const timer = setTimeout(() => {
+      pendingReqs.delete(reqId);
+      readiness.cancel();
+      reject(new ResourceError("TIMEOUT", "resource request timed out"));
+    }, RESOURCE_REQ_TIMEOUT);
+    pendingReqs.set(reqId, {
+      resolve,
+      reject,
+      timer,
+      cancelReady: readiness.cancel,
+    });
+
+    void readiness.promise.then(
+      () => {
+        // The budget may have run out while we waited, in which case the request has
+        // already been rejected and must not also be sent.
+        if (!pendingReqs.has(reqId)) return;
+        if (generation !== clientSessionGeneration()) {
+          clearTimeout(timer);
+          pendingReqs.delete(reqId);
+          reject(new ResourceError("DISCONNECTED", "session changed before the resource request was sent"));
+          return;
+        }
+        if (sendFrame({ type: "resource_req", req_id: reqId, resource, params })) return;
+        clearTimeout(timer);
+        pendingReqs.delete(reqId);
+        reject(new ResourceError("DISCONNECTED", "socket not connected"));
+      },
+      (error: Error) => {
+        clearTimeout(timer);
+        pendingReqs.delete(reqId);
+        reject(error);
+      }
+    );
+  });
+}
+
 export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   const token = useAuthStore((s) => s.token);
   const cbsRef = useRef(cbs);
@@ -571,49 +618,6 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     if (!token) closeSocket();
   }, [token]);
 
-  // Imperative resource client: send a resource_req on the live channel socket and
-  // resolve when the matching resource_res (by req_id) returns. Used by the workbench
-  // (File/Context plugins) to read/write the channel workspace fs.
-  const sendResourceReq = useCallback(
-    (resource: string, params: Record<string, unknown>): Promise<ResourceData> => {
-      return new Promise<ResourceData>((resolve, reject) => {
-        const reqId = crypto.randomUUID();
-        const readiness = whenSocketReady();
-        // The request budget also removes its readiness waiter, so a long offline
-        // session cannot retain one closure per timed-out resource request.
-        const timer = setTimeout(() => {
-          pendingReqs.delete(reqId);
-          readiness.cancel();
-          reject(new ResourceError("TIMEOUT", "resource request timed out"));
-        }, RESOURCE_REQ_TIMEOUT);
-        pendingReqs.set(reqId, {
-          resolve,
-          reject,
-          timer,
-          cancelReady: readiness.cancel,
-        });
-
-        void readiness.promise.then(
-          () => {
-            // The budget may have run out while we waited, in which case the request has
-            // already been rejected and must not also be sent.
-            if (!pendingReqs.has(reqId)) return;
-            if (sendFrame({ type: "resource_req", req_id: reqId, resource, params })) return;
-            clearTimeout(timer);
-            pendingReqs.delete(reqId);
-            reject(new ResourceError("DISCONNECTED", "socket not connected"));
-          },
-          (error: Error) => {
-            clearTimeout(timer);
-            pendingReqs.delete(reqId);
-            reject(error);
-          }
-        );
-      });
-    },
-    []
-  );
-
   // Broadcast the caller's workspace focus (which bot's workspace / which path they're
   // viewing) so peers see it in the next `presence` snapshot. `focus === null` clears it
   // (dialog closed / bot switched). Best-effort: a no-op if the socket isn't open —
@@ -625,5 +629,5 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     []
   );
 
-  return { sendResourceReq, sendPresenceFocus, status, reconnectNow };
+  return { sendResourceReq: sendResourceRequest, sendPresenceFocus, status, reconnectNow };
 }

@@ -206,13 +206,19 @@ pub(crate) fn cancel_frame(placeholder_msg_id: Uuid, reason: &str) -> Value {
 
 /// Session-targeted ACP `session/set_mode` (value-gated by the connector's L0
 /// allowed_modes envelope).
-pub(crate) fn mode_set_frame(request_id: &str, provider_session_key: &str, mode: &str) -> Value {
+pub(crate) fn mode_set_frame(
+    request_id: &str,
+    provider_session_key: &str,
+    mode: &str,
+    session_config: Option<proto::SessionConfigOverrides>,
+) -> Value {
     frame_value(&proto::ControlInbound::ModeSet {
         v: BRIDGE_PROTOCOL_VERSION,
         request_id: request_id.to_string(),
         session_id: None,
         provider_session_key: Some(provider_session_key.to_string()),
         mode: mode.to_string(),
+        session_config,
         updated_at: None,
     })
 }
@@ -223,6 +229,7 @@ pub(crate) fn config_option_set_frame(
     provider_session_key: &str,
     config_id: &str,
     value: &str,
+    session_config: Option<proto::SessionConfigOverrides>,
 ) -> Value {
     frame_value(&proto::ControlInbound::ConfigOptionSet {
         v: BRIDGE_PROTOCOL_VERSION,
@@ -231,6 +238,7 @@ pub(crate) fn config_option_set_frame(
         provider_session_key: Some(provider_session_key.to_string()),
         config_id: config_id.to_string(),
         value: value.to_string(),
+        session_config,
         updated_at: None,
     })
 }
@@ -589,6 +597,7 @@ mod tests {
             "99999999-aaaa-4bbb-8ccc-dddddddddddd",
             "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
             "acceptEdits",
+            None,
         );
         assert_matches_fixture(&frame, "control/to_connector/mode_set.json", &[]);
     }
@@ -600,6 +609,7 @@ mod tests {
             "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
             "model",
             "claude-sonnet-5",
+            None,
         );
         assert_matches_fixture(&frame, "control/to_connector/config_option_set.json", &[]);
     }
