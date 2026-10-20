@@ -542,6 +542,32 @@ mod tests {
     }
 
     #[test]
+    fn task_accept_matches_fixture() {
+        let frame = frame_value(&proto::ControlOutbound::TaskAccept {
+            v: BRIDGE_PROTOCOL_VERSION,
+            task_id: "99999999-aaaa-4bbb-8ccc-dddddddddddd".into(),
+            placeholder_msg_id: "33333333-4444-4555-8666-777777777777".into(),
+            channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+            execution_id: "11111111-2222-4333-8444-555555555555".into(),
+        });
+        assert_matches_fixture(&frame, "control/to_gateway/task_accept.json", &[]);
+    }
+
+    #[test]
+    fn task_acceptance_matches_fixture() {
+        let frame = frame_value(&proto::ControlInbound::TaskAcceptance {
+            v: BRIDGE_PROTOCOL_VERSION,
+            task_id: "99999999-aaaa-4bbb-8ccc-dddddddddddd".into(),
+            placeholder_msg_id: "33333333-4444-4555-8666-777777777777".into(),
+            channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+            execution_id: "11111111-2222-4333-8444-555555555555".into(),
+            status: proto::TaskAcceptanceStatus::Granted,
+            error: None,
+        });
+        assert_matches_fixture(&frame, "control/to_connector/task_acceptance.json", &[]);
+    }
+
+    #[test]
     fn pong_matches_fixture() {
         assert_matches_fixture(&pong_frame(), "data/to_connector/pong.json", &[]);
     }

@@ -62,6 +62,11 @@ impl BotLocator for RedisBotLocator {
     // no cross-instance connection-identity fence, so offline reclamation fails
     // closed instead of deleting a newer instance's in-flight turn.
     async fn dispatch_task(&self, bot_id: Uuid, task: Value) -> bool {
+        if task.get("type").and_then(Value::as_str) == Some("task") {
+            // No connection-scoped acceptance negotiation exists in this parked
+            // transport; never deliver executable tasks through an unfenced path.
+            return false;
+        }
         // 先检查 control 在线标记（避免无效 PUBLISH）
         if !keys_exist(&self.publisher, &[control_online_key(bot_id)]).await {
             return false;
@@ -147,6 +152,9 @@ impl BotRegistry for Arc<RedisBotRegistry> {
     fn bind_data(&self, bot_id: Uuid, conn_id: Uuid, data_tx: mpsc::Sender<Value>) {
         (**self).bind_data(bot_id, conn_id, data_tx)
     }
+    fn set_task_acceptance(&self, bot_id: Uuid, conn_id: Uuid, enabled: bool) -> bool {
+        (**self).set_task_acceptance(bot_id, conn_id, enabled)
+    }
     fn unbind(&self, bot_id: Uuid) {
         (**self).unbind(bot_id)
     }
@@ -162,6 +170,12 @@ impl BotRegistry for Arc<RedisBotRegistry> {
 }
 
 impl BotRegistry for RedisBotRegistry {
+    // This transport is parked and cannot bind execution-grant negotiation to
+    // a cross-instance control identity. Task delivery remains disabled here.
+    fn set_task_acceptance(&self, _bot_id: Uuid, _conn_id: Uuid, _enabled: bool) -> bool {
+        false
+    }
+
     fn bind_control(
         &self,
         bot_id: Uuid,

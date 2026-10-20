@@ -43,7 +43,7 @@ use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
     ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
     ElicitationResolution, PermissionOption, PermissionResolution, RuntimeSessionAckSession,
-    RuntimeSessionControlSession, ServerCapabilities, SessionConfigOverrides,
+    RuntimeSessionControlSession, ServerCapabilities, SessionConfigOverrides, TaskAcceptanceStatus,
     BRIDGE_PROTOCOL_VERSION,
 };
 use crate::bridge_session::{
@@ -626,6 +626,31 @@ impl RuntimeContext {
     }
 
     async fn handle_control(self: Arc<Self>, frame: ControlInbound) -> anyhow::Result<()> {
+        let reservation = if let ControlInbound::Task {
+            acceptance_required,
+            ..
+        } = &frame
+        {
+            if !*acceptance_required || !self.io.task_acceptance_enabled() {
+                tracing::error!(account = %self.account_id, "refusing task without negotiated durable acceptance");
+                return Ok(());
+            }
+            match self
+                .shared
+                .task_reservations
+                .lock()
+                .expect("task reservations poisoned")
+                .reserve(&frame)
+            {
+                Ok(reservation) => reservation,
+                Err(error) => {
+                    tracing::error!(account = %self.account_id, %error, "refusing conflicting task frame");
+                    return Ok(());
+                }
+            }
+        } else {
+            None
+        };
         match frame {
             ControlInbound::Task {
                 task_id,
@@ -643,6 +668,9 @@ impl RuntimeContext {
                 session_config,
                 ..
             } => {
+                let Some(identity) = reservation else {
+                    return Ok(());
+                };
                 let task = TaskCommand {
                     task_id,
                     channel_id,
@@ -659,11 +687,34 @@ impl RuntimeContext {
                     session_config,
                 };
                 let runtime = self.clone();
+                let reservation =
+                    tasks::TaskReservationGuard::new(self.shared.clone(), identity.clone());
                 tokio::spawn(async move {
-                    if let Err(err) = runtime.run_task(task, None).await {
-                        tracing::error!("task failed: {err}");
+                    let _reservation = reservation;
+                    match runtime.io.request_task_acceptance(identity).await {
+                        Ok(ControlInbound::TaskAcceptance {
+                            status: TaskAcceptanceStatus::Granted,
+                            ..
+                        }) => {
+                            if let Err(err) = runtime.run_task(task, None).await {
+                                tracing::error!("task failed: {err}");
+                            }
+                        }
+                        Ok(ControlInbound::TaskAcceptance { status, error, .. }) => {
+                            // Never finalize another execution owner's placeholder.
+                            tracing::warn!(task_id = %task.task_id, ?status, ?error, "task execution was not granted");
+                        }
+                        Err(error) => {
+                            tracing::error!(task_id = %task.task_id, %error, "task acceptance failed; agent execution will not start");
+                        }
+                        Ok(_) => {
+                            unreachable!("task acceptance waiter only accepts matching responses")
+                        }
                     }
                 });
+            }
+            reply @ ControlInbound::TaskAcceptance { .. } => {
+                self.io.resolve_task_acceptance(&reply).await;
             }
             ControlInbound::ClaimEvaluation {
                 evaluation_id,
@@ -2187,13 +2238,16 @@ impl RuntimeContext {
         {
             Ok(result) => Ok(result),
             Err(err) => match self.recover_agent_auth(&task, &err).await {
-                Ok(()) => {
+                Ok(()) if evaluation_id.is_some() => {
                     let requester = self.adapter.lock().await.prompt_client();
                     requester
                         .prompt(&acp_session_id, prompt, self.config.agent.prompt_timeout_ms)
                         .await
                 }
-                Err(_) => Err(err),
+                // A standard task may already have executed external tools before
+                // reporting an auth error. Recovery prepares the next task; it
+                // cannot safely authorize a second prompt for this execution.
+                Ok(()) | Err(_) => Err(err),
             },
         };
 
@@ -3070,6 +3124,8 @@ impl TurnSlots {
 }
 
 struct SharedRuntimeState {
+    /// Local duplicate suppression; the gateway grants durable execution ownership.
+    task_reservations: std::sync::Mutex<tasks::TaskReservations>,
     remote: Arc<remote_execution::RemoteRegistry>,
     /// Bot defaults and monotonic per-session desired-state snapshots.
     session_configs: Mutex<config::DesiredSessionConfigs>,
@@ -3137,6 +3193,7 @@ impl SharedRuntimeState {
         agent: &crate::config::StdioAgentConfig,
     ) -> Self {
         Self {
+            task_reservations: std::sync::Mutex::new(tasks::TaskReservations::default()),
             session_configs: Mutex::new(config::DesiredSessionConfigs::new(agent)),
             remote: Arc::new(remote_execution::RemoteRegistry::default()),
             runs: Mutex::new(RunRegistry::default()),
@@ -3490,6 +3547,7 @@ mod io;
 mod permission;
 mod prompt;
 mod signing;
+mod tasks;
 
 use frames::*;
 use io::*;
@@ -3536,6 +3594,7 @@ mod tests {
         /// agent 进程没了：真实实现里连接中断会丢弃所有 pending reply oneshot，
         /// 于是每个在途 prompt 各自拿到这个错误。
         Crash,
+        AuthError,
     }
 
     struct GatedPromptClient {
@@ -3581,6 +3640,7 @@ mod tests {
                 PromptOutcome::Crash => Err(anyhow!(
                     "ACP runtime actor dropped reply (method=session/prompt)"
                 )),
+                PromptOutcome::AuthError => Err(anyhow!("authentication required")),
             }
         }
     }
@@ -3592,6 +3652,7 @@ mod tests {
         sessions: AtomicU64,
         load_sessions: bool,
         native_model_only: bool,
+        auth_enabled: bool,
         config_calls: Arc<Mutex<Vec<String>>>,
     }
 
@@ -3608,10 +3669,15 @@ mod tests {
         }
         async fn authenticate(
             &mut self,
-            _method_id: &str,
+            method_id: &str,
             _request_route: Option<RequestRoute>,
         ) -> anyhow::Result<()> {
-            unimplemented!("fixture agent needs no authentication")
+            assert!(self.auth_enabled, "fixture agent needs no authentication");
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("authenticate:{method_id}"));
+            Ok(())
         }
         async fn new_session(
             &mut self,
@@ -3697,7 +3763,11 @@ mod tests {
             }
         }
         fn initialize_response(&self) -> Option<Value> {
-            None
+            self.auth_enabled.then(|| {
+                json!({
+                    "authMethods":[{"id":"fixture-auth", "name":"Fixture login"}]
+                })
+            })
         }
         async fn inject_fence(&self, _acp_session_id: String) {}
     }
@@ -3819,6 +3889,7 @@ max_concurrent = {max_concurrent}
             sessions: AtomicU64::new(0),
             load_sessions: false,
             native_model_only: false,
+            auth_enabled: false,
             config_calls: Arc::new(Mutex::new(Vec::new())),
         });
         let config = fixture_config(dir, max_concurrent).await;
@@ -3882,6 +3953,197 @@ max_concurrent = {max_concurrent}
         }
     }
 
+    fn standard_task_frame(required: bool) -> ControlInbound {
+        serde_json::from_value(json!({
+            "type":"task", "task_id":"task-standard", "channel_id":"standard",
+            "trigger_msg_id":"origin-standard", "placeholder_msg_id":"msg-standard",
+            "provider_session_key":"provider-standard", "acceptance_required":required,
+            "trigger":"user_message", "trigger_message":{"text":"execute once"},
+        }))
+        .unwrap()
+    }
+
+    fn acceptance_reply(request: ControlOutbound, status: TaskAcceptanceStatus) -> ControlInbound {
+        let ControlOutbound::TaskAccept {
+            v,
+            task_id,
+            placeholder_msg_id,
+            channel_id,
+            execution_id,
+        } = request
+        else {
+            panic!("expected task_accept request")
+        };
+        ControlInbound::TaskAcceptance {
+            v,
+            task_id,
+            placeholder_msg_id,
+            channel_id,
+            execution_id,
+            status,
+            error: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn standard_task_waits_for_matching_grant_and_executes_duplicate_frames_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, started, release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        Arc::get_mut(&mut runtime)
+            .unwrap()
+            .io
+            .enable_task_acceptance_for_test(Duration::from_secs(5));
+        let frame = standard_task_frame(true);
+        runtime.clone().handle_control(frame.clone()).await.unwrap();
+        let request = taps._control.recv().await.unwrap();
+        assert_eq!(started.available_permits(), 0);
+        assert!(runtime.shared.runs.lock().await.by_msg.is_empty());
+        runtime.clone().handle_control(frame.clone()).await.unwrap();
+        assert!(taps._control.try_recv().is_err());
+
+        let reply = acceptance_reply(request, TaskAcceptanceStatus::Granted);
+        let original_execution = match &reply {
+            ControlInbound::TaskAcceptance { execution_id, .. } => execution_id.clone(),
+            _ => unreachable!(),
+        };
+        let mut wrong = reply.clone();
+        if let ControlInbound::TaskAcceptance {
+            placeholder_msg_id, ..
+        } = &mut wrong
+        {
+            *placeholder_msg_id = "another-placeholder".into();
+        }
+        runtime.clone().handle_control(wrong).await.unwrap();
+        assert_eq!(started.available_permits(), 0);
+        runtime.clone().handle_control(reply.clone()).await.unwrap();
+        let first = timeout(Duration::from_secs(2), started.acquire())
+            .await
+            .unwrap()
+            .unwrap();
+        first.forget();
+        runtime.clone().handle_control(reply).await.unwrap();
+        runtime.clone().handle_control(frame.clone()).await.unwrap();
+        assert_eq!(started.available_permits(), 0);
+        assert!(taps._control.try_recv().is_err());
+        release.send(Some(PromptOutcome::Finish)).unwrap();
+        timeout(Duration::from_secs(2), async {
+            while !runtime.shared.runs.lock().await.by_msg.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        runtime.clone().handle_control(frame).await.unwrap();
+        let repeated = acceptance_reply(
+            taps._control.recv().await.unwrap(),
+            TaskAcceptanceStatus::Owned,
+        );
+        if let ControlInbound::TaskAcceptance { execution_id, .. } = &repeated {
+            assert_ne!(
+                execution_id, &original_execution,
+                "completed reservations must be released, never reused"
+            );
+        }
+        runtime.clone().handle_control(repeated).await.unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(started.available_permits(), 0);
+        assert!(taps._control.try_recv().is_err());
+        assert_eq!(
+            taps.drain_priority()
+                .iter()
+                .filter(|frame| matches!(frame, DataOutbound::Done { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn ungranted_task_never_calls_acp_or_finalizes_another_execution() {
+        for status in [TaskAcceptanceStatus::Owned, TaskAcceptanceStatus::Rejected] {
+            let dir = tempfile::tempdir().unwrap();
+            let (mut runtime, started, _release, mut taps) =
+                fixture_runtime(dir.path(), PromptGate::All, 4).await;
+            Arc::get_mut(&mut runtime)
+                .unwrap()
+                .io
+                .enable_task_acceptance_for_test(Duration::from_secs(5));
+            let frame = standard_task_frame(true);
+            runtime.clone().handle_control(frame.clone()).await.unwrap();
+            let reply = acceptance_reply(taps._control.recv().await.unwrap(), status);
+            runtime.clone().handle_control(reply.clone()).await.unwrap();
+            runtime.clone().handle_control(frame).await.unwrap();
+            // Rejected dispositions never hand off into run_task, even if a
+            // delayed second response incorrectly says granted.
+            let mut late = reply;
+            if let ControlInbound::TaskAcceptance { status, .. } = &mut late {
+                *status = TaskAcceptanceStatus::Granted;
+            }
+            runtime.clone().handle_control(late).await.unwrap();
+            tokio::task::yield_now().await;
+            assert_eq!(started.available_permits(), 0);
+            assert!(runtime.shared.runs.lock().await.by_msg.is_empty());
+            assert!(taps.drain_priority().is_empty());
+            assert!(taps._control.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acceptance_timeout_and_late_grant_cannot_start_or_retry_a_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, started, _release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        Arc::get_mut(&mut runtime)
+            .unwrap()
+            .io
+            .enable_task_acceptance_for_test(Duration::from_secs(5));
+        let frame = standard_task_frame(true);
+        runtime.clone().handle_control(frame.clone()).await.unwrap();
+        let late = acceptance_reply(
+            taps._control.recv().await.unwrap(),
+            TaskAcceptanceStatus::Granted,
+        );
+        tokio::time::advance(Duration::from_secs(6)).await;
+        tokio::task::yield_now().await;
+        runtime.clone().handle_control(late).await.unwrap();
+        runtime.clone().handle_control(frame).await.unwrap();
+        let denied = acceptance_reply(
+            taps._control.recv().await.unwrap(),
+            TaskAcceptanceStatus::Owned,
+        );
+        runtime.clone().handle_control(denied).await.unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(started.available_permits(), 0);
+        assert!(runtime.shared.runs.lock().await.by_msg.is_empty());
+        assert!(taps.drain_priority().is_empty());
+        assert!(taps._control.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn standard_tasks_require_both_explicit_task_flag_and_gateway_capability() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, started, _release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        runtime
+            .clone()
+            .handle_control(standard_task_frame(true))
+            .await
+            .unwrap();
+        assert!(taps._control.try_recv().is_err());
+        Arc::get_mut(&mut runtime)
+            .unwrap()
+            .io
+            .enable_task_acceptance_for_test(Duration::from_secs(5));
+        runtime
+            .clone()
+            .handle_control(standard_task_frame(false))
+            .await
+            .unwrap();
+        assert!(taps._control.try_recv().is_err());
+        assert_eq!(started.available_permits(), 0);
+        assert!(taps.drain_priority().is_empty());
+    }
+
     async fn config_runtime(
         dir: &Path,
     ) -> (
@@ -3908,6 +4170,7 @@ max_concurrent = {max_concurrent}
             sessions: AtomicU64::new(0),
             load_sessions: true,
             native_model_only: true,
+            auth_enabled: false,
             config_calls: calls.clone(),
         });
         (runtime, calls, release, taps)
@@ -3918,6 +4181,70 @@ max_concurrent = {max_concurrent}
             revision,
             permission_mode: Some("session-mode".into()),
             config_options: BTreeMap::from([("model".into(), model.into())]),
+        }
+    }
+
+    #[tokio::test]
+    async fn successful_auth_recovery_does_not_repeat_standard_task_prompt() {
+        for evaluation in [None, Some("private-evaluation".to_string())] {
+            let dir = tempfile::tempdir().unwrap();
+            let (runtime, started, release, mut taps) =
+                fixture_runtime(dir.path(), PromptGate::First, 4).await;
+            let requester = runtime.adapter.lock().await.prompt_client();
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            *runtime.adapter.lock().await = Box::new(FakeAdapter {
+                prompt_client: requester,
+                sessions: AtomicU64::new(0),
+                load_sessions: false,
+                native_model_only: false,
+                auth_enabled: true,
+                config_calls: calls.clone(),
+            });
+            let standard = evaluation.is_none();
+            let turn = tokio::spawn(runtime.clone().run_task(fixture_task("auth"), evaluation));
+            let first = timeout(Duration::from_secs(2), started.acquire())
+                .await
+                .unwrap()
+                .unwrap();
+            first.forget();
+            release.send(Some(PromptOutcome::AuthError)).unwrap();
+            let request_id = timeout(Duration::from_secs(2), async {
+                loop {
+                    match taps.priority.recv().await.unwrap() {
+                        DataOutbound::AuthRequired { request_id, .. } => break request_id,
+                        DataOutbound::Error { message, .. } => {
+                            panic!("auth fixture failed before card: {message}")
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            runtime
+                .handle_auth_acknowledged(request_id, "retry".into(), Some("fixture-auth".into()))
+                .await
+                .unwrap();
+            timeout(Duration::from_secs(2), turn)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert!(calls
+                .lock()
+                .await
+                .contains(&"authenticate:fixture-auth".to_string()));
+            assert_eq!(
+                started.available_permits(),
+                if standard { 0 } else { 1 },
+                "standard execution cannot re-prompt after auth; private evaluation retains retry",
+            );
+            if standard {
+                assert_eq!(
+                    error_msg_ids(&taps.drain_priority()),
+                    vec!["msg-auth".to_string()]
+                );
+            }
         }
     }
 

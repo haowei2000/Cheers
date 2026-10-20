@@ -222,15 +222,24 @@ pub async fn create_message(
         .map(|mention| mention.member_id)
         .chain(targeted_session.iter().map(|(bot, _, _)| *bot))
         .collect();
-    let mut offline_bots = Vec::new();
+    let mut has_offline_target = false;
+    let mut has_unready_target = false;
     for bot_id in mentioned_bots.into_iter().filter(|id| bots.contains(id)) {
         if !bot_locator.is_online(bot_id).await {
-            offline_bots.push(bot_id);
+            has_offline_target = true;
+        } else if !bot_locator.supports_task_acceptance(bot_id).await {
+            has_unready_target = true;
         }
     }
-    if !offline_bots.is_empty() {
+    if has_offline_target {
         return Err(AppError::Conflict(
             "the mentioned bot is currently offline".into(),
+        ));
+    }
+    if has_unready_target {
+        return Err(AppError::Conflict(
+            "the mentioned bot is not ready to accept tasks; reconnect or upgrade its connector"
+                .into(),
         ));
     }
     let msg_id = params.msg_id.unwrap_or_else(Uuid::new_v4);

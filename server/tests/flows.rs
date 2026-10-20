@@ -374,6 +374,9 @@ impl BotLocator for CountingBotLocator {
     async fn is_online(&self, _bot_id: Uuid) -> bool {
         true
     }
+    async fn supports_task_acceptance(&self, _bot_id: Uuid) -> bool {
+        true
+    }
 }
 
 /// 并发双触发同一 (trigger_msg_id, bot_id)：占位由 INSERT…ON CONFLICT 单点定胜负，
@@ -475,6 +478,50 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
     .try_get("c")
     .unwrap();
     assert_eq!(count, 1, "并发双触发只应产生一条占位");
+
+    let placeholder = outcomes
+        .iter()
+        .find_map(|result| match result {
+            DispatchResult::Dispatched { placeholder_msg_id } => Some(*placeholder_msg_id),
+            _ => None,
+        })
+        .unwrap();
+    let original_task: String =
+        sqlx::query_scalar("SELECT task_id FROM bot_runs WHERE placeholder_msg_id=$1")
+            .bind(placeholder.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    sqlx::query("DELETE FROM messages WHERE msg_id=$1")
+        .bind(placeholder.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    registry.remove(placeholder);
+    let retry = dispatcher::dispatch(
+        &db,
+        &fanout,
+        &registry,
+        &bot_locator,
+        make_params(),
+        &dispatcher::MediaCache::default(),
+    )
+    .await;
+    assert!(matches!(retry, DispatchResult::AlreadyInProgress));
+    assert_eq!(counter.dispatched.load(Ordering::SeqCst), 1);
+    let retained_task: String =
+        sqlx::query_scalar("SELECT task_id FROM bot_runs WHERE placeholder_msg_id=$1")
+            .bind(placeholder.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(retained_task, original_task);
+    let recreated: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE msg_id=$1")
+        .bind(placeholder.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(recreated, 0, "cleanup must not mint another task identity");
 }
 
 // ── #330：频道内并发发送的多条不同用户消息，每条都应各自落库+各自派发一次 ──────
@@ -4154,7 +4201,9 @@ async fn interactive_request_retries_dispatch_once_and_keep_structured_context(d
     let locator = InProcessBotLocator::new();
     let (control_tx, mut control_rx) = tokio::sync::mpsc::channel(16);
     let (data_tx, _data_rx) = tokio::sync::mpsc::channel(16);
-    let _connection = locator.bind_control(bot, Uuid::new_v4(), control_tx);
+    let control_connection = Uuid::new_v4();
+    let _connection = locator.bind_control(bot, control_connection, control_tx);
+    assert!(locator.set_task_acceptance(bot, control_connection, true));
     locator.bind_data(bot, Uuid::new_v4(), data_tx);
     let bot_locator: Arc<dyn BotLocator> = locator.clone();
     let fanout = fanout();

@@ -228,7 +228,7 @@ async fn handle_control(
                                     last_seen_written = std::time::Instant::now();
                                     touch_host(&state, &bot).await;
                                 }
-                                handle_control_frame(&frame, &state, &bot).await;
+                                handle_control_frame(&frame, &state, &bot, connection_id, &mut socket).await;
                             }
                             Err(e) => {
                                 malformed += 1;
@@ -314,7 +314,13 @@ async fn touch_host(state: &AppState, bot: &BotInfo) {
     .await;
 }
 
-async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+async fn handle_control_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    connection_id: Uuid,
+    socket: &mut WebSocket,
+) {
     let bot_id = bot.bot_id;
     // Typed parse — the shared enum is the single schema both ends compile
     // against, so a field rename can no longer silently read as None (the
@@ -334,6 +340,67 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
     };
     match parsed {
         proto::ControlOutbound::Ping => {} // pong 由 WS 层处理
+        proto::ControlOutbound::TaskAccept {
+            task_id,
+            placeholder_msg_id,
+            channel_id,
+            execution_id,
+            ..
+        } => {
+            use crate::gateway::task_acceptance::{self, Decision};
+            let decision = if state.bot_locator.control_generation(bot_id).await
+                != Some(connection_id)
+                || !state.bot_locator.supports_task_acceptance(bot_id).await
+            {
+                Decision {
+                    status: proto::TaskAcceptanceStatus::Rejected,
+                    error: Some(
+                        "task acceptance was not negotiated on this control connection".into(),
+                    ),
+                }
+            } else if let (Ok(task), Ok(placeholder), Ok(channel), Ok(execution)) = (
+                task_id.parse::<Uuid>(),
+                placeholder_msg_id.parse::<Uuid>(),
+                channel_id.parse::<Uuid>(),
+                execution_id.parse::<Uuid>(),
+            ) {
+                match task_acceptance::claim(
+                    &state.db,
+                    bot_id,
+                    connection_id,
+                    task,
+                    placeholder,
+                    channel,
+                    execution,
+                )
+                .await
+                {
+                    Ok(decision) => decision,
+                    Err(error) => {
+                        tracing::warn!(%bot_id, %task_id, %error, "task execution grant failed to commit");
+                        Decision {
+                            status: proto::TaskAcceptanceStatus::Rejected,
+                            error: Some("task execution grant could not be persisted".into()),
+                        }
+                    }
+                }
+            } else {
+                Decision {
+                    status: proto::TaskAcceptanceStatus::Rejected,
+                    error: Some("invalid task acceptance identity".into()),
+                }
+            };
+            let response = bridge_frames::frame_value(&proto::ControlInbound::TaskAcceptance {
+                v: BRIDGE_PROTOCOL_VERSION,
+                task_id,
+                placeholder_msg_id,
+                channel_id,
+                execution_id,
+                status: decision.status,
+                error: decision.error,
+            });
+            let _ = ws_send(socket, &response).await;
+        }
         proto::ControlOutbound::Ready {
             connector_version,
             plugin_version,
@@ -353,6 +420,14 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
             // a connector upgrade updates them automatically. The version rides
             // along so bot status can report update availability while offline.
             let caps = connector_capabilities;
+            state.bot_registry.set_task_acceptance(
+                bot_id,
+                connection_id,
+                caps.as_ref()
+                    .and_then(|caps| caps.get("task_acceptance"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            );
             if caps.is_some() || connector_version.is_some() {
                 let caps_str = serde_json::to_string(&caps.unwrap_or(Value::Null))
                     .unwrap_or_else(|_| "null".into());
@@ -2562,6 +2637,7 @@ fn server_capabilities(state: &AppState) -> Value {
         "runtime_session_control": true,
         "send_ack": true,
         "terminal_ack": true,
+        "task_acceptance": true,
         "resume": "ack_only",
         "file_upload": false,
         "acp_security": true,

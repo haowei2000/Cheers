@@ -38,6 +38,12 @@ pub trait BotLocator: Send + Sync {
     async fn control_generation(&self, _bot_id: Uuid) -> Option<Uuid> {
         None
     }
+
+    /// Execution grants are mandatory for task delivery. Unsupported transports
+    /// fail closed; a newly bound control connection has not negotiated support.
+    async fn supports_task_acceptance(&self, _bot_id: Uuid) -> bool {
+        false
+    }
 }
 
 /// 【WS 连接层接口】管理 bot 的 control/data WS 连接注册。
@@ -54,6 +60,9 @@ pub trait BotRegistry: Send + Sync {
     ) -> oneshot::Receiver<()>;
 
     fn bind_data(&self, bot_id: Uuid, conn_id: Uuid, data_tx: mpsc::Sender<Value>);
+
+    /// Apply Ready capabilities only to the control connection that sent them.
+    fn set_task_acceptance(&self, bot_id: Uuid, conn_id: Uuid, enabled: bool) -> bool;
 
     /// 完整移除 bot 的 session（正常断线清理）。
     fn unbind(&self, bot_id: Uuid);
@@ -81,6 +90,7 @@ struct BotSession {
     connection_id: Uuid,
     /// control WS 的发送端（发 task 帧）
     control_tx: mpsc::Sender<Value>,
+    task_acceptance: bool,
     /// data WS 的发送端（发 permission/workspace 等帧）+ 其连接标识（防旧连接误清）
     data_tx: Option<(Uuid, mpsc::Sender<Value>)>,
     /// 当新连接 supersede 此 session 时，向旧 WS 发取消信号
@@ -157,6 +167,7 @@ impl BotRegistry for InProcessBotLocator {
             BotSession {
                 connection_id: conn_id,
                 control_tx: task_tx,
+                task_acceptance: false,
                 data_tx,
                 supersede_tx,
             },
@@ -174,6 +185,17 @@ impl BotRegistry for InProcessBotLocator {
             tracing::debug!(%bot_id, "bind_data: session not ready, stashing");
             self.pending_data.insert(bot_id, (conn_id, data_tx));
         }
+    }
+
+    fn set_task_acceptance(&self, bot_id: Uuid, conn_id: Uuid, enabled: bool) -> bool {
+        let Some(mut session) = self.sessions.get_mut(&bot_id) else {
+            return false;
+        };
+        if session.connection_id != conn_id {
+            return false;
+        }
+        session.task_acceptance = enabled;
+        true
     }
 
     fn unbind(&self, bot_id: Uuid) {
@@ -219,7 +241,12 @@ impl BotLocator for InProcessBotLocator {
         // Clone the sender and drop the DashMap guard before awaiting: holding a
         // shard guard across `.await` would block unrelated bind/unbind calls for
         // other bots on the same shard for the full wait.
-        let Some(tx) = self.sessions.get(&bot_id).map(|s| s.control_tx.clone()) else {
+        let requires_acceptance = task.get("type").and_then(Value::as_str) == Some("task");
+        let Some(tx) = self.sessions.get(&bot_id).and_then(|session| {
+            // Negotiate and choose the actual sender under one binding guard;
+            // a reconnect during context loading cannot route work to a legacy peer.
+            (!requires_acceptance || session.task_acceptance).then(|| session.control_tx.clone())
+        }) else {
             return false;
         };
         tokio::time::timeout(QUEUE_SEND_TIMEOUT, tx.send(task))
@@ -246,6 +273,12 @@ impl BotLocator for InProcessBotLocator {
 
     async fn control_generation(&self, bot_id: Uuid) -> Option<Uuid> {
         self.control_generations.get(&bot_id).map(|id| *id)
+    }
+
+    async fn supports_task_acceptance(&self, bot_id: Uuid) -> bool {
+        self.sessions
+            .get(&bot_id)
+            .is_some_and(|session| session.task_acceptance)
     }
 }
 
@@ -384,5 +417,56 @@ mod tests {
         assert_eq!(reg.control_generation(bot).await, Some(winning));
         assert!(reg.unbind_if_connection(bot, winning));
         assert_eq!(reg.control_generation(bot).await, Some(winning));
+    }
+
+    #[tokio::test]
+    async fn task_delivery_requires_capability_on_the_actual_current_sender() {
+        let reg = InProcessBotLocator::new();
+        let bot = Uuid::new_v4();
+        let old = Uuid::new_v4();
+        let (old_tx, mut old_rx) = mpsc::channel(4);
+        let _old = reg.bind_control(bot, old, old_tx);
+        assert!(!reg.supports_task_acceptance(bot).await);
+        assert!(
+            !reg.dispatch_task(bot, serde_json::json!({"type":"task"}))
+                .await
+        );
+        assert!(old_rx.try_recv().is_err());
+        assert!(reg.set_task_acceptance(bot, old, true));
+        assert!(reg.supports_task_acceptance(bot).await);
+        assert!(
+            reg.dispatch_task(bot, serde_json::json!({"type":"task"}))
+                .await
+        );
+        assert_eq!(old_rx.try_recv().unwrap()["type"], "task");
+
+        // The dispatcher may have checked the old capability before awaiting
+        // context reads. Replacing that connection must reset the final gate.
+        let current = Uuid::new_v4();
+        let (tx, mut rx) = mpsc::channel(4);
+        let _current = reg.bind_control(bot, current, tx);
+        assert!(!reg.supports_task_acceptance(bot).await);
+        assert!(!reg.set_task_acceptance(bot, old, true));
+        assert!(
+            !reg.dispatch_task(bot, serde_json::json!({"type":"task"}))
+                .await
+        );
+        assert!(rx.try_recv().is_err());
+        assert!(
+            reg.dispatch_task(bot, serde_json::json!({"type":"cancel"}))
+                .await
+        );
+        assert_eq!(rx.try_recv().unwrap()["type"], "cancel");
+        assert!(reg.set_task_acceptance(bot, current, true));
+        assert!(
+            reg.dispatch_task(bot, serde_json::json!({"type":"task"}))
+                .await
+        );
+        assert_eq!(rx.try_recv().unwrap()["type"], "task");
+        assert!(reg.set_task_acceptance(bot, current, false));
+        assert!(
+            !reg.dispatch_task(bot, serde_json::json!({"type":"task"}))
+                .await
+        );
     }
 }

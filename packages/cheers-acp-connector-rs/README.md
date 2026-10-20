@@ -20,6 +20,17 @@ restore overrides made offline or before the first runtime session exists.
 Monotonic revisions prevent an older queued task from restoring stale settings;
 local host policy still clamps every session override.
 
+Since 0.1.54, standard tasks require the Gateway's `task_acceptance` capability
+and an explicit `acceptance_required` task flag. The Connector reserves the task,
+requests an execution grant, and starts ACP only after a matching committed
+`granted` response. The existing Gateway `bot_runs` record is the durable owner;
+there is no second local task ledger. Duplicate frames cannot reuse one grant,
+and a restarted Connector cannot take over the previous connection's execution.
+Denied or timed-out grants never execute or finalize another owner's message.
+Standard tasks also stop after an authentication failure rather than automatically
+re-prompting. See [Task Delivery and Completion](../../docs/arch/TASK_DELIVERY.md)
+for the receipt contract, recovery limits and coordinated rollout requirements.
+
 Every session receives the canonical Gateway HTTP MCP URL from the authenticated
 Bridge hello, and the Connector requires `mcpCapabilities.http=true`.
 

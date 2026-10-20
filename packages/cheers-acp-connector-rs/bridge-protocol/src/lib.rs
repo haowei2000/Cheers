@@ -284,6 +284,9 @@ pub struct ServerCapabilities {
     pub runtime_session_control: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<bool>,
+    /// Standard tasks require a committed gateway execution grant before ACP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_acceptance: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -521,9 +524,30 @@ pub struct BridgeErrorFrame {
     pub retryable: Option<bool>,
 }
 
+/// A grant commits execution ownership; `owned` never authorizes another run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskAcceptanceStatus {
+    Granted,
+    Owned,
+    Rejected,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ControlInbound {
+    #[serde(rename = "task_acceptance")]
+    TaskAcceptance {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        task_id: String,
+        placeholder_msg_id: String,
+        channel_id: String,
+        execution_id: String,
+        status: TaskAcceptanceStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     #[serde(rename = "hello")]
     Hello {
         #[serde(default = "default_bridge_protocol_version")]
@@ -584,6 +608,8 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         trigger: Option<String>,
         placeholder_msg_id: String,
+        #[serde(default)]
+        acceptance_required: bool,
         provider_session_key: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session_id: Option<String>,
@@ -759,6 +785,15 @@ pub enum ControlInbound {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ControlOutbound {
+    #[serde(rename = "task_accept")]
+    TaskAccept {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        task_id: String,
+        placeholder_msg_id: String,
+        channel_id: String,
+        execution_id: String,
+    },
     #[serde(rename = "auth")]
     Auth {
         #[serde(default = "default_bridge_protocol_version")]

@@ -20,15 +20,75 @@ pub(super) struct BridgeIoHandle {
     pending_send_acks: Arc<Mutex<HashMap<String, oneshot::Sender<DataInbound>>>>,
     pending_terminal_acks: Arc<Mutex<HashMap<String, oneshot::Sender<DataInbound>>>>,
     pending_file_upload_acks: Arc<Mutex<HashMap<String, oneshot::Sender<DataInbound>>>>,
+    pending_task_acceptances: Arc<Mutex<HashMap<String, PendingTaskAcceptance>>>,
     ack_timeout: Duration,
     terminal_ack_timeout: Duration,
     send_ack_enabled: bool,
     terminal_ack_enabled: bool,
     file_upload_enabled: bool,
+    task_acceptance_enabled: bool,
     last_event_seq: Arc<AtomicU64>,
 }
 
+struct PendingTaskAcceptance {
+    identity: tasks::TaskIdentity,
+    reply: oneshot::Sender<ControlInbound>,
+}
+
 impl BridgeIoHandle {
+    pub(super) fn task_acceptance_enabled(&self) -> bool {
+        self.task_acceptance_enabled
+    }
+
+    pub(super) async fn request_task_acceptance(
+        &self,
+        identity: tasks::TaskIdentity,
+    ) -> anyhow::Result<ControlInbound> {
+        if !self.task_acceptance_enabled {
+            return Err(anyhow!("gateway does not support durable task acceptance"));
+        }
+        let key = identity.execution_id.clone();
+        let request = identity.request();
+        let (reply, receiver) = oneshot::channel();
+        self.pending_task_acceptances
+            .lock()
+            .await
+            .insert(key.clone(), PendingTaskAcceptance { identity, reply });
+        // Cap both queueing and waiting. A missing grant never permits ACP work.
+        let result = timeout(self.ack_timeout.min(Duration::from_secs(30)), async {
+            self.send_control(request).await?;
+            receiver.await.context("task acceptance waiter closed")
+        })
+        .await;
+        self.pending_task_acceptances.lock().await.remove(&key);
+        match result {
+            Ok(result) => result,
+            Err(_) => Err(anyhow!("task acceptance timeout execution_id={key}")),
+        }
+    }
+
+    pub(super) async fn resolve_task_acceptance(&self, frame: &ControlInbound) -> bool {
+        let ControlInbound::TaskAcceptance { execution_id, .. } = frame else {
+            return false;
+        };
+        let mut pending = self.pending_task_acceptances.lock().await;
+        if !pending
+            .get(execution_id)
+            .is_some_and(|entry| entry.identity.matches(frame))
+        {
+            return false;
+        }
+        pending
+            .remove(execution_id)
+            .is_some_and(|entry| entry.reply.send(frame.clone()).is_ok())
+    }
+
+    #[cfg(test)]
+    pub(super) fn enable_task_acceptance_for_test(&mut self, wait: Duration) {
+        self.task_acceptance_enabled = true;
+        self.ack_timeout = wait;
+    }
+
     pub(super) async fn send_control(&self, frame: ControlOutbound) -> anyhow::Result<()> {
         self.control_tx
             .send(frame)
@@ -261,11 +321,13 @@ pub(super) fn test_io() -> TestIo {
             pending_send_acks: Arc::new(Mutex::new(HashMap::new())),
             pending_terminal_acks: Arc::new(Mutex::new(HashMap::new())),
             pending_file_upload_acks: Arc::new(Mutex::new(HashMap::new())),
+            pending_task_acceptances: Arc::new(Mutex::new(HashMap::new())),
             ack_timeout: Duration::from_secs(5),
             terminal_ack_timeout: Duration::from_secs(5),
             send_ack_enabled: false,
             terminal_ack_enabled: false,
             file_upload_enabled: false,
+            task_acceptance_enabled: false,
             last_event_seq: Arc::new(AtomicU64::new(0)),
         },
         control,
@@ -285,7 +347,7 @@ pub(super) fn spawn_bridge_io(
         control,
         data,
         account_id: _,
-        control_hello: _,
+        control_hello,
         data_hello,
         memberships: _,
     } = session.into_parts();
@@ -319,6 +381,7 @@ pub(super) fn spawn_bridge_io(
         pending_send_acks: Arc::new(Mutex::new(HashMap::new())),
         pending_terminal_acks: Arc::new(Mutex::new(HashMap::new())),
         pending_file_upload_acks: Arc::new(Mutex::new(HashMap::new())),
+        pending_task_acceptances: Arc::new(Mutex::new(HashMap::new())),
         ack_timeout,
         terminal_ack_timeout,
         send_ack_enabled: capability_enabled(&data_capabilities, |cap| cap.send_ack),
@@ -327,6 +390,11 @@ pub(super) fn spawn_bridge_io(
             .as_ref()
             .and_then(|cap| cap.file_upload.as_ref())
             .is_some(),
+        task_acceptance_enabled: control_hello
+            .server_capabilities
+            .as_ref()
+            .and_then(|cap| cap.task_acceptance)
+            == Some(true),
         last_event_seq,
     }
 }

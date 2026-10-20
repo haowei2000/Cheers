@@ -16,6 +16,7 @@ pub mod registry;
 pub mod resource_effects;
 pub mod scheduled_message_scheduler;
 pub mod stream;
+pub mod task_acceptance;
 pub mod task_claim_scheduler;
 pub mod transcription_worker;
 pub mod workspace_rpc;

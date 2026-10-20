@@ -88,17 +88,23 @@ pub async fn dispatch(
     params: DispatchParams,
     media_cache: &MediaCache,
 ) -> DispatchResult {
+    // Capability belongs to the current control binding, so a legacy/replaced
+    // connector cannot bypass the durable execution grant by ignoring a field.
+    if !bot_locator.supports_task_acceptance(params.bot_id).await {
+        if let Some(session_id) = params.session_id {
+            let _ = sessions::finalize_session(db, session_id).await;
+        }
+        return DispatchResult::BotOffline;
+    }
     // Resolve desired configuration before creating a turn. A failed metadata
     // read must not run the agent under a fallback model or permission mode.
     let workspace = match load_session_settings(db, &params.provider_session_key).await {
         Ok(settings) => settings,
         Err(error) => return DispatchResult::DbError(error.to_string()),
     };
-    // ── 原子创建占位（先落库）────────────────────────────────────────────────
-    // 占位 id 由 (trigger_msg_id, bot_id) 确定性派生（I4）：同一输入永远同一 UUID。
-    // R5：不再用前置 SELECT 判幂等（与 INSERT 非原子，并发双触发会两边都通过，
-    // 导致 task 帧派发两次、bot 重复跑同一任务）。改由 `INSERT … ON CONFLICT
-    // DO NOTHING` 的 rows_affected 单点定胜负——只有真正插入占位的调用继续派发。
+    // The deterministic placeholder identifies this trigger/bot pair. Its unique
+    // run record elects one dispatcher in the same transaction as the message;
+    // retaining the run prevents redispatch even after placeholder cleanup.
     let placeholder_id = derive_placeholder_id(params.trigger_msg_id, params.bot_id);
     let task_id = Uuid::new_v4();
 
@@ -134,6 +140,7 @@ pub async fn dispatch(
     let content_data = params.session_id.map(|sid| json!({ "session_id": sid }));
     match create_placeholder(
         db,
+        task_id,
         placeholder_id,
         params.channel_id,
         params.bot_id,
@@ -265,6 +272,7 @@ fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
 )]
 async fn create_placeholder(
     db: &PgPool,
+    task_id: Uuid,
     placeholder_id: Uuid,
     channel_id: Uuid,
     bot_id: Uuid,
@@ -274,13 +282,34 @@ async fn create_placeholder(
     context_bundle: Option<&Value>,
     content_data: Option<&Value>,
 ) -> Result<bool, String> {
+    let mut tx = db.begin().await.map_err(|error| error.to_string())?;
+    // The existing run ledger is also the tombstone after placeholder removal.
+    // A duplicate trigger cannot obtain a new execution identity after cleanup.
+    let run = sqlx::query!(
+        "INSERT INTO bot_runs
+            (bot_run_id, task_id, channel_id, trigger_msg_id, bot_id, placeholder_msg_id,
+             binding_type, status)
+         VALUES ($1, $1, $2, $3, $4, $5, 'acp', 'prepared')
+         ON CONFLICT (placeholder_msg_id) DO NOTHING",
+        task_id.to_string(),
+        channel_id.to_string(),
+        trigger_msg_id.to_string(),
+        bot_id.to_string(),
+        placeholder_id.to_string(),
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| error.to_string())?;
+    if run.rows_affected() == 0 {
+        return Ok(false);
+    }
     // Bot stream placeholders use the same explicit text kind as completed
     // replies. The baseline DB default is legacy `normal`, not `text`.
     let result = sqlx::query!(
         "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, msg_type, is_partial, depth, chain_id,
+            (msg_id, task_id, channel_id, sender_type, sender_id, content, msg_type, is_partial, depth, chain_id,
              context_bundle, in_reply_to_msg_id, content_data)
-         VALUES ($1, $2, 'bot', $3, '', 'text', TRUE, $4, $5, $6, $7, $8)
+         VALUES ($1, $9, $2, 'bot', $3, '', 'text', TRUE, $4, $5, $6, $7, $8)
          ON CONFLICT (msg_id) DO NOTHING",
         placeholder_id.to_string(),
         channel_id.to_string(),
@@ -290,12 +319,17 @@ async fn create_placeholder(
         context_bundle,
         trigger_msg_id.to_string(),
         content_data,
+        task_id.to_string(),
     )
-    .execute(db)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(result.rows_affected() == 1)
+    if result.rows_affected() == 0 {
+        return Ok(false);
+    }
+    tx.commit().await.map_err(|error| error.to_string())?;
+    Ok(true)
 }
 
 pub(crate) struct FailedPlaceholder {
@@ -775,6 +809,7 @@ fn build_task_frame(
         depth: Some(depth),
         trigger: Some(trigger.to_string()),
         placeholder_msg_id: placeholder_msg_id.to_string(),
+        acceptance_required: true,
         provider_session_key: provider_session_key.to_string(),
         session_id: session_id.map(|id| id.to_string()),
         session_policy: Some(proto::SessionPolicy {

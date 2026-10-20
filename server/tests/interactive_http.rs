@@ -159,7 +159,9 @@ async fn interactive_http_rejects_forged_stale_requests_and_replays_accepted_rec
     let locator = InProcessBotLocator::new();
     let (control_tx, mut control_rx) = tokio::sync::mpsc::channel(8);
     let (data_tx, _data_rx) = tokio::sync::mpsc::channel(8);
-    let _connection = locator.bind_control(bot, Uuid::new_v4(), control_tx);
+    let control_connection = Uuid::new_v4();
+    let _connection = locator.bind_control(bot, control_connection, control_tx);
+    assert!(locator.set_task_acceptance(bot, control_connection, true));
     locator.bind_data(bot, Uuid::new_v4(), data_tx);
     let bot_locator: Arc<dyn BotLocator> = locator;
     let fanout: Arc<dyn Fanout> = InProcessFanout::new();
