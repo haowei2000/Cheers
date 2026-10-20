@@ -35,7 +35,7 @@ impl Decision {
     }
 }
 
-async fn may_execute(
+pub(crate) async fn may_execute(
     tx: &mut Transaction<'_, Postgres>,
     bot_id: Uuid,
     channel_id: Uuid,

@@ -31,7 +31,7 @@ connection is independent of these two agent connections.
 
 ## Execution grants
 
-Connector 0.1.54 and later reserve an in-flight task locally before asynchronously
+The Connector reserves an in-flight task locally before asynchronously
 sending `task_accept` with its task, placeholder, channel and fresh execution IDs.
 The gateway locks the matching message and run, revalidates bot enablement,
 writable membership and active task chain, then commits the first execution ID
@@ -77,10 +77,53 @@ or browser fan-out can suspend. An old claim cannot reopen or remove a replaceme
 task with the same message ID.
 
 A terminal result can also finalize an existing partial row after a gateway
-restart, when no memory entry remains. The gateway returns a terminal ACK only
-after successful persistence and delivery handling. The current connector retains
-its ACK waiter in memory; it does not persist or automatically resend failed
-terminal results.
+restart, when no memory entry remains. Standard task results carry the original
+`execution` tuple (task, execution and channel IDs), plus their placeholder and
+stable UUID `client_msg_id`. Delivery on another connection does not transfer execution
+ownership or obtain another execution grant.
+
+The gateway records the terminal receipt and a fingerprint of the unsigned result
+in `bot_runs` in the same transaction as message finalization. Only the capability
+signature envelope is excluded from that fingerprint. An exact committed retry
+returns the same successful ACK, including after a gateway restart or subsequent
+message deletion. A changed result, receipt ID, execution or bot is rejected.
+The receipt is retained with the execution tombstone.
+
+Receipt replay is a read-only operation on the authenticated bot connection. It
+runs before active-session authorization because a successful completion already
+made that session idle. It does not touch session state, allocate a sequence,
+publish another event, notify humans or dispatch another bot turn. A result with
+no matching committed receipt must still pass current execution and authorization
+checks before it can finalize an active placeholder.
+
+The receipt confirms database persistence. Browser fan-out, push notifications and
+downstream bot dispatch remain best-effort effects after that commit. A crash in
+that gap can lose those effects; replay does not run them a second time.
+
+## Connector result outbox
+
+Connector 0.1.55 requires `terminal_replay` on both authenticated connections,
+committed ACK support on the data connection and execution acceptance. Before
+sending a standard task's Done or Error, it persists the
+unsigned result in an immutable file beside its configured state file. Atomic
+publication and file synchronization protect completed appends across process
+interruption. The scope binds the account, gateway endpoints and authenticated
+bot/host identity, so retargeting an account cannot send its old results to another
+bot or gateway. This outbox contains results, not executable tasks.
+
+A continuous result-only worker drains pending entries while the account runtime
+is active and after the daemon starts again. It retries the same payload and
+receipt ID with a fresh capability signature. It never creates or loads an ACP
+session or invokes a prompt. A matching successful v1 ACK for the exact message,
+with no queued job, removes the stored entry. A timeout, malformed or negative
+ACK preserves it. Permanent rejections also remain on disk for inspection;
+they are not silently discarded or retried again until the daemon starts again.
+
+Socket closure still stops the account runtime and ACP adapter. This slice does
+not add an in-process reconnect loop: the supervisor or a later daemon start
+reconnects and drains its stored results. Durability starts after the append
+completes; interruption between ACP completion and that append can still lose a
+result.
 
 ## Abandoned placeholders
 
@@ -121,15 +164,20 @@ A quick connector restart also changes the generation and protects old registere
 turns from offline recovery. Their execution ownership is retained, but there is
 no protocol to resume delivery or replace that owner.
 
-Automatic task replay and terminal-result replay are not enabled. A committed
-grant whose reply was lost may remain unexecuted; a crashed owner is not replaced.
-The run ledger retains execution tombstones after placeholder cleanup. Future
-recovery must preserve those ownership rules and add durable dispatch/result
-delivery through the same record store.
+Automatic task replay is not enabled. A committed grant whose reply was lost may
+remain unexecuted; a crashed owner is not replaced. The run ledger retains
+execution tombstones after placeholder cleanup.
+
+Result replay cannot recreate a missing, deleted or reclaimed partial placeholder
+that never committed a terminal receipt. Offline and orphan reclamation therefore
+bound the delivery window for an uncommitted result. Such a result receives a
+negative ACK and remains in the Connector outbox. A result that already committed
+can still obtain its receipt after message cleanup. Durable dispatch intent and
+safe recovery beyond the placeholder retention window remain separate work.
 
 ## Rollout
 
-Connector and shared protocol crate versions are 0.1.54. Gateway downloads and
+Connector and shared protocol crate versions are 0.1.55. Gateway downloads and
 installers require at least that version. Both peers must support execution
 grants before standard tasks can run; older peers are refused rather than running
 an unguarded task. Follow the connector release order in `AGENTS.md`: validate,
@@ -151,5 +199,7 @@ The tests inject real UPDATE/COMMIT failures, transaction cancellation and delay
 fan-out; verify concurrent and restart completion; and exercise offline recovery,
 reconnection generation fences, busy claims and delete retries.
 Acceptance tests cover concurrent owners, real WebSocket grants, commit failure,
-capability replacement, authorization revocation and restart ownership. Connector
-tests prove that duplicate, denied, stale and timed-out grants never start ACP.
+capability replacement, authorization revocation and restart ownership. Receipt
+tests cover lost ACKs, restart, changed payloads, execution isolation and rollback.
+Connector tests cover durable append/reload, ACK correlation and result-only
+retry, and prove that duplicate, denied, stale and timed-out grants never start ACP.

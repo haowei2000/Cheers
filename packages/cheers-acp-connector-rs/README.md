@@ -31,6 +31,16 @@ Standard tasks also stop after an authentication failure rather than automatical
 re-prompting. See [Task Delivery and Completion](../../docs/arch/TASK_DELIVERY.md)
 for the receipt contract, recovery limits and coordinated rollout requirements.
 
+Since 0.1.55, standard tasks also require `terminal_replay`. Done and Error carry
+the granted execution identity and are saved to a durable result outbox before
+network delivery. A result-only worker retries pending entries on startup and
+while connected, using the same receipt ID and a fresh signature. Only a matching
+committed ACK removes the entry. It never re-runs ACP work. The Gateway commits
+its receipt with the message and answers exact retries without publishing another
+reply or touching a newer turn's session. Results whose uncommitted placeholders
+were already reclaimed remain rejected and retained locally; see the recovery
+limits above.
+
 Every session receives the canonical Gateway HTTP MCP URL from the authenticated
 Bridge hello, and the Connector requires `mcpCapabilities.http=true`.
 

@@ -604,6 +604,7 @@ mod connector_asset_tests {
             assert!(connector_version_below_floor("0.1.51"));
             assert!(connector_version_below_floor("0.1.52"));
             assert!(connector_version_below_floor("0.1.53"));
+            assert!(connector_version_below_floor("0.1.54"));
             assert!(connector_version_below_floor("latest"));
             assert!(connector_version_below_floor(""));
         }
@@ -611,9 +612,9 @@ mod connector_asset_tests {
         #[test]
         fn floor_accepts_current_and_newer_versions() {
             assert!(!connector_version_below_floor(MIN_CONNECTOR_VERSION));
-            assert!(!connector_version_below_floor("0.1.54"));
             assert!(!connector_version_below_floor("0.1.55"));
-            assert!(!connector_version_below_floor("v0.1.54"));
+            assert!(!connector_version_below_floor("0.1.56"));
+            assert!(!connector_version_below_floor("v0.1.55"));
         }
 
         /// Every placeholder the serve-time substitution rewrites must exist in
@@ -667,12 +668,13 @@ static DOWNLOAD_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLo
 ///
 /// - 0.1.52 adds workspace remote_terminal/remote_open policy fields.
 /// - 0.1.54 requires a durable gateway grant before standard task execution.
+/// - 0.1.55 requires execution-scoped terminal results and durable result receipts.
 ///
 /// Bump it with incompatible config or mandatory execution protocol changes;
 /// the download proxy refuses anything below it (#539) so a forgotten
 /// `CHEERS_CONNECTOR_RELEASE_VERSION` bump fails loudly at the server instead
 /// of crash-looping on user machines.
-pub const MIN_CONNECTOR_VERSION: &str = "0.1.54";
+pub const MIN_CONNECTOR_VERSION: &str = "0.1.55";
 
 /// True when `v` must not be distributed: strictly older than
 /// [`MIN_CONNECTOR_VERSION`], or not a semver triple at all — a garbled pin

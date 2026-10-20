@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id FROM messages WHERE msg_id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "625bb6333cd8fced478908d59dbd1982544821a25eed458b45391625248d0561"
+}

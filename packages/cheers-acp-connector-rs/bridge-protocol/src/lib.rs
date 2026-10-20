@@ -287,6 +287,9 @@ pub struct ServerCapabilities {
     /// Standard tasks require a committed gateway execution grant before ACP.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_acceptance: Option<bool>,
+    /// Durable terminal receipts permit result delivery without executing again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_replay: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -531,6 +534,14 @@ pub enum TaskAcceptanceStatus {
     Granted,
     Owned,
     Rejected,
+}
+
+/// Immutable execution owner carried across result delivery connections.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskExecution {
+    pub task_id: String,
+    pub execution_id: String,
+    pub channel_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -953,6 +964,8 @@ pub enum DataInbound {
         error: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retryable: Option<bool>,
     },
     #[serde(rename = "file_upload_ack")]
     FileUploadAck {
@@ -1114,6 +1127,8 @@ pub enum DataOutbound {
         v: u32,
         client_msg_id: String,
         msg_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution: Option<TaskExecution>,
         #[serde(default)]
         file_ids: Vec<String>,
         #[serde(default)]
@@ -1135,6 +1150,8 @@ pub enum DataOutbound {
         v: u32,
         client_msg_id: String,
         msg_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution: Option<TaskExecution>,
         message: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_session_key: Option<String>,

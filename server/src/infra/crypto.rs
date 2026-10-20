@@ -1,5 +1,7 @@
 use hmac::{Hmac, Mac};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::io::Write;
 
 /// One password policy for self-service and administrator-provisioned accounts.
 /// Existing credentials remain valid; this applies whenever a password is set.
@@ -80,6 +82,61 @@ pub fn sha256_hex(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+/// Hash JSON with sorted object keys, preserving array order and scalar values.
+/// Exclusions apply only to the top level, for transport envelopes or request keys.
+/// Stream into the hasher so large resource payloads need no serialized copy.
+pub(crate) fn json_fingerprint(value: &Value, excluded: &[&str]) -> String {
+    let mut writer = JsonHashWriter(Sha256::new());
+    write_canonical_json(&mut writer, value, excluded);
+    hex::encode(writer.0.finalize())
+}
+
+struct JsonHashWriter(Sha256);
+
+impl Write for JsonHashWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn write_canonical_json(writer: &mut JsonHashWriter, value: &Value, excluded: &[&str]) {
+    match value {
+        Value::Object(object) => {
+            let mut keys: Vec<_> = object
+                .keys()
+                .filter(|key| !excluded.contains(&key.as_str()))
+                .collect();
+            keys.sort();
+            writer.0.update(b"{");
+            for (index, key) in keys.into_iter().enumerate() {
+                if index > 0 {
+                    writer.0.update(b",");
+                }
+                serde_json::to_writer(&mut *writer, key).expect("hashing cannot fail");
+                writer.0.update(b":");
+                write_canonical_json(writer, &object[key], &[]);
+            }
+            writer.0.update(b"}");
+        }
+        Value::Array(items) => {
+            writer.0.update(b"[");
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    writer.0.update(b",");
+                }
+                write_canonical_json(writer, item, &[]);
+            }
+            writer.0.update(b"]");
+        }
+        scalar => serde_json::to_writer(writer, scalar).expect("hashing cannot fail"),
+    }
 }
 
 /// Keyed digest for short email OTPs. A plain SHA-256 digest would still be

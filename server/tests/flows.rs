@@ -636,9 +636,8 @@ async fn issue_330_concurrent_distinct_messages_all_persist_and_dispatch_once_ea
 
 // ── 流程 4：done 落库 finalize；迟到的第二个 done 幂等（不双写、不耗 seq）──────
 
-/// 派发占位 → done 帧 finalize（此刻才分配 seq）。第二个 done 被 DB 守卫
-/// （`is_partial=TRUE AND channel_seq IS NULL`）拦截，且其 seq 分配随事务回滚，
-/// channels.next_seq 不前进（I2 无洞）。
+/// Dispatch and accept a real execution, then finalize its result. Exact delivery
+/// replay confirms the durable receipt without consuming another channel sequence.
 #[sqlx::test]
 async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
     let ws = seed_workspace(&db).await;
@@ -647,10 +646,24 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
     let fanout = fanout();
     let registry = StreamRegistry::new();
     let locator: Arc<dyn BotLocator> = Arc::new(CountingBotLocator::default());
-    let bot = Uuid::new_v4();
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
 
     let trigger = Uuid::new_v4();
-    let session = Uuid::new_v4();
+    let provider_key = server::domain::sessions::primary_provider_session_key(&ch.to_string(), bot);
+    let session = server::domain::sessions::acquire_scope_session(
+        &db,
+        bot,
+        &bot.to_string(),
+        &provider_key,
+        server::domain::sessions::SESSION_SCOPE_CHANNEL,
+        &ch.to_string(),
+        None,
+        "primary",
+    )
+    .await
+    .unwrap()
+    .session_id;
     let trigger_author = seed_user(&db).await;
     add_member(&db, ch, trigger_author, "user").await;
 
@@ -681,7 +694,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
             bot_id: bot,
             channel_id: ch,
             depth: 0,
-            provider_session_key: "cheers:test".into(),
+            provider_session_key: provider_key,
             session_id: Some(session),
             chain_id: None,
         },
@@ -716,7 +729,28 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
         "placeholder content_data carries session_id for reply reuse"
     );
 
-    add_member(&db, ch, bot, "bot").await;
+    let task_id: String =
+        sqlx::query_scalar("SELECT task_id FROM bot_runs WHERE placeholder_msg_id=$1")
+            .bind(placeholder.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let execution_id = Uuid::new_v4();
+    let grant = server::gateway::task_acceptance::claim(
+        &db,
+        bot,
+        Uuid::new_v4(),
+        task_id.parse().unwrap(),
+        placeholder,
+        ch,
+        execution_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        grant.status,
+        cheers_bridge_protocol::TaskAcceptanceStatus::Granted
+    );
     let cards = serde_json::json!([{"v":1,"kind":"resource_ref","uri":"cheers:desk/forms/report.a2ui.json"}]);
     let attach =
         serde_json::json!({"channel_id":ch,"msg_id":placeholder,"cards_json":cards.to_string()});
@@ -737,10 +771,13 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
     assert!(staged["content_data"].get("cards").is_none());
 
     // done 帧 → finalize。
-    let frame = serde_json::json!({ "msg_id": placeholder.to_string(), "content": "hello" });
-    stream::handle_done(&registry, &fanout, &db, &locator, bot, "", &frame)
+    let frame = serde_json::json!({ "type":"done", "client_msg_id":Uuid::new_v4(),
+        "msg_id": placeholder, "content": "hello", "execution":{
+            "task_id":task_id,"execution_id":execution_id,"channel_id":ch} });
+    let first = stream::handle_done(&registry, &fanout, &db, &locator, bot, "", &frame)
         .await
         .expect("first done should finalize");
+    assert_eq!(first, stream::TerminalOutcome::Committed);
 
     let row = sqlx::query(
         "SELECT is_partial, channel_seq, content, in_reply_to_msg_id, content_data
@@ -784,11 +821,11 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
         "late card writes update the finalized reply"
     );
 
-    // 迟到的第二个 done：DB 守卫拦截 → Err。
+    // An exact retransmission acknowledges its original commit, without effects.
     let second = stream::handle_done(&registry, &fanout, &db, &locator, bot, "", &frame).await;
-    assert!(second.is_err(), "迟到的第二个 done 应被拒绝");
+    assert_eq!(second.unwrap(), stream::TerminalOutcome::Replayed);
 
-    // I2：第二个 done 的 allocate 随事务回滚，不消费 seq → next_seq 仍为 1。
+    // I2: replay consumes no sequence, so next_seq remains 1.
     let next_seq: i64 = sqlx::query("SELECT next_seq FROM channels WHERE channel_id = $1")
         .bind(ch.to_string())
         .fetch_one(&db)

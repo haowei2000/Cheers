@@ -31,6 +31,7 @@ use crate::{
     gateway::{
         realtime::frame::WireFrame,
         stream::{handle_delta, handle_done, handle_send, handle_session_update},
+        task_results::{self, TerminalError, TerminalOutcome},
     },
     infra::crypto::hash_host_credential,
     infra::db::models::MESSAGE_SCHEMA_VERSION,
@@ -423,10 +424,10 @@ async fn handle_control_frame(
             state.bot_registry.set_task_acceptance(
                 bot_id,
                 connection_id,
-                caps.as_ref()
-                    .and_then(|caps| caps.get("task_acceptance"))
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
+                caps.as_ref().is_some_and(|caps| {
+                    caps.get("task_acceptance").and_then(Value::as_bool) == Some(true)
+                        && caps.get("terminal_replay").and_then(Value::as_bool) == Some(true)
+                }),
             );
             if caps.is_some() || connector_version.is_some() {
                 let caps_str = serde_json::to_string(&caps.unwrap_or(Value::Null))
@@ -725,6 +726,13 @@ async fn handle_data(
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(frame) = serde_json::from_str::<Value>(&text) {
                             malformed = 0;
+                            let terminal = matches!(frame.get("type").and_then(Value::as_str), Some("done" | "error"));
+                            // An exact committed receipt is a read-only answer:
+                            // its original session may now be idle or belong to
+                            // newer work, so do not authorize/touch it as a write.
+                            if terminal && replay_terminal_frame(&frame, &state, &bot, &mut socket).await {
+                                continue;
+                            }
                             if bot.require_capability {
                                 if let Err(err) =
                                     acp_capability::authorize_data_frame(
@@ -793,11 +801,18 @@ async fn handle_data(
                                             "data frame rejected by capability check"
                                         );
                                     }
-                                    let _ = ws_send(
-                                        &mut socket,
-                                        &bridge_error("CAPABILITY_DENIED", &err.to_string()),
-                                    )
-                                    .await;
+                                    if terminal {
+                                        // A concurrent first result can commit
+                                        // between our receipt read and the active
+                                        // session check. Confirm it before denial.
+                                        if !replay_terminal_frame(&frame, &state, &bot, &mut socket).await {
+                                            reject_terminal_frame(&frame, &mut socket,
+                                                TerminalError::rejected("TERMINAL_FORBIDDEN", "terminal capability was denied")).await;
+                                        }
+                                    } else {
+                                        let _ = ws_send(&mut socket,
+                                            &bridge_error("CAPABILITY_DENIED", &err.to_string())).await;
+                                    }
                                     continue;
                                 }
                             }
@@ -904,22 +919,34 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
 
         "error" => {
             if frame.get("msg_id").is_some() {
-                let mut normalized = frame.clone();
-                normalized["type"] = json!("done");
-                if normalized.get("content").and_then(Value::as_str).is_none() {
-                    normalized["content"] = json!(frame
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .unwrap_or("connector reported an error"));
-                }
-                handle_terminal_frame(&normalized, state, bot, socket, TerminalAckKind::Terminal)
-                    .await;
+                // Preserve the original kind and fields in the immutable receipt.
+                handle_terminal_frame(frame, state, bot, socket, TerminalAckKind::Terminal).await;
             } else {
                 tracing::debug!(bot_id = %bot.bot_id, "connector protocol error frame received");
             }
         }
 
         "reply" => {
+            // Execution-owned results use the authenticated Done/Error protocol.
+            // The legacy alias has no stream-capability contract and cannot
+            // carry a grant through normalization to bypass that authorization.
+            if frame
+                .get("execution")
+                .is_some_and(|execution| !execution.is_null())
+            {
+                let response = match client_msg_id(frame) {
+                    Some(client_msg_id) => send_ack_err(
+                        &client_msg_id,
+                        "INVALID_FRAME",
+                        "execution results must use done or error",
+                    ),
+                    None => {
+                        bridge_error("INVALID_FRAME", "execution results must use done or error")
+                    }
+                };
+                let _ = ws_send(socket, &response).await;
+                return;
+            }
             let mut normalized = frame.clone();
             normalized["type"] = json!("done");
             if normalized.get("msg_id").and_then(Value::as_str).is_none() {
@@ -1568,6 +1595,48 @@ enum TerminalAckKind {
     Send,
 }
 
+async fn reject_terminal_frame(frame: &Value, socket: &mut WebSocket, error: TerminalError) {
+    let response = match client_msg_id(frame) {
+        Some(client_msg_id) => {
+            terminal_ack_err(&client_msg_id, error.code, error.detail, error.retryable)
+        }
+        None => bridge_error(error.code, error.detail),
+    };
+    let _ = ws_send(socket, &response).await;
+}
+
+/// True only when a committed replay or a definitive protocol/ledger error was
+/// answered. A fresh result continues through the full authorization/write path.
+async fn replay_terminal_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    socket: &mut WebSocket,
+) -> bool {
+    match task_results::replay(&state.db, bot.bot_id, frame).await {
+        Ok(None) => false,
+        Ok(Some(TerminalOutcome::Replayed)) => {
+            if let (Some(client_msg_id), Some(msg_id)) = (
+                client_msg_id(frame),
+                frame
+                    .get("msg_id")
+                    .and_then(Value::as_str)
+                    .and_then(|id| id.parse().ok()),
+            ) {
+                let _ = ws_send(socket, &terminal_ack_ok(&client_msg_id, msg_id)).await;
+            }
+            true
+        }
+        Ok(Some(TerminalOutcome::Committed)) => {
+            unreachable!("a receipt read cannot commit a result")
+        }
+        Err(error) => {
+            reject_terminal_frame(frame, socket, error).await;
+            true
+        }
+    }
+}
+
 async fn handle_terminal_frame(
     frame: &Value,
     state: &AppState,
@@ -1594,7 +1663,12 @@ async fn handle_terminal_frame(
     )
     .await
     {
-        Ok(()) => {
+        Ok(TerminalOutcome::Replayed) => {
+            if let (Some(client_msg_id), Some(msg_id)) = (client_msg_id, msg_id) {
+                let _ = ws_send(socket, &terminal_ack_ok(&client_msg_id, msg_id)).await;
+            }
+        }
+        Ok(TerminalOutcome::Committed) => {
             if let Some(mid) = msg_id {
                 if let Ok(Some(row)) = sqlx::query!(
                     "UPDATE task_claim_requests SET status='completed',updated_at=NOW() WHERE execution_msg_id=$1 AND status='executing' RETURNING claim_id,channel_id",
@@ -1648,7 +1722,7 @@ async fn handle_terminal_frame(
             let Some(msg_id) = msg_id else {
                 let _ = ws_send(
                     socket,
-                    &terminal_ack_err(&client_msg_id, "INVALID_FRAME", "missing msg_id"),
+                    &terminal_ack_err(&client_msg_id, "INVALID_FRAME", "missing msg_id", false),
                 )
                 .await;
                 return;
@@ -1660,17 +1734,19 @@ async fn handle_terminal_frame(
             let _ = ws_send(socket, &ack).await;
         }
         Err(e) => {
-            tracing::warn!(bot_id = %bot.bot_id, err = e, "terminal frame rejected");
+            tracing::warn!(bot_id = %bot.bot_id, err = %e, "terminal frame rejected");
             if let Some(client_msg_id) = client_msg_id {
                 let ack = match ack_kind {
                     TerminalAckKind::Terminal => {
-                        terminal_ack_err(&client_msg_id, "TERMINAL_REJECTED", e)
+                        terminal_ack_err(&client_msg_id, e.code, e.detail, e.retryable)
                     }
-                    TerminalAckKind::Send => send_ack_err(&client_msg_id, "REPLY_REJECTED", e),
+                    TerminalAckKind::Send => {
+                        send_ack_err(&client_msg_id, "REPLY_REJECTED", e.detail)
+                    }
                 };
                 let _ = ws_send(socket, &ack).await;
             } else {
-                let _ = ws_send(socket, &bridge_error("TERMINAL_REJECTED", e)).await;
+                let _ = ws_send(socket, &bridge_error(e.code, e.detail)).await;
             }
         }
     }
@@ -2637,6 +2713,7 @@ fn server_capabilities(state: &AppState) -> Value {
         "runtime_session_control": true,
         "send_ack": true,
         "terminal_ack": true,
+        "terminal_replay": true,
         "task_acceptance": true,
         "resume": "ack_only",
         "file_upload": false,

@@ -15,7 +15,7 @@ use uuid::Uuid;
 use server::gateway::{
     realtime::{fanout::Fanout, frame::WireFrame},
     registry::{BotLocator, InProcessBotLocator},
-    stream::{self, StreamEntry, StreamRegistry},
+    stream::{self, StreamEntry, StreamRegistry, TerminalError, TerminalOutcome},
 };
 
 #[derive(Default)]
@@ -65,6 +65,10 @@ struct Turn {
     channel: Uuid,
     bot: Uuid,
     placeholder: Uuid,
+    trigger: Uuid,
+    task_id: Uuid,
+    execution_id: Option<Uuid>,
+    terminal_client_msg_id: Uuid,
     registry: Arc<StreamRegistry>,
     recorded: Arc<RecordingFanout>,
     fanout: Arc<dyn Fanout>,
@@ -79,6 +83,7 @@ impl Turn {
         let bot = Uuid::new_v4();
         let trigger = Uuid::new_v4();
         let placeholder = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
         sqlx::query("INSERT INTO workspaces (workspace_id,name) VALUES ($1,'Terminal recovery')")
             .bind(workspace.to_string())
             .execute(db)
@@ -114,7 +119,7 @@ impl Turn {
                 msg_id: placeholder,
                 bot_id: bot,
                 channel_id: channel,
-                task_id: Uuid::new_v4(),
+                task_id,
                 trigger_msg_id: trigger,
                 session_id: None,
                 finalized: false,
@@ -126,6 +131,10 @@ impl Turn {
             channel,
             bot,
             placeholder,
+            trigger,
+            task_id,
+            execution_id: None,
+            terminal_client_msg_id: Uuid::new_v4(),
             registry,
             fanout: recorded.clone(),
             recorded,
@@ -134,10 +143,32 @@ impl Turn {
     }
 
     fn frame(&self) -> Value {
-        json!({"msg_id":self.placeholder,"content":"terminal result"})
+        let mut frame = json!({"msg_id":self.placeholder,"content":"terminal result"});
+        if let Some(execution_id) = self.execution_id {
+            frame["type"] = json!("done");
+            frame["client_msg_id"] = json!(self.terminal_client_msg_id);
+            frame["execution"] = json!({"task_id":self.task_id,"execution_id":execution_id,"channel_id":self.channel});
+        }
+        frame
     }
 
-    async fn done(&self, db: &PgPool) -> Result<(), &'static str> {
+    async fn accepted(db: &PgPool, registered: bool) -> Self {
+        let mut turn = Self::seed(db, registered).await;
+        let execution = Uuid::new_v4();
+        sqlx::query("INSERT INTO bot_runs(bot_run_id,task_id,channel_id,trigger_msg_id,bot_id,placeholder_msg_id,binding_type,status,execution_id,execution_connection_id,accepted_at) VALUES($1,$1,$2,$3,$4,$5,'acp','accepted',$6,$7,NOW())")
+            .bind(turn.task_id.to_string()).bind(turn.channel.to_string())
+            .bind(turn.trigger.to_string())
+            .bind(turn.bot.to_string()).bind(turn.placeholder.to_string())
+            .bind(execution.to_string()).bind(Uuid::new_v4().to_string()).execute(db).await.unwrap();
+        turn.execution_id = Some(execution);
+        turn
+    }
+
+    async fn done(&self, db: &PgPool) -> Result<TerminalOutcome, TerminalError> {
+        self.submit(db, &self.frame()).await
+    }
+
+    async fn submit(&self, db: &PgPool, frame: &Value) -> Result<TerminalOutcome, TerminalError> {
         stream::handle_done(
             &self.registry,
             &self.fanout,
@@ -145,12 +176,15 @@ impl Turn {
             &self.locator,
             self.bot,
             "",
-            &self.frame(),
+            frame,
         )
         .await
     }
 
-    fn spawn_done(&self, db: &PgPool) -> tokio::task::JoinHandle<Result<(), &'static str>> {
+    fn spawn_done(
+        &self,
+        db: &PgPool,
+    ) -> tokio::task::JoinHandle<Result<TerminalOutcome, TerminalError>> {
         let (db, registry, fanout, locator, bot, frame) = (
             db.clone(),
             self.registry.clone(),
@@ -221,6 +255,20 @@ impl Turn {
             .await
             .unwrap()
     }
+
+    async fn assert_no_receipt(&self, db: &PgPool) {
+        let receipt: Value = sqlx::query_scalar(
+            "SELECT to_jsonb(bot_runs) FROM bot_runs WHERE placeholder_msg_id=$1",
+        )
+        .bind(self.placeholder.to_string())
+        .fetch_one(db)
+        .await
+        .unwrap();
+        assert!(receipt["terminal_client_msg_id"].is_null());
+        assert!(receipt["terminal_fingerprint"].is_null());
+        assert!(receipt["terminal_committed_at"].is_null());
+        assert_eq!(receipt["status"], "accepted");
+    }
 }
 
 async fn install_failure(db: &PgPool, deferred: bool) {
@@ -283,10 +331,11 @@ async fn remove_block(db: &PgPool) {
 
 #[sqlx::test]
 async fn terminal_update_failure_can_retry_without_poisoning_the_stream(db: PgPool) {
-    let turn = Turn::seed(&db, true).await;
+    let turn = Turn::accepted(&db, true).await;
     install_failure(&db, false).await;
     assert!(turn.done(&db).await.is_err());
     turn.assert_partial(&db).await;
+    turn.assert_no_receipt(&db).await;
     remove_failure(&db).await;
     turn.done(&db)
         .await
@@ -296,10 +345,11 @@ async fn terminal_update_failure_can_retry_without_poisoning_the_stream(db: PgPo
 
 #[sqlx::test]
 async fn terminal_commit_failure_can_retry_without_consuming_a_sequence(db: PgPool) {
-    let turn = Turn::seed(&db, true).await;
+    let turn = Turn::accepted(&db, true).await;
     install_failure(&db, true).await;
     assert!(turn.done(&db).await.is_err());
     turn.assert_partial(&db).await;
+    turn.assert_no_receipt(&db).await;
     remove_failure(&db).await;
     turn.done(&db)
         .await
@@ -384,5 +434,123 @@ async fn restart_with_an_empty_stream_registry_can_finalize_the_durable_placehol
         .expect("durable ownership must allow done replay after gateway restart");
     turn.assert_final(&db).await;
     assert!(turn.done(&db).await.is_err());
+    turn.assert_final(&db).await;
+}
+
+#[sqlx::test]
+async fn accepted_result_replays_after_gateway_restart_without_repeating_effects(db: PgPool) {
+    let mut turn = Turn::accepted(&db, true).await;
+    assert_eq!(turn.done(&db).await.unwrap(), TerminalOutcome::Committed);
+    turn.assert_final(&db).await;
+    let receipt: Value =
+        sqlx::query_scalar("SELECT to_jsonb(bot_runs) FROM bot_runs WHERE placeholder_msg_id=$1")
+            .bind(turn.placeholder.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(
+        receipt["terminal_client_msg_id"],
+        turn.terminal_client_msg_id.to_string()
+    );
+    assert_eq!(receipt["terminal_fingerprint"].as_str().unwrap().len(), 64);
+    assert!(receipt["terminal_committed_at"].is_string());
+    assert_eq!(receipt["status"], "completed");
+    turn.registry = StreamRegistry::new();
+    assert_eq!(turn.done(&db).await.unwrap(), TerminalOutcome::Replayed);
+    turn.assert_final(&db).await;
+    let after: Value =
+        sqlx::query_scalar("SELECT to_jsonb(bot_runs) FROM bot_runs WHERE placeholder_msg_id=$1")
+            .bind(turn.placeholder.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(after, receipt);
+}
+
+#[sqlx::test]
+async fn receipt_allows_a_fresh_signature_but_rejects_every_changed_unsigned_field(db: PgPool) {
+    let turn = Turn::accepted(&db, true).await;
+    let mut frame = turn.frame();
+    frame["provider_session_key"] = json!("original-scope");
+    frame["acp_capability"] = json!({"nonce":"original"});
+    assert_eq!(
+        turn.submit(&db, &frame).await.unwrap(),
+        TerminalOutcome::Committed
+    );
+    frame["acp_capability"] = json!({"nonce":"fresh"});
+    assert_eq!(
+        turn.submit(&db, &frame).await.unwrap(),
+        TerminalOutcome::Replayed
+    );
+    for (key, value) in [
+        ("content", json!("changed")),
+        ("client_msg_id", json!(Uuid::new_v4())),
+        ("provider_session_key", json!("another-scope")),
+        ("mention_ids", json!([])),
+        ("type", json!("error")),
+    ] {
+        let mut changed = frame.clone();
+        changed[key] = value;
+        let error = turn.submit(&db, &changed).await.unwrap_err();
+        assert_eq!(error.code, "TERMINAL_CONFLICT", "{key}");
+        assert!(!error.retryable);
+    }
+    turn.assert_final(&db).await;
+}
+
+#[sqlx::test]
+async fn reclaimed_result_is_negative_but_a_committed_receipt_survives_message_deletion(
+    db: PgPool,
+) {
+    let missing = Turn::accepted(&db, true).await;
+    sqlx::query("DELETE FROM messages WHERE msg_id=$1")
+        .bind(missing.placeholder.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    let error = missing.done(&db).await.unwrap_err();
+    assert_eq!(error.code, "TERMINAL_GONE");
+    assert!(!error.retryable);
+    missing.assert_no_receipt(&db).await;
+    assert_eq!(missing.next_seq(&db).await, 1);
+
+    let completed = Turn::accepted(&db, true).await;
+    assert_eq!(
+        completed.done(&db).await.unwrap(),
+        TerminalOutcome::Committed
+    );
+    sqlx::query("DELETE FROM messages WHERE msg_id=$1")
+        .bind(completed.placeholder.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        completed.done(&db).await.unwrap(),
+        TerminalOutcome::Replayed
+    );
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE msg_id=$1")
+        .bind(completed.placeholder.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0, "a receipt cannot recreate a deleted message");
+    assert_eq!(completed.recorded.terminal_count(), 1);
+    assert_eq!(completed.next_seq(&db).await, 2);
+}
+
+#[sqlx::test]
+async fn an_inflight_result_retries_until_the_single_commit_can_be_acknowledged(db: PgPool) {
+    let turn = Turn::accepted(&db, true).await;
+    let blocker = block_terminal_update(&db).await;
+    let first = turn.spawn_done(&db);
+    wait_until_update_is_blocked(&db).await;
+    let busy = turn.done(&db).await.unwrap_err();
+    assert_eq!(busy.code, "TERMINAL_BUSY");
+    assert!(busy.retryable);
+    turn.assert_no_receipt(&db).await;
+    blocker.rollback().await.unwrap();
+    assert_eq!(first.await.unwrap().unwrap(), TerminalOutcome::Committed);
+    remove_block(&db).await;
+    assert_eq!(turn.done(&db).await.unwrap(), TerminalOutcome::Replayed);
     turn.assert_final(&db).await;
 }

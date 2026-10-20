@@ -167,10 +167,16 @@ pub(crate) fn terminal_ack_ok(client_msg_id: &str, msg_id: Uuid) -> Value {
         job_id: None,
         error: None,
         code: None,
+        retryable: None,
     })
 }
 
-pub(crate) fn terminal_ack_err(client_msg_id: &str, code: &str, error: &str) -> Value {
+pub(crate) fn terminal_ack_err(
+    client_msg_id: &str,
+    code: &str,
+    error: &str,
+    retryable: bool,
+) -> Value {
     frame_value(&proto::DataInbound::TerminalAck {
         v: BRIDGE_PROTOCOL_VERSION,
         client_msg_id: client_msg_id.to_string(),
@@ -180,6 +186,7 @@ pub(crate) fn terminal_ack_err(client_msg_id: &str, code: &str, error: &str) -> 
         job_id: None,
         error: Some(error.to_string()),
         code: Some(code.to_string()),
+        retryable: Some(retryable),
     })
 }
 
@@ -595,13 +602,18 @@ mod tests {
 
     #[test]
     fn terminal_ack_ok_matches_fixture() {
-        let frame = terminal_ack_ok("client-msg-2", bot_id());
+        let frame = terminal_ack_ok("22222222-3333-4444-8555-666666666666", bot_id());
         assert_matches_fixture(&frame, "data/to_connector/terminal_ack_ok.json", &[]);
     }
 
     #[test]
     fn terminal_ack_err_matches_fixture() {
-        let frame = terminal_ack_err("client-msg-2", "TERMINAL_REJECTED", "not the owner of msg");
+        let frame = terminal_ack_err(
+            "22222222-3333-4444-8555-666666666666",
+            "TERMINAL_REJECTED",
+            "not the owner of msg",
+            false,
+        );
         assert_matches_fixture(&frame, "data/to_connector/terminal_ack_err.json", &[]);
     }
 

@@ -11,10 +11,7 @@
 //! refused. A concurrent duplicate blocks on the key row until the first transaction
 //! settles, so exactly one write lands even across gateway replicas.
 
-use std::io::Write;
-
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use super::{Principal, ResourceResult};
@@ -176,55 +173,7 @@ pub async fn sweep_expired(db: &PgPool) -> Result<u64, sqlx::Error> {
 /// retry hashes equally whatever order its transport built the params in. Values are
 /// streamed into the hasher: `channel.files.create` carries up to 8 MB of base64.
 fn request_hash(params: &Value) -> String {
-    let mut hasher = HashWriter(Sha256::new());
-    write_canonical(&mut hasher, params, true);
-    hex::encode(hasher.0.finalize())
-}
-
-struct HashWriter(Sha256);
-
-impl Write for HashWriter {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-fn write_canonical(hasher: &mut HashWriter, value: &Value, top_level: bool) {
-    match value {
-        Value::Object(object) => {
-            let mut keys: Vec<&String> = object
-                .keys()
-                .filter(|key| !(top_level && key.as_str() == PARAM))
-                .collect();
-            keys.sort();
-            hasher.0.update(b"{");
-            for (index, key) in keys.into_iter().enumerate() {
-                if index > 0 {
-                    hasher.0.update(b",");
-                }
-                serde_json::to_writer(&mut *hasher, key).expect("hashing cannot fail");
-                hasher.0.update(b":");
-                write_canonical(hasher, &object[key], false);
-            }
-            hasher.0.update(b"}");
-        }
-        Value::Array(items) => {
-            hasher.0.update(b"[");
-            for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    hasher.0.update(b",");
-                }
-                write_canonical(hasher, item, false);
-            }
-            hasher.0.update(b"]");
-        }
-        scalar => serde_json::to_writer(&mut *hasher, scalar).expect("hashing cannot fail"),
-    }
+    crate::infra::crypto::json_fingerprint(params, &[PARAM])
 }
 
 #[cfg(test)]

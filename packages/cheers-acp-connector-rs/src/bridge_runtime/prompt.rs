@@ -48,6 +48,7 @@ pub(super) fn bridge_ready_from_initialize(
     ready.connector_capabilities = Some(json!({
         "runtime_protocols": ["acp"],
         "task_acceptance": true,
+        "terminal_replay": true,
         "runtime_session_control": policy.sessions.create
             || policy.sessions.load
             || policy.sessions.cancel

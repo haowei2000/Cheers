@@ -18,6 +18,7 @@ pub mod scheduled_message_scheduler;
 pub mod stream;
 pub mod task_acceptance;
 pub mod task_claim_scheduler;
+pub mod task_results;
 pub mod transcription_worker;
 pub mod workspace_rpc;
 pub mod ws;

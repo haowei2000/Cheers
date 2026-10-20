@@ -15,6 +15,9 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::task_results::{self, TerminalRequest};
+pub use super::task_results::{TerminalError, TerminalOutcome};
+
 use crate::{
     domain::{chains, channel_seq, mentions, sessions},
     gateway::{
@@ -338,53 +341,134 @@ pub async fn handle_done(
     bot_id: Uuid,
     provider_account_id: &str,
     frame: &Value,
-) -> Result<(), &'static str> {
-    let msg_id: Uuid = frame
-        .get("msg_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or("missing msg_id")?;
+) -> Result<TerminalOutcome, TerminalError> {
+    let request = TerminalRequest::parse(frame)?;
+    if let Some(outcome) = task_results::replay(db, bot_id, frame).await? {
+        return Ok(outcome);
+    }
+    let msg_id = request.msg_id;
     let entry_session_id = registry
         .entries
         .get(&msg_id)
         .and_then(|entry| entry.session_id);
-    mark_session_alive(db, bot_id, provider_account_id, frame, entry_session_id).await;
 
-    let content = frame.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    let content = if frame.get("type").and_then(Value::as_str) == Some("error") {
+        frame
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("connector reported an error")
+    } else {
+        frame.get("content").and_then(Value::as_str).unwrap_or("")
+    };
     let done_file_ids = parse_file_ids(frame.get("file_ids"));
     let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
     let mention_ids = parse_mention_ids(frame.get("mention_ids"));
 
-    // R1: 所有权校验
-    let channel_id = verify_ownership(db, bot_id, msg_id).await?;
+    // The execution's channel is checked against the locked message and run
+    // below. Legacy/manual turns obtain the routing channel from their message.
+    let channel_id = match request.execution.as_ref() {
+        Some(execution) => execution.channel_id,
+        None => sqlx::query_scalar!(
+            "SELECT channel_id FROM messages WHERE msg_id=$1",
+            msg_id.to_string()
+        )
+        .fetch_optional(db)
+        .await
+        .map_err(TerminalError::database("read terminal channel"))?
+        .and_then(|channel| channel.parse().ok())
+        .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "message no longer exists"))?,
+    };
     let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
         .await
-        .map_err(mention_parse_error_to_static)?;
+        .map_err(|error| match error {
+            mentions::MentionParseError::Db(error) => {
+                TerminalError::database("validate terminal mentions")(error)
+            }
+            other => {
+                TerminalError::rejected("TERMINAL_FORBIDDEN", mention_parse_error_to_static(other))
+            }
+        })?;
 
     // R4: 标记 finalize（先在内存里标记，防止并发 delta 继续写入）
-    let finalize_guard = registry.claim_finalize(msg_id)?;
+    let finalize_guard = match registry.claim_finalize(msg_id) {
+        Ok(guard) => guard,
+        Err(_) => {
+            if let Some(outcome) = task_results::replay(db, bot_id, frame).await? {
+                return Ok(outcome);
+            }
+            return Err(TerminalError::busy());
+        }
+    };
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
     let mut tx = db
         .begin()
         .await
-        .map_err(crate::gateway::log_db_err("stream.done: begin tx"))?;
-    let channel_seq =
-        channel_seq::allocate(&mut tx, channel_id)
-            .await
-            .map_err(crate::gateway::log_db_err(
-                "stream.done: allocate channel_seq",
-            ))?;
-    let metadata = sqlx::query!(
-        "SELECT content_data FROM messages WHERE msg_id = $1 AND is_partial = TRUE FOR UPDATE",
+        .map_err(TerminalError::database("stream.done: begin tx"))?;
+    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+        .await
+        .map_err(TerminalError::database("stream.done: allocate channel_seq"))?;
+    let message = sqlx::query!(
+        "SELECT channel_id,sender_id,sender_type,is_partial,is_deleted,channel_seq,chain_id,content_data
+         FROM messages WHERE msg_id = $1 FOR UPDATE",
         msg_id.to_string(),
     )
     .fetch_optional(&mut *tx)
     .await
-    .map_err(crate::gateway::log_db_err(
-        "stream.done: lock card metadata",
+    .map_err(TerminalError::database(
+        "stream.done: lock message",
     ))?;
-    if let Some(data) = metadata.and_then(|row| row.content_data) {
+    let run = task_results::lock_run(&mut tx, &request).await?;
+    if let Some(run) = run {
+        if let Some(outcome) = run.validate(bot_id, &request)? {
+            // Drop rolls back the provisional sequence allocation. A replay
+            // never repeats message writes, session changes or completion effects.
+            return Ok(outcome);
+        }
+    } else if request.execution.is_some() {
+        return Err(TerminalError::rejected(
+            "TERMINAL_GONE",
+            "task execution no longer exists",
+        ));
+    }
+    let message = message
+        .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "message no longer exists"))?;
+    if message.sender_id != bot_id.to_string()
+        || message.sender_type != "bot"
+        || message.channel_id != channel_id.to_string()
+    {
+        return Err(TerminalError::rejected(
+            "TERMINAL_FORBIDDEN",
+            "message does not belong to this bot and channel",
+        ));
+    }
+    if message.is_deleted {
+        return Err(TerminalError::rejected(
+            "TERMINAL_GONE",
+            "message was deleted",
+        ));
+    }
+    if !message.is_partial || message.channel_seq.is_some() {
+        return Err(TerminalError::rejected(
+            "TERMINAL_CONFLICT",
+            "message was finalized without this receipt",
+        ));
+    }
+    if !super::task_acceptance::may_execute(
+        &mut tx,
+        bot_id,
+        channel_id,
+        message.chain_id.as_deref(),
+    )
+    .await
+    .map_err(TerminalError::database("authorize terminal result"))?
+    {
+        return Err(TerminalError::rejected(
+            "TERMINAL_FORBIDDEN",
+            "bot may no longer publish this result",
+        ));
+    }
+    if let Some(data) = message.content_data {
         let finalized =
             crate::resource::messages::finalize_card_metadata(data, !content.trim().is_empty());
         sqlx::query!(
@@ -394,7 +478,7 @@ pub async fn handle_done(
         )
         .execute(&mut *tx)
         .await
-        .map_err(crate::gateway::log_db_err(
+        .map_err(TerminalError::database(
             "stream.done: publish card metadata",
         ))?;
     }
@@ -414,16 +498,17 @@ pub async fn handle_done(
     )
     .fetch_optional(&mut *tx)
     .await
-    .map_err(crate::gateway::log_db_err(
+    .map_err(TerminalError::database(
         "stream.done: finalize message update",
     ))?
-    .ok_or("message not found")?;
+    .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "message no longer exists"))?;
     mentions::replace_batch(&mut tx, msg_id, &mentions)
         .await
-        .map_err(crate::gateway::log_db_err("stream.done: replace mentions"))?;
+        .map_err(TerminalError::database("stream.done: replace mentions"))?;
+    task_results::complete(&mut tx, &request).await?;
     tx.commit()
         .await
-        .map_err(crate::gateway::log_db_err("stream.done: commit tx"))?;
+        .map_err(TerminalError::database("stream.done: commit tx"))?;
     if let Some(guard) = finalize_guard {
         guard.remove();
     }
@@ -432,12 +517,12 @@ pub async fn handle_done(
         .channel_id
         .clone()
         .parse()
-        .map_err(|_| "invalid channel_id")?;
+        .map_err(|_| TerminalError::rejected("INTERNAL_ERROR", "invalid channel_id"))?;
     let channel_seq = details
         .channel_seq
         .clone()
         .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))
-        .map_err(crate::gateway::log_db_err(
+        .map_err(TerminalError::database(
             "stream.done: read channel_seq column",
         ))?;
     let depth = details.depth.clone();
@@ -510,7 +595,7 @@ pub async fn handle_done(
         }
     }
 
-    Ok(())
+    Ok(TerminalOutcome::Committed)
 }
 
 /// 处理 bot 上报的 session_update 帧（provider_session_id / metadata）。
