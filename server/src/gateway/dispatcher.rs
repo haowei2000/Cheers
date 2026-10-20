@@ -102,6 +102,32 @@ pub async fn dispatch(
     let placeholder_id = derive_placeholder_id(params.trigger_msg_id, params.bot_id);
     let task_id = Uuid::new_v4();
 
+    // Finish potentially slow context/media reads before creating a live turn.
+    // Offline recovery must not see an entry that is still waiting on S3.
+    let mut task_context = load_task_context(db, params.trigger_msg_id, params.bot_id, media_cache)
+        .await
+        .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
+    task_context.pinned = media_cache.pinned_context(db, params.channel_id).await;
+    // A gateway-assembled handoff bundle (bot@bot) overrides the trigger message's
+    // own bundle; otherwise the human-attached bundle read above flows through.
+    if params.context_bundle.is_some() {
+        task_context.context_bundle = params.context_bundle.clone();
+    }
+    // Per-session ACP root set (cwd + additionalDirectories) stored on the session
+    // row; absent → the connector falls back to its default_cwd.
+    let task_frame = build_task_frame(
+        task_id,
+        params.channel_id,
+        params.trigger_msg_id,
+        params.trigger_seq,
+        params.depth,
+        placeholder_id,
+        &params.provider_session_key,
+        params.session_id,
+        task_context,
+        workspace,
+    );
+
     // Nest the bot turn under its trigger so clients render it as a sub-message
     // (not an independent top-level row). Persist session_id on content_data so
     // a human Reply can reuse the same session/model without a separate lookup.
@@ -166,31 +192,6 @@ pub async fn dispatch(
         channel_id = %params.channel_id,
         placeholder_msg_id = %placeholder_id,
         "placeholder created and empty bubble fanned out"
-    );
-
-    // ── 通过 control WS 派发 task 帧给 bot ───────────────────────────────────
-    let mut task_context = load_task_context(db, params.trigger_msg_id, params.bot_id, media_cache)
-        .await
-        .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
-    task_context.pinned = media_cache.pinned_context(db, params.channel_id).await;
-    // A gateway-assembled handoff bundle (bot@bot) overrides the trigger message's
-    // own bundle; otherwise the human-attached bundle read above flows through.
-    if params.context_bundle.is_some() {
-        task_context.context_bundle = params.context_bundle.clone();
-    }
-    // Per-session ACP root set (cwd + additionalDirectories) stored on the session
-    // row; absent → the connector falls back to its default_cwd.
-    let task_frame = build_task_frame(
-        task_id,
-        params.channel_id,
-        params.trigger_msg_id,
-        params.trigger_seq,
-        params.depth,
-        placeholder_id,
-        &params.provider_session_key,
-        params.session_id,
-        task_context,
-        workspace,
     );
 
     let delivered = bot_locator.dispatch_task(params.bot_id, task_frame).await;

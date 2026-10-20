@@ -58,6 +58,9 @@ impl RedisBotLocator {
 
 #[async_trait]
 impl BotLocator for RedisBotLocator {
+    // Intentionally inherits control_generation=None. This parked transport has
+    // no cross-instance connection-identity fence, so offline reclamation fails
+    // closed instead of deleting a newer instance's in-flight turn.
     async fn dispatch_task(&self, bot_id: Uuid, task: Value) -> bool {
         // 先检查 control 在线标记（避免无效 PUBLISH）
         if !keys_exist(&self.publisher, &[control_online_key(bot_id)]).await {
@@ -147,10 +150,10 @@ impl BotRegistry for Arc<RedisBotRegistry> {
     fn unbind(&self, bot_id: Uuid) {
         (**self).unbind(bot_id)
     }
-    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) {
+    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) -> bool {
         (**self).unbind_if_connection(bot_id, conn_id)
     }
-    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid) {
+    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid) -> bool {
         (**self).unbind_data(bot_id, conn_id)
     }
     fn kick(&self, bot_id: Uuid) {
@@ -262,19 +265,22 @@ impl BotRegistry for RedisBotRegistry {
         );
     }
 
-    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) {
+    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) -> bool {
         // 防误删：重连后旧 control socket 的迟到 cleanup 不能把新绑定打下线。
-        let matches = self
+        let removed = self
             .cancel_map
-            .get(&bot_id)
-            .map(|e| e.control_conn_id == Some(conn_id))
-            .unwrap_or(false);
-        if matches {
-            self.unbind(bot_id);
+            .remove_if(&bot_id, |_, tokens| tokens.control_conn_id == Some(conn_id))
+            .is_some();
+        if removed {
+            del_keys_bg(
+                self.publisher.clone(),
+                vec![control_online_key(bot_id), data_online_key(bot_id)],
+            );
         }
+        removed
     }
 
-    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid) {
+    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid) -> bool {
         // 只清自己的绑定（同 in-process 的守卫语义），并显式清 data 在线标记。
         let mut cleared = false;
         if let Some(mut entry) = self.cancel_map.get_mut(&bot_id) {
@@ -288,6 +294,7 @@ impl BotRegistry for RedisBotRegistry {
         if cleared {
             del_keys_bg(self.publisher.clone(), vec![data_online_key(bot_id)]);
         }
+        cleared
     }
 
     /// # Not yet safe for multi-instance

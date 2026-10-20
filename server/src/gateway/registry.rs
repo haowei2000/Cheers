@@ -29,6 +29,15 @@ pub trait BotLocator: Send + Sync {
     /// Async because the multi-instance impl has to ask Redis (the connection may
     /// live on another gateway replica).
     async fn is_online(&self, bot_id: Uuid) -> bool;
+
+    /// Most recently bound control connection, retained after disconnect.
+    /// Reclaimers use it to fence old timers after any newer connection binds.
+    /// `None` explicitly means this transport cannot safely fence reclamation;
+    /// registered turns must then be left intact. The parked Redis transport
+    /// does not implement this capability and is not wired into the runtime.
+    async fn control_generation(&self, _bot_id: Uuid) -> Option<Uuid> {
+        None
+    }
 }
 
 /// 【WS 连接层接口】管理 bot 的 control/data WS 连接注册。
@@ -50,12 +59,14 @@ pub trait BotRegistry: Send + Sync {
     fn unbind(&self, bot_id: Uuid);
 
     /// 仅当 conn_id 匹配时才移除（防止新连接的 session 被旧连接 cleanup 误删）。
-    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid);
+    /// 返回当前绑定是否确实被移除，供调用方仅回收该连接留下的任务。
+    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) -> bool;
 
     /// data WS 断线时清除 data_tx，保留 control session。仅当 conn_id 与当前
     /// 绑定的 data 连接匹配才清（同 unbind_if_connection 的防误删语义：迟到的
     /// 旧 data socket cleanup 不能把重连后的新绑定打下线）。
-    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid);
+    /// 返回当前或待绑定的 data 连接是否确实被移除。
+    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid) -> bool;
 
     /// 强制踢掉 bot 的实时会话（管理员禁用时用）。移除 session 并向 control WS
     /// 发 supersede 信号让其关闭;之后 is_online 立即变 false,派发也会失败。
@@ -80,6 +91,9 @@ struct BotSession {
 
 pub struct InProcessBotLocator {
     sessions: DashMap<Uuid, BotSession>,
+    /// Last control bind identity survives unbind, so an old disconnect timer
+    /// cannot reclaim turns after a reconnect followed by another disconnect.
+    control_generations: DashMap<Uuid, Uuid>,
     /// data_tx that arrived before the control session was created.
     /// bind_control picks these up so they are not lost to the race.
     pending_data: DashMap<Uuid, (Uuid, mpsc::Sender<Value>)>,
@@ -89,6 +103,7 @@ impl InProcessBotLocator {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             sessions: DashMap::new(),
+            control_generations: DashMap::new(),
             pending_data: DashMap::new(),
         })
     }
@@ -106,6 +121,7 @@ impl Default for InProcessBotLocator {
     fn default() -> Self {
         Self {
             sessions: DashMap::new(),
+            control_generations: DashMap::new(),
             pending_data: DashMap::new(),
         }
     }
@@ -119,6 +135,10 @@ impl BotRegistry for InProcessBotLocator {
         task_tx: mpsc::Sender<Value>,
     ) -> oneshot::Receiver<()> {
         let (supersede_tx, supersede_rx) = oneshot::channel();
+        // Serialize the generation and session mutations for this bot. Two
+        // simultaneous binds must publish the identity of the session that won.
+        let mut generation = self.control_generations.entry(bot_id).or_insert(conn_id);
+        *generation = conn_id;
 
         // Remove any old session and signal it (genuine supersede).
         // If there's no old session the signal just drops.
@@ -141,6 +161,7 @@ impl BotRegistry for InProcessBotLocator {
                 supersede_tx,
             },
         );
+        drop(generation);
 
         supersede_rx
     }
@@ -159,27 +180,26 @@ impl BotRegistry for InProcessBotLocator {
         self.sessions.remove(&bot_id);
     }
 
-    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) {
-        let matches = self
-            .sessions
-            .get(&bot_id)
-            .map(|s| s.connection_id == conn_id)
-            .unwrap_or(false);
-        if matches {
-            self.sessions.remove(&bot_id);
-        }
+    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) -> bool {
+        self.sessions
+            .remove_if(&bot_id, |_, session| session.connection_id == conn_id)
+            .is_some()
     }
 
-    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid) {
+    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid) -> bool {
         // 只清自己的绑定：重连后旧 data socket 的迟到 cleanup 不能打掉新绑定。
+        let mut cleared = false;
         if let Some(mut s) = self.sessions.get_mut(&bot_id) {
             if s.data_tx.as_ref().is_some_and(|(id, _)| *id == conn_id) {
                 s.data_tx = None;
+                cleared = true;
             }
         }
         // pending 栈里同理（data 先到、control 未到期间断线）。
         self.pending_data
-            .remove_if(&bot_id, |_, (id, _)| *id == conn_id);
+            .remove_if(&bot_id, |_, (id, _)| *id == conn_id)
+            .is_some()
+            || cleared
     }
 
     fn kick(&self, bot_id: Uuid) {
@@ -222,6 +242,10 @@ impl BotLocator for InProcessBotLocator {
 
     async fn is_online(&self, bot_id: Uuid) -> bool {
         InProcessBotLocator::is_online(self, bot_id)
+    }
+
+    async fn control_generation(&self, bot_id: Uuid) -> Option<Uuid> {
+        self.control_generations.get(&bot_id).map(|id| *id)
     }
 }
 
@@ -291,14 +315,74 @@ mod tests {
         assert!(reg.is_online(bot));
 
         // The server finally notices the old data socket died: guarded no-op.
-        reg.unbind_data(bot, old_data_conn);
+        assert!(!reg.unbind_data(bot, old_data_conn));
         assert!(
             reg.is_online(bot),
             "stale cleanup must not take the bot offline"
         );
 
         // The real (new) data socket closing does unbind.
-        reg.unbind_data(bot, new_data_conn);
+        assert!(reg.unbind_data(bot, new_data_conn));
         assert!(!reg.is_online(bot));
+        assert!(!reg.unbind_data(bot, new_data_conn));
+    }
+
+    #[test]
+    fn control_cleanup_reports_only_removal_of_the_current_connection() {
+        let reg = InProcessBotLocator::new();
+        let bot = Uuid::new_v4();
+        let old = Uuid::new_v4();
+        let current = Uuid::new_v4();
+        let _old_rx = reg.bind_control(bot, old, dummy_tx());
+        let _current_rx = reg.bind_control(bot, current, dummy_tx());
+        reg.bind_data(bot, Uuid::new_v4(), dummy_tx());
+
+        assert!(!reg.unbind_if_connection(bot, old));
+        assert!(reg.is_online(bot));
+        assert!(reg.unbind_if_connection(bot, current));
+        assert!(!reg.is_online(bot));
+        assert!(!reg.unbind_if_connection(bot, current));
+    }
+
+    #[test]
+    fn pending_data_cleanup_reports_only_the_matching_connection() {
+        let reg = InProcessBotLocator::new();
+        let bot = Uuid::new_v4();
+        let old = Uuid::new_v4();
+        let current = Uuid::new_v4();
+        reg.bind_data(bot, old, dummy_tx());
+        reg.bind_data(bot, current, dummy_tx());
+        assert!(!reg.unbind_data(bot, old));
+        let _control = reg.bind_control(bot, Uuid::new_v4(), dummy_tx());
+        assert!(reg.is_online(bot), "stale cleanup must retain pending data");
+
+        let pending_bot = Uuid::new_v4();
+        let pending = Uuid::new_v4();
+        reg.bind_data(pending_bot, pending, dummy_tx());
+        assert!(reg.unbind_data(pending_bot, pending));
+        assert!(!reg.unbind_data(pending_bot, pending));
+        let _control = reg.bind_control(pending_bot, Uuid::new_v4(), dummy_tx());
+        assert!(!reg.is_online(pending_bot));
+    }
+
+    #[tokio::test]
+    async fn concurrent_control_binds_publish_the_winning_connection_generation() {
+        let reg = InProcessBotLocator::new();
+        let bot = Uuid::new_v4();
+        let barrier = std::sync::Barrier::new(16);
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                let reg = &reg;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    let _connection = reg.bind_control(bot, Uuid::new_v4(), dummy_tx());
+                });
+            }
+        });
+        let winning = reg.sessions.get(&bot).unwrap().connection_id;
+        assert_eq!(reg.control_generation(bot).await, Some(winning));
+        assert!(reg.unbind_if_connection(bot, winning));
+        assert_eq!(reg.control_generation(bot).await, Some(winning));
     }
 }

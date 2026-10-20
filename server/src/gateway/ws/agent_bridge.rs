@@ -79,6 +79,22 @@ struct BotInfo {
     owner_id: Option<String>,
 }
 
+fn cleanup_control_connection(state: &AppState, bot_id: Uuid, connection_id: Uuid) {
+    state
+        .bot_registry
+        .unbind_if_connection(bot_id, connection_id);
+    // Kick also uses the supersede signal. Always schedule against this control
+    // identity; a genuine reconnect changes the generation and cancels recovery.
+    crate::gateway::reclaimer::spawn_disconnect_sweep(
+        state.db.clone(),
+        state.stream_registry.clone(),
+        state.fanout.clone(),
+        state.bot_locator.clone(),
+        bot_id,
+        connection_id,
+    );
+}
+
 // ── Control WS ────────────────────────────────────────────────────────────────
 
 /// GET /ws/agent-bridge/control
@@ -118,7 +134,7 @@ async fn handle_control(
     let connection_id = Uuid::new_v4();
     let (task_tx, mut task_rx) = mpsc::channel::<Value>(64);
 
-    // bind_control 先插入新 session，再向旧连接发 supersede 信号
+    // A replacement control connection supersedes the old runtime.
     let mut supersede_rx = state
         .bot_registry
         .bind_control(bot.bot_id, connection_id, task_tx);
@@ -138,6 +154,8 @@ async fn handle_control(
         bot.acp_security.as_ref(),
     );
     if ws_send(&mut socket, &hello).await.is_err() {
+        cleanup_control_connection(&state, bot.bot_id, connection_id);
+        crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
         return;
     }
 
@@ -259,6 +277,7 @@ async fn handle_control(
     };
 
     let superseded = reason == "superseded";
+    cleanup_control_connection(&state, bot.bot_id, connection_id);
     tracing::info!(bot_id = %bot.bot_id, host_id = %bot.host_id, reason, "control disconnected");
     crate::domain::bot_events::record_bg(
         &state.db,
@@ -271,23 +290,7 @@ async fn handle_control(
 
     // 被 supersede 时新连接已写入 session，不能 unbind（会删掉新 session）
     if !superseded {
-        state
-            .bot_registry
-            .unbind_if_connection(bot.bot_id, connection_id);
         crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
-        // A turn that was streaming when this socket died has a placeholder the
-        // connector will never finalize. The periodic sweep would eventually
-        // clear it, but it waits out a threshold long enough for the chat bubble
-        // to sit on "thinking" for minutes. Here the death is known, so schedule
-        // a scoped sweep — it still re-checks liveness first, so a connector that
-        // reconnects inside the grace keeps its turn.
-        crate::gateway::reclaimer::spawn_disconnect_sweep(
-            state.db.clone(),
-            state.stream_registry.clone(),
-            state.fanout.clone(),
-            state.bot_locator.clone(),
-            bot.bot_id,
-        );
     }
 }
 
@@ -615,6 +618,8 @@ async fn handle_data(
         bot.acp_security.as_ref(),
     );
     if ws_send(&mut socket, &hello).await.is_err() {
+        state.bot_registry.unbind_data(bot.bot_id, connection_id);
+        crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
         return;
     }
 

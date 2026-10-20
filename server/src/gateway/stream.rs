@@ -96,15 +96,23 @@ impl StreamRegistry {
 
     /// R4 守卫：原子地认领 finalize（在 DashMap 分片写锁下 read-and-set，
     /// 无独立读写窗口）。done 帧借此挡住并发迟到的 delta / 第二个 done。
-    fn claim_finalize(&self, msg_id: Uuid) -> FinalizeClaim {
+    pub(crate) fn claim_finalize(
+        &self,
+        msg_id: Uuid,
+    ) -> Result<Option<FinalizeGuard<'_>>, &'static str> {
         match self.entries.get_mut(&msg_id) {
-            None => FinalizeClaim::NotRegistered,
+            None => Ok(None),
             Some(mut entry) => {
                 if entry.finalized {
-                    FinalizeClaim::AlreadyFinalized
+                    Err("already finalized")
                 } else {
                     entry.finalized = true;
-                    FinalizeClaim::Claimed
+                    Ok(Some(FinalizeGuard {
+                        registry: self,
+                        msg_id,
+                        task_id: entry.task_id,
+                        committed: false,
+                    }))
                 }
             }
         }
@@ -152,15 +160,45 @@ impl StreamRegistry {
     }
 }
 
-/// `claim_finalize` 的认领结果（R4 守卫）。
-#[derive(Debug, PartialEq, Eq)]
-enum FinalizeClaim {
-    /// 本次成功把流标记为 finalize（此前未 finalize）。
-    Claimed,
-    /// 流已被先前的 done 帧 finalize——并发迟到的 done 应被拒绝。
-    AlreadyFinalized,
-    /// 流未注册——done 到达时占位理应仍在；按既有行为放行。
-    NotRegistered,
+/// A memory claim fences concurrent terminal/delta frames only while the DB
+/// transaction is pending. Failure or cancellation releases it; PostgreSQL's
+/// conditional partial-row update remains the durable completion authority.
+pub(crate) struct FinalizeGuard<'a> {
+    registry: &'a StreamRegistry,
+    msg_id: Uuid,
+    task_id: Uuid,
+    committed: bool,
+}
+
+impl FinalizeGuard<'_> {
+    /// Remove only the task this claim fenced. Holding the entry lock through
+    /// counter cleanup prevents a replacement task's sequence from being erased.
+    pub(crate) fn remove(mut self) {
+        if let dashmap::mapref::entry::Entry::Occupied(entry) =
+            self.registry.entries.entry(self.msg_id)
+        {
+            if entry.get().task_id == self.task_id {
+                self.registry.seq_counters.remove(&self.msg_id);
+                entry.remove();
+            }
+        }
+        self.committed = true;
+    }
+}
+
+impl Drop for FinalizeGuard<'_> {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        if let Some(mut entry) = self.registry.entries.get_mut(&self.msg_id) {
+            // Removal/replacement can happen while the transaction awaits IO.
+            // A failed old task must never reopen a newer task's claim.
+            if entry.task_id == self.task_id {
+                entry.finalized = false;
+            }
+        }
+    }
 }
 
 // ── 回流处理（R1-R4）─────────────────────────────────────────────────────────
@@ -324,9 +362,7 @@ pub async fn handle_done(
         .map_err(mention_parse_error_to_static)?;
 
     // R4: 标记 finalize（先在内存里标记，防止并发 delta 继续写入）
-    if registry.claim_finalize(msg_id) == FinalizeClaim::AlreadyFinalized {
-        return Err("already finalized");
-    }
+    let finalize_guard = registry.claim_finalize(msg_id)?;
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
     let mut tx = db
@@ -388,6 +424,9 @@ pub async fn handle_done(
     tx.commit()
         .await
         .map_err(crate::gateway::log_db_err("stream.done: commit tx"))?;
+    if let Some(guard) = finalize_guard {
+        guard.remove();
+    }
 
     let channel_id = details
         .channel_id
@@ -443,9 +482,6 @@ pub async fn handle_done(
         }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
-
-    // 清理注册表
-    registry.remove(msg_id);
 
     // depth 上限 / 自 @ 过滤 / bot@bot INITIATE 门禁都在 trigger_bot_replies 内部处理。
     // chain_id 从本条回复继承，下一跳共享同一条可取消链（§8 gate 也在内部）。
@@ -1086,18 +1122,47 @@ mod tests {
         let reg = StreamRegistry::new();
         let msg = Uuid::new_v4();
         reg.register(entry(msg));
-        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::Claimed);
-        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::AlreadyFinalized);
+        let _guard = reg.claim_finalize(msg).unwrap().unwrap();
+        assert!(matches!(reg.claim_finalize(msg), Err("already finalized")));
     }
 
     /// 未注册的流：finalize 认领返回 NotRegistered（handle_done 据此放行）。
     #[test]
     fn claim_finalize_unregistered_is_not_rejected() {
         let reg = StreamRegistry::new();
-        assert_eq!(
-            reg.claim_finalize(Uuid::new_v4()),
-            FinalizeClaim::NotRegistered
-        );
+        assert!(reg.claim_finalize(Uuid::new_v4()).unwrap().is_none());
+    }
+
+    #[test]
+    fn abandoned_finalize_claim_can_be_retried() {
+        let reg = StreamRegistry::new();
+        let msg = Uuid::new_v4();
+        reg.register(entry(msg));
+        drop(reg.claim_finalize(msg).unwrap());
+        assert!(reg.claim_finalize(msg).unwrap().is_some());
+    }
+
+    #[test]
+    fn finished_finalize_claim_removes_its_registry_state() {
+        let reg = StreamRegistry::new();
+        let msg = Uuid::new_v4();
+        reg.register(entry(msg));
+        reg.claim_finalize(msg).unwrap().unwrap().remove();
+        assert!(!reg.contains(msg));
+        assert!(reg.claim_finalize(msg).unwrap().is_none());
+    }
+
+    #[test]
+    fn abandoned_old_claim_cannot_reopen_a_replacement_task() {
+        let reg = StreamRegistry::new();
+        let msg = Uuid::new_v4();
+        reg.register(entry(msg));
+        let old = reg.claim_finalize(msg).unwrap();
+        reg.remove(msg);
+        reg.register(entry(msg));
+        let _current = reg.claim_finalize(msg).unwrap();
+        drop(old);
+        assert!(matches!(reg.claim_finalize(msg), Err("already finalized")));
     }
 
     // ── active_channels：一个 bot 同时在多个频道工作时的在途频道集合 ──────────
@@ -1147,7 +1212,7 @@ mod tests {
             ..entry(msg)
         });
         assert_eq!(reg.active_channels(bot).len(), 1);
-        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::Claimed);
+        let _guard = reg.claim_finalize(msg).unwrap();
         assert!(reg.active_channels(bot).is_empty());
     }
 }

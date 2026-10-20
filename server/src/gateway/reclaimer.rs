@@ -6,11 +6,12 @@
 //! 本周期性扫描删除这类孤儿占位，并发送一个瞬态 bot-unavailable 提示，与派发期
 //! bot-offline 路径（`dispatcher::bot_unavailable_frame`）行为一致。
 //!
-//! 安全前提：占位仅在同时满足以下两条时才回收——
+//! 周期扫描的安全前提：占位仅在同时满足以下两条时才回收——
 //!   (a) 早于 `threshold_secs`（`created_at < now() - threshold`），且
-//!   (b) 无存活 `StreamEntry`（没有已连接的 bot 正在流式回写）。
+//!   (b) 无注册的 `StreamEntry`。
 //! 因此正在流式的长任务（有存活 entry）绝不会被误杀，且 bot 在后端重启后有
-//! `threshold` 的时间重连并补发 `done`。
+//! `threshold` 的时间重连并补发 `done`。已知断线另走连接代数门禁：宽限期后
+//! 仅在原连接代数未变且 bot 仍不可用时回收，重连后的任务不受旧定时器影响。
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +21,7 @@ use uuid::Uuid;
 
 use super::dispatcher::{bot_unavailable_frame, remove_placeholder};
 use super::realtime::fanout::Fanout;
+use super::registry::BotLocator;
 use super::stream::StreamRegistry;
 
 /// 执行一次扫描，返回本轮回收的孤儿占位数。
@@ -94,24 +96,40 @@ pub async fn sweep_once(
 
 /// Grace between a control disconnect and reclaiming that bot's placeholders.
 ///
-/// The periodic sweep waits `orphan_reclaim_threshold_secs` (15 min by default)
-/// because it cannot tell a dead connector from a slow one. A disconnect can:
-/// the gateway knows the socket is gone the instant it closes, so it only has to
-/// outlast a reconnect. The connector's backoff caps at 30s, so a minute is
-/// comfortably past a healthy recovery — and 15× faster than waiting for the
-/// sweep, which is how long a chat bubble used to sit on "thinking".
+/// A minute outlasts the connector's normal reconnect backoff. Reclamation then
+/// requires the original control generation and an unavailable bot; a new
+/// connection invalidates this timer even if it disconnects again immediately.
 const DISCONNECT_GRACE_SECS: u64 = 60;
 
-/// Reclaim one bot's orphan placeholders. Same safety condition as the periodic
-/// sweep — never touch a placeholder with a live [`StreamEntry`], since that is
-/// a turn still streaming — but scoped to a single sender and without the age
-/// filter, because the caller has already established that this bot is offline.
+#[derive(Default)]
+pub struct ReclaimReport {
+    pub reclaimed: usize,
+    /// A DB failure or an in-flight terminal claim needs another fenced attempt.
+    pub retry: bool,
+}
+
+async fn can_reclaim(locator: &Arc<dyn BotLocator>, bot_id: Uuid, generation: Uuid) -> bool {
+    locator.control_generation(bot_id).await == Some(generation)
+        && !locator.is_online(bot_id).await
+        && locator.control_generation(bot_id).await == Some(generation)
+}
+
+/// Reclaim a bot that stayed unavailable after its control connection closed.
+/// The caller waits the grace period first. Recheck the connection generation
+/// and availability before each delete, and share the terminal claim so a DB
+/// failure or cancellation cannot poison the in-memory entry.
 pub async fn sweep_bot(
     db: &PgPool,
     registry: &StreamRegistry,
     fanout: &Arc<dyn Fanout>,
+    locator: &Arc<dyn BotLocator>,
     bot_id: Uuid,
-) -> usize {
+    expected_generation: Uuid,
+) -> ReclaimReport {
+    let mut report = ReclaimReport::default();
+    if !can_reclaim(locator, bot_id, expected_generation).await {
+        return report;
+    }
     let rows = match sqlx::query!(
         "SELECT msg_id
          FROM messages
@@ -125,65 +143,93 @@ pub async fn sweep_bot(
     .await
     {
         Ok(rows) => rows,
-        Err(e) => {
-            tracing::error!(error = %e, %bot_id, ctx = "disconnect reclaimer: select placeholders", "reclaimer db error");
-            return 0;
+        Err(error) => {
+            tracing::error!(%error, %bot_id, ctx = "disconnect reclaimer: select placeholders", "reclaimer db error");
+            report.retry = true;
+            return report;
         }
     };
-
-    let mut reclaimed = 0usize;
     for row in rows {
-        let Some(msg_id) = Some(row.msg_id.clone()).and_then(|s| s.parse::<Uuid>().ok()) else {
+        let Ok(msg_id) = row.msg_id.parse::<Uuid>() else {
             continue;
         };
-        if registry.contains(msg_id) {
-            continue;
+        let claim = match registry.claim_finalize(msg_id) {
+            Ok(claim) => claim,
+            Err(_) => {
+                report.retry = true;
+                continue;
+            }
+        };
+        if !can_reclaim(locator, bot_id, expected_generation).await {
+            break;
         }
         match remove_placeholder(db, msg_id).await {
             Ok(Some(failed)) => {
+                if let Some(claim) = claim {
+                    claim.remove();
+                }
                 fanout
                     .broadcast_channel(
                         failed.channel_id,
                         bot_unavailable_frame(failed.channel_id, msg_id, bot_id),
                     )
                     .await;
-                registry.remove(msg_id);
-                reclaimed += 1;
+                report.reclaimed += 1;
             }
-            Ok(None) => {}
+            // The DB row already completed or disappeared. Remove only the old
+            // task's stale memory entry, leaving any replacement task intact.
+            Ok(None) => {
+                if let Some(claim) = claim {
+                    claim.remove();
+                }
+            }
             Err(e) => {
                 tracing::error!(error = %e, %msg_id, ctx = "disconnect reclaimer: remove_placeholder", "reclaimer db error");
+                report.retry = true;
             }
         }
     }
-    if reclaimed > 0 {
+    if report.reclaimed > 0 {
         tracing::info!(
             %bot_id,
-            count = reclaimed,
+            count = report.reclaimed,
             "disconnect reclaimer: released placeholders left by a dropped connector"
         );
     }
-    reclaimed
+    report
 }
 
-/// Schedule [`sweep_bot`] for a bot whose control connection just dropped.
+/// Schedule recovery for a control connection that closed or was kicked.
 ///
-/// Re-checks liveness after the grace window and does nothing if the connector
-/// came back, so an ordinary reconnect still gets to finish its turn — only a
-/// connection that stayed down releases the placeholders it stranded.
+/// Capturing the actual connection ID, rather than checking availability alone,
+/// preserves a fresh grace period after every reconnect/disconnect cycle.
 pub fn spawn_disconnect_sweep(
     db: PgPool,
     registry: Arc<StreamRegistry>,
     fanout: Arc<dyn Fanout>,
-    locator: Arc<dyn super::registry::BotLocator>,
+    locator: Arc<dyn BotLocator>,
     bot_id: Uuid,
+    disconnected_connection: Uuid,
 ) {
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(DISCONNECT_GRACE_SECS)).await;
-        if locator.is_online(bot_id).await {
-            return;
+        loop {
+            tokio::time::sleep(Duration::from_secs(DISCONNECT_GRACE_SECS)).await;
+            let report = sweep_bot(
+                &db,
+                &registry,
+                &fanout,
+                &locator,
+                bot_id,
+                disconnected_connection,
+            )
+            .await;
+            // A temporary DB outage must not leave registered turns stranded
+            // forever. Retry at most once per minute; a new generation or a
+            // healthy connection retires the old attempt without touching work.
+            if !report.retry {
+                break;
+            }
         }
-        sweep_bot(&db, &registry, &fanout, bot_id).await;
     });
 }
 
