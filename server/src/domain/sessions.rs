@@ -502,6 +502,38 @@ pub async fn resolve_primary_session(
     }))
 }
 
+/// Select the authoritative primary while preparing a durable dispatch. Keep
+/// the selected binding and session live until the enclosing message commits;
+/// promoting another primary later cannot retarget the persisted intent.
+pub async fn resolve_primary_session_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    bot_id: Uuid,
+    channel_id: &str,
+) -> Result<Option<SessionHandle>, AppError> {
+    let row = sqlx::query!(
+        "SELECT s.session_id, s.provider_session_key
+         FROM cheers_session_bindings b
+         JOIN cheers_sessions s ON s.session_id = b.session_id
+         WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3
+           AND b.role = 'primary'
+           AND s.status NOT IN ('terminated', 'revoked', 'expired')
+         LIMIT 1 FOR SHARE OF b, s",
+        bot_id.to_string(),
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    row.map(|row| {
+        Ok(SessionHandle {
+            session_id: Uuid::parse_str(&row.session_id)
+                .map_err(|_| AppError::Internal("invalid primary session_id".into()))?,
+            provider_session_key: row.provider_session_key,
+        })
+    })
+    .transpose()
+}
+
 /// Make an existing channel session the bot's PRIMARY — the session Auto/mention
 /// messages route to. The binding role is the source of truth: demote the current
 /// primary binding to 'other' and promote the target, in one transaction (the
@@ -628,6 +660,32 @@ pub async fn resolve_channel_session(
     Ok((bot_id, key))
 }
 
+/// Revalidate a specifically targeted channel session and freeze its exact key
+/// in the same transaction as the human message and pending execution intent.
+pub async fn resolve_channel_session_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    channel_id: &str,
+    session_id: Uuid,
+) -> Result<(Uuid, String), AppError> {
+    let row = sqlx::query!(
+        "SELECT s.bot_id, s.provider_session_key
+         FROM cheers_session_bindings b
+         JOIN cheers_sessions s ON s.session_id = b.session_id
+         WHERE b.scope_type = $1 AND b.scope_id = $2 AND b.session_id = $3
+           AND s.status NOT IN ('terminated', 'revoked', 'expired')
+         LIMIT 1 FOR SHARE OF b, s",
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        session_id.to_string(),
+    )
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let bot_id = Uuid::parse_str(&row.bot_id)
+        .map_err(|_| AppError::Internal("invalid session bot_id".into()))?;
+    Ok((bot_id, row.provider_session_key))
+}
+
 /// Close a channel session: mark it terminated + detach its binding, so it drops
 /// out of the switcher and can no longer be targeted. Verifies it is bound (active)
 /// to the channel first. Cheers-level only — the agent's ACP session is left to go
@@ -740,6 +798,22 @@ where
 }
 
 pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
+    touch_session_with_executor(db, session_id).await
+}
+
+/// Mark BUSY only when a pending dispatch is actually offered, atomically with
+/// its run-state transition. Admission itself leaves session status unchanged.
+pub(crate) async fn touch_session_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    session_id: Uuid,
+) -> Result<(), AppError> {
+    touch_session_with_executor(&mut **tx, session_id).await
+}
+
+async fn touch_session_with_executor<'a, E>(executor: E, session_id: Uuid) -> Result<(), AppError>
+where
+    E: Executor<'a, Database = Postgres>,
+{
     let now = Utc::now();
     sqlx::query!(
         "UPDATE cheers_sessions
@@ -749,7 +823,7 @@ pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError
         now,
         session_id.to_string(),
     )
-    .execute(db)
+    .execute(executor)
     .await
     .map_err(AppError::Db)?;
 
@@ -781,6 +855,49 @@ pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppEr
     .await
     .map_err(AppError::Db)?;
 
+    Ok(())
+}
+
+/// Canceling an offered intent must not leave its session BUSY, or make a
+/// different pending/running turn appear idle. Session selection and offering
+/// take this same row lock, so check remaining turns after acquiring it.
+pub(crate) async fn finalize_session_without_active_turns_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    session_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "SELECT session_id FROM cheers_sessions WHERE session_id=$1 FOR UPDATE",
+        session_id.to_string(),
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    let now = Utc::now();
+    let updated = sqlx::query!(
+        "UPDATE cheers_sessions s
+         SET status=$1,last_used_at=$2,updated_at=$2
+         WHERE s.session_id=$3 AND s.status NOT IN ('terminated','revoked','expired')
+           AND NOT EXISTS (
+               SELECT 1 FROM messages m
+               WHERE m.sender_type='bot' AND m.is_partial=TRUE AND m.channel_seq IS NULL
+                 AND m.is_deleted=FALSE AND m.content_data->>'session_id'=s.session_id
+           )",
+        SESSION_STATUS_IDLE,
+        now,
+        session_id.to_string(),
+    )
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() != 0 {
+        sqlx::query!(
+            "UPDATE cheers_session_bindings
+         SET detached_at = COALESCE(detached_at, $1)
+         WHERE session_id = $2 AND detached_at IS NULL",
+            now,
+            session_id.to_string(),
+        )
+        .execute(&mut **tx)
+        .await?;
+    }
     Ok(())
 }
 

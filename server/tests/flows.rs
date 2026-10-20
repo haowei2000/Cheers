@@ -1034,7 +1034,7 @@ async fn m2_pinned_context_from_workbench_config(db: PgPool) {
     )
     .await;
 
-    let pinned = load_pinned_context(&db, ch).await;
+    let pinned = load_pinned_context(&db, ch).await.unwrap();
     assert_eq!(pinned.len(), 1, "应载入 1 个 pin 块: {pinned:?}");
     assert!(
         pinned[0].contains("prompts/sys.md"),

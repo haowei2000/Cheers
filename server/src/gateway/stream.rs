@@ -89,6 +89,29 @@ impl StreamRegistry {
         self.seq_counters.insert(msg_id, AtomicU64::new(0));
     }
 
+    /// Recover the same offered turn without resetting a live stream's sequence
+    /// or replacing another task. The caller holds its message/run state locks.
+    pub fn register_if_absent(&self, entry: StreamEntry) -> Result<bool, &'static str> {
+        match self.entries.entry(entry.msg_id) {
+            dashmap::mapref::entry::Entry::Occupied(current) => {
+                let current = current.get();
+                if current.task_id == entry.task_id
+                    && current.bot_id == entry.bot_id
+                    && current.channel_id == entry.channel_id
+                {
+                    Ok(false)
+                } else {
+                    Err("another task owns this stream")
+                }
+            }
+            dashmap::mapref::entry::Entry::Vacant(slot) => {
+                self.seq_counters.insert(entry.msg_id, AtomicU64::new(0));
+                slot.insert(entry);
+                Ok(true)
+            }
+        }
+    }
+
     /// 获取并递增 seq（R2：Backend 盖戳，不透传 connector 自报的 seq）。
     fn next_seq(&self, msg_id: Uuid) -> u64 {
         self.seq_counters
@@ -125,6 +148,15 @@ impl StreamRegistry {
     pub fn remove(&self, msg_id: Uuid) {
         self.entries.remove(&msg_id);
         self.seq_counters.remove(&msg_id);
+    }
+
+    pub(crate) fn remove_task(&self, msg_id: Uuid, task_id: Uuid) {
+        if let dashmap::mapref::entry::Entry::Occupied(entry) = self.entries.entry(msg_id) {
+            if entry.get().task_id == task_id {
+                self.seq_counters.remove(&msg_id);
+                entry.remove();
+            }
+        }
     }
 
     /// Peek the trigger message id for an active stream. Call **before**
@@ -177,14 +209,7 @@ impl FinalizeGuard<'_> {
     /// Remove only the task this claim fenced. Holding the entry lock through
     /// counter cleanup prevents a replacement task's sequence from being erased.
     pub(crate) fn remove(mut self) {
-        if let dashmap::mapref::entry::Entry::Occupied(entry) =
-            self.registry.entries.entry(self.msg_id)
-        {
-            if entry.get().task_id == self.task_id {
-                self.registry.seq_counters.remove(&self.msg_id);
-                entry.remove();
-            }
-        }
+        self.registry.remove_task(self.msg_id, self.task_id);
         self.committed = true;
     }
 }
@@ -1216,6 +1241,22 @@ mod tests {
     fn claim_finalize_unregistered_is_not_rejected() {
         let reg = StreamRegistry::new();
         assert!(reg.claim_finalize(Uuid::new_v4()).unwrap().is_none());
+    }
+
+    #[test]
+    fn recovering_the_same_stream_preserves_sequence_and_finalize_claim() {
+        let registry = StreamRegistry::new();
+        let original = entry(Uuid::new_v4());
+        assert!(registry.register_if_absent(original.clone()).unwrap());
+        assert_eq!(registry.next_seq(original.msg_id), 0);
+        assert!(!registry.register_if_absent(original.clone()).unwrap());
+        assert_eq!(registry.next_seq(original.msg_id), 1);
+        let _claim = registry.claim_finalize(original.msg_id).unwrap();
+        assert!(!registry.register_if_absent(original.clone()).unwrap());
+        assert!(registry.claim_finalize(original.msg_id).is_err());
+        let mut another = original;
+        another.task_id = Uuid::new_v4();
+        assert!(registry.register_if_absent(another).is_err());
     }
 
     #[test]

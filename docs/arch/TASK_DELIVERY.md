@@ -1,23 +1,48 @@
 # Task Delivery and Completion
 
 This document describes the current Rust gateway and Rust ACP connector. The
-implementation is authoritative: `server/src/gateway/{dispatcher,registry,stream,reclaimer}.rs`
+implementation is authoritative: `server/src/gateway/{dispatch_intents,dispatcher,registry,stream,reclaimer}.rs`
 and `packages/cheers-acp-connector-rs/src/bridge_runtime/`.
 
 ## Dispatch
 
-A human message is committed before the gateway dispatches any bot turns. Each
-turn has a deterministic placeholder message ID derived from the trigger message
-and bot IDs. The placeholder and its existing `bot_runs` record are created in
-one transaction. The run's unique placeholder ID elects one dispatcher and keeps
-the original task identity even after placeholder cleanup. Duplicate dispatch
-does not create another execution identity.
+A human send commits its message, mentions, admitted bot targets, chosen sessions,
+task chain, partial placeholders and `bot_runs` intents in one transaction. Any
+failure rolls back the entire target set and message sequence. Interactive request
+receipts share that transaction, so an idempotent retry cannot mint more tasks.
+Session selection honors the targeted or promoted primary session; newly created
+sessions remain idle while their work waits for delivery.
 
-The dispatcher registers the placeholder in `StreamRegistry`, broadcasts it, and
-sends the task through the bot's control connection. The locator waits up to
-500 ms for room in its bounded queue. A successful enqueue is **not** a connector
-receipt or proof that agent execution started. A failed enqueue removes the
-partial placeholder and emits `bot_unavailable`.
+An explicit bot request still fails before persistence if its target is offline
+or unready. Automatic/default targets that are unavailable at admission are
+skipped, preserving ordinary human chat without creating an offline backlog.
+Once a ready target is admitted, a later disconnect cannot lose its intent.
+
+Each intent fixes its original author, trigger text, attachment IDs, sanitized
+context references, bot, session/key and chain. A deterministic placeholder ID
+identifies the trigger/bot pair; the unique run record keeps its task identity
+even after placeholder cleanup. Recovery never re-resolves mentions, defaults or
+a newly promoted primary session.
+
+The request's immediate delivery path and the startup/periodic recovery worker
+use the same database lease. Preparation loads media and current session settings
+outside the message transaction, then freezes the first complete task envelope in
+the existing run row. Offers retry that exact envelope while the run remains
+unaccepted. They recheck current author membership, prompt policy, consent, bot
+authority, selected session and chain; a permanent denial cancels the intent.
+Source deletion cancels work; a source edit does not replace the accepted input.
+
+The worker registers streams idempotently and sends through the current control
+connection. The locator waits up to 500 ms for room in its bounded queue. A
+successful enqueue is **not** a connector receipt or proof that execution started;
+a failed enqueue retains a recoverable human intent. The run progresses from
+`pending` to `prepared` and then to `accepted` only when the execution grant
+commits. Accepted executions are never recovered as new tasks.
+
+Historical runs without a dispatch input are not replayable. Other direct
+dispatch producers retain their existing behavior: their run and placeholder
+commit together, and a failed enqueue removes that partial placeholder and emits
+`bot_unavailable`.
 
 Standard tasks require negotiated `task_acceptance` on the current control
 connection. The dispatcher checks it before preparing a turn and again atomically
@@ -36,6 +61,9 @@ sending `task_accept` with its task, placeholder, channel and fresh execution ID
 The gateway locks the matching message and run, revalidates bot enablement,
 writable membership and active task chain, then commits the first execution ID
 and authenticated control connection ID to `bot_runs` before replying.
+For recoverable human intents, it also checks the original sender and selected
+session. Acceptance clears the stored dispatch input and large task envelope in
+that transaction, retaining the execution identity and later terminal receipt.
 
 `task_acceptance.status` has three values:
 
@@ -129,7 +157,10 @@ result.
 
 The periodic reclaimer deletes old partial rows without registered streams after
 `orphan_reclaim_threshold_secs` (15 minutes by default). A registered stream
-protects a slow active turn from that age-based sweep.
+protects a slow active turn from that age-based sweep. Recoverable, unaccepted
+human intents are also excluded from both age-based and disconnect sweeps. Their
+durable worker owns recovery until acceptance, cancellation or an authorization
+denial; startup order cannot make the reclaimer erase queued work.
 
 A closed control connection also schedules a recovery attempt after a 60-second
 grace period. Its control connection ID is retained as a generation fence. The
@@ -157,23 +188,24 @@ deployed runtime uses the in-process locator.
 
 ## Recovery limits
 
-The human message and bot dispatch intent are still separate transactions. A
-crash between message commit and preparing its bot runs can therefore lose work.
-The `resume` capability is explicitly `ack_only`; it replays no task or event log.
-A quick connector restart also changes the generation and protects old registered
-turns from offline recovery. Their execution ownership is retained, but there is
-no protocol to resume delivery or replace that owner.
+Human-message dispatch intents recover automatically until execution acceptance.
+This includes REST, scheduled sends, integration delivery and other callers of
+the shared human-message command. Bot-created messages and downstream bot-to-bot
+triggers still commit separately from their dispatch effects; a crash in that gap
+can lose a downstream hop. They do not acquire recoverable intents implicitly.
 
-Automatic task replay is not enabled. A committed grant whose reply was lost may
-remain unexecuted; a crashed owner is not replaced. The run ledger retains
-execution tombstones after placeholder cleanup.
+The `resume` capability remains `ack_only`; it replays no socket event log. Task
+offers come from the run ledger, not this capability. A committed execution grant
+whose reply was lost may remain unexecuted; a crashed owner is not replaced.
+Already queued frames can arrive after acceptance, but cannot obtain another
+execution owner. The run ledger retains execution tombstones after cleanup.
 
 Result replay cannot recreate a missing, deleted or reclaimed partial placeholder
 that never committed a terminal receipt. Offline and orphan reclamation therefore
 bound the delivery window for an uncommitted result. Such a result receives a
 negative ACK and remains in the Connector outbox. A result that already committed
-can still obtain its receipt after message cleanup. Durable dispatch intent and
-safe recovery beyond the placeholder retention window remain separate work.
+can still obtain its receipt after message cleanup. Safe recovery of an accepted
+execution beyond the placeholder retention window remains separate work.
 
 ## Rollout
 
@@ -203,3 +235,6 @@ capability replacement, authorization revocation and restart ownership. Receipt
 tests cover lost ACKs, restart, changed payloads, execution isolation and rollback.
 Connector tests cover durable append/reload, ACK correlation and result-only
 retry, and prove that duplicate, denied, stale and timed-out grants never start ACP.
+Dispatch tests cover multi-target transaction rollback, postcommit cancellation,
+real-process startup recovery, frozen envelopes, lease recovery, session selection
+and the exclusion of accepted executions from further offers.

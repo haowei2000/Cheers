@@ -3,16 +3,15 @@ use std::collections::{HashMap, HashSet};
 ///
 /// 核心流程（写后投递原则）：
 ///   1. 验写权限、屏蔽、consent 与目标 bot
-///   2. INSERT message → PG
+///   2. INSERT message + chosen sessions/chain/dispatch intents → PG (one tx)
 ///   3. fanout::broadcast（终态帧，先落库再投递）
-///   4. 解析 bot 触发条件
-///   5. 对每个触发的 bot 调 dispatcher::dispatch
+///   4. Offer the committed intents through the shared durable delivery path
 use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json::json;
-use sqlx::PgPool;
-use tracing::{debug, info, warn};
+use sqlx::{PgPool, Postgres, Transaction};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{
@@ -23,7 +22,8 @@ use crate::{
     },
     errors::AppError,
     gateway::{
-        dispatcher::{self, DispatchParams},
+        dispatch_intents::{self, HumanIntent},
+        dispatcher::DispatchParams,
         realtime::{fanout::Fanout, frame::WireFrame},
         registry::BotLocator,
         stream::StreamRegistry,
@@ -139,25 +139,28 @@ pub async fn create_message(
 
     let targeted_session = match params.session_id {
         Some(sid) => {
-            let (bot, key) =
+            let (bot, _) =
                 sessions::resolve_channel_session(db, &params.channel_id.to_string(), sid)
                     .await
-                    .map_err(|_| {
-                        AppError::BadRequest("session not found in this channel".into())
+                    .map_err(|error| match error {
+                        AppError::NotFound => {
+                            AppError::BadRequest("session not found in this channel".into())
+                        }
+                        error => error,
                     })?;
-            Some((bot, sid, key))
+            Some((bot, sid))
         }
         None => None,
     };
     let bots = match &targeted_session {
-        Some((bot, _, _)) => vec![*bot],
+        Some((bot, _)) => vec![*bot],
         None => {
-            resolve_bot_triggers(db, params.channel_id, &mentions, params.reply_to_msg_id).await
+            resolve_bot_triggers(db, params.channel_id, &mentions, params.reply_to_msg_id).await?
         }
     };
     // readonly 角色的 bot 不派发：它在 resource 层本就发不出消息，唤醒只会
     // 产生一个必然失败的回合。消息本身照常入库。
-    let bots = filter_writable_bots(db, params.channel_id, bots).await;
+    let bots = filter_writable_bots(db, params.channel_id, bots).await?;
     let bots = super::message_policy::filter_prompt_bots(
         db,
         params.user_id,
@@ -199,15 +202,20 @@ pub async fn create_message(
         super::message_policy::validate_resource_interaction(db, &params, event).await?;
     }
 
-    let sender_name: Option<String> = sqlx::query!(
-        "SELECT display_name FROM users WHERE user_id = $1",
+    let author = sqlx::query!(
+        "SELECT display_name, username FROM users WHERE user_id = $1",
         params.user_id.to_string(),
     )
     .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .and_then(|r| r.display_name.clone());
+    .await?
+    .ok_or_else(|| AppError::Forbidden("message author is not active".into()))?;
+    let trigger_sender_name = author
+        .display_name
+        .as_ref()
+        .filter(|name| !name.is_empty())
+        .cloned()
+        .unwrap_or(author.username);
+    let sender_name = author.display_name;
 
     // A human @mention is a request to start work, not merely decorative text.
     // Reject before allocating a sequence or persisting anything when its target
@@ -216,19 +224,22 @@ pub async fn create_message(
     // Only an eligible dispatch target can reject a human send. In particular,
     // readonly bot members are intentionally not woken, so @all must still post
     // when one of those passive members is offline.
-    let mentioned_bots: Vec<Uuid> = mentions
+    let mentioned_bots: HashSet<Uuid> = mentions
         .iter()
         .filter(|mention| matches!(mention.member_type, mentions::MemberType::Bot))
         .map(|mention| mention.member_id)
-        .chain(targeted_session.iter().map(|(bot, _, _)| *bot))
+        .chain(targeted_session.iter().map(|(bot, _)| *bot))
         .collect();
     let mut has_offline_target = false;
     let mut has_unready_target = false;
-    for bot_id in mentioned_bots.into_iter().filter(|id| bots.contains(id)) {
+    let mut admitted_bots = Vec::with_capacity(bots.len());
+    for bot_id in bots {
         if !bot_locator.is_online(bot_id).await {
-            has_offline_target = true;
+            has_offline_target |= mentioned_bots.contains(&bot_id);
         } else if !bot_locator.supports_task_acceptance(bot_id).await {
-            has_unready_target = true;
+            has_unready_target |= mentioned_bots.contains(&bot_id);
+        } else {
+            admitted_bots.push(bot_id);
         }
     }
     if has_offline_target {
@@ -241,6 +252,25 @@ pub async fn create_message(
             "the mentioned bot is not ready to accept tasks; reconnect or upgrade its connector"
                 .into(),
         ));
+    }
+    // Automatic/default targets keep their best-effort admission semantics:
+    // only a currently ready bot receives an intent. Once admitted, a later
+    // disconnect is recoverable without changing this accepted target set.
+    let mut targets = Vec::with_capacity(admitted_bots.len());
+    for bot_id in admitted_bots {
+        let bundle = match &params.context_bundle {
+            Some(bundle) => Some(
+                crate::domain::context_bundle::finalize_bundle_for_target(
+                    db,
+                    bundle,
+                    crate::resource::Principal::bot(bot_id),
+                    params.channel_id,
+                )
+                .await,
+            ),
+            None => None,
+        };
+        targets.push((bot_id, bundle));
     }
     let msg_id = params.msg_id.unwrap_or_else(Uuid::new_v4);
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
@@ -301,6 +331,104 @@ pub async fn create_message(
     mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(AppError::Db)?;
+
+    // Freeze every accepted destination in the message's transaction. Session
+    // promotion/default changes after commit cannot redirect recovered work.
+    // Preparation never marks a session BUSY and performs no media/network I/O.
+    let chain_id = if targets.is_empty() {
+        None
+    } else {
+        Some(
+            crate::domain::task_chains::start_chain_tx(&mut tx, params.channel_id, msg_id, msg_id)
+                .await?
+                .to_string(),
+        )
+    };
+    let trigger_message = json!({
+        "msg_id": msg_id,
+        "user": params.user_id.to_string(),
+        "sender_name": trigger_sender_name,
+        "text": params.content,
+        "timestamp": now.to_rfc3339(),
+        "msg_type": msg_type,
+        "in_reply_to_msg_id": params.reply_to_msg_id.map(|id| id.to_string()),
+    });
+    for (bot_id, context_bundle) in &targets {
+        let session = match targeted_session {
+            Some((expected_bot, session_id)) => {
+                let (resolved_bot, provider_session_key) = sessions::resolve_channel_session_tx(
+                    &mut tx,
+                    &params.channel_id.to_string(),
+                    session_id,
+                )
+                .await?;
+                if resolved_bot != expected_bot || resolved_bot != *bot_id {
+                    return Err(AppError::Conflict("target session changed".into()));
+                }
+                sessions::SessionHandle {
+                    session_id,
+                    provider_session_key,
+                }
+            }
+            None => {
+                match sessions::resolve_primary_session_tx(
+                    &mut tx,
+                    *bot_id,
+                    &params.channel_id.to_string(),
+                )
+                .await?
+                {
+                    Some(session) => session,
+                    None => {
+                        let account_id =
+                            resolve_provider_account_id_for_bot_tx(&mut tx, *bot_id).await?;
+                        sessions::ensure_primary_session_workspace_tx(
+                            &mut tx,
+                            *bot_id,
+                            &account_id,
+                            &params.channel_id.to_string(),
+                            None,
+                            &[],
+                        )
+                        .await?;
+                        // The authoritative binding may belong to a promoted
+                        // session; never assume the deterministic ensure result
+                        // is the destination, and never revive a closed session.
+                        sessions::resolve_primary_session_tx(
+                            &mut tx,
+                            *bot_id,
+                            &params.channel_id.to_string(),
+                        )
+                        .await?
+                        .ok_or_else(|| {
+                            AppError::Conflict("no live primary session is available".into())
+                        })?
+                    }
+                }
+            }
+        };
+        dispatch_intents::enqueue_human(
+            &mut tx,
+            HumanIntent {
+                version: 1,
+                author_id: params.user_id,
+                params: DispatchParams {
+                    trigger_msg_id: msg_id,
+                    trigger_seq: seq,
+                    bot_id: *bot_id,
+                    channel_id: params.channel_id,
+                    depth: 0,
+                    provider_session_key: session.provider_session_key,
+                    session_id: Some(session.session_id),
+                    chain_id: chain_id.clone(),
+                    context_bundle: context_bundle.clone(),
+                },
+                trigger_message: trigger_message.clone(),
+                file_ids: file_ids.clone(),
+            },
+        )
+        .await?;
+    }
 
     let dto = MessageDto {
         v: MESSAGE_SCHEMA_VERSION,
@@ -376,127 +504,15 @@ pub async fn create_message(
     fanout.broadcast_channel(params.channel_id, wire).await;
     info!(message_id = %msg_id, channel_id = %params.channel_id, "message fanout broadcast dispatched");
 
-    info!(message_id = %msg_id, matched_bots = bots.len(), "resolved bot triggers");
-
-    // Root a bot@bot chain at this user message so the whole cascade it spawns is
-    // cancelable as one unit (DECENTRALIZED_MESH §8) — only when it actually
-    // triggers a bot (no dead rows for pure human chat).
-    let chain_id: Option<String> = if bots.is_empty() {
-        None
-    } else {
-        match crate::domain::task_chains::start_chain(db, params.channel_id, msg_id, msg_id).await {
-            Ok(cid) => Some(cid.to_string()),
-            Err(e) => {
-                warn!(channel_id = %params.channel_id, err = %e, "start_chain failed; cascade will be un-cancelable");
-                None
-            }
-        }
-    };
-    // Shared across all bots triggered by THIS message so identical trigger
-    // attachments / pinned files are fetched from S3 once, not once per bot.
-    let media_cache = dispatcher::MediaCache::default();
-    for bot_id in bots {
-        // Resolve the session to prompt. A targeted "other" session reuses its
-        // own key (cheers:session:{id}); otherwise the channel PRIMARY session:
-        // the `role='primary'` BINDING is authoritative (set_primary_session can
-        // re-point it at a promoted "other" session, which keeps its own key), and
-        // only when no live primary is bound is the scope-derived deterministic
-        // key acquired (lazily creating the default primary on first message).
-        let (provider_session_key, resolved_session_id) = match &targeted_session {
-            Some((_, sid, key)) => {
-                let _ = sessions::touch_session(db, *sid).await;
-                (key.clone(), Some(*sid))
-            }
-            None => {
-                match sessions::resolve_primary_session(db, bot_id, &params.channel_id.to_string())
-                    .await
-                    .ok()
-                    .flatten()
-                {
-                    Some((sid, key)) => {
-                        let _ = sessions::touch_session(db, sid).await;
-                        (key, Some(sid))
-                    }
-                    None => {
-                        let provider_session_key =
-                            provider_session_key_for_bot_channel(params.channel_id, bot_id);
-                        let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
-                            .await
-                            .unwrap_or_else(|_| bot_id.to_string());
-                        let session = sessions::acquire_scope_session(
-                            db,
-                            bot_id,
-                            &provider_account_id,
-                            &provider_session_key,
-                            sessions::SESSION_SCOPE_CHANNEL,
-                            &params.channel_id.to_string(),
-                            None,
-                            "primary",
-                        )
-                        .await;
-                        if let Err(e) = &session {
-                            warn!(
-                                bot_id = %bot_id,
-                                channel_id = %params.channel_id,
-                                err = %e,
-                                "session acquire failed, fallback to unbound task dispatch"
-                            );
-                        }
-                        (provider_session_key, session.ok().map(|s| s.session_id))
-                    }
-                }
-            }
-        };
-
-        // Deliver-time finalize for THIS target (the same shared step the handoff
-        // path runs): the FULL bundle (with the inline snapshot the member-facing
-        // row omits) is re-authorized against this @mentioned bot + de-duped, then
-        // delivered straight to its task frame (overrides load_task_context's
-        // preview-stripped row read). A ref this target can't read is dropped.
-        let target_bundle = match &params.context_bundle {
-            Some(b) => Some(
-                crate::domain::context_bundle::finalize_bundle_for_target(
-                    db,
-                    b,
-                    crate::resource::Principal::bot(bot_id),
-                    params.channel_id,
-                )
-                .await,
-            ),
-            None => None,
-        };
-
-        let result = dispatcher::dispatch(
-            db,
-            fanout,
-            stream_registry,
-            bot_locator,
-            DispatchParams {
-                trigger_msg_id: msg_id,
-                trigger_seq: seq,
-                bot_id,
-                channel_id: params.channel_id,
-                depth: 0,
-                provider_session_key,
-                session_id: resolved_session_id,
-                chain_id: chain_id.clone(),
-                context_bundle: target_bundle,
-            },
-            &media_cache,
-        )
-        .await;
-
-        if let dispatcher::DispatchResult::DbError(e) = result {
-            tracing::warn!(bot_id = %bot_id, err = e, "dispatch failed");
-        }
+    info!(message_id = %msg_id, matched_bots = targets.len(), "committed bot dispatch intents");
+    if let Err(error) =
+        dispatch_intents::deliver_trigger(db, fanout, stream_registry, bot_locator, msg_id).await
+    {
+        tracing::warn!(%error, message_id = %msg_id, "committed dispatch intents retained for recovery");
     }
 
     info!(message_id = %msg_id, "create_message complete");
     Ok(dto)
-}
-
-fn provider_session_key_for_bot_channel(channel_id: Uuid, bot_id: Uuid) -> String {
-    format!("cheers:channel:{channel_id}:bot:{bot_id}")
 }
 
 pub async fn resolve_provider_account_id_for_bot(
@@ -515,6 +531,26 @@ pub async fn resolve_provider_account_id_for_bot(
 
     let value = binding_config.ok_or(AppError::NotFound)?;
     resolve_provider_account_id_from_binding_config(&value).ok_or(AppError::NotFound)
+}
+
+async fn resolve_provider_account_id_for_bot_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    bot_id: Uuid,
+) -> Result<String, AppError> {
+    let row = sqlx::query!(
+        "SELECT binding_config FROM bot_accounts WHERE bot_id = $1",
+        bot_id.to_string(),
+    )
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    // An account without an explicit provider account keeps the existing bot-id
+    // default. Database failures and a removed bot never become a fallback task.
+    Ok(row
+        .binding_config
+        .as_ref()
+        .and_then(resolve_provider_account_id_from_binding_config)
+        .unwrap_or_else(|| bot_id.to_string()))
 }
 
 fn resolve_provider_account_id_from_binding_config(
@@ -633,7 +669,7 @@ pub(crate) async fn resolve_bot_triggers(
     channel_id: Uuid,
     mentions: &[crate::domain::mentions::Mention],
     reply_to_msg_id: Option<Uuid>,
-) -> Vec<Uuid> {
+) -> Result<Vec<Uuid>, AppError> {
     use crate::domain::mentions::MemberType;
 
     // 1. 从已解析的 mentions 取 bot
@@ -644,7 +680,7 @@ pub(crate) async fn resolve_bot_triggers(
         .collect();
 
     if !mentioned_bots.is_empty() {
-        return mentioned_bots;
+        return Ok(mentioned_bots);
     }
 
     // 2. 回复目标是本频道内某个 bot 的消息 → 触发该 bot。同频道校验防止跨频道
@@ -659,19 +695,17 @@ pub(crate) async fn resolve_bot_triggers(
             channel_id.to_string(),
         )
         .fetch_optional(db)
-        .await
-        .ok()
-        .flatten();
+        .await?;
         if let Some(raw) = bot {
-            if let Ok(bot_id) = Uuid::parse_str(&raw) {
-                return vec![bot_id];
-            }
+            let bot_id = Uuid::parse_str(&raw)
+                .map_err(|_| AppError::Internal("invalid reply target bot_id".into()))?;
+            return Ok(vec![bot_id]);
         }
     }
 
     // 3. 无 @bot、非回复 bot → 回落 channels.default_bot_id
 
-    match sqlx::query!(
+    let row = sqlx::query!(
         "SELECT COALESCE(c.default_bot_id, w.default_bot_id) AS default_bot_id
          FROM channels c
          LEFT JOIN workspaces w ON w.workspace_id = c.workspace_id
@@ -685,29 +719,27 @@ pub(crate) async fn resolve_bot_triggers(
         channel_id.to_string(),
     )
     .fetch_optional(db)
-    .await
-    {
-        Ok(Some(row)) => match row.default_bot_id.clone() {
-            Some(raw) => Uuid::parse_str(&raw).into_iter().collect(),
-            _ => vec![],
-        },
-        _ => vec![],
+    .await?;
+    match row.and_then(|row| row.default_bot_id) {
+        Some(raw) => Ok(vec![Uuid::parse_str(&raw)
+            .map_err(|_| AppError::Internal("invalid default bot_id".into()))?]),
+        None => Ok(Vec::new()),
     }
 }
 
 /// 过滤出频道内角色可写（owner/admin/member）的 bot 成员。
-/// readonly bot 不应被派发（见 resource 层 role_can_write）；查询失败时保守放行，
-/// 与 INITIATE(prompt) gate 的 fail-open 语义一致（成员资格早已校验过）。
+/// A failed membership read must not admit an unauthorized durable intent or
+/// turn a failed target lookup into a successful message without work.
 pub(crate) async fn filter_writable_bots(
     db: &PgPool,
     channel_id: Uuid,
     bots: Vec<Uuid>,
-) -> Vec<Uuid> {
+) -> Result<Vec<Uuid>, sqlx::Error> {
     if bots.is_empty() {
-        return bots;
+        return Ok(bots);
     }
     let ids: Vec<String> = bots.iter().map(Uuid::to_string).collect();
-    let writable: Result<Vec<String>, _> = sqlx::query_scalar!(
+    let writable = sqlx::query_scalar!(
         "SELECT member_id FROM channel_memberships
          WHERE channel_id = $1 AND member_type = 'bot'
            AND member_id = ANY($2)
@@ -716,17 +748,11 @@ pub(crate) async fn filter_writable_bots(
         &ids,
     )
     .fetch_all(db)
-    .await;
-    match writable {
-        Ok(writable) => bots
-            .into_iter()
-            .filter(|id| writable.contains(&id.to_string()))
-            .collect(),
-        Err(e) => {
-            warn!(channel_id = %channel_id, err = %e, "filter_writable_bots query failed; fail-open");
-            bots
-        }
-    }
+    .await?;
+    Ok(bots
+        .into_iter()
+        .filter(|id| writable.contains(&id.to_string()))
+        .collect())
 }
 
 pub(crate) fn mention_parse_error_to_app(error: MentionParseError) -> AppError {
@@ -1480,6 +1506,35 @@ async fn load_message_mentions(
 #[cfg(test)]
 mod tests {
     use super::escape_like_pattern;
+
+    #[tokio::test]
+    async fn target_lookup_failures_do_not_become_empty_or_unfiltered_dispatches() {
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/closed_target_lookup_test")
+            .unwrap();
+        db.close().await;
+        let channel_id = uuid::Uuid::new_v4();
+        for reply in [None, Some(uuid::Uuid::new_v4())] {
+            assert!(matches!(
+                super::resolve_bot_triggers(&db, channel_id, &[], reply).await,
+                Err(crate::errors::AppError::Db(sqlx::Error::PoolClosed))
+            ));
+        }
+        assert!(matches!(
+            super::filter_writable_bots(&db, channel_id, vec![uuid::Uuid::new_v4()]).await,
+            Err(sqlx::Error::PoolClosed)
+        ));
+        assert!(matches!(
+            crate::domain::message_policy::reauthorize_human_intent(
+                &db,
+                uuid::Uuid::new_v4(),
+                channel_id,
+                uuid::Uuid::new_v4(),
+            )
+            .await,
+            Err(crate::domain::message_policy::HumanIntentPolicyError::Retryable(_))
+        ));
+    }
 
     /// 搜索 query 中的 LIKE 通配符必须按字面转义（默认转义符 `\`）。
     #[test]

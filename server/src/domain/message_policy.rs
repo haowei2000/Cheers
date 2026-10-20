@@ -14,6 +14,64 @@ use crate::{
     resource::{authorize_channel_write, Principal},
 };
 
+/// Durable intents keep their accepted target, but do not keep permission to run
+/// after the author loses access or withdraws consent. Infrastructure failures
+/// retain the intent for retry; an authoritative denial ends it.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum HumanIntentPolicyError {
+    #[error("{0}")]
+    Denied(AppError),
+    #[error("{0}")]
+    Retryable(AppError),
+}
+
+impl From<AppError> for HumanIntentPolicyError {
+    fn from(error: AppError) -> Self {
+        if matches!(
+            &error,
+            AppError::Db(_)
+                | AppError::Internal(_)
+                | AppError::ServiceUnavailable(_)
+                | AppError::TooManyRequests { .. }
+        ) {
+            Self::Retryable(error)
+        } else {
+            Self::Denied(error)
+        }
+    }
+}
+
+/// Recheck the original human author against ONE persisted target. This never
+/// re-resolves mentions/default bots, revalidates a source UI action, or creates
+/// a session. Both pending delivery and the execution-grant path share it.
+pub(crate) async fn reauthorize_human_intent(
+    db: &PgPool,
+    user_id: Uuid,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> Result<(), HumanIntentPolicyError> {
+    let role = authorize_human_send(db, user_id, channel_id).await?;
+    authorize_channel_write(db, &Principal::bot(bot_id), channel_id)
+        .await
+        .map_err(|(code, message)| {
+            HumanIntentPolicyError::from(if code == "INTERNAL_ERROR" {
+                AppError::Internal(message)
+            } else {
+                AppError::Forbidden(message)
+            })
+        })?;
+    if filter_prompt_bots(db, user_id, channel_id, &role, vec![bot_id])
+        .await?
+        .is_empty()
+    {
+        return Err(HumanIntentPolicyError::Denied(AppError::Forbidden(
+            "not authorized to prompt the accepted bot".into(),
+        )));
+    }
+    ensure_bot_consents(db, &user_id.to_string(), channel_id, &[bot_id]).await?;
+    Ok(())
+}
+
 pub(crate) async fn authorize_human_send(
     db: &PgPool,
     user_id: Uuid,

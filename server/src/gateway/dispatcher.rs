@@ -20,6 +20,7 @@ use crate::gateway::realtime::{fanout::Fanout, frame::WireFrame};
 use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 
 /// 派发参数。
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct DispatchParams {
     pub trigger_msg_id: Uuid,
     pub trigger_seq: i64,
@@ -70,13 +71,17 @@ pub struct MediaCache {
 impl MediaCache {
     /// Cached [`load_pinned_context`] keyed by channel (pinned blocks are per-channel,
     /// bot-independent).
-    async fn pinned_context(&self, db: &PgPool, channel_id: Uuid) -> Vec<String> {
+    async fn pinned_context(
+        &self,
+        db: &PgPool,
+        channel_id: Uuid,
+    ) -> Result<Vec<String>, sqlx::Error> {
         if let Some(hit) = self.pinned.lock().await.get(&channel_id).cloned() {
-            return hit;
+            return Ok(hit);
         }
-        let blocks = load_pinned_context(db, channel_id).await;
+        let blocks = load_pinned_context(db, channel_id).await?;
         self.pinned.lock().await.insert(channel_id, blocks.clone());
-        blocks
+        Ok(blocks)
     }
 }
 
@@ -113,7 +118,13 @@ pub async fn dispatch(
     let mut task_context = load_task_context(db, params.trigger_msg_id, params.bot_id, media_cache)
         .await
         .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
-    task_context.pinned = media_cache.pinned_context(db, params.channel_id).await;
+    task_context.pinned = media_cache
+        .pinned_context(db, params.channel_id)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "pinned context read failed; omitting on direct dispatch");
+            Vec::new()
+        });
     // A gateway-assembled handoff bundle (bot@bot) overrides the trigger message's
     // own bundle; otherwise the human-attached bundle read above flows through.
     if params.context_bundle.is_some() {
@@ -170,29 +181,7 @@ pub async fn dispatch(
     });
 
     // ── fan-out 占位气泡给浏览器（终态帧，先落库再投递）─────────────────────
-    let bubble = WireFrame::channel(
-        params.channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": placeholder_id,
-            "channel_id": params.channel_id,
-            "channel_seq": null,
-            "sender_id": params.bot_id,
-            "sender_type": "bot",
-            "content": "",
-            "msg_type": "text",
-            "is_partial": true,
-            "reply_to_msg_id": params.trigger_msg_id,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "content_data": content_data,
-            // F2 handoff card: the assembled bundle rides the placeholder so the
-            // chat shows "received a handoff" the moment the bot starts working.
-            "context_bundle": params.context_bundle,
-        }),
-    );
+    let bubble = placeholder_frame(&params, placeholder_id);
     fanout.broadcast_channel(params.channel_id, bubble).await;
     tracing::debug!(
         bot_id = %params.bot_id,
@@ -252,12 +241,60 @@ pub async fn dispatch(
 
 /// R3：确定性派生占位 id。
 /// UUID v5（SHA-1 namespace + "trigger_id:bot_id"）保证幂等。
-fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
+pub(crate) fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
     use uuid::Uuid;
     // 用 UUID v5 的 DNS namespace 作为固定 namespace
     let namespace = Uuid::NAMESPACE_DNS;
     let name = format!("{trigger_msg_id}:{bot_id}");
     Uuid::new_v5(&namespace, name.as_bytes())
+}
+
+pub(crate) fn placeholder_frame(params: &DispatchParams, placeholder_id: Uuid) -> WireFrame {
+    WireFrame::channel(
+        params.channel_id,
+        "message",
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION, "msg_id": placeholder_id,
+            "channel_id": params.channel_id, "channel_seq": null,
+            "sender_id": params.bot_id, "sender_type": "bot", "content": "",
+            "msg_type": "text", "is_partial": true,
+            "reply_to_msg_id": params.trigger_msg_id,
+            "file_ids": [], "mentions": [], "files": [],
+            "content_data": params.session_id.map(|sid| json!({"session_id":sid})),
+            "context_bundle": params.context_bundle,
+        }),
+    )
+}
+
+/// Hydrate a frozen human trigger using the same media/config/wire builders as
+/// direct dispatch. Call outside a transaction; its result is persisted once.
+pub(crate) async fn prepare_human_task(
+    db: &PgPool,
+    task_id: Uuid,
+    params: &DispatchParams,
+    trigger_message: Value,
+    file_ids: &[String],
+    media_cache: &MediaCache,
+) -> Result<Value, crate::errors::AppError> {
+    let workspace = load_session_settings(db, &params.provider_session_key).await?;
+    let context = TaskContext {
+        trigger_message,
+        attachments: load_attachments(db, file_ids, params.bot_id, media_cache).await?,
+        pinned: media_cache.pinned_context(db, params.channel_id).await?,
+        context_bundle: params.context_bundle.clone(),
+    };
+    Ok(build_task_frame(
+        task_id,
+        params.channel_id,
+        params.trigger_msg_id,
+        params.trigger_seq,
+        params.depth,
+        derive_placeholder_id(params.trigger_msg_id, params.bot_id),
+        &params.provider_session_key,
+        params.session_id,
+        context,
+        workspace,
+    ))
 }
 
 /// 原子创建占位。返回 `true` 表示本次 INSERT 胜出（rows_affected == 1）；
@@ -422,7 +459,10 @@ async fn load_task_context(
             })
         })
         .unwrap_or_default();
-    let attachments = load_attachments(db, &file_ids, bot_id, media_cache).await;
+    let attachments = load_attachments(db, &file_ids, bot_id, media_cache).await.unwrap_or_else(|error| {
+            tracing::warn!(%error, "attachment metadata load failed; sending bare file_ids on direct dispatch");
+            file_ids.iter().map(|file_id| json!({"file_id":file_id})).collect()
+    });
     let timestamp = row.created_at.map(|dt| dt.to_rfc3339());
 
     Some(TaskContext {
@@ -480,9 +520,9 @@ async fn load_attachments(
     file_ids: &[String],
     bot_id: Uuid,
     media_cache: &MediaCache,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, crate::errors::AppError> {
     if file_ids.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     // Whether this bot's agent accepts native ACP audio blocks (persisted from
     // the connector's ready frame). NULL/missing = false: don't spend frame
@@ -493,9 +533,7 @@ async fn load_attachments(
         bot_id.to_string(),
     )
     .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
+    .await?
     .flatten()
     .unwrap_or(false);
     let rows = sqlx::query_as!(
@@ -508,11 +546,7 @@ async fn load_attachments(
         file_ids,
     )
     .fetch_all(db)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::warn!(err = %e, "attachment metadata load failed; sending bare file_ids");
-        Vec::new()
-    });
+    .await?;
 
     let mut inline_budget = MAX_INLINE_TOTAL_BYTES;
     let mut out = Vec::with_capacity(file_ids.len());
@@ -571,7 +605,7 @@ async fn load_attachments(
         }
         out.push(attachment);
     }
-    out
+    Ok(out)
 }
 
 /// Whether an image attachment's bytes qualify for inlining: readable object (`uploaded`,
@@ -651,17 +685,18 @@ async fn fetch_media_b64(row: &AttachmentRow, cache: &MediaCache) -> Option<Stri
 /// Read the channel's pinned convention files (paths listed in `.workbench.json`)
 /// and format each into a prompt block. These are injected into the agent prompt on
 /// EVERY request (the semantic layer) — a controlled push, not auto-memory.
-pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
+pub async fn load_pinned_context(
+    db: &PgPool,
+    channel_id: Uuid,
+) -> Result<Vec<String>, sqlx::Error> {
     let cfg = sqlx::query_scalar!(
         "SELECT content FROM context_files WHERE channel_id = $1 AND path = '.workbench.json'",
         channel_id.to_string(),
     )
     .fetch_optional(db)
-    .await
-    .ok()
-    .flatten();
+    .await?;
     let Some(cfg) = cfg else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let paths: Vec<String> = serde_json::from_str::<Value>(&cfg)
         .ok()
@@ -675,20 +710,20 @@ pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
         .unwrap_or_default();
     let mut out = Vec::new();
     for path in paths {
-        if let Ok(Some(content)) = sqlx::query_scalar!(
+        if let Some(content) = sqlx::query_scalar!(
             "SELECT content FROM context_files WHERE channel_id = $1 AND path = $2",
             channel_id.to_string(),
             &path,
         )
         .fetch_optional(db)
-        .await
+        .await?
         {
             if !content.trim().is_empty() {
                 out.push(format!("[Pinned: {path}]\n{content}"));
             }
         }
     }
-    out
+    Ok(out)
 }
 
 pub(crate) async fn remove_placeholder(

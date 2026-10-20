@@ -69,7 +69,7 @@ pub async fn trigger_bot_replies(
         return Ok(());
     }
     // readonly 角色的 bot 不派发（同 create_message 的过滤，见 messages.rs）。
-    let bots = crate::domain::messages::filter_writable_bots(db, channel_id, bots).await;
+    let bots = crate::domain::messages::filter_writable_bots(db, channel_id, bots).await?;
 
     let next_depth = current_depth.saturating_add(1);
 

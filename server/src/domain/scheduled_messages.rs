@@ -324,8 +324,8 @@ async fn authorize_targets(
             .await
             .map_err(super::messages::mention_parse_error_to_app)?;
     let bots =
-        super::messages::resolve_bot_triggers(&state.db, input.channel_id, &mentions, None).await;
-    let bots = super::messages::filter_writable_bots(&state.db, input.channel_id, bots).await;
+        super::messages::resolve_bot_triggers(&state.db, input.channel_id, &mentions, None).await?;
+    let bots = super::messages::filter_writable_bots(&state.db, input.channel_id, bots).await?;
     let bots = super::message_policy::filter_prompt_bots(
         &state.db,
         user_id,

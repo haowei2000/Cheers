@@ -33,10 +33,16 @@ pub async fn sweep_once(
 ) -> usize {
     let rows = match sqlx::query!(
         "SELECT msg_id, sender_id
-         FROM messages
+         FROM messages m
          WHERE is_partial = TRUE
            AND channel_seq IS NULL
-           AND created_at < NOW() - make_interval(secs => $1)",
+           AND created_at < NOW() - make_interval(secs => $1)
+           AND NOT EXISTS (
+               SELECT 1 FROM bot_runs r WHERE r.placeholder_msg_id = m.msg_id
+                 AND r.dispatch_input IS NOT NULL
+                 AND r.status IN ('pending', 'prepared')
+                 AND r.execution_id IS NULL AND r.accepted_at IS NULL
+           )",
         threshold_secs as f64,
     )
     .fetch_all(db)
@@ -132,11 +138,17 @@ pub async fn sweep_bot(
     }
     let rows = match sqlx::query!(
         "SELECT msg_id
-         FROM messages
+         FROM messages m
          WHERE is_partial = TRUE
            AND channel_seq IS NULL
            AND sender_type = 'bot'
-           AND sender_id = $1",
+           AND sender_id = $1
+           AND NOT EXISTS (
+               SELECT 1 FROM bot_runs r WHERE r.placeholder_msg_id = m.msg_id
+                 AND r.dispatch_input IS NOT NULL
+                 AND r.status IN ('pending', 'prepared')
+                 AND r.execution_id IS NULL AND r.accepted_at IS NULL
+           )",
         bot_id.to_string(),
     )
     .fetch_all(db)

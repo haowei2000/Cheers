@@ -90,6 +90,31 @@ pub async fn claim(
     channel_id: Uuid,
     execution_id: Uuid,
 ) -> Result<Decision, sqlx::Error> {
+    // The shared human policy uses PgPool. Finish it before retaining a
+    // transaction connection/locks; the immutable input is compared again under
+    // the run lock, and mutable source/session authority is fenced below.
+    let dispatch_input = sqlx::query_scalar!(
+        "SELECT dispatch_input FROM bot_runs WHERE placeholder_msg_id=$1",
+        placeholder_msg_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await?
+    .flatten();
+    let human_intent = match dispatch_input.as_ref() {
+        Some(input) => match super::dispatch_intents::preauthorize(db, input).await {
+            Ok(intent) => Some(intent),
+            Err(crate::domain::message_policy::HumanIntentPolicyError::Denied(_)) => {
+                return Ok(Decision::rejected("human dispatch authority was revoked"));
+            }
+            Err(crate::domain::message_policy::HumanIntentPolicyError::Retryable(error)) => {
+                return Err(match error {
+                    crate::errors::AppError::Db(error) => error,
+                    other => sqlx::Error::Protocol(other.to_string()),
+                });
+            }
+        },
+        None => None,
+    };
     let mut tx = db.begin().await?;
     let message = sqlx::query!(
         "SELECT channel_id, sender_id, sender_type, is_partial, is_deleted, channel_seq, chain_id
@@ -100,7 +125,7 @@ pub async fn claim(
     .await?;
     let run = sqlx::query!(
         "SELECT task_id, bot_id, channel_id, status, binding_type,
-                execution_id, execution_connection_id
+                execution_id, execution_connection_id, dispatch_input,task_frame
          FROM bot_runs WHERE placeholder_msg_id = $1 FOR UPDATE",
         placeholder_msg_id.to_string(),
     )
@@ -126,11 +151,36 @@ pub async fn claim(
             } else {
                 match (run.execution_id, run.execution_connection_id) {
                     (None, None) if run.status == "prepared" => {
+                        if let Some(current_input) = run.dispatch_input.as_ref() {
+                            let Some(intent) = human_intent.as_ref() else {
+                                return Ok(Decision::rejected("human dispatch input changed"));
+                            };
+                            if dispatch_input.as_ref() != Some(current_input)
+                                || run.task_frame.is_none()
+                                || intent.params.bot_id != bot_id
+                                || intent.params.channel_id != channel_id
+                                || super::dispatcher::derive_placeholder_id(
+                                    intent.params.trigger_msg_id,
+                                    bot_id,
+                                ) != placeholder_msg_id
+                                || intent.params.chain_id.as_deref() != message.chain_id.as_deref()
+                                || !super::dispatch_intents::authorize_locked(&mut tx, intent)
+                                    .await?
+                            {
+                                return Ok(Decision::rejected(
+                                    "human dispatch authority is no longer active",
+                                ));
+                            }
+                        } else if dispatch_input.is_some() {
+                            return Ok(Decision::rejected("human dispatch input changed"));
+                        }
                         let granted = sqlx::query!(
                             "UPDATE bot_runs
                          SET execution_id = $2, execution_connection_id = $3,
                              accepted_at = NOW(), status = 'accepted',
-                             last_event_type = 'task_accept', updated_at = NOW()
+                             last_event_type = 'task_accept', updated_at = NOW(),
+                             dispatch_input=NULL,task_frame=NULL,next_offer_at=NULL,
+                             dispatch_lease_id=NULL,dispatch_lease_until=NULL
                          WHERE placeholder_msg_id = $1 AND execution_id IS NULL
                            AND execution_connection_id IS NULL",
                             placeholder_msg_id.to_string(),

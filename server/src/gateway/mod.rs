@@ -2,6 +2,7 @@ pub mod approval_sweeper;
 pub mod bridge_frames;
 pub mod connection_event_reaper;
 pub mod conversion_worker;
+pub mod dispatch_intents;
 pub mod dispatcher;
 pub mod integration_event_worker;
 pub mod pairing_reaper;

@@ -406,8 +406,8 @@ async fn explicit_bot_preflight_rejects_unnegotiated_connectors_before_commit(db
         .await
         .unwrap();
     assert!(control.try_recv().is_err());
-    let session_status: String = sqlx::query_scalar(
-        "SELECT status FROM cheers_sessions WHERE bot_id=$1 AND current_scope_id=$2",
+    let sessions: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM cheers_sessions WHERE bot_id=$1 AND current_scope_id=$2",
     )
     .bind(task.bot.to_string())
     .bind(task.channel.to_string())
@@ -415,9 +415,17 @@ async fn explicit_bot_preflight_rejects_unnegotiated_connectors_before_commit(db
     .await
     .unwrap();
     assert_eq!(
-        session_status,
-        server::domain::sessions::SESSION_STATUS_IDLE
+        sessions, 0,
+        "an unready automatic target never starts or queues a session"
     );
+    let intents: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bot_runs WHERE channel_id=$1 AND dispatch_input IS NOT NULL",
+    )
+    .bind(task.channel.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(intents, 0);
     assert!(locator.set_task_acceptance(task.bot, connection, true));
     messages::create_message(
         &db,

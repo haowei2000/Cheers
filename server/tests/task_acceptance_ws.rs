@@ -42,7 +42,7 @@ impl Fixture {
         let (gateway, base) =
             gateway::TestGateway::start(db, "task-acceptance-admin", &password).await;
         let client = Client::builder()
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(20))
             .build()
             .unwrap();
         let response = client
@@ -137,6 +137,20 @@ impl Fixture {
         Bridge { control, data }
     }
 
+    /// Recovery may offer immediately after Ready, before its Pong barrier.
+    /// Unlike a fresh admission fixture, receiving that offer is expected here.
+    async fn recovering_bridge(&self) -> Bridge {
+        let mut control = self.socket(&self.bot, "control").await;
+        let data = self.socket(&self.bot, "data").await;
+        send(
+            &mut control,
+            json!({"type":"ready","v":1,"connector_capabilities":{
+            "task_acceptance":true,"terminal_replay":true}}),
+        )
+        .await;
+        Bridge { control, data }
+    }
+
     async fn dispatch(&self, control: &mut Socket) -> Value {
         self.post(
             &format!("/channels/{}/messages", self.channel),
@@ -220,6 +234,264 @@ async fn assert_no_task_before_pong(control: &mut Socket) {
     })
     .await
     .expect("control ping must confirm the preceding operation completed");
+}
+
+async fn assert_no_task_for(control: &mut Socket, duration: Duration) {
+    let result = tokio::time::timeout(duration, async {
+        loop {
+            match control.next().await.expect("control remains open").unwrap() {
+                Message::Text(text) => {
+                    let frame: Value = serde_json::from_str(&text).unwrap();
+                    assert_ne!(
+                        frame["type"], "task",
+                        "an accepted task was offered again: {frame}"
+                    );
+                }
+                Message::Ping(bytes) => control.send(Message::Pong(bytes)).await.unwrap(),
+                Message::Close(reason) => panic!("control closed: {reason:?}"),
+                _ => {}
+            }
+        }
+    })
+    .await;
+    assert!(result.is_err(), "the observation interval must complete");
+}
+
+async fn age_unaccepted_intent(db: &PgPool, task: &Value) {
+    sqlx::query("UPDATE bot_runs SET created_at=NOW()-INTERVAL '1 day',updated_at=NOW()-INTERVAL '1 day',next_offer_at=NOW()-INTERVAL '1 second',dispatch_lease_id=NULL,dispatch_lease_until=NULL WHERE task_id=$1")
+        .bind(task["task_id"].as_str().unwrap()).execute(db).await.unwrap();
+    sqlx::query("UPDATE messages SET created_at=NOW()-INTERVAL '1 day' WHERE msg_id=$1")
+        .bind(task["placeholder_msg_id"].as_str().unwrap())
+        .execute(db)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test]
+async fn real_startup_preserves_old_unaccepted_work_and_reoffers_the_exact_frozen_task(db: PgPool) {
+    let mut fixture = Fixture::start(&db).await;
+    let session = server::domain::sessions::ensure_primary_session_workspace(
+        &db,
+        fixture.bot.id,
+        &fixture.bot.id.to_string(),
+        &fixture.channel.to_string(),
+        Some("/original-workspace"),
+        &[],
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE cheers_sessions SET metadata=metadata || $2 WHERE session_id=$1")
+        .bind(session.session_id.to_string())
+        .bind(json!({"session_config":{"config_options":{"model":"original-model"}}}))
+        .execute(&db)
+        .await
+        .unwrap();
+    let mut bridge = fixture.bridge(true).await;
+    let reference = json!({"verb":"channel.info","params":{"channel_id":fixture.channel},
+        "label":"Original reference","preview":{"text":"Never persist this inline body"}});
+    fixture
+        .post(
+            &format!("/channels/{}/messages", fixture.channel),
+            json!({
+        "content":"The frozen human instruction","mention_ids":[fixture.bot.id],
+        "context_bundle":{"origin":"spoofed","items":[reference]}}),
+        )
+        .await;
+    let original = next_type(&mut bridge.control, "task").await;
+    assert_eq!(
+        original["trigger_message"]["text"],
+        "The frozen human instruction"
+    );
+    assert_eq!(original["cwd"], "/original-workspace");
+    assert_eq!(
+        original["session_config"]["config_options"]["model"],
+        "original-model"
+    );
+    assert_eq!(original["context_bundle"]["origin"], "human");
+    assert!(original["context_bundle"]["items"][0]
+        .get("preview")
+        .is_none());
+    assert!(!ledger(&db, &original)
+        .await
+        .to_string()
+        .contains("Never persist this inline body"));
+    assert_eq!(ledger(&db, &original).await["task_frame"], original);
+
+    drop(fixture.gateway.take());
+    drop(bridge);
+    age_unaccepted_intent(&db, &original).await;
+    sqlx::query("UPDATE messages SET content='A later edit must not replace admitted work',context_bundle=NULL WHERE msg_id=$1")
+        .bind(original["trigger_msg_id"].as_str().unwrap()).execute(&db).await.unwrap();
+    sqlx::query("UPDATE cheers_sessions SET metadata=$2 WHERE session_id=$1")
+        .bind(session.session_id.to_string())
+        .bind(json!({"workspace":{"cwd":"/later-workspace"},"session_config":{"config_options":{"model":"later-model"}}}))
+        .execute(&db).await.unwrap();
+    fixture.restart(&db).await;
+    let mut restarted = fixture.recovering_bridge().await;
+    let recovered = next_type(&mut restarted.control, "task").await;
+    // This goes through main's actual startup worker and orphan reclaimer. No
+    // test calls recover_once, so missing production wiring cannot pass.
+    assert_eq!(recovered, original);
+    let partial: bool = sqlx::query_scalar("SELECT is_partial FROM messages WHERE msg_id=$1")
+        .bind(original["placeholder_msg_id"].as_str().unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(
+        partial,
+        "the startup orphan scan must preserve recoverable work regardless of age"
+    );
+
+    let execution = Uuid::new_v4();
+    accept(
+        &mut restarted.control,
+        acceptance(&recovered, execution),
+        "granted",
+    )
+    .await;
+    let accepted = ledger(&db, &recovered).await;
+    assert!(
+        accepted["dispatch_input"].is_null(),
+        "acceptance releases retained input"
+    );
+    assert!(
+        accepted["task_frame"].is_null(),
+        "acceptance releases the frozen payload"
+    );
+    // Make recovery immediately eligible by time alone; accepted ownership must
+    // still exclude it on every worker pass after a real process restart.
+    drop(fixture.gateway.take());
+    drop(restarted);
+    sqlx::query("UPDATE bot_runs SET next_offer_at=NOW()-INTERVAL '1 day' WHERE task_id=$1")
+        .bind(original["task_id"].as_str().unwrap())
+        .execute(&db)
+        .await
+        .unwrap();
+    // Keep accepted work within the normal orphan grace. It is not a recoverable
+    // offer and retains the existing terminal-result/reclamation contract.
+    sqlx::query("UPDATE messages SET created_at=NOW() WHERE msg_id=$1")
+        .bind(original["placeholder_msg_id"].as_str().unwrap())
+        .execute(&db)
+        .await
+        .unwrap();
+    fixture.restart(&db).await;
+    let mut accepted_restart = fixture.recovering_bridge().await;
+    assert_no_task_for(&mut accepted_restart.control, Duration::from_secs(7)).await;
+    accept(
+        &mut accepted_restart.control,
+        acceptance(&original, execution),
+        "owned",
+    )
+    .await;
+    accept(
+        &mut accepted_restart.control,
+        acceptance(&original, Uuid::new_v4()),
+        "owned",
+    )
+    .await;
+}
+
+#[sqlx::test]
+async fn a_process_crash_after_human_commit_recovers_the_pending_input_without_a_second_message(
+    db: PgPool,
+) {
+    let mut fixture = Fixture::start(&db).await;
+    let bridge = fixture.bridge(true).await;
+    // Stop the first preparation at an actual database await after admission.
+    // Killing the gateway here tests its production recovery startup rather
+    // than relying on client disconnect to cancel an HTTP handler.
+    let lock_key: i64 = 6_742_019;
+    let mut blocker = db.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(lock_key)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::query(&format!("CREATE FUNCTION pause_preparation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.task_frame IS NULL AND NEW.task_frame IS NOT NULL THEN PERFORM pg_advisory_xact_lock({lock_key}::bigint); END IF; RETURN NEW; END $$"))
+        .execute(&db).await.unwrap();
+    sqlx::query("CREATE TRIGGER pause_preparation BEFORE UPDATE ON bot_runs FOR EACH ROW EXECUTE FUNCTION pause_preparation()")
+        .execute(&db).await.unwrap();
+    let request = {
+        let client = fixture.client.clone();
+        let endpoint = format!(
+            "{}/api/v1/channels/{}/messages",
+            fixture.base, fixture.channel
+        );
+        let token = fixture.token.clone();
+        let bot = fixture.bot.id;
+        tokio::spawn(async move {
+            client
+                .post(endpoint)
+                .bearer_auth(token)
+                .json(&json!({
+                "content":"Committed before the process disappeared","mention_ids":[bot]}))
+                .send()
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND NOT granted AND objid=$1::bigint::oid)")
+                .bind(lock_key).fetch_one(&db).await.unwrap();
+            if waiting { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("preparation must reach the injected postcommit barrier");
+    let before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM bot_runs r WHERE channel_id=$1")
+            .bind(fixture.channel.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(before["status"], "pending");
+    assert!(before["task_frame"].is_null());
+    assert!(before["dispatch_input"].is_object());
+    assert_eq!(
+        before["dispatch_input"]["trigger_message"]["text"],
+        "Committed before the process disappeared"
+    );
+    drop(fixture.gateway.take());
+    drop(bridge);
+    let _ = request.await;
+    sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(lock_key)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    drop(blocker);
+    sqlx::query("DROP TRIGGER pause_preparation ON bot_runs")
+        .execute(&db)
+        .await
+        .unwrap();
+    let identity =
+        json!({"task_id":before["task_id"],"placeholder_msg_id":before["placeholder_msg_id"]});
+    age_unaccepted_intent(&db, &identity).await;
+    fixture.restart(&db).await;
+    let mut recovered = fixture.recovering_bridge().await;
+    let task = next_type(&mut recovered.control, "task").await;
+    assert_eq!(task["task_id"], before["task_id"]);
+    assert_eq!(task["placeholder_msg_id"], before["placeholder_msg_id"]);
+    assert_eq!(
+        task["trigger_message"]["text"],
+        "Committed before the process disappeared"
+    );
+    let humans: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM messages WHERE channel_id=$1 AND sender_type='user'",
+    )
+    .bind(fixture.channel.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        humans, 1,
+        "recovery delivers the committed message's offer without posting the human twice"
+    );
+    accept(
+        &mut recovered.control,
+        acceptance(&task, Uuid::new_v4()),
+        "granted",
+    )
+    .await;
 }
 
 fn acceptance(task: &Value, execution: Uuid) -> Value {

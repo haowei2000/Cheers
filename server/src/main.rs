@@ -218,6 +218,15 @@ async fn main() -> anyhow::Result<()> {
         push,
     };
 
+    // Recover admitted human dispatches from the existing run ledger. Socket
+    // enqueue is not a receipt; only an execution grant ends delivery retries.
+    gateway::dispatch_intents::spawn(
+        state.db.clone(),
+        state.stream_registry.clone(),
+        state.fanout.clone(),
+        state.bot_locator.clone(),
+    );
+
     // Orphan-placeholder reclaimer (flow 8 gap): finalize placeholders that
     // never got a `done` (backend restart lost the in-memory registry, or a bot
     // vanished mid-task) so chat bubbles don't hang on "thinking" forever.
