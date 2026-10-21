@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT user_id FROM email_codes\n         WHERE email = $1 AND code_hash = $2 AND purpose = 'password_reset'\n           AND used = FALSE AND expires_at > clock_timestamp()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "16c6c8e3630c6a4c58227cbfc41e092bc7b925ac2a626bf650757b7ab00eedac"
+}

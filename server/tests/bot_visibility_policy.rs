@@ -576,6 +576,9 @@ async fn policy_and_dynamic_group_read_failures_never_fall_back_to_a_warm_allow(
         .unwrap();
         f.live_probe(&mut browser, &mut bridge, "visibility_probe", false)
             .await;
+        let log = f._gateway.log_contents();
+        assert!(log.contains("live SEE lookup failed; fail-closed for ordinary viewers"));
+        assert!(log.contains(&f.bot.to_string()) && log.contains(&f.channel.to_string()));
         for path in [
             format!("/channels/{}/messages/{}/trace", f.channel, f.card),
             format!("/channels/{}/traces", f.channel),
@@ -920,7 +923,7 @@ async fn policy_read_budget_is_per_operation_bot_and_distinct_live_viewer(db: Pg
     // VOLATILE prevents the optimizer from folding away its observable writes.
     sqlx::raw_sql(
         r#"
-        CREATE TABLE visibility_policy_reads(kind TEXT NOT NULL);
+        CREATE TABLE visibility_policy_reads(kind TEXT NOT NULL, read_tx BIGINT DEFAULT txid_current());
         CREATE FUNCTION record_visibility_policy_read(read_kind TEXT) RETURNS BOOLEAN
         LANGUAGE plpgsql VOLATILE COST 1000000 AS $$
         BEGIN
@@ -982,6 +985,16 @@ async fn policy_read_budget_is_per_operation_bot_and_distinct_live_viewer(db: Pg
             visibility_read_counts(&db).await,
             (operation, 2 * operation),
             "each new broadcast reloads rules once and groups once per distinct viewer"
+        );
+        let statements: i64 =
+            sqlx::query_scalar("SELECT COUNT(DISTINCT read_tx) FROM visibility_policy_reads")
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert_eq!(
+            statements,
+            2 * operation,
+            "rules and all viewer groups use two statement transactions per broadcast"
         );
         let sentinel = f.sentinel().await;
         for browser in [&mut first_browser, &mut second_browser] {

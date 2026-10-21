@@ -102,6 +102,48 @@ struct Flow {
     failed_attempts: i16,
 }
 
+struct CredentialSnapshot {
+    user_id: String,
+    username: String,
+    password_hash: Option<String>,
+    display_name: Option<String>,
+    role: String,
+    token_version: i32,
+    is_suspended: bool,
+    is_deleted: bool,
+}
+
+impl CredentialSnapshot {
+    fn into_active_user(self) -> Option<auth_domain::AuthUser> {
+        if self.is_suspended || self.is_deleted {
+            return None;
+        }
+        Some(auth_domain::AuthUser {
+            id: self.user_id,
+            username: self.username,
+            display_name: self.display_name,
+            role: self.role,
+            token_version: self.token_version,
+        })
+    }
+}
+
+// Capture credential version before verification without turning account state
+// into a pre-proof oracle. Status is enforced only after the proof is checked.
+async fn credential_snapshot(
+    db: &sqlx::PgPool,
+    user_id: &str,
+) -> Result<Option<CredentialSnapshot>, AppError> {
+    Ok(sqlx::query_as!(
+        CredentialSnapshot,
+        "SELECT user_id, username, password_hash, display_name, role, token_version,
+                is_suspended, is_deleted FROM users WHERE user_id = $1",
+        user_id,
+    )
+    .fetch_optional(db)
+    .await?)
+}
+
 pub async fn start(
     State(state): State<AppState>,
     claims: Option<Extension<Claims>>,
@@ -189,10 +231,10 @@ pub async fn password(
     Json(body): Json<PasswordRequest>,
 ) -> Result<Response, AppError> {
     let flow = load_flow(&state, &transaction_id, claims.as_ref().map(|v| &v.0)).await?;
-    let user_id = flow
-        .user_id
-        .as_deref()
-        .ok_or_else(|| invalid_factor("password"))?;
+    let Some(user_id) = flow.user_id.as_deref() else {
+        fail_attempt(&state, &flow, "password").await?;
+        return Err(invalid_factor("password"));
+    };
     if flow.kind == "login" && flow.status == "factor_required" {
         auth_sessions::validate_stored_primary(
             &state.db,
@@ -204,22 +246,13 @@ pub async fn password(
     }
     // Bind the password hash and its credential version in one snapshot before
     // bcrypt yields. A later reload must not turn an old proof into a new one.
-    let credential = sqlx::query!(
-        "SELECT user_id, username, password_hash, display_name, role, token_version, is_suspended
-         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-        user_id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
+    let credential = credential_snapshot(&state.db, user_id).await?;
     let Some(credential) = credential else {
         fail_attempt(&state, &flow, "password").await?;
         return Err(invalid_factor("password"));
     };
-    if credential.is_suspended {
-        return Err(AppError::Forbidden("account suspended".into()));
-    }
-    let valid = match credential.password_hash {
-        Some(hash) => crypto::verify_password(body.password, hash)
+    let valid = match credential.password_hash.as_ref() {
+        Some(hash) => crypto::verify_password(body.password, hash.clone())
             .await
             .unwrap_or(false),
         None => false,
@@ -228,12 +261,9 @@ pub async fn password(
         fail_attempt(&state, &flow, "password").await?;
         return Err(invalid_factor("password"));
     }
-    let user = auth_domain::AuthUser {
-        id: credential.user_id,
-        username: credential.username,
-        display_name: credential.display_name,
-        role: credential.role,
-        token_version: credential.token_version,
+    let Some(user) = credential.into_active_user() else {
+        fail_attempt(&state, &flow, "password").await?;
+        return Err(invalid_factor("password"));
     };
     // At `factor_required` the password is the *second* step, which only the
     // accounts that armed it may use — and never twice in one sign-in.
@@ -341,11 +371,15 @@ pub async fn verify_email(
         fail_attempt(&state, &flow, "email").await?;
         return Err(invalid_factor("email code"));
     }
-    let user = auth_domain::load_auth_user(&state.db, user_id).await?;
+    let credential = credential_snapshot(&state.db, user_id).await?;
     if !two_factor::verify_email_code(&state.db, &state.config, user_id, &body.code).await? {
         fail_attempt(&state, &flow, "email").await?;
         return Err(invalid_factor("email code"));
     }
+    let Some(user) = credential.and_then(CredentialSnapshot::into_active_user) else {
+        fail_attempt(&state, &flow, "email").await?;
+        return Err(invalid_factor("email code"));
+    };
     if second_step {
         return complete_verified(&state, flow, "email", body.remember_device).await;
     }
@@ -420,10 +454,10 @@ pub async fn verify_passkey(
     Json(body): Json<PasskeyRequest>,
 ) -> Result<Response, AppError> {
     let flow = load_flow(&state, &transaction_id, claims.as_ref().map(|v| &v.0)).await?;
-    let user_id = flow
-        .user_id
-        .as_deref()
-        .ok_or_else(|| invalid_factor("passkey"))?;
+    let Some(user_id) = flow.user_id.as_deref() else {
+        fail_attempt(&state, &flow, "passkey").await?;
+        return Err(invalid_factor("passkey"));
+    };
     let second_step = flow.status == "factor_required";
     if flow.kind == "login" && second_step {
         auth_sessions::validate_stored_primary(&state.db, &flow.transaction_id, user_id, "passkey")
@@ -432,7 +466,7 @@ pub async fn verify_passkey(
     let service = state.webauthn.as_deref().ok_or_else(|| {
         AppError::ServiceUnavailable("passkeys are not configured on this server".into())
     })?;
-    let user = auth_domain::load_auth_user(&state.db, user_id).await?;
+    let credential = credential_snapshot(&state.db, user_id).await?;
     if let Err(error) = webauthn::finish_authentication(
         &state.db,
         service,
@@ -445,6 +479,10 @@ pub async fn verify_passkey(
         fail_attempt(&state, &flow, "passkey").await?;
         return Err(error);
     }
+    let Some(user) = credential.and_then(CredentialSnapshot::into_active_user) else {
+        fail_attempt(&state, &flow, "passkey").await?;
+        return Err(invalid_factor("passkey"));
+    };
     if second_step {
         complete_verified(&state, flow, "passkey", body.remember_device).await
     } else {

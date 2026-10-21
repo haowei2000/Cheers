@@ -117,7 +117,7 @@ pub(crate) fn session_response(
     })
 }
 
-/// Every transaction-based login uses the same browser/native response contract.
+/// Every completed login uses the same browser/native response contract.
 pub(crate) fn completed_login_response(
     completed: auth_sessions::CompletedLogin,
 ) -> Result<Response, AppError> {
@@ -221,48 +221,16 @@ pub async fn login(
         })
         .into_response());
     }
-    let session = auth_sessions::finalize_login(
+    let completed = auth_sessions::complete_direct_login(
         &state.db,
         &state.config,
         &user,
         client,
         body.device_name.as_deref(),
+        remember_device,
     )
     .await?;
-    let session_id = session.session_id.clone();
-    let refresh = session.refresh_token.clone();
-    let csrf = session.csrf_token.clone();
-    let device_name = body.device_name.clone();
-    let mut login_body = session_response(&user, session, client)?;
-    if remember_device {
-        let trusted = auth_sessions::issue_trusted_device(
-            &state.db,
-            &user.id,
-            &session_id,
-            device_name.as_deref(),
-        )
-        .await?;
-        if client != auth_sessions::ClientType::Web {
-            login_body.trusted_device = Some(trusted.clone());
-        }
-        let mut response = if client == auth_sessions::ClientType::Web {
-            response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-        } else {
-            Json(login_body).into_response()
-        };
-        response.headers_mut().append(
-            axum::http::header::SET_COOKIE,
-            auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
-                .parse()
-                .expect("valid cookie header"),
-        );
-        return Ok(response);
-    }
-    Ok(if client == auth_sessions::ClientType::Web {
-        response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(login_body).into_response()
-    })
+    completed_login_response(completed)
 }
 
 pub(crate) fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -1136,12 +1104,12 @@ pub async fn forgot_password(
     let email = body.email.trim().to_lowercase();
     if !email.is_empty() {
         let found = sqlx::query!(
-            "SELECT user_id FROM users WHERE lower(email) = $1 AND is_deleted = FALSE LIMIT 1",
+            "SELECT user_id FROM users WHERE lower(email) = $1 AND is_deleted = FALSE",
             &email,
         )
-        .fetch_optional(&state.db)
+        .fetch_all(&state.db)
         .await?;
-        if found.is_some() {
+        if let [owner] = found.as_slice() {
             let code = crate::infra::crypto::generate_email_code();
             let code_hash = crate::infra::crypto::hash_email_code(
                 state.config.secret_store_key.as_deref(),
@@ -1152,11 +1120,12 @@ pub async fn forgot_password(
             );
             let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
             sqlx::query!(
-                "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
-                 VALUES ($1, NULL, $2, 'password_reset', $3)",
+                "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at, user_id)
+                 VALUES ($1, NULL, $2, 'password_reset', $3, $4)",
                 &email,
                 code_hash,
                 expires,
+                &owner.user_id,
             )
             .execute(&state.db)
             .await?;

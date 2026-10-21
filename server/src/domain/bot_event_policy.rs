@@ -148,7 +148,7 @@ pub fn default_access_for(event_class: &str, capability: Capability) -> bool {
 }
 
 /// One stored access rule.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct Rule {
     pub channel_id: String,
     pub subject_kind: String,
@@ -156,6 +156,103 @@ pub struct Rule {
     pub event_class: String,
     pub capability: String,
     pub allow: bool,
+}
+
+/// Live fan-out loads membership and the relevant SEE rules in one round trip.
+/// Only group rules require a second, set-based lookup for all viewers. Keep
+/// resolution shared with HTTP readers and reload authority on every frame;
+/// a TTL allow-cache would delay revocations and grant expiry.
+pub(crate) async fn live_seers(
+    db: &PgPool,
+    bot_id: &str,
+    channel_id: &str,
+    online_ids: &[String],
+    event_class: &str,
+) -> Result<Vec<String>, AppError> {
+    let members = sqlx::query!(
+        "SELECT cm.member_id, cm.role AS crole, u.role AS prole,
+           (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                'channel_id', channel_id, 'subject_kind', subject_kind,
+                'subject_id', subject_id, 'event_class', event_class,
+                'capability', capability, 'allow', decision = 'allow')), '[]'::jsonb)
+            FROM bot_event_access
+            WHERE bot_id = $1 AND channel_id IN ('', $2)
+              AND capability = 'see' AND event_class = $4
+              AND (expires_at IS NULL OR expires_at > clock_timestamp())) AS \"rules!\"
+         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id
+         WHERE cm.channel_id = $2 AND cm.member_type = 'user' AND cm.member_id = ANY($3)",
+        bot_id,
+        channel_id,
+        online_ids,
+        event_class,
+    )
+    .fetch_all(db)
+    .await?;
+    let Some(first) = members.first() else {
+        return Ok(Vec::new());
+    };
+    let rules: Vec<Rule> = serde_json::from_value(first.rules.clone())
+        .map_err(|error| AppError::Internal(format!("invalid live SEE rules: {error}")))?;
+    let group_refs: Vec<String> = rules
+        .iter()
+        .filter(|rule| rule.subject_kind == SUBJECT_GROUP)
+        .map(|rule| rule.subject_id.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let viewers: Vec<String> = members
+        .iter()
+        .filter(|member| !matches!(member.prole.as_str(), "system_admin" | "admin"))
+        .map(|member| member.member_id.clone())
+        .collect();
+    let mut groups = HashMap::new();
+    if !group_refs.is_empty() && !viewers.is_empty() {
+        let rows = sqlx::query!(
+            "SELECT viewer.user_id AS \"user_id!\", ARRAY(
+                SELECT subject_id FROM unnest($3::text[]) refs(subject_id)
+                WHERE CASE
+                    WHEN subject_id = 'friends' THEN EXISTS(
+                        SELECT 1 FROM bot_accounts owner JOIN friendships f
+                          ON f.pair_key = CASE WHEN owner.created_by < viewer.user_id
+                              THEN owner.created_by || ':' || viewer.user_id
+                              ELSE viewer.user_id || ':' || owner.created_by END
+                        WHERE owner.bot_id = $1 AND owner.created_by <> viewer.user_id
+                          AND f.status = 'accepted')
+                    WHEN starts_with(subject_id, 'channel:') THEN EXISTS(
+                        SELECT 1 FROM channel_memberships cm
+                        WHERE cm.channel_id = substring(subject_id FROM 9)
+                          AND cm.member_id = viewer.user_id AND cm.member_type = 'user')
+                    WHEN starts_with(subject_id, 'workspace:') THEN EXISTS(
+                        SELECT 1 FROM workspace_memberships wm
+                        WHERE wm.workspace_id = substring(subject_id FROM 11)
+                          AND wm.user_id = viewer.user_id AND wm.status = 'active')
+                    ELSE FALSE
+                END) AS \"groups!\"
+             FROM unnest($2::text[]) viewer(user_id)",
+            bot_id,
+            &viewers,
+            &group_refs,
+        )
+        .fetch_all(db)
+        .await?;
+        groups.extend(rows.into_iter().map(|row| (row.user_id, row.groups)));
+    }
+    Ok(members
+        .into_iter()
+        .filter(|member| {
+            matches!(member.prole.as_str(), "system_admin" | "admin")
+                || resolve_access(
+                    &rules,
+                    channel_id,
+                    &member.member_id,
+                    &member.crole,
+                    groups.get(&member.member_id).map_or(&[], Vec::as_slice),
+                    event_class,
+                    Capability::See,
+                )
+        })
+        .map(|member| member.member_id)
+        .collect())
 }
 
 /// Policy reads shared by one request or broadcast. Repeated rows/viewers reuse

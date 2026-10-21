@@ -87,8 +87,8 @@ impl Fixture {
         let hash = self
             .gateway
             .email_code_hash(&self.email, "password_reset", code);
-        sqlx::query("INSERT INTO email_codes(email,code,code_hash,purpose,expires_at) VALUES($1,NULL,$2,'password_reset',clock_timestamp()+INTERVAL '10 minutes')")
-            .bind(&self.email).bind(hash).execute(db).await.unwrap();
+        sqlx::query("INSERT INTO email_codes(email,code,code_hash,purpose,expires_at,user_id) VALUES($1,NULL,$2,'password_reset',clock_timestamp()+INTERVAL '10 minutes',$3)")
+            .bind(&self.email).bind(hash).bind(&self.user).execute(db).await.unwrap();
     }
 
     async fn reset(&self, code: &str, password: &str) -> (StatusCode, Value) {

@@ -595,8 +595,8 @@ async fn external_ai_consent_is_current_and_specific_to_each_text_author_or_voic
     fixture.run(&db).await.unwrap();
     assert_eq!(fixture.locator.offers().len(), 2);
     assert_eq!(fixture.evaluations(&db).await.len(), 2);
-    assert_eq!(fixture.monitoring(&db).await["last_evaluated_seq"], 4);
-    complete_evaluation(
+    assert_eq!(fixture.monitoring(&db).await["last_evaluated_seq"], 5);
+    let duplicate = complete_evaluation(
         &db,
         CompleteEvaluationParams {
             bot_id: fixture.bot,
@@ -607,6 +607,8 @@ async fn external_ai_consent_is_current_and_specific_to_each_text_author_or_voic
     )
     .await
     .unwrap();
+    assert!(!duplicate.newly_decided);
+    assert_eq!(duplicate.data["duplicate"], true);
     fixture.due(&db).await;
     fixture.run(&db).await.unwrap();
     assert_eq!(fixture.monitoring(&db).await["last_evaluated_seq"], 5);
@@ -932,7 +934,6 @@ async fn fresh_claim_rechecks_monitoring_prompt_consent_and_bot_membership_after
             fixture.consent(&db, fixture.user, "v2").await;
         }
         fixture.run(&db).await.unwrap();
-        let before = fixture.evaluations(&db).await;
         let effects = fixture.claim_effects(&db).await;
         match revoked {
             "monitoring" => {
@@ -959,11 +960,12 @@ async fn fresh_claim_rechecks_monitoring_prompt_consent_and_bot_membership_after
                 .is_err(),
             "{revoked}"
         );
-        assert_eq!(
-            fixture.evaluations(&db).await,
-            before,
-            "rejection must preserve the dispatched reservation: {revoked}"
-        );
+        let rejected = fixture.evaluations(&db).await;
+        assert_eq!(rejected[0]["status"], "failed", "{revoked}");
+        assert!(rejected[0]["completed_at"].is_string());
+        assert!(rejected[0]["error"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
         assert_eq!(
             fixture.claim_effects(&db).await,
             effects,
@@ -990,9 +992,10 @@ async fn fresh_claim_rechecks_monitoring_prompt_consent_and_bot_membership_after
             .complete(&db, EvaluationDecision::Claim { confidence: 1.0 })
             .await
             .unwrap();
-        assert!(completed.newly_decided);
-        assert_eq!(completed.data["status"], "pending");
-        assert_eq!(fixture.claim_effects(&db).await, (2, 1, 1, 1));
+        assert!(!completed.newly_decided);
+        assert_eq!(completed.data["duplicate"], true);
+        assert_eq!(fixture.evaluations(&db).await, rejected);
+        assert_eq!(fixture.claim_effects(&db).await, effects);
     }
 }
 

@@ -32,6 +32,11 @@ impl Drop for TestGateway {
     }
 }
 impl TestGateway {
+    #[allow(dead_code)]
+    pub fn log_contents(&self) -> String {
+        std::fs::read_to_string(self.directory.join("gateway.log")).unwrap()
+    }
+
     /// Seed a real hashed email code without depending on an SMTP service.
     #[allow(dead_code)]
     pub fn email_code_hash(&self, email: &str, purpose: &str, code: &str) -> String {
@@ -69,7 +74,22 @@ impl TestGateway {
         .unwrap()
     }
 
+    #[allow(dead_code)]
     pub async fn start(db: &PgPool, login: &str, password: &str) -> (Self, String) {
+        Self::start_configured(db, login, password, false).await
+    }
+
+    #[allow(dead_code)]
+    pub async fn start_with_webauthn(db: &PgPool, login: &str, password: &str) -> (Self, String) {
+        Self::start_configured(db, login, password, true).await
+    }
+
+    async fn start_configured(
+        db: &PgPool,
+        login: &str,
+        password: &str,
+        webauthn: bool,
+    ) -> (Self, String) {
         static PROCESS_SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
         let process_permit = PROCESS_SLOTS
             .get_or_init(|| Arc::new(Semaphore::new(4)))
@@ -117,24 +137,27 @@ impl TestGateway {
         drop(listener);
         let base = format!("http://127.0.0.1:{port}");
         let log = std::fs::File::create(gateway.directory.join("gateway.log")).unwrap();
-        gateway.process = Some(
-            Command::new(env!("CARGO_BIN_EXE_server"))
-                .current_dir(&gateway.directory)
-                .env("DATABASE_URL", db.connect_options().to_url_lossy().as_str())
-                .env("PORT", port.to_string())
-                .env("BIND_ADDRESS", "127.0.0.1")
-                .env("JWT_PRIVATE_KEY", std::fs::read_to_string(private).unwrap())
-                .env("JWT_PUBLIC_KEY", std::fs::read_to_string(public).unwrap())
-                .env("ADMIN_USERNAME", login)
-                .env("ADMIN_PASSWORD", password)
-                .env("S3_ENDPOINT", "http://127.0.0.1:1")
-                .env("S3_ACCESS_KEY", "integration-test")
-                .env("S3_SECRET_KEY", "integration-test")
-                .stdout(Stdio::from(log.try_clone().unwrap()))
-                .stderr(Stdio::from(log))
-                .spawn()
-                .unwrap(),
-        );
+        let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+        command
+            .current_dir(&gateway.directory)
+            .env("DATABASE_URL", db.connect_options().to_url_lossy().as_str())
+            .env("PORT", port.to_string())
+            .env("BIND_ADDRESS", "127.0.0.1")
+            .env("JWT_PRIVATE_KEY", std::fs::read_to_string(private).unwrap())
+            .env("JWT_PUBLIC_KEY", std::fs::read_to_string(public).unwrap())
+            .env("ADMIN_USERNAME", login)
+            .env("ADMIN_PASSWORD", password)
+            .env("S3_ENDPOINT", "http://127.0.0.1:1")
+            .env("S3_ACCESS_KEY", "integration-test")
+            .env("S3_SECRET_KEY", "integration-test")
+            .stdout(Stdio::from(log.try_clone().unwrap()))
+            .stderr(Stdio::from(log));
+        if webauthn {
+            command
+                .env("WEBAUTHN_RP_ID", "localhost")
+                .env("WEBAUTHN_RP_ORIGIN", "https://localhost");
+        }
+        gateway.process = Some(command.spawn().unwrap());
         let client = Client::builder()
             .timeout(Duration::from_secs(2))
             .build()

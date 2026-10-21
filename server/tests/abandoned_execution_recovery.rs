@@ -822,7 +822,9 @@ async fn every_partial_terminal_receipt_protects_its_placeholder_and_stream(db: 
 }
 
 #[sqlx::test]
-async fn foreign_session_is_untouched_and_a_foreign_claim_marker_rolls_back_settlement(db: PgPool) {
+async fn foreign_session_and_claim_references_are_untouched_while_the_owned_orphan_is_reclaimed(
+    db: PgPool,
+) {
     let fixture = Fixture::seed(&db).await;
     let turn = fixture.human(&db, true).await;
     let foreign = Fixture::seed(&db).await;
@@ -851,20 +853,84 @@ async fn foreign_session_is_untouched_and_a_foreign_claim_marker_rolls_back_sett
         .execute(&db).await.unwrap();
     let before = claimed.snapshot(&db, &own_claim).await;
     let foreign_before = foreign.snapshot(&db, &foreign_claim).await;
+    assert!(
+        claimed.done(&db, &own_claim).await.is_err(),
+        "terminal results keep the strict claim fence"
+    );
+    assert_eq!(claimed.snapshot(&db, &own_claim).await, before);
     claimed.offline();
     claimed.events.clear();
     let report = claimed.sweep(&db).await;
-    assert_eq!(report.reclaimed, 0);
-    assert!(
-        report.retry,
-        "a strong claim identity conflict must roll back rather than guess"
-    );
-    assert_eq!(claimed.snapshot(&db, &own_claim).await, before);
+    assert_eq!(report.reclaimed, 1);
+    assert!(!report.retry);
+    let after = claimed.snapshot(&db, &own_claim).await;
+    assert!(after["message"].is_null());
+    assert_eq!(after["run"]["status"], "failed");
+    assert_eq!(after["claim"], before["claim"]);
+    assert_eq!(after["confirmation"], before["confirmation"]);
+    assert_eq!(after["session"]["status"], "idle");
     assert_eq!(foreign.snapshot(&db, &foreign_claim).await, foreign_before);
-    assert!(claimed.registry.contains(own_claim.message));
-    assert_eq!(
-        claimed.registry.active_channels(claimed.bot),
-        vec![claimed.channel]
-    );
-    assert!(claimed.events.snapshot().is_empty());
+    assert!(!claimed.registry.contains(own_claim.message));
+    assert_eq!(claimed.events.count("bot_unavailable"), 1);
+    assert_eq!(claimed.events.count("task_claim_updated"), 0);
+}
+
+#[sqlx::test]
+async fn missing_relinked_or_ambiguous_claims_cannot_strand_an_owned_execution(db: PgPool) {
+    for corruption in ["missing", "relinked", "ambiguous"] {
+        let fixture = Fixture::seed(&db).await;
+        let turn = fixture.claim(&db, true, true).await;
+        let foreign = Fixture::seed(&db).await;
+        let foreign_turn = foreign.claim(&db, true, true).await;
+        match corruption {
+            "missing" => {
+                sqlx::query("DELETE FROM task_claim_requests WHERE claim_id=$1")
+                    .bind(turn.claim.unwrap().to_string())
+                    .execute(&db)
+                    .await
+                    .unwrap();
+            }
+            "relinked" => {
+                sqlx::query("UPDATE task_claim_requests SET execution_msg_id=$2 WHERE claim_id=$1")
+                    .bind(turn.claim.unwrap().to_string())
+                    .bind(foreign_turn.message.to_string())
+                    .execute(&db)
+                    .await
+                    .unwrap();
+            }
+            _ => {
+                sqlx::query("UPDATE task_claim_requests SET execution_msg_id=$2 WHERE claim_id=$1")
+                    .bind(foreign_turn.claim.unwrap().to_string())
+                    .bind(turn.message.to_string())
+                    .execute(&db)
+                    .await
+                    .unwrap();
+            }
+        }
+        let before = fixture.snapshot(&db, &turn).await;
+        let foreign_before = foreign.snapshot(&db, &foreign_turn).await;
+        assert!(
+            fixture.done(&db, &turn).await.is_err(),
+            "{corruption}: a terminal result cannot bypass the missing/mismatched claim"
+        );
+        assert_eq!(fixture.snapshot(&db, &turn).await, before);
+        fixture.offline();
+        fixture.events.clear();
+        let report = fixture.sweep(&db).await;
+        assert_eq!(report.reclaimed, 1, "{corruption}");
+        assert!(!report.retry, "{corruption}");
+        let after = fixture.snapshot(&db, &turn).await;
+        assert!(after["message"].is_null());
+        assert_eq!(after["run"]["status"], "failed");
+        assert_eq!(after["run"]["execution_id"], before["run"]["execution_id"]);
+        assert!(after["run"]["terminal_committed_at"].is_null());
+        assert_eq!(after["claim"], before["claim"]);
+        assert_eq!(after["confirmation"], before["confirmation"]);
+        assert_eq!(after["session"]["status"], "idle");
+        assert_eq!(foreign.snapshot(&db, &foreign_turn).await, foreign_before);
+        assert!(!fixture.registry.contains(turn.message));
+        assert_eq!(fixture.events.count("bot_unavailable"), 1);
+        assert_eq!(fixture.events.count("task_claim_updated"), 0);
+        assert_eq!(fixture.sweep(&db).await.reclaimed, 0);
+    }
 }

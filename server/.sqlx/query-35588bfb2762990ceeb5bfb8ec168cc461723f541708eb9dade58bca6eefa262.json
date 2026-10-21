@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE email_codes SET used = TRUE\n         WHERE email = $1 AND code_hash = $2 AND purpose = 'password_reset'\n           AND user_id = $3 AND used = FALSE AND expires_at > clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35588bfb2762990ceeb5bfb8ec168cc461723f541708eb9dade58bca6eefa262"
+}

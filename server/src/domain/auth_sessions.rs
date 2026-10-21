@@ -396,13 +396,8 @@ pub async fn complete_transaction_login(
     };
     let client = ClientType::parse(Some(&transaction.client_type))?;
     let device_name = transaction.context_json["device_name"].as_str();
-    let now = database_now(&mut tx).await?;
-    let session = insert_session(&mut tx, config, &user, client, device_name, now).await?;
-    let trusted_device = if remember_device {
-        Some(insert_trusted_device(&mut tx, &user.id, &session.session_id, device_name, now).await?)
-    } else {
-        None
-    };
+    let completed =
+        insert_completed_login(&mut tx, config, user, client, device_name, remember_device).await?;
     let consumed = sqlx::query!(
         "UPDATE auth_transactions
          SET status = 'consumed', consumed_at = clock_timestamp(), updated_at = clock_timestamp(),
@@ -419,12 +414,7 @@ pub async fn complete_transaction_login(
         return Err(invalid_login_transaction());
     }
     tx.commit().await?;
-    Ok(CompletedLogin {
-        user,
-        session,
-        client,
-        trusted_device,
-    })
+    Ok(completed)
 }
 
 pub async fn record_factor_failure(db: &PgPool, transaction_id: &str) -> Result<(), AppError> {
@@ -528,6 +518,50 @@ pub async fn finalize_login(
     let session = insert_session(&mut tx, config, &current_user, client, device_name, now).await?;
     tx.commit().await?;
     Ok(session)
+}
+
+/// A verified primary that needs no challenge still issues all credentials in
+/// one transaction, including optional device trust.
+pub async fn complete_direct_login(
+    db: &PgPool,
+    config: &Config,
+    verified_user: &AuthUser,
+    client: ClientType,
+    device_name: Option<&str>,
+    remember_device: bool,
+) -> Result<CompletedLogin, AppError> {
+    let mut tx = db.begin().await?;
+    let user = lock_auth_user(&mut tx, &verified_user.id).await?;
+    if user.token_version != verified_user.token_version {
+        return Err(changed_authentication());
+    }
+    let completed =
+        insert_completed_login(&mut tx, config, user, client, device_name, remember_device).await?;
+    tx.commit().await?;
+    Ok(completed)
+}
+
+async fn insert_completed_login(
+    tx: &mut Transaction<'_, Postgres>,
+    config: &Config,
+    user: AuthUser,
+    client: ClientType,
+    device_name: Option<&str>,
+    remember_device: bool,
+) -> Result<CompletedLogin, AppError> {
+    let now = database_now(tx).await?;
+    let session = insert_session(tx, config, &user, client, device_name, now).await?;
+    let trusted_device = if remember_device {
+        Some(insert_trusted_device(tx, &user.id, &session.session_id, device_name, now).await?)
+    } else {
+        None
+    };
+    Ok(CompletedLogin {
+        user,
+        session,
+        client,
+        trusted_device,
+    })
 }
 
 async fn insert_session(

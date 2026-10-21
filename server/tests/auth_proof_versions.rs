@@ -127,8 +127,8 @@ impl Fixture {
         // matching the production verifier's exact single-use UPDATE.
         sqlx::query("UPDATE email_codes SET used=TRUE WHERE email=$1 AND purpose=$2 AND code_hash=$3 AND used=FALSE")
             .bind(&self.email).bind(purpose).bind(&hash).execute(db).await.unwrap();
-        sqlx::query("INSERT INTO email_codes(email,code,code_hash,purpose,expires_at) VALUES($1,NULL,$2,$3,clock_timestamp()+INTERVAL '10 minutes')")
-            .bind(&self.email).bind(hash).bind(purpose).execute(db).await.unwrap();
+        sqlx::query("INSERT INTO email_codes(email,code,code_hash,purpose,expires_at,user_id) VALUES($1,NULL,$2,$3,clock_timestamp()+INTERVAL '10 minutes',$4)")
+            .bind(&self.email).bind(hash).bind(purpose).bind(&self.user).execute(db).await.unwrap();
     }
 
     async fn complete_email(&self, adapter: Adapter, id: &str, code: &str) -> (StatusCode, Value) {

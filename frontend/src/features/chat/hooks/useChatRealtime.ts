@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
+import { clientSessionGeneration } from "@/lib/clientSession";
 import type { Message, TraceEvent, VoiceTranscriptSegment } from "@/types";
 import { normalizeTraceEvent } from "../traceEvent";
 import { claimConfirmationUpdate } from "../taskClaimProjection";
@@ -170,13 +171,13 @@ export function handleChannelFrame(event: RealtimeFrame, cbs: Callbacks) {
 }
 
 export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
-  const token = useAuthStore((s) => s.token);
+  const session = useAuthStore((s) => s.token ? clientSessionGeneration() : null);
   const cbsRef = useRef(cbs);
   cbsRef.current = cbs;
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
 
   useEffect(() => {
-    if (!channelId || !token) return;
+    if (!channelId || session === null) return;
     setStatus("connecting");
     const transport = realtimeTransport();
     const unsubscribe = transport.subscribeChannels([channelId], {
@@ -189,7 +190,7 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
       transport.sendPresenceFocus(channelId, null);
       unsubscribe();
     };
-  }, [channelId, token]);
+  }, [channelId, session]);
 
   const reconnectNow = useCallback(() => realtimeTransport().reconnectNow(), []);
   const sendPresenceFocus = useCallback(

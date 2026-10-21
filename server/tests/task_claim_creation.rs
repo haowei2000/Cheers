@@ -358,6 +358,9 @@ async fn both_adapters_reject_foreign_evaluations_and_nonvisible_or_nonhuman_sou
             "bot_disabled",
             "bot_readonly",
             "bot_removed",
+            "monitor_off",
+            "monitor_missing",
+            "author_readonly",
         ] {
             let fixture = Fixture::seed(&db).await;
             let events = Events::default();
@@ -368,7 +371,8 @@ async fn both_adapters_reject_foreign_evaluations_and_nonvisible_or_nonhuman_sou
                 "partial" => Some("UPDATE messages SET is_partial=TRUE WHERE msg_id=$1"),
                 "bot_source" | "missing_user" => None,
                 "empty" => Some("UPDATE messages SET content='   ' WHERE msg_id=$1"),
-                "other_bot" | "bot_disabled" | "bot_readonly" | "bot_removed" => None,
+                "other_bot" | "bot_disabled" | "bot_readonly" | "bot_removed" | "monitor_off"
+                | "monitor_missing" | "author_readonly" => None,
                 _ => unreachable!(),
             };
             if let Some(statement) = statement {
@@ -414,6 +418,27 @@ async fn both_adapters_reject_foreign_evaluations_and_nonvisible_or_nonhuman_sou
                 }
                 _ => {}
             }
+            match corruption {
+                "monitor_off" => {
+                    sqlx::query("UPDATE channel_bot_monitoring SET mode='off' WHERE channel_id=$1 AND bot_id=$2")
+                        .bind(fixture.channel.to_string()).bind(fixture.bot.to_string()).execute(&db).await.unwrap();
+                }
+                "monitor_missing" => {
+                    sqlx::query(
+                        "DELETE FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2",
+                    )
+                    .bind(fixture.channel.to_string())
+                    .bind(fixture.bot.to_string())
+                    .execute(&db)
+                    .await
+                    .unwrap();
+                }
+                "author_readonly" => {
+                    sqlx::query("UPDATE channel_memberships SET role='readonly' WHERE channel_id=$1 AND member_id=$2")
+                        .bind(fixture.channel.to_string()).bind(fixture.user.to_string()).execute(&db).await.unwrap();
+                }
+                _ => {}
+            }
             let actor = if corruption == "other_bot" {
                 fixture.other_bot
             } else {
@@ -427,10 +452,23 @@ async fn both_adapters_reject_foreign_evaluations_and_nonvisible_or_nonhuman_sou
                 "{adapter:?}/{corruption}"
             );
             assert_eq!(
-                fixture.evaluation(&db).await,
-                before,
-                "{adapter:?}/{corruption} must not consume or poison the owner's reservation"
+                fixture.evaluation(&db).await["status"],
+                if corruption == "other_bot" {
+                    "dispatched"
+                } else {
+                    "failed"
+                },
+                "{adapter:?}/{corruption}"
             );
+            let rejected = fixture.evaluation(&db).await;
+            if corruption == "other_bot" {
+                assert_eq!(rejected, before);
+            } else {
+                assert!(rejected["completed_at"].is_string());
+                assert!(rejected["error"]
+                    .as_str()
+                    .is_some_and(|value| !value.is_empty()));
+            }
             assert_eq!(fixture.counts(&db).await, (0, 0, 0, 1));
             assert!(events.snapshot().is_empty());
             sqlx::query("UPDATE messages SET sender_type='user',sender_id=$3,is_deleted=FALSE,is_secret=FALSE,is_partial=FALSE,content=$2 WHERE msg_id=$1")
@@ -448,9 +486,18 @@ async fn both_adapters_reject_foreign_evaluations_and_nonvisible_or_nonhuman_sou
             }
             let retry = fixture
                 .submit(&db, &events, adapter.other(), "claim", Some(0.9))
-                .await
-                .unwrap();
-            fixture.assert_created(&db, &retry).await;
+                .await;
+            if corruption == "other_bot" {
+                fixture.assert_created(&db, &retry.unwrap()).await;
+            } else {
+                match retry {
+                    Ok(data) => assert_eq!(data["duplicate"], true),
+                    Err(error) => assert!(error.contains("CONFLICT"), "{error}"),
+                }
+                assert_eq!(fixture.evaluation(&db).await, rejected);
+                assert_eq!(fixture.counts(&db).await, (0, 0, 0, 1));
+                assert!(events.snapshot().is_empty());
+            }
         }
     }
     let fixture = Fixture::seed(&db).await;
@@ -462,6 +509,87 @@ async fn both_adapters_reject_foreign_evaluations_and_nonvisible_or_nonhuman_sou
         &json!({"channel_id":fixture.channel,"evaluation_id":fixture.evaluation,"decision":"claim","confidence":0.9})).await;
     assert!(human.is_err());
     assert_eq!(fixture.counts(&db).await, (0, 0, 0, 1));
+}
+
+#[sqlx::test]
+async fn rejection_write_and_commit_failures_preserve_the_owned_reservation_for_retry(db: PgPool) {
+    for deferred in [false, true] {
+        let fixture = Fixture::seed(&db).await;
+        let events = Events::default();
+        sqlx::query("UPDATE messages SET content='   ' WHERE msg_id=$1")
+            .bind(fixture.source.to_string())
+            .execute(&db)
+            .await
+            .unwrap();
+        let before = fixture.evaluation(&db).await;
+        sqlx::raw_sql("CREATE FUNCTION reject_evaluation_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='failed' THEN RAISE EXCEPTION 'injected rejection persistence failure'; END IF; RETURN NEW; END $$")
+            .execute(&db).await.unwrap();
+        let trigger = if deferred {
+            "CREATE CONSTRAINT TRIGGER reject_evaluation_failure AFTER UPDATE ON task_claim_evaluations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_evaluation_failure()"
+        } else {
+            "CREATE TRIGGER reject_evaluation_failure BEFORE UPDATE ON task_claim_evaluations FOR EACH ROW EXECUTE FUNCTION reject_evaluation_failure()"
+        };
+        sqlx::raw_sql(trigger).execute(&db).await.unwrap();
+        let error = fixture
+            .submit(&db, &events, Adapter::LegacyWs, "claim", Some(1.0))
+            .await
+            .unwrap_err();
+        assert!(
+            error.contains("injected rejection persistence failure"),
+            "{error}"
+        );
+        assert_eq!(fixture.evaluation(&db).await, before);
+        assert_eq!(fixture.counts(&db).await, (0, 0, 0, 1));
+        assert!(events.snapshot().is_empty());
+        sqlx::raw_sql("DROP TRIGGER reject_evaluation_failure ON task_claim_evaluations; DROP FUNCTION reject_evaluation_failure()")
+            .execute(&db).await.unwrap();
+        let error = fixture
+            .submit(&db, &events, Adapter::Mcp, "claim", Some(1.0))
+            .await
+            .unwrap_err();
+        assert!(error.contains("source message is empty"), "{error}");
+        let rejected = fixture.evaluation(&db).await;
+        assert_eq!(rejected["status"], "failed");
+        assert!(rejected["completed_at"].is_string());
+        let late = fixture
+            .submit(&db, &events, Adapter::LegacyWs, "ignore", None)
+            .await
+            .unwrap();
+        assert_eq!(late["duplicate"], true);
+        assert_eq!(fixture.evaluation(&db).await, rejected);
+        assert!(events.snapshot().is_empty());
+    }
+}
+
+#[sqlx::test]
+async fn a_policy_database_failure_does_not_become_a_durable_rejection(db: PgPool) {
+    let fixture = Fixture::seed(&db).await;
+    let events = Events::default();
+    sqlx::query("UPDATE bot_accounts SET external_processor=TRUE,processor_policy_version='v2' WHERE bot_id=$1")
+        .bind(fixture.bot.to_string()).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO ai_data_consents(user_id,channel_id,bot_id,policy_version) VALUES($1,$2,$3,'v2')")
+        .bind(fixture.user.to_string()).bind(fixture.channel.to_string()).bind(fixture.bot.to_string()).execute(&db).await.unwrap();
+    let before = fixture.evaluation(&db).await;
+    sqlx::query("ALTER TABLE ai_data_consents RENAME TO unavailable_claim_consents")
+        .execute(&db)
+        .await
+        .unwrap();
+    assert!(fixture
+        .submit(&db, &events, Adapter::Mcp, "claim", Some(1.0))
+        .await
+        .is_err());
+    assert_eq!(fixture.evaluation(&db).await, before);
+    assert_eq!(fixture.counts(&db).await, (0, 0, 0, 1));
+    assert!(events.snapshot().is_empty());
+    sqlx::query("ALTER TABLE unavailable_claim_consents RENAME TO ai_data_consents")
+        .execute(&db)
+        .await
+        .unwrap();
+    let result = fixture
+        .submit(&db, &events, Adapter::LegacyWs, "claim", Some(1.0))
+        .await
+        .unwrap();
+    fixture.assert_created(&db, &result).await;
 }
 
 #[sqlx::test]

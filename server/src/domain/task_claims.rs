@@ -231,18 +231,31 @@ pub async fn complete_evaluation(
         }
         EvaluationDecision::Claim { confidence } => {
             if !confidence.is_finite() {
-                return Err(AppError::BadRequest(
-                    "claim confidence must be finite".into(),
-                ));
+                return reject_evaluation(
+                    tx,
+                    params.evaluation_id,
+                    AppError::BadRequest("claim confidence must be finite".into()),
+                )
+                .await;
             }
             confidence.clamp(0.0, 1.0)
         }
     };
-    let monitoring = monitoring.ok_or_else(|| {
-        AppError::Conflict("task-claim monitoring is no longer configured".into())
-    })?;
+    let Some(monitoring) = monitoring else {
+        return reject_evaluation(
+            tx,
+            params.evaluation_id,
+            AppError::Conflict("task-claim monitoring is no longer configured".into()),
+        )
+        .await;
+    };
     if monitoring.mode == "off" {
-        return Err(AppError::Conflict("task-claim monitoring is off".into()));
+        return reject_evaluation(
+            tx,
+            params.evaluation_id,
+            AppError::Conflict("task-claim monitoring is off".into()),
+        )
+        .await;
     }
     if confidence < monitoring.threshold {
         finish_evaluation(
@@ -268,18 +281,31 @@ pub async fn complete_evaluation(
         evaluation.source_seq_to,
     )
     .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| {
-        AppError::BadRequest("claim evaluation source is not an available user message".into())
-    })?;
+    .await?;
+    let Some(source) = source else {
+        return reject_evaluation(
+            tx,
+            params.evaluation_id,
+            AppError::BadRequest("claim evaluation source is not an available user message".into()),
+        )
+        .await;
+    };
     let summary: String = source.content.trim().chars().take(1000).collect();
     if summary.is_empty() {
-        return Err(AppError::BadRequest("claim source message is empty".into()));
+        return reject_evaluation(
+            tx,
+            params.evaluation_id,
+            AppError::BadRequest("claim source message is empty".into()),
+        )
+        .await;
     }
     if !may_claim {
-        return Err(AppError::Forbidden(
-            "bot may no longer create task claims here".into(),
-        ));
+        return reject_evaluation(
+            tx,
+            params.evaluation_id,
+            AppError::Forbidden("bot may no longer create task claims here".into()),
+        )
+        .await;
     }
     // The requester is the real source author. Use the same policy command as
     // scheduler admission and ordinary human dispatch, after source/bot locks.
@@ -287,12 +313,15 @@ pub async fn complete_evaluation(
         .sender_id
         .parse::<Uuid>()
         .map_err(|_| AppError::Internal("invalid evaluation requester id".into()))?;
-    message_policy::reauthorize_human_intent_tx(&mut tx, requester, channel_id, params.bot_id)
+    match message_policy::reauthorize_human_intent_tx(&mut tx, requester, channel_id, params.bot_id)
         .await
-        .map_err(|error| match error {
-            message_policy::HumanIntentPolicyError::Denied(error)
-            | message_policy::HumanIntentPolicyError::Retryable(error) => error,
-        })?;
+    {
+        Ok(()) => {}
+        Err(message_policy::HumanIntentPolicyError::Denied(error)) => {
+            return reject_evaluation(tx, params.evaluation_id, error).await;
+        }
+        Err(message_policy::HumanIntentPolicyError::Retryable(error)) => return Err(error),
+    }
     let bot_name = sqlx::query_scalar!(
         "SELECT COALESCE(NULLIF(display_name,''),username) AS \"name!\" FROM bot_accounts WHERE bot_id=$1",
         params.bot_id.to_string(),
@@ -346,6 +375,19 @@ pub async fn complete_evaluation(
                 "content_data":data}}),
         newly_decided: true,
     })
+}
+
+/// An authenticated evaluation's deterministic refusal is itself a decision.
+/// Persist it before returning the adapter error; DB/commit failures instead
+/// leave the reservation dispatched so the same owned request can retry.
+async fn reject_evaluation(
+    mut tx: Transaction<'_, Postgres>,
+    evaluation_id: Uuid,
+    error: AppError,
+) -> Result<CompleteEvaluationOutcome, AppError> {
+    finish_evaluation(&mut tx, evaluation_id, "failed", Some(&error.to_string())).await?;
+    tx.commit().await?;
+    Err(error)
 }
 
 async fn finish_evaluation(
@@ -712,6 +754,56 @@ pub(crate) async fn fail_execution_tx(
     channel_id: Uuid,
     reason: &str,
 ) -> Result<Option<ClaimUpdate>, sqlx::Error> {
+    fail_execution_with_policy_tx(
+        tx,
+        expected_claim,
+        msg_id,
+        bot_id,
+        channel_id,
+        reason,
+        MissingClaimPolicy::Reject,
+    )
+    .await
+}
+
+/// The reclaimer has already proven the abandoned message/run tuple. A broken
+/// claim reference must not strand that execution, or authorize changing a
+/// different claim. Ordinary delivery cancellation keeps the strict entrypoint.
+pub(crate) async fn fail_orphaned_execution_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    expected_claim: Option<Uuid>,
+    msg_id: Uuid,
+    bot_id: Uuid,
+    channel_id: Uuid,
+    reason: &str,
+) -> Result<Option<ClaimUpdate>, sqlx::Error> {
+    fail_execution_with_policy_tx(
+        tx,
+        expected_claim,
+        msg_id,
+        bot_id,
+        channel_id,
+        reason,
+        MissingClaimPolicy::ReclaimOrphan,
+    )
+    .await
+}
+
+#[derive(Clone, Copy)]
+enum MissingClaimPolicy {
+    Reject,
+    ReclaimOrphan,
+}
+
+async fn fail_execution_with_policy_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    expected_claim: Option<Uuid>,
+    msg_id: Uuid,
+    bot_id: Uuid,
+    channel_id: Uuid,
+    reason: &str,
+    policy: MissingClaimPolicy,
+) -> Result<Option<ClaimUpdate>, sqlx::Error> {
     let claims = sqlx::query!(
         "SELECT claim_id,bot_id,channel_id,status FROM task_claim_requests
          WHERE execution_msg_id=$1 ORDER BY claim_id FOR UPDATE",
@@ -720,7 +812,7 @@ pub(crate) async fn fail_execution_tx(
     .fetch_all(&mut **tx)
     .await?;
     let Some(claim) = claims.first() else {
-        return if expected_claim.is_some() {
+        return if expected_claim.is_some() && matches!(policy, MissingClaimPolicy::Reject) {
             Err(sqlx::Error::Protocol(
                 "task claim execution link is missing".into(),
             ))
@@ -733,6 +825,11 @@ pub(crate) async fn fail_execution_tx(
         || claim.bot_id != bot_id.to_string()
         || claim.channel_id != channel_id.to_string()
     {
+        if matches!(policy, MissingClaimPolicy::ReclaimOrphan) {
+            tracing::warn!(%msg_id, %bot_id, %channel_id, ?expected_claim,
+                "reclaiming abandoned execution without changing inconsistent task claims");
+            return Ok(None);
+        }
         return Err(sqlx::Error::Protocol(
             "inconsistent task claim execution link".into(),
         ));

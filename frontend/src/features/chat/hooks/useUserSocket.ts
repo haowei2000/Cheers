@@ -1,15 +1,16 @@
 import { useEffect, useRef } from "react";
 import { useAuthStore } from "@/stores/authStore";
+import { clientSessionGeneration } from "@/lib/clientSession";
 import { realtimeTransport } from "@/lib/realtimeTransport";
 
 /** Retains user events even when no channel is open. Shares authentication and
  * recovery with chat and Fleet; a new connection reconciles durable activity. */
 export function useUserSocket(onFrame: (type: string, data: unknown) => void) {
-  const token = useAuthStore((s) => s.token);
+  const session = useAuthStore((s) => s.token ? clientSessionGeneration() : null);
   const cbRef = useRef(onFrame);
   cbRef.current = onFrame;
   useEffect(() => {
-    if (!token) return;
+    if (session === null) return;
     return realtimeTransport().subscribeUser({
       onReady: () => cbRef.current("connected", undefined),
       onFrame: ({ type, data }) => {
@@ -18,5 +19,5 @@ export function useUserSocket(onFrame: (type: string, data: unknown) => void) {
         }
       },
     });
-  }, [token]);
+  }, [session]);
 }

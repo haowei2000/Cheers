@@ -1,9 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/stores/authStore";
-import { clearClientSessionData } from "./clientSession";
+import { buildWsUrl } from "@/api/client";
+import { createHookHarness } from "@/test/hookHarness";
+import { useChatRealtime } from "@/features/chat/hooks/useChatRealtime";
+import { useUserSocket } from "@/features/chat/hooks/useUserSocket";
+import { useFleetLive } from "@/features/fleet/useFleetLive";
+import { clearClientSessionData, clientSessionGeneration } from "./clientSession";
+import * as realtime from "./realtimeTransport";
 import { RealtimeTransport } from "./realtimeTransport";
 
-vi.mock("@/api/client", () => ({ buildWsUrl: (path: string) => `ws://gateway${path}` }));
+vi.mock("@/api/client", () => ({ buildWsUrl: vi.fn((path: string) => `ws://gateway${path}`) }));
+vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), ...await import("@/test/hookHarness") }));
+vi.mock("@/stores/authStore", async (original) => {
+  const module = await original<typeof import("@/stores/authStore")>();
+  const store = module.useAuthStore;
+  // The controlled harness renders manually. Read hook snapshots from the real
+  // store while retaining its actual actions, subscription and refresh logic.
+  const snapshot = <T>(selector: (state: ReturnType<typeof store.getState>) => T) => selector(store.getState());
+  return { ...module, useAuthStore: Object.assign(snapshot, store) };
+});
+
+function accessToken(sid = "login-1", serial = 1, sub = "user", iss = "cheers") {
+  const encoded = btoa(JSON.stringify({ sub, sid, iss, iat: serial })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `header.${encoded}.signature`;
+}
 
 class FakeSocket {
   static readonly CONNECTING = 0;
@@ -29,6 +49,7 @@ class FakeSocket {
 let transport: RealtimeTransport;
 let windowEvents: EventTarget;
 let documentEvents: EventTarget;
+const realRestoreSession = useAuthStore.getState().restoreSession;
 async function dial() {
   await vi.advanceTimersByTimeAsync(0);
   const socket = FakeSocket.instances.at(-1)!;
@@ -49,7 +70,10 @@ describe("shared authenticated realtime transport", () => {
     vi.stubGlobal("window", windowEvents);
     vi.stubGlobal("document", documentEvents);
     vi.stubGlobal("WebSocket", FakeSocket);
-    useAuthStore.setState({ token: "token-1", sessionExpired: false });
+    vi.mocked(buildWsUrl).mockImplementation((path) => `ws://gateway${path}`);
+    // Zustand copies actions into new state objects. Restoring a spy on the
+    // previous object alone cannot restore the action in the current state.
+    useAuthStore.setState({ user: null, token: "token-1", sessionExpired: false, restoreSession: realRestoreSession });
     transport = new RealtimeTransport();
   });
   afterEach(() => {
@@ -233,6 +257,119 @@ describe("shared authenticated realtime transport", () => {
     const second = await dial();
     expect(second.ofType("auth")).toEqual([{ type: "auth", token: "fresh-token" }]);
     expect(useAuthStore.getState().sessionExpired).toBe(false);
+  });
+
+  it("renews proactive refresh in place while chat, user and Fleet hooks retain their leases", async () => {
+    const initial = accessToken();
+    const refreshed = accessToken("login-1", 2);
+    useAuthStore.getState().setAuth({ user_id: "user", display_name: "User" }, initial);
+    vi.spyOn(realtime, "realtimeTransport").mockReturnValue(transport);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ access_token: refreshed, user_id: "user", role: "member" }), { status: 200 })));
+    const user = vi.fn();
+    const stream = vi.fn();
+    const ready = vi.fn();
+    const fleet = vi.fn();
+    const harness = createHookHarness();
+    const render = () => harness.render(() => {
+      useUserSocket(user);
+      useChatRealtime("A", { onMessage: vi.fn(), onStreamDelta: stream, onStreamDone: vi.fn(), onMessageDeleted: vi.fn(), onReady: ready });
+      useFleetLive(["A"], fleet);
+    });
+    try {
+      render();
+      const socket = await dial();
+      socket.frame({ type: "subscribed", channel_id: "A" });
+      await vi.advanceTimersByTimeAsync(400);
+      const generation = clientSessionGeneration();
+      const write = transport.request("fs.write", { path: "draft", content: "retained" }).then(
+        (data) => ({ fulfilled: true, data }),
+        (error: unknown) => ({ fulfilled: false, error }),
+      );
+      const request = socket.ofType("resource_req")[0];
+      channel(socket, "A", "message_stream");
+
+      // This is the same restore operation invoked by App's eight-minute timer.
+      expect(await useAuthStore.getState().restoreSession()).toBe(refreshed);
+      render();
+      expect(clientSessionGeneration()).toBe(generation);
+      expect(socket.readyState).toBe(FakeSocket.OPEN);
+      expect(socket.ofType("auth")).toEqual([{ type: "auth", token: initial }, { type: "auth", token: refreshed }]);
+      socket.frame({ type: "auth_ok", user_id: "user" });
+      channel(socket, "A", "message_stream");
+      socket.frame({ type: "resource_res", req_id: request.req_id, ok: true, data: { saved: true } });
+      await expect(write).resolves.toEqual({ fulfilled: true, data: { saved: true } });
+      await vi.advanceTimersByTimeAsync(400);
+      expect(FakeSocket.instances).toHaveLength(1);
+      expect(socket.ofType("subscribe").map((frame) => frame.channel_id)).toEqual(["A"]);
+      expect(socket.ofType("unsubscribe")).toHaveLength(0);
+      expect(socket.ofType("presence_focus")).toHaveLength(0);
+      expect(socket.ofType("resource_req")).toHaveLength(1);
+      expect(stream).toHaveBeenCalledTimes(2);
+      expect(ready).toHaveBeenCalledTimes(1);
+      expect(user.mock.calls.filter(([kind]) => kind === "connected")).toHaveLength(1);
+      expect(fleet).toHaveBeenCalledTimes(1);
+
+      useAuthStore.getState().logout();
+      render();
+      expect(socket.readyState).toBe(FakeSocket.CLOSED);
+      useAuthStore.getState().setAuth({ user_id: "user", display_name: "User" }, accessToken("login-2", 3));
+      render();
+      const next = await dial();
+      next.frame({ type: "subscribed", channel_id: "A" });
+      channel(next, "A", "message_stream");
+      expect(FakeSocket.instances).toHaveLength(2);
+      expect(ready).toHaveBeenCalledTimes(2);
+      expect(stream).toHaveBeenCalledTimes(3);
+    } finally { harness.unmount(); }
+  });
+
+  it.each([
+    ["another login", accessToken("login-2", 2)],
+    ["another user", accessToken("login-1", 2, "other-user")],
+    ["another issuer", accessToken("login-1", 2, "user", "other-gateway")],
+    ["an opaque credential", "opaque-token"],
+  ])("reconnects instead of renewing %s on the old connection", async (_label, token) => {
+    useAuthStore.getState().setAuth({ user_id: "user", display_name: "User" }, accessToken());
+    transport.subscribeChannels(["A"], { onFrame: vi.fn() });
+    const socket = await dial();
+    socket.frame({ type: "subscribed", channel_id: "A" });
+    useAuthStore.getState().setToken(token);
+    expect(socket.readyState).toBe(FakeSocket.CLOSED);
+    expect(socket.ofType("auth")).toHaveLength(1);
+    const next = await dial();
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(next.ofType("auth")).toEqual([{ type: "auth", token }]);
+    expect(next.ofType("subscribe").map((frame) => frame.channel_id)).toEqual(["A"]);
+  });
+
+  it("does not renew an old endpoint after the configured gateway changes", async () => {
+    useAuthStore.getState().setAuth({ user_id: "user", display_name: "User" }, accessToken());
+    transport.subscribeUser({ onFrame: vi.fn() });
+    const socket = await dial();
+    vi.mocked(buildWsUrl).mockReturnValue("wss://other-gateway/ws");
+    useAuthStore.getState().setToken(accessToken("login-1", 2));
+    expect(socket.readyState).toBe(FakeSocket.CLOSED);
+    expect(socket.ofType("auth")).toHaveLength(1);
+  });
+
+  it.each(["auth_err", "expired close"])("still closes and expires a rejected renewed login on %s", async (rejection) => {
+    useAuthStore.getState().setAuth({ user_id: "user", display_name: "User" }, accessToken());
+    const restore = vi.spyOn(useAuthStore.getState(), "restoreSession").mockResolvedValue(null);
+    transport.subscribeUser({ onFrame: vi.fn() });
+    const socket = await dial();
+    const write = transport.request("fs.write", { path: "draft" });
+    const rejected = expect(write).rejects.toMatchObject({ code: "DISCONNECTED" });
+    useAuthStore.getState().setToken(accessToken("login-1", 2));
+    if (rejection === "auth_err") socket.frame({ type: "auth_err" });
+    else socket.disconnect(4401);
+    await rejected;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().sessionExpired).toBe(true);
+    expect(socket.readyState).toBe(FakeSocket.CLOSED);
+    windowEvents.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(FakeSocket.instances).toHaveLength(1);
   });
 
   it("cannot expire or reconnect a new account when an old refresh finishes", async () => {

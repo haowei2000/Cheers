@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, code_hash FROM email_codes\n         WHERE email = $1 AND purpose = 'password_reset' AND used = FALSE\n         ORDER BY id FOR UPDATE",
+  "query": "SELECT id, code_hash FROM email_codes\n         WHERE email = $1 AND user_id = $2 AND purpose = 'password_reset' AND used = FALSE\n         ORDER BY id FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,7 @@
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
@@ -24,5 +25,5 @@
       true
     ]
   },
-  "hash": "9c14fb1d032a8d5fd8ecb9a36f4148cb06d91603ab530190faa53067fa3c72cc"
+  "hash": "3010a04493f05585e8b7b6cc74e159bee6d045490ed6da902958baa33a160cd8"
 }

@@ -39,6 +39,23 @@ const MAX_RETRIES = 10;
 const IDLE_CLOSE_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
+// These claims only decide whether to reuse a connection. The gateway still
+// verifies the new token and its live session before accepting in-band auth.
+function sameLogin(first: string | null, second: string | null): boolean {
+  const identity = (token: string | null) => {
+    if (!token || token.split(".").length !== 3) return null;
+    try {
+      const encoded = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const claims = JSON.parse(atob(encoded)) as { sub?: unknown; sid?: unknown; iss?: unknown };
+      if (typeof claims.sub !== "string" || !claims.sub || typeof claims.sid !== "string" || !claims.sid || typeof claims.iss !== "string" || !claims.iss) return null;
+      return claims;
+    } catch { return null; }
+  };
+  const previous = identity(first);
+  const next = identity(second);
+  return previous !== null && next !== null && previous.sub === next.sub && previous.sid === next.sid && previous.iss === next.iss;
+}
+
 /** One authenticated browser connection. Views own leases, never sockets.
  * Channel subscriptions are reference counted; resource requests keep their own
  * lease so background saves do not depend on a mounted chat view. Writes are
@@ -77,9 +94,16 @@ export class RealtimeTransport {
       // A valid explicit token change must not wait for an obsolete refresh
       // request, which may remain unresolved while the network is unavailable.
       this.refreshing = null;
+      const previousToken = this.token;
       this.token = state.token;
       this.blocked = !state.token;
       this.authFailed = false;
+      if (state.token && this.authenticated && this.socket?.url === buildWsUrl("/ws") && sameLogin(previousToken, state.token)) {
+        // The normal refresh timer rotates access for the same live login.
+        // Renew the server deadline without interrupting streams, subscriptions,
+        // or in-flight requests on this authenticated connection.
+        if (this.send({ type: "auth", token: state.token })) return;
+      }
       this.closeSocket();
       this.retryCount = 0;
       this.setStatus(state.token ? "reconnecting" : "offline");
@@ -274,8 +298,10 @@ export class RealtimeTransport {
 
   private handleFrame(frame: RealtimeFrame) {
     if (frame.type === "auth_ok") {
+      const alreadyAuthenticated = this.authenticated;
       this.authenticated = true;
       this.retryCount = 0;
+      if (alreadyAuthenticated) return;
       for (const id of this.channels.keys()) this.send({ type: "subscribe", channel_id: id });
       this.setStatus("online");
       this.waiters.release();

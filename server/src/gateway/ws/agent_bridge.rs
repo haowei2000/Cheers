@@ -1447,48 +1447,46 @@ pub(crate) async fn allowed_seers(
         return Vec::new();
     }
     let online_ids: Vec<String> = online.iter().map(Uuid::to_string).collect();
-    let rows = match sqlx::query!(
-        "SELECT cm.member_id, cm.role AS crole, u.role AS prole
-         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id
-         WHERE cm.channel_id = $1 AND cm.member_type = 'user' AND cm.member_id=ANY($2)",
-        channel_id.to_string(),
+    let bot_id = bot_id.to_string();
+    let channel_id = channel_id.to_string();
+    let members = match crate::domain::bot_event_policy::live_seers(
+        &state.db,
+        &bot_id,
+        &channel_id,
         &online_ids,
+        event_class,
     )
-    .fetch_all(&state.db)
     .await
     {
-        Ok(rows) => rows,
-        Err(_) => return Vec::new(),
-    };
-    let members: std::collections::HashMap<_, _> = rows
-        .into_iter()
-        .map(|row| (row.member_id, (row.crole, row.prole)))
-        .collect();
-    let mut policy = crate::domain::bot_event_policy::AccessBatch::new(&state.db);
-    let bot_s = bot_id.to_string();
-    let channel_s = channel_id.to_string();
-    let mut allowed = Vec::new();
-    for uid in online {
-        let user_s = uid.to_string();
-        let Some((role, platform_role)) = members.get(&user_s) else {
-            continue;
-        };
-        if policy
-            .may_see(
-                &bot_s,
-                &channel_s,
-                &user_s,
-                role,
-                matches!(platform_role.as_str(), "system_admin" | "admin"),
-                event_class,
+        Ok(members) => members,
+        Err(error) => {
+            tracing::warn!(%bot_id, %channel_id, %event_class, %error,
+                "live SEE lookup failed; fail-closed for ordinary viewers");
+            // The policy-independent admin bypass still requires current channel
+            // membership and DB role. A policy outage must never grant SEE by default.
+            match sqlx::query_scalar!(
+                "SELECT cm.member_id FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id
+                 WHERE cm.channel_id = $1 AND cm.member_type = 'user' AND cm.member_id = ANY($2)
+                   AND u.role IN ('system_admin', 'admin')",
+                &channel_id,
+                &online_ids,
             )
+            .fetch_all(&state.db)
             .await
-            .unwrap_or(false)
-        {
-            allowed.push(uid);
+            {
+                Ok(admins) => admins,
+                Err(error) => {
+                    tracing::warn!(%bot_id, %channel_id, %event_class, %error,
+                        "live SEE membership lookup failed; no recipients");
+                    Vec::new()
+                }
+            }
         }
-    }
-    allowed
+    };
+    members
+        .into_iter()
+        .filter_map(|id| id.parse().ok())
+        .collect()
 }
 
 async fn reject_terminal_frame(frame: &Value, socket: &mut WebSocket, error: TerminalError) {

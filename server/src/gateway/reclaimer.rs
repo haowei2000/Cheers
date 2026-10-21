@@ -145,7 +145,7 @@ async fn reclaim_placeholder(
     let expected_claim = stored_id("task_claim_id")?;
     // Legacy placeholders can lack a run or metadata. Only actual persisted
     // execution links may settle a claim; no current primary/session fallback.
-    let claim_update = crate::domain::task_claims::fail_execution_tx(
+    let claim_update = crate::domain::task_claims::fail_orphaned_execution_tx(
         &mut tx,
         expected_claim,
         msg_id,

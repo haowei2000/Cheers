@@ -13,12 +13,27 @@ pub async fn reset_password_with_code(
     new_password_hash: &str,
 ) -> Result<super::auth_sessions::RevokedSessions, AppError> {
     let mut tx = db.begin().await?;
+    // This is only a locator. Never choose a user by an ambiguous mailbox, or
+    // reinterpret proof issued to an account that no longer owns the address.
+    let owners = sqlx::query_scalar!(
+        "SELECT DISTINCT user_id FROM email_codes
+         WHERE email = $1 AND code_hash = $2 AND purpose = 'password_reset'
+           AND used = FALSE AND expires_at > clock_timestamp()",
+        email,
+        code_hash,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let [Some(user_id)] = owners.as_slice() else {
+        return Err(AppError::BadRequest("invalid or expired code".into()));
+    };
     // Session issuance holds SHARE on this same user until its insert commits.
     // NO KEY UPDATE also remains compatible with credential/security-event FKs.
     let user_id = sqlx::query_scalar!(
         "SELECT user_id FROM users
-         WHERE lower(email) = $1 AND is_deleted = FALSE
+         WHERE user_id = $1 AND lower(email) = $2 AND is_deleted = FALSE
          FOR NO KEY UPDATE",
+        user_id,
         email,
     )
     .fetch_optional(&mut *tx)
@@ -26,9 +41,10 @@ pub async fn reset_password_with_code(
     .ok_or_else(|| AppError::BadRequest("invalid or expired code".into()))?;
     let codes = sqlx::query!(
         "SELECT id, code_hash FROM email_codes
-         WHERE email = $1 AND purpose = 'password_reset' AND used = FALSE
+         WHERE email = $1 AND user_id = $2 AND purpose = 'password_reset' AND used = FALSE
          ORDER BY id FOR UPDATE",
         email,
+        &user_id,
     )
     .fetch_all(&mut *tx)
     .await?;
@@ -53,9 +69,10 @@ pub async fn reset_password_with_code(
     let consumed = sqlx::query!(
         "UPDATE email_codes SET used = TRUE
          WHERE email = $1 AND code_hash = $2 AND purpose = 'password_reset'
-           AND used = FALSE AND expires_at > clock_timestamp()",
+           AND user_id = $3 AND used = FALSE AND expires_at > clock_timestamp()",
         email,
         code_hash,
+        &user_id,
     )
     .execute(&mut *tx)
     .await?;
@@ -64,8 +81,8 @@ pub async fn reset_password_with_code(
     }
     sqlx::query!(
         "UPDATE email_codes SET used = TRUE
-         WHERE email = $1 AND purpose = 'password_reset' AND used = FALSE",
-        email,
+         WHERE user_id = $1 AND purpose = 'password_reset' AND used = FALSE",
+        &user_id,
     )
     .execute(&mut *tx)
     .await?;
