@@ -32,6 +32,14 @@ impl Drop for TestGateway {
     }
 }
 impl TestGateway {
+    /// Seed a real hashed email code without depending on an SMTP service.
+    #[allow(dead_code)]
+    pub fn email_code_hash(&self, email: &str, purpose: &str, code: &str) -> String {
+        let private = std::fs::read_to_string(self.directory.join("private.pem")).unwrap();
+        let secret = std::env::var("SECRET_STORE_KEY").ok();
+        server::infra::crypto::hash_email_code(secret.as_deref(), &private, email, purpose, code)
+    }
+
     /// Re-sign only the time claims of a real login token with this fixture's
     /// temporary key. Account, session, issuer and revocation version stay real.
     #[allow(dead_code)]

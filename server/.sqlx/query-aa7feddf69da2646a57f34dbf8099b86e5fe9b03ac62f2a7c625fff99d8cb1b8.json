@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT token_version, is_suspended FROM users\n         WHERE user_id = $1 AND is_deleted = FALSE FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_suspended",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "aa7feddf69da2646a57f34dbf8099b86e5fe9b03ac62f2a7c625fff99d8cb1b8"
+}

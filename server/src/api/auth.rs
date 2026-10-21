@@ -1177,7 +1177,7 @@ pub async fn reset_password(
            AND used = FALSE AND expires_at > NOW()
          LIMIT 1",
         &email,
-        code_hash,
+        &code_hash,
     )
     .fetch_optional(&state.db)
     .await?;
@@ -1186,43 +1186,24 @@ pub async fn reset_password(
         return Err(AppError::BadRequest("invalid or expired code".into()));
     }
 
-    let user = sqlx::query!(
-        "SELECT user_id FROM users WHERE lower(email) = $1 AND is_deleted = FALSE LIMIT 1",
-        &email,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    let user_id: String = user.user_id.clone();
-
     let hash = crate::infra::crypto::hash_password(body.new_password.clone())
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
-    sqlx::query!(
-        "UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE user_id = $1",
-        &user_id,
-        &hash,
-    )
-    .execute(&state.db)
-    .await?;
-    // Revocation must reach live sockets too (a reset usually means the old
-    // credential is considered compromised).
-    if let Ok(uid) = user_id.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
-    }
+    let revoked = match auth::reset_password_with_code(&state.db, &email, &code_hash, &hash).await {
+        Ok(revoked) => revoked,
+        Err(error) => {
+            if matches!(&error, AppError::BadRequest(_)) {
+                limiter.record_failure(&key);
+            }
+            return Err(error);
+        }
+    };
+    apply_session_revocations(&state, &revoked);
+    let user_id = revoked.user_id.to_string();
     // …and push subscriptions: a compromised-credential reset must silence
     // every previously-enrolled device.
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &user_id).await;
     crate::notify::revoke_user_devices(&state.db, &user_id).await;
-    // Burn this + any other live reset codes for the email.
-    sqlx::query!(
-        "UPDATE email_codes SET used = TRUE
-         WHERE email = $1 AND purpose = 'password_reset' AND used = FALSE",
-        &email,
-    )
-    .execute(&state.db)
-    .await?;
-
     Ok(Json(json!({ "ok": true })))
 }
 
