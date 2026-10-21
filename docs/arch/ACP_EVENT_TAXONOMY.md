@@ -143,6 +143,24 @@ affected recipients or rows. Message Trace queries bind both the message ID and
 the authorized route's channel ID. These checks govern each read/broadcast;
 later changes cannot retract an event already delivered.
 
+Channel removal and self-leave share `domain::channel_memberships`: membership,
+pending invites, approval delegations and that channel's per-user event rules
+are removed in one transaction. A cleanup or commit failure preserves the
+previous authority. After a successful commit, the HTTP adapter revokes live
+subscriptions before awaiting notification resolution or presence updates.
+This does not retract messages already delivered or make post-commit fanout
+effects durable across a process crash.
+
+Membership removal, leave and role changes serialize on a channel-scoped
+transaction advisory lock and read caller/target authority after acquiring it.
+Workspace detachment, account deletion and integration projection use the same
+guard when changing existing memberships; invite acceptance also participates
+so an in-flight acceptance cannot reuse an invite consumed by removal. Commands
+affecting multiple channels acquire guards in advisory-key order, after any
+workspace parent locks. The guard is separate from the channel row used to
+allocate message sequences, avoiding a lock-order inversion with message/task
+authorization.
+
 > Net: the permission system reduces to **(a) the connector's event-type allow-list** +
 > **(b) Cheers's two (user × event) matrices (initiate / see+respond)**. `request_permission`
 > is just the one agent event that needs a user response, so "approvers" is the

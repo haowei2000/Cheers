@@ -14,6 +14,7 @@ pub mod bot_status_scheduler;
 pub mod catalog;
 pub mod chains;
 pub mod channel_features;
+pub mod channel_memberships;
 pub mod channel_profiles;
 pub mod channel_seq;
 pub mod commands_store;

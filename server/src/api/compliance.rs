@@ -82,6 +82,53 @@ pub async fn delete_account(
 pub(crate) async fn delete_user_data(state: &AppState, user_id: &str) -> Result<(), AppError> {
     let mut tx = state.db.begin().await?;
 
+    // Workspace detach takes parent rows before channel guards. Keep that same
+    // order before any ownership transfer or authority cleanup, so a concurrent
+    // channel leave cannot count an owner that this transaction then removes.
+    let workspace_ids = sqlx::query_scalar!(
+        "SELECT w.workspace_id FROM workspaces w
+         WHERE EXISTS (
+             SELECT 1 FROM workspace_memberships wm
+             WHERE wm.workspace_id = w.workspace_id AND wm.user_id = $1
+         ) OR EXISTS (
+             SELECT 1 FROM channels c
+             JOIN channel_memberships cm ON cm.channel_id = c.channel_id
+             WHERE c.workspace_id = w.workspace_id
+               AND cm.member_id = $1 AND cm.member_type = 'user'
+         ) ORDER BY w.workspace_id FOR UPDATE OF w",
+        user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let channel_ids = sqlx::query_scalar!(
+        "SELECT c.channel_id FROM channels c
+         WHERE c.workspace_id = ANY($1)
+            OR EXISTS (
+                SELECT 1 FROM channel_memberships cm
+                WHERE cm.channel_id = c.channel_id
+                  AND cm.member_id = $2 AND cm.member_type = 'user'
+            ) OR EXISTS (
+                SELECT 1 FROM channel_invites ci
+                WHERE ci.channel_id = c.channel_id
+                  AND (ci.user_id = $2 OR ci.invited_by = $2)
+            ) OR EXISTS (
+                SELECT 1 FROM approval_delegations ad
+                WHERE ad.channel_id = c.channel_id
+                  AND (ad.user_id = $2 OR ad.granted_by = $2)
+            ) OR EXISTS (
+                SELECT 1 FROM bot_event_access bea
+                WHERE bea.channel_id = c.channel_id
+                  AND bea.subject_kind = 'user' AND bea.subject_id = $2
+            ) ORDER BY hashtext(c.channel_id),c.channel_id",
+        &workspace_ids,
+        user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for channel_id in &channel_ids {
+        crate::domain::channel_memberships::lock_channel(&mut tx, channel_id).await?;
+    }
+
     // Transfer each owned workspace to the oldest active admin/member. If there
     // is nobody to receive it, archive it instead of leaving an active orphan.
     let workspaces = sqlx::query!(
