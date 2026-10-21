@@ -29,9 +29,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
      *  root composable then swaps to the login screen. */
     fun signOut() {
         if (_state.value.signingOut) return
+        val identity = _state.value.session?.identity ?: return
         _state.update { it.copy(signingOut = true) }
         viewModelScope.launch {
-            container.authRepository.logout()
+            container.authRepository.logout(identity)
         }
     }
 

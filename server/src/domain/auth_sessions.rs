@@ -28,6 +28,7 @@ pub enum ClientType {
     Web,
     Ios,
     Macos,
+    Android,
 }
 
 impl ClientType {
@@ -36,8 +37,9 @@ impl ClientType {
             "web" => Ok(Self::Web),
             "ios" => Ok(Self::Ios),
             "macos" => Ok(Self::Macos),
+            "android" => Ok(Self::Android),
             _ => Err(AppError::BadRequest(
-                "client must be web, ios, or macos".into(),
+                "client must be web, ios, macos, or android".into(),
             )),
         }
     }
@@ -47,6 +49,7 @@ impl ClientType {
             Self::Web => "web",
             Self::Ios => "ios",
             Self::Macos => "macos",
+            Self::Android => "android",
         }
     }
 }
@@ -830,7 +833,11 @@ mod tests {
     fn client_type_is_fail_closed() {
         assert_eq!(ClientType::parse(None).unwrap(), ClientType::Web);
         assert_eq!(ClientType::parse(Some("ios")).unwrap(), ClientType::Ios);
-        assert!(ClientType::parse(Some("android")).is_err());
+        assert_eq!(
+            ClientType::parse(Some("android")).unwrap(),
+            ClientType::Android
+        );
+        assert!(ClientType::parse(Some("unknown")).is_err());
     }
 
     #[test]

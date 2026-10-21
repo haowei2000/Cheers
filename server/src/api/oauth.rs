@@ -187,9 +187,9 @@ fn return_uri(state: &AppState, client: auth_sessions::ClientType) -> Result<Str
             .oauth_web_return_url
             .clone()
             .ok_or_else(|| AppError::ServiceUnavailable("web OAuth is not configured".into())),
-        auth_sessions::ClientType::Macos | auth_sessions::ClientType::Ios => {
-            Ok("cheers://auth/callback".into())
-        }
+        auth_sessions::ClientType::Macos
+        | auth_sessions::ClientType::Ios
+        | auth_sessions::ClientType::Android => Ok("cheers://auth/callback".into()),
     }
 }
 
