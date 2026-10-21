@@ -17,6 +17,7 @@ type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 struct Bot {
     id: Uuid,
+    host: Uuid,
     credential: String,
 }
 
@@ -63,6 +64,7 @@ impl Fixture {
             channel: Uuid::nil(),
             bot: Bot {
                 id: Uuid::nil(),
+                host: Uuid::nil(),
                 credential: String::new(),
             },
         };
@@ -95,6 +97,40 @@ impl Fixture {
         body
     }
 
+    async fn mcp_post(&self, arguments: Value) -> Value {
+        // Exchange the host credential against the current process's keys, so
+        // the same authenticated command can be retried after a gateway restart.
+        let metadata: Value = self
+            .client
+            .get(format!(
+                "{}/.well-known/oauth-protected-resource/mcp",
+                self.base
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let response = self.client.post(format!("{}/oauth/token", self.base)).json(&json!({
+            "grant_type":"client_credentials","client_id":self.bot.host,"client_secret":self.bot.credential,
+            "resource":metadata["resource"],"scope":"cheers:read cheers:messages:write","cheers_channel":self.channel,
+        })).send().await.unwrap();
+        let status = response.status();
+        let token: Value = response.json().await.unwrap();
+        assert!(status.is_success(), "{status}: {token}");
+        let response = self.client.post(format!("{}/mcp", self.base))
+            .bearer_auth(token["access_token"].as_str().unwrap())
+            .header("MCP-Protocol-Version", "2025-11-25").header("Accept", "application/json, text/event-stream")
+            .json(&json!({"jsonrpc":"2.0","id":Uuid::new_v4(),"method":"tools/call","params":{"name":"post_message","arguments":arguments}}))
+            .send().await.unwrap();
+        let status = response.status();
+        let rpc: Value = response.json().await.unwrap();
+        assert!(status.is_success(), "{status}: {rpc}");
+        assert_eq!(rpc["result"]["isError"], false, "{rpc}");
+        rpc["result"]["structuredContent"].clone()
+    }
+
     async fn seed_bot(&self, db: &PgPool) -> Bot {
         let id = Uuid::new_v4();
         let host = Uuid::new_v4();
@@ -111,7 +147,11 @@ impl Fixture {
             .bind(host.to_string()).bind(id.to_string())
             .bind(server::infra::crypto::hash_host_credential(&credential))
             .execute(db).await.unwrap();
-        Bot { id, credential }
+        Bot {
+            id,
+            host,
+            credential,
+        }
     }
 
     async fn socket(&self, bot: &Bot, stream: &str) -> Socket {
@@ -1230,6 +1270,164 @@ fn canonical_frame(value: &Value) -> String {
         ),
         _ => value.to_string(),
     }
+}
+
+#[sqlx::test]
+async fn mcp_and_bridge_sends_share_one_idempotent_command_and_child(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let child = fixture.seed_bot(&db).await;
+    let mut author = fixture.bridge(true).await;
+    let mut control = fixture.socket(&child, "control").await;
+    let _data = fixture.socket(&child, "data").await;
+    ready(&mut control, true).await;
+    let created = fixture
+        .mcp_post(
+            json!({"channel_id":fixture.channel,"text":"One command across transports",
+        "mention_ids":[child.id],"idempotency_key":"bridge.send:shared-mcp-send"}),
+        )
+        .await;
+    let task = next_type(&mut control, "task").await;
+    assert_eq!(task["trigger_msg_id"], created["msg_id"]);
+    send(&mut author.data, json!({"type":"send","v":1,"client_msg_id":"shared-mcp-send",
+        "channel_id":fixture.channel,"content":"One command across transports","mention_ids":[child.id]})).await;
+    let replay = next_type(&mut author.data, "send_ack").await;
+    assert_eq!(replay["ok"], true, "{replay}");
+    assert_eq!(replay["message_id"], created["msg_id"]);
+    accept(&mut control, acceptance(&task, Uuid::new_v4()), "granted").await;
+    let parents: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM messages WHERE channel_id=$1 AND sender_id=$2 AND is_partial=FALSE",
+    )
+    .bind(fixture.channel.to_string())
+    .bind(fixture.bot.id.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(parents, 1);
+    let children: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bot_runs WHERE trigger_msg_id=$1")
+        .bind(created["msg_id"].as_str().unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(children, 1);
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM acp_event_log WHERE channel_id=$1 AND name='dispatch'",
+    )
+    .bind(fixture.channel.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(audits, 1);
+}
+
+async fn proactive_child_crash(db: PgPool, resource_post: bool) {
+    let mut fixture = Fixture::start(&db).await;
+    let child = fixture.seed_bot(&db).await;
+    let mut author = fixture.bridge(true).await;
+    let mut control = fixture.socket(&child, "control").await;
+    let data = fixture.socket(&child, "data").await;
+    ready(&mut control, true).await;
+    let mut blocker = db.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(104733,86)")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::query(&format!("CREATE FUNCTION pause_proactive_preparation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.bot_id='{}' AND OLD.task_frame IS NULL AND NEW.task_frame IS NOT NULL THEN PERFORM pg_advisory_xact_lock(104733,86); END IF; RETURN NEW; END $$", child.id))
+        .execute(&db).await.unwrap();
+    sqlx::query("CREATE TRIGGER pause_proactive_preparation BEFORE UPDATE ON bot_runs FOR EACH ROW EXECUTE FUNCTION pause_proactive_preparation()")
+        .execute(&db).await.unwrap();
+    let arguments = json!({"channel_id":fixture.channel,"text":"Durable proactive handoff","mention_ids":[child.id],"idempotency_key":"proactive-resource-key"});
+    let frame = json!({"type":"send","v":1,"client_msg_id":"proactive-send-key","channel_id":fixture.channel,"content":"Durable proactive handoff","mention_ids":[child.id]});
+    if resource_post {
+        fixture.mcp_post(arguments.clone()).await;
+    } else {
+        send(&mut author.data, frame.clone()).await;
+    }
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=104733 AND objid=86 AND NOT granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database()))")
+                .fetch_one(&db).await.unwrap();
+            if waiting { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("the real producer must commit its child before preparation");
+    let before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM bot_runs r WHERE channel_id=$1 AND bot_id=$2")
+            .bind(fixture.channel.to_string())
+            .bind(child.id.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(before["dispatch_input"]["actor"]["type"], "bot_message");
+    assert!(before["dispatch_input"]["actor"]
+        .get("parent_execution_id")
+        .is_none());
+    let source = before["trigger_msg_id"].as_str().unwrap().to_string();
+    let proof: (Option<String>, i64) = sqlx::query_as("SELECT task_id,(SELECT COUNT(*) FROM bot_runs WHERE placeholder_msg_id=m.msg_id) FROM messages m WHERE msg_id=$1")
+        .bind(&source).fetch_one(&db).await.unwrap();
+    assert_eq!(proof, (None, 0));
+    drop(fixture.gateway.take());
+    drop(author);
+    drop(control);
+    drop(data);
+    blocker.rollback().await.unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        sqlx::query("DROP TRIGGER pause_proactive_preparation ON bot_runs").execute(&db),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    sqlx::query("DROP FUNCTION pause_proactive_preparation()")
+        .execute(&db)
+        .await
+        .unwrap();
+    age_unaccepted_intent(
+        &db,
+        &json!({"task_id":before["task_id"],"placeholder_msg_id":before["placeholder_msg_id"]}),
+    )
+    .await;
+    fixture.restart(&db).await;
+    let mut recovered = fixture.recovering_bot_bridge(&child).await;
+    let task = next_type(&mut recovered.control, "task").await;
+    assert_eq!(task["task_id"], before["task_id"]);
+    assert_eq!(task["placeholder_msg_id"], before["placeholder_msg_id"]);
+    assert_eq!(task["trigger_message"]["text"], "Durable proactive handoff");
+    accept(
+        &mut recovered.control,
+        acceptance(&task, Uuid::new_v4()),
+        "granted",
+    )
+    .await;
+    if resource_post {
+        let replay = fixture.mcp_post(arguments).await;
+        assert_eq!(replay["idempotent_replay"], true);
+        assert_eq!(replay["msg_id"], source);
+    } else {
+        let mut reconnected = fixture.recovering_bridge().await;
+        send(&mut reconnected.data, frame).await;
+        let replay = next_type(&mut reconnected.data, "send_ack").await;
+        assert_eq!(replay["ok"], true, "{replay}");
+        assert_eq!(replay["message_id"], source);
+    }
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bot_runs WHERE trigger_msg_id=$1")
+        .bind(&source)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        count, 1,
+        "replaying the producer cannot admit another child"
+    );
+}
+
+#[sqlx::test]
+async fn a_proactive_send_child_recovers_after_real_process_loss(db: PgPool) {
+    proactive_child_crash(db, false).await;
+}
+
+#[sqlx::test]
+async fn a_resource_post_child_recovers_after_real_process_loss(db: PgPool) {
+    proactive_child_crash(db, true).await;
 }
 
 #[sqlx::test]

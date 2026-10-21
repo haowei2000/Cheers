@@ -1,35 +1,22 @@
-//! Transport-neutral resource dispatch — `resource::dispatch` **plus the side effects
-//! it structurally cannot perform**.
+//! Transport-neutral resource dispatch and postcommit publication.
 //!
-//! [`resource::dispatch`] is deliberately db-only: it takes a `PgPool` and nothing else.
-//! That keeps the resource layer transport-agnostic and easy to test, but it also means
-//! a successful write there is only *half* the operation. Creating a message must also
-//! push the live `message` frame to the channel and trigger any @mentioned bots; leaving
-//! a channel must re-broadcast presence; a workspace write must nudge open Desk views.
-//! All of those need `AppState` (fanout / stream_registry / bot_locator), which
-//! `dispatch` does not have.
-//!
-//! Historically each of those effects was patched in at the bot-bridge WS boundary, so
-//! the rule "creating a message ⇒ broadcast + trigger" existed only at that one call
-//! site. That is a trap for the next transport: a Streamable-HTTP MCP endpoint calling
-//! `resource::dispatch` directly would persist the row, return 200, and **silently** skip
-//! the broadcast and the bot trigger — no error, just a channel that never updates and an
-//! @mentioned bot that never wakes. Bugs of omission don't announce themselves.
-//!
-//! [`dispatch_with_effects`] is the seam that closes it: **every** transport routes
-//! resource frames through here and gets the complete semantics of each verb. Adding a
-//! new effect means adding it once, here, rather than in every boundary.
+//! Message creation commits its dispatch intents with the message and receipt.
+//! [`resource::dispatch`] receives the live locator for readiness admission; it
+//! cannot lose downstream work if publication is interrupted. This layer shares
+//! browser fan-out, notification and immediate delivery effects across transports.
+//! Receipt replay does not repeat those effects, and the durable worker can
+//! deliver committed intents independently of this publication path.
 //!
 //! `workspace.read` is an alternate dispatch rather than a post-dispatch effect.
-//! It is brokered here as well, so Agent Bridge and HTTP MCP share the same live
-//! owner-Connector routing and authorization semantics.
+//! Bot MCP workspace reads are brokered here through the owner's live Connector,
+//! with the requesting bot's resource authorization.
 
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
     app_state::AppState,
-    gateway::{realtime::frame::WireFrame, stream::broadcast_and_trigger_created_message},
+    gateway::{realtime::frame::WireFrame, stream::broadcast_created_message},
     resource::{self, Principal},
 };
 
@@ -43,8 +30,8 @@ fn direct_message_notification_payload(channel_id: Uuid, sender_name: &str) -> V
     })
 }
 
-/// Dispatch a `resource_req` frame and apply the post-write effects the db-only
-/// resource layer can't. Returns the `resource_res` frame verbatim from
+/// Dispatch a `resource_req` frame and apply post-write publication. Returns the
+/// `resource_res` frame verbatim from
 /// [`resource::dispatch`] — effects never change the reply, and never fail it.
 pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame: &Value) -> Value {
     if frame.get("resource").and_then(Value::as_str) == Some("workspace.read") {
@@ -52,9 +39,12 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
     }
     let resp = match principal.principal_type {
         resource::PrincipalType::User => {
-            resource::dispatch_user(&state.db, principal.principal_id, frame).await
+            resource::dispatch_user(&state.db, principal.principal_id, frame, &state.bot_locator)
+                .await
         }
-        resource::PrincipalType::Bot => resource::dispatch(&state.db, principal, frame).await,
+        resource::PrincipalType::Bot => {
+            resource::dispatch(&state.db, principal, frame, &state.bot_locator).await
+        }
     };
 
     // Effects run only for a write that actually landed.
@@ -302,9 +292,9 @@ fn workspace_error(error: &crate::errors::AppError) -> (&'static str, String) {
     }
 }
 
-/// Broadcast the new message and trigger any @mentioned bots — **off the caller's
-/// critical path**. The row is already committed, so the `resource_res` returns without
-/// waiting on a Redis PUBLISH or the next bot@bot hop. Ordering is safe: the frontend
+/// Publish a committed message and accelerate its already-admitted intents off
+/// the caller's critical path. The `resource_res` returns without waiting on
+/// browser fan-out or the next bot@bot hop. Ordering is safe: the frontend
 /// re-sorts incoming `message` frames by `channel_seq` (`ChannelView.upsertMessage`), so
 /// a broadcast that lands after the reply cannot misorder the channel.
 fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created: Value) {
@@ -316,18 +306,10 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
     let state_for_apns = state.clone();
     tokio::spawn(async move {
         let started = std::time::Instant::now();
-        let _ = broadcast_and_trigger_created_message(
-            &registry,
-            &fanout,
-            &db,
-            &bot_locator,
-            author_bot_id,
-            &created,
-        )
-        .await;
+        let _ = broadcast_created_message(&registry, &fanout, &db, &bot_locator, &created).await;
         tracing::debug!(
             elapsed_ms = started.elapsed().as_millis() as u64,
-            "post_message broadcast+trigger complete (off critical path)"
+            "post_message publication complete (off critical path)"
         );
 
         // Out-of-app nudge to the @mentioned humans (kind=mention) — bots

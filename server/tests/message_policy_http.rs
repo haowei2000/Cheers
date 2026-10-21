@@ -270,6 +270,8 @@ async fn scheduled_dm_rechecks_blocking_at_execution(db: PgPool) {
 
 #[sqlx::test]
 async fn consent_follows_resolved_names_replies_and_default_bot_targets(db: PgPool) {
+    let resource_locator: std::sync::Arc<dyn server::gateway::registry::BotLocator> =
+        server::gateway::registry::InProcessBotLocator::new();
     let (_gateway, base, client, token, _, channel) = setup(&db).await;
     let bot = Uuid::new_v4();
     let name = format!("external-{bot}");
@@ -347,7 +349,7 @@ async fn consent_follows_resolved_names_replies_and_default_bot_targets(db: PgPo
         .execute(&db)
         .await
         .unwrap();
-    let bot_message = server::resource::dispatch(&db, server::resource::Principal::bot(bot), &json!({"req_id":"bot-message","resource":"channel.messages.create","params":{"channel_id":channel,"content":"reply to me"}})).await;
+    let bot_message = server::resource::dispatch(&db, server::resource::Principal::bot(bot), &json!({"req_id":"bot-message","resource":"channel.messages.create","params":{"channel_id":channel,"content":"reply to me"}}), &resource_locator).await;
     assert_eq!(bot_message["ok"], true, "{bot_message}");
     let (status, error) = post(
         &client,

@@ -1,7 +1,7 @@
 //! Bot@Bot 触发与取消。
 //!
-//! Execution-owned Done admits child turns in the parent receipt transaction.
-//! Proactive/resource/legacy bot replies retain their direct postcommit path.
+//! Done and proactive bot posts admit children in their source transaction.
+//! Legacy/manual completions retain their direct postcommit path.
 //! 取消接口（cancel / resolve_chain_id_for_message）保留供已有 cancel-chain API 使用。
 use std::{collections::HashSet, sync::Arc};
 
@@ -17,7 +17,7 @@ use crate::{
     },
     errors::AppError,
     gateway::{
-        dispatch_intents::{self, BotIntent},
+        dispatch_intents::{self, BotIntent, BotMessageIntent},
         dispatcher::{self, DispatchParams},
         realtime::fanout::Fanout,
         registry::BotLocator,
@@ -27,6 +27,12 @@ use crate::{
 
 /// bot@bot 触发的最大深度，超出后静默停止。
 pub const MAX_BOT_REPLY_DEPTH: i32 = 5;
+
+#[derive(Clone, Copy)]
+enum ChildSource {
+    Execution { task_id: Uuid, execution_id: Uuid },
+    Message,
+}
 
 /// Admit execution-owned Done mentions in the parent's finalize/receipt
 /// transaction. Ready targets were snapshotted before acquiring this transaction;
@@ -44,6 +50,88 @@ pub async fn enqueue_terminal_children(
     parent_task_id: Uuid,
     parent_execution_id: Uuid,
     ready_targets: &[Uuid],
+) -> Result<usize, AppError> {
+    enqueue_children(
+        tx,
+        channel_id,
+        parent_msg_id,
+        parent_seq,
+        parent_depth,
+        author_bot_id,
+        mentions,
+        chain_id,
+        ChildSource::Execution {
+            task_id: parent_task_id,
+            execution_id: parent_execution_id,
+        },
+        ready_targets,
+        None,
+    )
+    .await
+}
+
+/// Proactive source rows and their dispatch intents share their creator's
+/// transaction. Inherit the author's existing chain without inventing an
+/// execution identity; current source/target authority is checked below.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn enqueue_message_children(
+    tx: &mut Transaction<'_, Postgres>,
+    channel_id: Uuid,
+    msg_id: Uuid,
+    seq: i64,
+    author_bot_id: Uuid,
+    mentions: &[Mention],
+    ready_targets: &[Uuid],
+    admission_key: Option<&str>,
+) -> Result<usize, AppError> {
+    if !mentions.iter().any(|mention| {
+        mention.member_type == MemberType::Bot
+            && mention.member_id != author_bot_id
+            && ready_targets.contains(&mention.member_id)
+    }) {
+        return Ok(0);
+    }
+    let chain =
+        crate::domain::task_chains::chain_of_active_bot_task_tx(tx, channel_id, author_bot_id)
+            .await?;
+    if let Some(chain) = &chain {
+        sqlx::query!(
+            "UPDATE messages SET chain_id=$2 WHERE msg_id=$1 AND chain_id IS NULL",
+            msg_id.to_string(),
+            chain,
+        )
+        .execute(&mut **tx)
+        .await?;
+    }
+    enqueue_children(
+        tx,
+        channel_id,
+        msg_id,
+        seq,
+        0,
+        author_bot_id,
+        mentions,
+        chain.as_deref(),
+        ChildSource::Message,
+        ready_targets,
+        admission_key,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn enqueue_children(
+    tx: &mut Transaction<'_, Postgres>,
+    channel_id: Uuid,
+    parent_msg_id: Uuid,
+    parent_seq: i64,
+    parent_depth: i32,
+    author_bot_id: Uuid,
+    mentions: &[Mention],
+    chain_id: Option<&str>,
+    source_proof: ChildSource,
+    ready_targets: &[Uuid],
+    admission_key: Option<&str>,
 ) -> Result<usize, AppError> {
     if parent_depth >= MAX_BOT_REPLY_DEPTH {
         return Ok(0);
@@ -69,13 +157,26 @@ pub async fn enqueue_terminal_children(
         }
     }
     let source = sqlx::query!(
-        "SELECT content,created_at,msg_type,in_reply_to_msg_id,file_ids,context_bundle,content_data,chain_id
+        "SELECT content,created_at,msg_type,in_reply_to_msg_id,file_ids,context_bundle,content_data,chain_id,task_id
          FROM messages WHERE msg_id=$1 AND channel_id=$2 AND sender_id=$3
            AND sender_type='bot' AND is_partial=FALSE AND is_deleted=FALSE FOR SHARE",
         parent_msg_id.to_string(), channel_id.to_string(), author_bot_id.to_string(),
     ).fetch_optional(&mut **tx).await?.ok_or_else(|| AppError::Conflict("parent result is not finalized by this bot".into()))?;
     if source.chain_id.as_deref() != chain_id {
         return Err(AppError::Conflict("parent task chain changed".into()));
+    }
+    match source_proof {
+        ChildSource::Execution { task_id, .. }
+            if source.task_id.as_deref() != Some(task_id.to_string().as_str()) =>
+        {
+            return Err(AppError::Conflict("parent result execution changed".into()));
+        }
+        ChildSource::Message if source.task_id.is_some() => {
+            return Err(AppError::Conflict(
+                "proactive source belongs to a task".into(),
+            ));
+        }
+        _ => {}
     }
     let author_name = sqlx::query_scalar!(
         "SELECT COALESCE(NULLIF(display_name,''),username) AS \"name!\" FROM bot_accounts WHERE bot_id=$1",
@@ -151,9 +252,12 @@ pub async fn enqueue_terminal_children(
             }
         };
         let placeholder = dispatcher::derive_placeholder_id(parent_msg_id, bot_id);
+        let budget_event = admission_key
+            .map(|key| format!("message:{key}:{bot_id}"))
+            .unwrap_or_else(|| placeholder.to_string());
         if decision.allow
             && !crate::infra::ratelimit::bot_dispatch_limiter()
-                .try_hit_once(&channel_id.to_string(), &placeholder.to_string())
+                .try_hit_once(&channel_id.to_string(), &budget_event)
         {
             decision = DispatchDecision {
                 allow: false,
@@ -185,10 +289,14 @@ pub async fn enqueue_terminal_children(
         }
         if decision.allow {
             if effective_chain.is_none() {
+                let root_task_id = match source_proof {
+                    ChildSource::Execution { task_id, .. } => task_id,
+                    ChildSource::Message => parent_msg_id,
+                };
                 let chain = crate::domain::task_chains::start_chain_tx(
                     tx,
                     channel_id,
-                    parent_task_id,
+                    root_task_id,
                     parent_msg_id,
                 )
                 .await?
@@ -200,21 +308,27 @@ pub async fn enqueue_terminal_children(
                 )
                 .execute(&mut **tx)
                 .await?;
-                let updated = sqlx::query!(
-                    "UPDATE bot_runs SET chain_id=$4 WHERE task_id=$1 AND execution_id=$2
+                if let ChildSource::Execution {
+                    task_id,
+                    execution_id,
+                } = source_proof
+                {
+                    let updated = sqlx::query!(
+                        "UPDATE bot_runs SET chain_id=$4 WHERE task_id=$1 AND execution_id=$2
                      AND placeholder_msg_id=$3 AND bot_id=$5 AND channel_id=$6
                      AND chain_id IS NULL AND status='completed' AND last_event_type='done'",
-                    parent_task_id.to_string(),
-                    parent_execution_id.to_string(),
-                    parent_msg_id.to_string(),
-                    &chain,
-                    author_bot_id.to_string(),
-                    channel_id.to_string(),
-                )
-                .execute(&mut **tx)
-                .await?;
-                if updated.rows_affected() != 1 {
-                    return Err(AppError::Conflict("parent execution chain changed".into()));
+                        task_id.to_string(),
+                        execution_id.to_string(),
+                        parent_msg_id.to_string(),
+                        &chain,
+                        author_bot_id.to_string(),
+                        channel_id.to_string(),
+                    )
+                    .execute(&mut **tx)
+                    .await?;
+                    if updated.rows_affected() != 1 {
+                        return Err(AppError::Conflict("parent execution chain changed".into()));
+                    }
                 }
                 effective_chain = Some(chain);
             }
@@ -227,29 +341,50 @@ pub async fn enqueue_terminal_children(
             .await?;
             let session =
                 session.ok_or_else(|| AppError::Internal("allowed child has no session".into()))?;
-            dispatch_intents::enqueue_bot(
-                tx,
-                BotIntent {
-                    version: 2,
-                    author_bot_id,
-                    parent_task_id,
-                    parent_execution_id,
-                    params: DispatchParams {
-                        trigger_msg_id: parent_msg_id,
-                        trigger_seq: parent_seq,
-                        bot_id,
-                        channel_id,
-                        depth: next_depth,
-                        provider_session_key: session.provider_session_key,
-                        session_id: Some(session.session_id),
-                        chain_id: effective_chain.clone(),
-                        context_bundle: Some(context_bundle),
-                    },
-                    trigger_message: trigger_message.clone(),
-                    file_ids: file_ids.clone(),
-                },
-            )
-            .await?;
+            let params = DispatchParams {
+                trigger_msg_id: parent_msg_id,
+                trigger_seq: parent_seq,
+                bot_id,
+                channel_id,
+                depth: next_depth,
+                provider_session_key: session.provider_session_key,
+                session_id: Some(session.session_id),
+                chain_id: effective_chain.clone(),
+                context_bundle: Some(context_bundle),
+            };
+            match source_proof {
+                ChildSource::Execution {
+                    task_id,
+                    execution_id,
+                } => {
+                    dispatch_intents::enqueue_bot(
+                        tx,
+                        BotIntent {
+                            version: 2,
+                            author_bot_id,
+                            parent_task_id: task_id,
+                            parent_execution_id: execution_id,
+                            params,
+                            trigger_message: trigger_message.clone(),
+                            file_ids: file_ids.clone(),
+                        },
+                    )
+                    .await?;
+                }
+                ChildSource::Message => {
+                    dispatch_intents::enqueue_bot_message(
+                        tx,
+                        BotMessageIntent {
+                            version: 2,
+                            author_bot_id,
+                            params,
+                            trigger_message: trigger_message.clone(),
+                            file_ids: file_ids.clone(),
+                        },
+                    )
+                    .await?;
+                }
+            }
             admitted += 1;
         }
         // Do not stop at a full window: later targets may already own an

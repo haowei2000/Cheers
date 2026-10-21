@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT content,created_at,msg_type,in_reply_to_msg_id,file_ids,context_bundle,content_data,chain_id\n         FROM messages WHERE msg_id=$1 AND channel_id=$2 AND sender_id=$3\n           AND sender_type='bot' AND is_partial=FALSE AND is_deleted=FALSE FOR SHARE",
+  "query": "SELECT content,created_at,msg_type,in_reply_to_msg_id,file_ids,context_bundle,content_data,chain_id,task_id\n         FROM messages WHERE msg_id=$1 AND channel_id=$2 AND sender_id=$3\n           AND sender_type='bot' AND is_partial=FALSE AND is_deleted=FALSE FOR SHARE",
   "describe": {
     "columns": [
       {
@@ -42,6 +42,11 @@
         "ordinal": 7,
         "name": "chain_id",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "task_id",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -59,8 +64,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "135bfff33a59d977182dd3fbb4b64a2f456653807a0aaaf7da82278e7c7ed94e"
+  "hash": "ecd3af50e4c858a19162e5d6414239b55d54f142c5a1e4d4a55526c39ceda211"
 }

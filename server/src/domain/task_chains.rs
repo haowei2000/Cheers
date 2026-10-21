@@ -93,6 +93,25 @@ pub async fn chain_of_active_bot_task(
     channel_id: Uuid,
     bot_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
+    chain_of_active_bot_task_with_executor(db, channel_id, bot_id).await
+}
+
+pub(crate) async fn chain_of_active_bot_task_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    chain_of_active_bot_task_with_executor(&mut **tx, channel_id, bot_id).await
+}
+
+async fn chain_of_active_bot_task_with_executor<'a, E>(
+    executor: E,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> Result<Option<String>, sqlx::Error>
+where
+    E: Executor<'a, Database = Postgres>,
+{
     let row = sqlx::query!(
         "SELECT chain_id FROM messages
          WHERE channel_id = $1 AND sender_id = $2 AND sender_type = 'bot'
@@ -102,7 +121,7 @@ pub async fn chain_of_active_bot_task(
         channel_id.to_string(),
         bot_id.to_string(),
     )
-    .fetch_optional(db)
+    .fetch_optional(executor)
     .await?;
     Ok(row.and_then(|r| r.chain_id.clone()))
 }

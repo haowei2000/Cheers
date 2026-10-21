@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT sender_id,sender_type,is_deleted,is_partial,channel_seq,chain_id,depth FROM messages\n         WHERE msg_id=$1 AND channel_id=$2 FOR SHARE",
+  "query": "SELECT sender_id,sender_type,is_deleted,is_partial,channel_seq,chain_id,depth,task_id FROM messages\n         WHERE msg_id=$1 AND channel_id=$2 FOR SHARE",
   "describe": {
     "columns": [
       {
@@ -37,6 +37,11 @@
         "ordinal": 6,
         "name": "depth",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "task_id",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -52,8 +57,9 @@
       false,
       true,
       true,
-      false
+      false,
+      true
     ]
   },
-  "hash": "0a8a3d4cac5be185c852b5fa692e798cf21c86df3b96b836c0999e39d3c7a8ee"
+  "hash": "fc421ebdec2a1d1491d3f41368945b6f2aa3f19e19d5c0f87fc62dde8285b49a"
 }

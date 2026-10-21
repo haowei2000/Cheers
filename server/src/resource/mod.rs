@@ -18,7 +18,10 @@ pub mod voice;
 
 use serde_json::{json, Value};
 use sqlx::{Executor, PgPool, Postgres, Transaction};
+use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::gateway::registry::BotLocator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrincipalType {
@@ -180,7 +183,12 @@ async fn resolve_resource(db: &PgPool, principal: &Principal, params: &Value) ->
 
 /// resource_req 的入口分发器。
 /// 收到帧后按 resource 字段路由到对应 handler。
-pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value {
+pub async fn dispatch(
+    db: &PgPool,
+    principal: Principal,
+    frame: &Value,
+    bot_locator: &Arc<dyn BotLocator>,
+) -> Value {
     let req_id = frame.get("req_id").and_then(|v| v.as_str()).unwrap_or("");
     let raw_resource = frame.get("resource").and_then(|v| v.as_str()).unwrap_or("");
     let raw_params = frame.get("params").cloned().unwrap_or(Value::Null);
@@ -228,7 +236,9 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
         "channel.sessions.read" => sessions::handle_read(db, &principal, &params).await,
 
         // ── 写操作（频道成员 role 可写）────────────────────────────────
-        "channel.messages.create" => messages::handle_create(db, &principal, &params).await,
+        "channel.messages.create" => {
+            messages::handle_create(db, &principal, &params, bot_locator).await
+        }
         "channel.messages.suggestions.write" => {
             messages::handle_suggestions_write(db, &principal, &params).await
         }
@@ -275,7 +285,12 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
 ///
 /// 门控名单来自 `cheers_mcp_server::registry`，不再是本文件里的字面量——新增破坏性
 /// 资源时只需在注册表里声明，不会漏掉这一侧。
-pub async fn dispatch_user(db: &PgPool, user_id: Uuid, frame: &Value) -> Value {
+pub async fn dispatch_user(
+    db: &PgPool,
+    user_id: Uuid,
+    frame: &Value,
+    bot_locator: &Arc<dyn BotLocator>,
+) -> Value {
     let resource = frame.get("resource").and_then(|v| v.as_str()).unwrap_or("");
     let req_id = frame.get("req_id").and_then(|v| v.as_str()).unwrap_or("");
     let principal = Principal::user(user_id);
@@ -298,7 +313,7 @@ pub async fn dispatch_user(db: &PgPool, user_id: Uuid, frame: &Value) -> Value {
     // plumbing: `resolve_frame` is pure, so both calls agree by construction, and
     // handing `dispatch` a rebuilt frame would create a second place where the
     // resolved call could diverge from the one this gate just inspected.
-    dispatch(db, principal, frame).await
+    dispatch(db, principal, frame, bot_locator).await
 }
 
 /// 破坏性 fs 操作的门控：principal 在目标频道须为 owner/admin。

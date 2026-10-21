@@ -33,6 +33,22 @@ pub struct IdempotencyKey {
 }
 
 impl IdempotencyKey {
+    /// Stable identity for the process-local dispatch budget only. A retried
+    /// transaction keeps its admission slot without fixing new message/task IDs
+    /// across this receipt's retention period. The memo expires each minute.
+    pub(crate) fn admission_key(&self) -> String {
+        crate::infra::crypto::json_fingerprint(
+            &serde_json::json!({
+                "principal_type": self.principal_type,
+                "principal_id": self.principal_id,
+                "resource": self.resource,
+                "idempotency_key": self.key,
+                "request_hash": self.request_hash,
+            }),
+            &[],
+        )
+    }
+
     /// Reads the optional key from a write's params. The request hash covers every
     /// other param, so one key can never stand for two different writes.
     pub fn from_params(
@@ -188,6 +204,36 @@ mod tests {
             "channel.messages.create",
             &params,
         )
+    }
+
+    #[test]
+    fn admission_identity_is_stable_and_scoped_to_the_real_idempotent_request() {
+        let params =
+            serde_json::json!({"idempotency_key":"post-1","content":"work","channel_id":"c"});
+        let first = key_for(params.clone()).unwrap().unwrap();
+        let same = key_for(
+            serde_json::json!({"channel_id":"c","content":"work","idempotency_key":"post-1"}),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(first.admission_key(), same.admission_key());
+        let other_bot = IdempotencyKey::from_params(
+            &Principal::bot(Uuid::new_v4()),
+            "channel.messages.create",
+            &params,
+        )
+        .unwrap()
+        .unwrap();
+        assert_ne!(first.admission_key(), other_bot.admission_key());
+        for changed in [
+            serde_json::json!({"idempotency_key":"post-2","content":"work","channel_id":"c"}),
+            serde_json::json!({"idempotency_key":"post-1","content":"different","channel_id":"c"}),
+        ] {
+            assert_ne!(
+                first.admission_key(),
+                key_for(changed).unwrap().unwrap().admission_key()
+            );
+        }
     }
 
     #[test]

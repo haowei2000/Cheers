@@ -33,7 +33,7 @@ use server::domain::workspaces;
 use server::domain::{auth_sessions, channel_seq};
 use server::gateway::dispatcher::{self, DispatchParams, DispatchResult};
 use server::gateway::realtime::fanout::{Fanout, InProcessFanout};
-use server::gateway::registry::{BotLocator, InProcessBotLocator};
+use server::gateway::registry::{BotLocator, BotRegistry, InProcessBotLocator};
 use server::gateway::stream::{self, StreamRegistry};
 use server::resource::files;
 
@@ -856,6 +856,22 @@ async fn seed_bot(db: &PgPool) -> Uuid {
     id
 }
 
+fn ready_resource_bot(
+    locator: &Arc<InProcessBotLocator>,
+    bot: Uuid,
+) -> (
+    tokio::sync::mpsc::Receiver<Value>,
+    tokio::sync::mpsc::Receiver<Value>,
+) {
+    let connection = Uuid::new_v4();
+    let (control_tx, control_rx) = tokio::sync::mpsc::channel(8);
+    let (data_tx, data_rx) = tokio::sync::mpsc::channel(8);
+    let _supersede = locator.bind_control(bot, connection, control_tx);
+    locator.bind_data(bot, Uuid::new_v4(), data_tx);
+    assert!(locator.set_task_acceptance(bot, connection, true));
+    (control_rx, data_rx)
+}
+
 fn req(resource: &str, params: Value) -> Value {
     serde_json::json!({ "req_id": "t", "resource": resource, "params": params })
 }
@@ -864,6 +880,7 @@ fn req(resource: &str, params: Value) -> Value {
 /// 用 `Principal::bot` 模拟外接 agent 的资源访问路径。
 #[sqlx::test]
 async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -879,7 +896,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
             "fs.write",
             serde_json::json!({ "channel_id": cid, "path": "notes/a.md", "content": "hello", "if_version": 0 }),
         ),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], true, "fs.write 应成功: {r}");
     assert_eq!(r["data"]["version"], 1, "新建文件 version=1");
@@ -892,6 +909,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
             "fs.read",
             serde_json::json!({ "channel_id": cid, "path": "notes/a.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true);
@@ -905,6 +923,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
             "fs.ls",
             serde_json::json!({ "channel_id": cid, "path": "notes" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true);
@@ -927,7 +946,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
             "fs.edit",
             serde_json::json!({ "channel_id": cid, "path": "notes/a.md", "old_string": "hello", "new_string": "world" }),
         ),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], true, "fs.edit 应成功: {r}");
 
@@ -938,6 +957,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
             "fs.read",
             serde_json::json!({ "channel_id": cid, "path": "notes/a.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["data"]["content"], "world", "edit 后内容应更新");
@@ -950,6 +970,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
             "fs.rm",
             serde_json::json!({ "channel_id": cid, "path": "notes/a.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "fs.rm 应成功: {r}");
@@ -962,6 +983,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
             "fs.read",
             serde_json::json!({ "channel_id": cid, "path": "notes/a.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -971,6 +993,7 @@ async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
 /// 非频道成员的 bot：读写都应 NOT_MEMBER（channel-role 是唯一授权事实源）。
 #[sqlx::test]
 async fn m2_fs_authz_non_member_rejected(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let outsider = seed_bot(&db).await; // 故意不 add_member
@@ -984,6 +1007,7 @@ async fn m2_fs_authz_non_member_rejected(db: PgPool) {
             "fs.read",
             serde_json::json!({ "channel_id": cid, "path": "x.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -999,6 +1023,7 @@ async fn m2_fs_authz_non_member_rejected(db: PgPool) {
             "fs.write",
             serde_json::json!({ "channel_id": cid, "path": "x.md", "content": "nope" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -1012,6 +1037,7 @@ async fn m2_fs_authz_non_member_rejected(db: PgPool) {
 /// 这是「提示词模板每次注入」的网关半边（连接器半边见 bridge_runtime build_prompt 测试）。
 #[sqlx::test]
 async fn m2_pinned_context_from_workbench_config(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     use server::gateway::dispatcher::load_pinned_context;
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
@@ -1025,13 +1051,13 @@ async fn m2_pinned_context_from_workbench_config(db: PgPool) {
         &db,
         who,
         &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "prompts/sys.md", "content": "Always end with ZEBRA.", "if_version": 0 })),
-    )
+     &resource_locator,)
     .await;
     let _ = dispatch(
         &db,
         who,
         &req("fs.write", serde_json::json!({ "channel_id": cid, "path": ".workbench.json", "content": "{\"pinned\":[\"prompts/sys.md\"]}", "if_version": 0 })),
-    )
+     &resource_locator,)
     .await;
 
     let pinned = load_pinned_context(&db, ch).await.unwrap();
@@ -1049,10 +1075,12 @@ async fn m2_pinned_context_from_workbench_config(db: PgPool) {
 /// 未知 verb → UNKNOWN_RESOURCE（dispatch fallback 行为锁定）。
 #[sqlx::test]
 async fn m2_dispatch_unknown_resource(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let r = dispatch(
         &db,
         Principal::bot(Uuid::new_v4()),
         &req("fs.teleport", serde_json::json!({})),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -1071,6 +1099,7 @@ async fn m2_dispatch_unknown_resource(db: PgPool) {
 /// member 可读写，但破坏性 `fs.rm` 被拒（PERMISSION_DENIED）。
 #[sqlx::test]
 async fn m2_user_member_can_write_but_not_rm(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let user = seed_user(&db).await;
@@ -1081,7 +1110,7 @@ async fn m2_user_member_can_write_but_not_rm(db: PgPool) {
         &db,
         user,
         &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "a.md", "content": "hi", "if_version": 0 })),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], true, "member 经 user 桥应可写: {r}");
 
@@ -1092,6 +1121,7 @@ async fn m2_user_member_can_write_but_not_rm(db: PgPool) {
             "fs.rm",
             serde_json::json!({ "channel_id": cid, "path": "a.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -1104,6 +1134,7 @@ async fn m2_user_member_can_write_but_not_rm(db: PgPool) {
 /// owner/admin 可执行破坏性 `fs.rm`。
 #[sqlx::test]
 async fn m2_user_admin_can_rm(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let admin = seed_user(&db).await;
@@ -1114,7 +1145,7 @@ async fn m2_user_admin_can_rm(db: PgPool) {
         &db,
         admin,
         &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "a.md", "content": "hi", "if_version": 0 })),
-    )
+     &resource_locator,)
     .await;
     let r = dispatch_user(
         &db,
@@ -1123,6 +1154,7 @@ async fn m2_user_admin_can_rm(db: PgPool) {
             "fs.rm",
             serde_json::json!({ "channel_id": cid, "path": "a.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "admin 应可 rm: {r}");
@@ -1131,6 +1163,7 @@ async fn m2_user_admin_can_rm(db: PgPool) {
 /// 非频道成员经 user 桥读 → NOT_MEMBER（与 bot 路径一致，channel-role 唯一事实源）。
 #[sqlx::test]
 async fn m2_user_non_member_rejected(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let outsider = seed_user(&db).await; // 故意不 add_member
@@ -1141,6 +1174,7 @@ async fn m2_user_non_member_rejected(db: PgPool) {
             "fs.read",
             serde_json::json!({ "channel_id": ch.to_string(), "path": "x.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -1159,6 +1193,7 @@ async fn m2_user_non_member_rejected(db: PgPool) {
 /// 正常小写入通过。
 #[sqlx::test]
 async fn m2_fs_write_size_cap(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -1172,7 +1207,7 @@ async fn m2_fs_write_size_cap(db: PgPool) {
         &db,
         who,
         &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "big.bin", "content": huge, "if_version": 0 })),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(
@@ -1186,14 +1221,14 @@ async fn m2_fs_write_size_cap(db: PgPool) {
         &db,
         who,
         &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "grow.md", "content": near, "if_version": 0 })),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], true, "接近上限的写入应通过: {r}");
     let r = dispatch(
         &db,
         who,
         &req("fs.append", serde_json::json!({ "channel_id": cid, "path": "grow.md", "content": "zzzzzzzzzzzzzzzzzzzz" })),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(
@@ -1206,7 +1241,7 @@ async fn m2_fs_write_size_cap(db: PgPool) {
         &db,
         who,
         &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "ok.md", "content": "small", "if_version": 0 })),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], true, "正常写入应通过: {r}");
 }
@@ -1950,6 +1985,7 @@ use server::domain::{commands_store, plan_store, usage_store};
 
 #[sqlx::test]
 async fn phasea_usage_read_sums_tokens_as_i64(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -1993,6 +2029,7 @@ async fn phasea_usage_read_sums_tokens_as_i64(db: PgPool) {
             "channel.usage.read",
             serde_json::json!({ "channel_id": cid }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "usage.read 应成功: {r}");
@@ -2038,6 +2075,7 @@ async fn phasea_usage_read_sums_tokens_as_i64(db: PgPool) {
             "channel.usage.read",
             serde_json::json!({ "channel_id": cid, "session_id": "s1" }),
         ),
+        &resource_locator,
     )
     .await;
     let b1 = &s1["data"]["bots"].as_array().unwrap()[0];
@@ -2055,6 +2093,7 @@ async fn phasea_usage_read_sums_tokens_as_i64(db: PgPool) {
             "channel.usage.read",
             serde_json::json!({ "channel_id": cid, "session_id": "s2" }),
         ),
+        &resource_locator,
     )
     .await;
     let b2 = &s2["data"]["bots"].as_array().unwrap()[0];
@@ -2064,6 +2103,7 @@ async fn phasea_usage_read_sums_tokens_as_i64(db: PgPool) {
 
 #[sqlx::test]
 async fn phasea_usage_read_requires_membership(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let outsider = seed_bot(&db).await; // 不加入频道
@@ -2074,6 +2114,7 @@ async fn phasea_usage_read_requires_membership(db: PgPool) {
             "channel.usage.read",
             serde_json::json!({ "channel_id": ch.to_string() }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false, "非成员应被拒: {r}");
@@ -2082,6 +2123,7 @@ async fn phasea_usage_read_requires_membership(db: PgPool) {
 
 #[sqlx::test]
 async fn phasea_plan_read_returns_progress_and_upserts(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -2145,6 +2187,7 @@ async fn phasea_plan_read_returns_progress_and_upserts(db: PgPool) {
             "channel.plan.read",
             serde_json::json!({ "channel_id": cid }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "plan.read 应成功: {r}");
@@ -2178,6 +2221,7 @@ async fn phasea_plan_read_returns_progress_and_upserts(db: PgPool) {
             "channel.plan.read",
             serde_json::json!({ "channel_id": cid }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(
@@ -2192,6 +2236,7 @@ async fn phasea_plan_read_returns_progress_and_upserts(db: PgPool) {
             "channel.plan.read",
             serde_json::json!({ "channel_id": cid, "session_id": "sess-2" }),
         ),
+        &resource_locator,
     )
     .await;
     let scoped = one["data"]["plans"].as_array().unwrap();
@@ -2201,6 +2246,7 @@ async fn phasea_plan_read_returns_progress_and_upserts(db: PgPool) {
 
 #[sqlx::test]
 async fn phasea_commands_read_projects_name_and_description(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -2236,6 +2282,7 @@ async fn phasea_commands_read_projects_name_and_description(db: PgPool) {
             "channel.commands.read",
             serde_json::json!({ "channel_id": cid }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "commands.read 应成功: {r}");
@@ -2250,6 +2297,7 @@ async fn phasea_commands_read_projects_name_and_description(db: PgPool) {
 
 #[sqlx::test]
 async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -2276,6 +2324,7 @@ async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
             "channel.sessions.read",
             serde_json::json!({ "channel_id": cid }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "sessions.read 应成功: {r}");
@@ -2309,6 +2358,7 @@ async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
             "channel.sessions.read",
             serde_json::json!({ "channel_id": cid }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(denied["ok"], false);
@@ -2425,6 +2475,7 @@ async fn phasea_sessions_primary_falls_back_after_promoted_session_closes(db: Pg
 
 #[sqlx::test]
 async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let user = seed_user(&db).await;
@@ -2465,6 +2516,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
             "channel.activity.read",
             serde_json::json!({ "channel_id": cid, "desc": true }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "activity.read 应成功: {r}");
@@ -2484,6 +2536,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
             "channel.activity.read",
             serde_json::json!({ "channel_id": cid }),
         ),
+        &resource_locator,
     )
     .await;
     let seqs2: Vec<i64> = r2["data"]["events"]
@@ -2501,6 +2554,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
 /// 非成员拒绝、空 query 报 INVALID_PARAMS。
 #[sqlx::test]
 async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let user = seed_user(&db).await;
@@ -2551,6 +2605,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             "channel.messages.search",
             serde_json::json!({ "channel_id": cid, "query": "deploy" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "search 应成功: {r}");
@@ -2580,6 +2635,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             "channel.messages.search",
             serde_json::json!({ "channel_id": cid, "query": "0%" }),
         ),
+        &resource_locator,
     )
     .await;
     let contents: Vec<&str> = r["data"]["messages"]
@@ -2599,6 +2655,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             "channel.messages.search",
             serde_json::json!({ "channel_id": cid, "query": "deploy", "limit": 2 }),
         ),
+        &resource_locator,
     )
     .await;
     let page = r["data"]["messages"].as_array().unwrap();
@@ -2614,7 +2671,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             "channel.messages.search",
             serde_json::json!({ "channel_id": cid, "query": "deploy", "limit": 2, "before": oldest_id }),
         ),
-    )
+     &resource_locator,)
     .await;
     let contents: Vec<&str> = r["data"]["messages"]
         .as_array()
@@ -2634,6 +2691,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             "channel.messages.search",
             serde_json::json!({ "channel_id": cid, "query": "deploy" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -2647,6 +2705,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             "channel.messages.search",
             serde_json::json!({ "channel_id": cid, "query": "  " }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -2912,6 +2971,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
 /// 退出后 membership 行删除、再退报 NOT_MEMBER。
 #[sqlx::test]
 async fn bot_leaves_channel_via_resource(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -2925,6 +2985,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
         &db,
         Principal::user(user),
         &req("channel.leave", serde_json::json!({ "channel_id": cid })),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -2935,6 +2996,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
         &db,
         Principal::bot(bot),
         &req("channel.leave", serde_json::json!({ "channel_id": cid })),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "bot leave 应成功: {r}");
@@ -2956,6 +3018,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
         &db,
         Principal::bot(bot),
         &req("channel.leave", serde_json::json!({ "channel_id": cid })),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false);
@@ -2979,6 +3042,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
             "channel.leave",
             serde_json::json!({ "channel_id": dm.to_string() }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], false, "DM 不可退出: {r}");
@@ -3000,6 +3064,7 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
 /// unable to recognise itself in the roster).
 #[sqlx::test]
 async fn members_marks_caller_is_self(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let user = seed_user(&db).await;
@@ -3015,6 +3080,7 @@ async fn members_marks_caller_is_self(db: PgPool) {
         &db,
         Principal::bot(bot_a),
         &req("channel.members", serde_json::json!({ "channel_id": cid })),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["ok"], true, "{r}");
@@ -3037,6 +3103,7 @@ async fn members_marks_caller_is_self(db: PgPool) {
         &db,
         Principal::user(user),
         &req("channel.members", serde_json::json!({ "channel_id": cid })),
+        &resource_locator,
     )
     .await;
     let members2 = r2["data"]["members"].as_array().unwrap();
@@ -3127,7 +3194,7 @@ async fn resolve_group_mention_tokens_expand_by_scope(db: PgPool) {
 /// A bot posting `@bots` triggers every OTHER bot in the channel (the author is
 /// self-excluded), proving the group token flows through the real create path
 /// (`channel.messages.create`) and the WS-boundary trigger
-/// (`broadcast_and_trigger_created_message`) — bounded by the per-channel
+/// (`broadcast_created_message`) — bounded by the per-channel
 /// dispatch budget (well under its cap for this burst).
 #[sqlx::test]
 async fn group_bots_mention_triggers_all_other_bots(db: PgPool) {
@@ -3139,48 +3206,43 @@ async fn group_bots_mention_triggers_all_other_bots(db: PgPool) {
     add_member(&db, ch, bot_b, "bot").await;
     let bot_c = seed_bot(&db).await;
     add_member(&db, ch, bot_c, "bot").await;
-    let cid = ch.to_string();
-
-    // Author bot posts a message @-mentioning the group token "bots".
+    let transport = InProcessBotLocator::new();
+    let (mut b_control, _b_data) = ready_resource_bot(&transport, bot_b);
+    let (mut c_control, _c_data) = ready_resource_bot(&transport, bot_c);
+    let locator: Arc<dyn BotLocator> = transport;
     let created = dispatch(
         &db,
         Principal::bot(author),
         &req(
             "channel.messages.create",
-            serde_json::json!({ "channel_id": cid, "text": "team, sync up", "mention_names": ["bots"] }),
+            serde_json::json!({"channel_id":ch,"content":"team, sync up","mention_names":["bots"]}),
         ),
+        &locator,
     )
     .await;
     assert_eq!(created["ok"], true, "{created}");
-    // All three bots are recorded as mentions on the message.
-    let mentions = created["data"]["mentions"].as_array().expect("mentions");
-    assert_eq!(mentions.len(), 3, "@bots expands to all three bot members");
-
-    // Fan-out + trigger (the WS-boundary side effect): author is self-excluded,
-    // so exactly the two OTHER bots are dispatched.
-    let fanout = fanout();
-    let registry = StreamRegistry::new();
-    let counter = Arc::new(CountingBotLocator::default());
-    let bot_locator: Arc<dyn BotLocator> = counter.clone();
-    // The trigger is spawned off the caller (so it can't stall the WS read loop);
-    // await the returned handle to observe it deterministically.
-    if let Some(h) = stream::broadcast_and_trigger_created_message(
-        &registry,
-        &fanout,
-        &db,
-        &bot_locator,
-        author,
-        &created["data"],
+    assert_eq!(created["data"]["mentions"].as_array().unwrap().len(), 3);
+    let admitted: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bot_runs WHERE trigger_msg_id=$1 AND dispatch_input IS NOT NULL",
     )
+    .bind(created["data"]["msg_id"].as_str().unwrap())
+    .fetch_one(&db)
     .await
-    {
-        h.await.unwrap();
-    }
+    .unwrap();
     assert_eq!(
-        counter.dispatched.load(Ordering::SeqCst),
-        2,
-        "@bots triggers every bot except the author"
+        admitted, 2,
+        "the actual creator admits every ready target except the author"
     );
+    let publisher = fanout();
+    let registry = StreamRegistry::new();
+    if let Some(delivery) =
+        stream::broadcast_created_message(&registry, &publisher, &db, &locator, &created["data"])
+            .await
+    {
+        delivery.await.unwrap();
+    }
+    assert_eq!(b_control.recv().await.unwrap()["type"], "task");
+    assert_eq!(c_control.recv().await.unwrap()["type"], "task");
 }
 
 /// The @me `mention_count` reverse-lookup counts unread messages that mention me
@@ -3490,81 +3552,56 @@ async fn cancel_chain_blocks_downstream_and_is_idempotent(db: PgPool) {
 async fn proactive_post_inherits_active_bot_chain(db: PgPool) {
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
-    let bot_a = seed_bot(&db).await;
-    add_member(&db, ch, bot_a, "bot").await;
-    let bot_b = seed_bot(&db).await;
-    add_member(&db, ch, bot_b, "bot").await;
-
+    let author = seed_bot(&db).await;
+    add_member(&db, ch, author, "bot").await;
+    let target = seed_bot(&db).await;
+    add_member(&db, ch, target, "bot").await;
     let root = Uuid::new_v4();
     let chain = task_chains::start_chain(&db, ch, root, root)
         .await
         .unwrap()
         .to_string();
-
-    // Bot A is "running": its in-flight task placeholder is tagged with the chain.
-    let a_task = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id)
-         VALUES ($1, $2, 'bot', $3, '', TRUE, 0, $4)",
-    )
-    .bind(a_task.to_string())
-    .bind(ch.to_string())
-    .bind(bot_a.to_string())
-    .bind(&chain)
-    .execute(&db)
-    .await
-    .unwrap();
-
-    // A proactively posts a message @-mentioning B (the WS-boundary side effect).
-    let a_post = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, is_partial, channel_seq)
-         VALUES ($1, $2, 'bot', $3, '@bot-b follow up', FALSE, 7)",
-    )
-    .bind(a_post.to_string())
-    .bind(ch.to_string())
-    .bind(bot_a.to_string())
-    .execute(&db)
-    .await
-    .unwrap();
-    let counter = Arc::new(CountingBotLocator::default());
-    let bot_locator: Arc<dyn BotLocator> = counter.clone();
-    // Await the spawned trigger handle so the assertions below see its effects.
-    if let Some(h) = stream::broadcast_and_trigger_created_message(
-        &StreamRegistry::new(),
-        &fanout(),
+    sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_type,sender_id,content,is_partial,depth,chain_id) VALUES($1,$2,'bot',$3,'',TRUE,0,$4)")
+        .bind(root.to_string()).bind(ch.to_string()).bind(author.to_string()).bind(&chain).execute(&db).await.unwrap();
+    let transport = InProcessBotLocator::new();
+    let (mut control, _data) = ready_resource_bot(&transport, target);
+    let locator: Arc<dyn BotLocator> = transport;
+    let created = dispatch(
         &db,
-        &bot_locator,
-        bot_a,
-        &serde_json::json!({
-            "msg_id": a_post, "channel_id": ch, "channel_seq": 7,
-            "mentions": [{ "member_id": bot_b, "member_type": "bot" }],
-        }),
+        Principal::bot(author),
+        &req(
+            "channel.messages.create",
+            serde_json::json!({"channel_id":ch,"content":"follow up","mention_ids":[target]}),
+        ),
+        &locator,
     )
-    .await
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    let child_chain: String =
+        sqlx::query_scalar("SELECT chain_id FROM bot_runs WHERE trigger_msg_id=$1")
+            .bind(created["data"]["msg_id"].as_str().unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(
+        child_chain, chain,
+        "the creator inherits the running cascade in its own transaction"
+    );
+    let publisher = fanout();
+    let registry = StreamRegistry::new();
+    if let Some(delivery) =
+        stream::broadcast_created_message(&registry, &publisher, &db, &locator, &created["data"])
+            .await
     {
-        h.await.unwrap();
+        delivery.await.unwrap();
     }
-
-    assert_eq!(
-        counter.dispatched.load(Ordering::SeqCst),
-        1,
-        "B is triggered"
-    );
-    // B's placeholder inherits A's chain (not a fresh one).
-    let b_chain: Option<String> = sqlx::query_scalar(
-        "SELECT chain_id FROM messages WHERE sender_id = $1 AND is_partial = TRUE",
-    )
-    .bind(bot_b.to_string())
-    .fetch_one(&db)
-    .await
-    .unwrap();
-    assert_eq!(
-        b_chain.as_deref(),
-        Some(chain.as_str()),
-        "downstream hop shares the author bot's chain"
-    );
+    assert_eq!(control.recv().await.unwrap()["type"], "task");
+    let source_chain: String = sqlx::query_scalar("SELECT chain_id FROM messages WHERE msg_id=$1")
+        .bind(created["data"]["msg_id"].as_str().unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(source_chain, chain);
 }
 
 // ── Invite links(0044):token_is_live 生命周期 + 原子占用 ───────────────────
@@ -3689,6 +3726,7 @@ async fn invite_link_use_reservation_is_atomic(db: PgPool) {
 /// stores nothing. Regression for docs/design/RESOURCE_CONTEXT.md "Bot / Manual pick".
 #[sqlx::test]
 async fn f4_bot_post_message_context_bundle_sanitized(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -3714,7 +3752,7 @@ async fn f4_bot_post_message_context_bundle_sanitized(db: PgPool) {
                 }
             }),
         ),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], true, "post should succeed: {r}");
     let bundle = &r["data"]["context_bundle"];
@@ -3748,6 +3786,7 @@ async fn f4_bot_post_message_context_bundle_sanitized(db: PgPool) {
                 "context_bundle": { "items": [ { "verb": "fs.write" } ] }
             }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r2["ok"], true);
@@ -3819,6 +3858,7 @@ async fn fleet_membership_requires_active_status(db: PgPool) {
 /// plus the clamped range (passage picking — docs/design/RESOURCE_CONTEXT.md).
 #[sqlx::test]
 async fn fs_read_line_range_slice(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -3833,7 +3873,7 @@ async fn fs_read_line_range_slice(db: PgPool) {
             "fs.write",
             serde_json::json!({ "channel_id": cid, "path": "notes/p.md", "content": "a\nb\nc\nd\ne", "if_version": 0 }),
         ),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], true, "write: {r}");
 
@@ -3845,7 +3885,7 @@ async fn fs_read_line_range_slice(db: PgPool) {
             "fs.read",
             serde_json::json!({ "channel_id": cid, "path": "notes/p.md", "start_line": 2, "end_line": 4 }),
         ),
-    )
+     &resource_locator,)
     .await;
     assert_eq!(r["ok"], true, "read: {r}");
     assert_eq!(r["data"]["content"], "b\nc\nd");
@@ -3860,6 +3900,7 @@ async fn fs_read_line_range_slice(db: PgPool) {
             "fs.read",
             serde_json::json!({ "channel_id": cid, "path": "notes/p.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(r["data"]["content"], "a\nb\nc\nd\ne");
@@ -4175,6 +4216,7 @@ async fn channel_message_count(db: &PgPool, channel_id: Uuid) -> i64 {
 
 #[sqlx::test]
 async fn interactive_files_validate_writes_and_renames(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -4183,6 +4225,7 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
         &db,
         Principal::bot(bot),
         &req("ui.contract.read", serde_json::json!({})),
+        &resource_locator,
     )
     .await;
     assert_eq!(contract["ok"], true, "{contract}");
@@ -4202,6 +4245,7 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
         &db,
         Principal::bot(bot),
         &write("forms/report.a2ui.json", example.to_string()),
+        &resource_locator,
     )
     .await;
     assert_eq!(good["ok"], true, "{good}");
@@ -4212,6 +4256,7 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
         &db,
         Principal::bot(bot),
         &write("forms/bad.a2ui.json", bad.to_string()),
+        &resource_locator,
     )
     .await;
     assert_eq!(rejected["error"]["code"], "INVALID_UI", "{rejected}");
@@ -4219,10 +4264,11 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
         &db,
         Principal::bot(bot),
         &write("untyped.txt", "invalid JSON".into()),
+        &resource_locator,
     )
     .await;
     assert_eq!(plain["ok"], true, "{plain}");
-    let renamed = dispatch(&db, Principal::bot(bot), &req("fs.mv", serde_json::json!({"channel_id":ch,"from":"untyped.txt","to":"forms/renamed.a2ui.json"}))).await;
+    let renamed = dispatch(&db, Principal::bot(bot), &req("fs.mv", serde_json::json!({"channel_id":ch,"from":"untyped.txt","to":"forms/renamed.a2ui.json"})), &resource_locator,).await;
     assert_eq!(renamed["error"]["code"], "INVALID_UI", "{renamed}");
 }
 
@@ -4382,6 +4428,7 @@ async fn inactive_authors_cannot_post_through_background_message_producers(db: P
 
 #[sqlx::test]
 async fn idempotent_post_message_retry_replays_the_first_message(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -4393,11 +4440,23 @@ async fn idempotent_post_message_retry_replays_the_first_message(db: PgPool) {
         )
     };
 
-    let first = dispatch(&db, Principal::bot(bot), &post("ship it")).await;
+    let first = dispatch(
+        &db,
+        Principal::bot(bot),
+        &post("ship it"),
+        &resource_locator,
+    )
+    .await;
     assert_eq!(first["ok"], true, "{first}");
     assert!(first["data"].get("idempotent_replay").is_none());
 
-    let retry = dispatch(&db, Principal::bot(bot), &post("ship it")).await;
+    let retry = dispatch(
+        &db,
+        Principal::bot(bot),
+        &post("ship it"),
+        &resource_locator,
+    )
+    .await;
     assert_eq!(retry["ok"], true, "{retry}");
     assert_eq!(retry["data"]["idempotent_replay"], true);
     assert_eq!(retry["data"]["msg_id"], first["data"]["msg_id"]);
@@ -4408,14 +4467,26 @@ async fn idempotent_post_message_retry_replays_the_first_message(db: PgPool) {
         "a replay must not write"
     );
 
-    let reused = dispatch(&db, Principal::bot(bot), &post("ship it now")).await;
+    let reused = dispatch(
+        &db,
+        Principal::bot(bot),
+        &post("ship it now"),
+        &resource_locator,
+    )
+    .await;
     assert_eq!(reused["ok"], false, "{reused}");
     assert_eq!(reused["error"]["code"], "E_IDEMPOTENCY_KEY_REUSED");
 
     // Keys are scoped to the caller: another bot's identical key is its own write.
     let other = seed_bot(&db).await;
     add_member(&db, ch, other, "bot").await;
-    let theirs = dispatch(&db, Principal::bot(other), &post("ship it")).await;
+    let theirs = dispatch(
+        &db,
+        Principal::bot(other),
+        &post("ship it"),
+        &resource_locator,
+    )
+    .await;
     assert_eq!(theirs["ok"], true, "{theirs}");
     assert!(theirs["data"].get("idempotent_replay").is_none());
     assert_eq!(channel_message_count(&db, ch).await, 2);
@@ -4425,7 +4496,13 @@ async fn idempotent_post_message_retry_replays_the_first_message(db: PgPool) {
         .execute(&db)
         .await
         .unwrap();
-    let after_expiry = dispatch(&db, Principal::bot(bot), &post("ship it again")).await;
+    let after_expiry = dispatch(
+        &db,
+        Principal::bot(bot),
+        &post("ship it again"),
+        &resource_locator,
+    )
+    .await;
     assert_eq!(after_expiry["ok"], true, "{after_expiry}");
     assert!(after_expiry["data"].get("idempotent_replay").is_none());
     assert_eq!(channel_message_count(&db, ch).await, 3);
@@ -4438,6 +4515,7 @@ async fn idempotent_post_message_retry_replays_the_first_message(db: PgPool) {
 
 #[sqlx::test]
 async fn concurrent_duplicate_desk_appends_land_once(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -4451,8 +4529,11 @@ async fn concurrent_duplicate_desk_appends_land_once(db: PgPool) {
     let handles: Vec<_> = (0..8)
         .map(|_| {
             let db = db.clone();
+            let resource_locator = resource_locator.clone();
             let append = append.clone();
-            tokio::spawn(async move { dispatch(&db, Principal::bot(bot), &append).await })
+            tokio::spawn(async move {
+                dispatch(&db, Principal::bot(bot), &append, &resource_locator).await
+            })
         })
         .collect();
     let mut results = Vec::new();
@@ -4476,6 +4557,7 @@ async fn concurrent_duplicate_desk_appends_land_once(db: PgPool) {
             "fs.read",
             serde_json::json!({ "channel_id": ch.to_string(), "path": "log.md" }),
         ),
+        &resource_locator,
     )
     .await;
     assert_eq!(read["data"]["content"], "line\n", "{read}");
@@ -4484,6 +4566,7 @@ async fn concurrent_duplicate_desk_appends_land_once(db: PgPool) {
 
 #[sqlx::test]
 async fn idempotent_inbox_deliver_retry_replays_before_touching_storage(db: PgPool) {
+    let resource_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let bot = seed_bot(&db).await;
@@ -4511,6 +4594,7 @@ async fn idempotent_inbox_deliver_retry_replays_before_touching_storage(db: PgPo
         &db,
         Principal::bot(bot),
         &req("channel.files.create", params),
+        &resource_locator,
     )
     .await;
     assert_eq!(retry["ok"], true, "{retry}");

@@ -108,10 +108,11 @@ impl Turn {
         // Keep the real same-channel reply/thread and channel-clock invariants.
         sqlx::query("INSERT INTO messages (msg_id,channel_id,sender_type,sender_id,content,msg_type,channel_seq) VALUES ($1,$2,'user',$3,'trigger','text',1)")
             .bind(trigger.to_string()).bind(channel.to_string()).bind(user.to_string()).execute(db).await.unwrap();
-        sqlx::query("INSERT INTO messages (msg_id,channel_id,sender_type,sender_id,content,msg_type,is_partial,in_reply_to_msg_id,content_data) VALUES ($1,$2,'bot',$3,'','text',TRUE,$4,$5)")
+        sqlx::query("INSERT INTO messages (msg_id,channel_id,sender_type,sender_id,content,msg_type,is_partial,in_reply_to_msg_id,content_data,task_id) VALUES ($1,$2,'bot',$3,'','text',TRUE,$4,$5,$6)")
             .bind(placeholder.to_string()).bind(channel.to_string()).bind(bot.to_string())
             .bind(trigger.to_string())
             .bind(json!({"pending_cards":[{"v":1,"kind":"resource_ref","uri":"cheers:desk/report.md"}]}))
+            .bind(task_id.to_string())
             .execute(db).await.unwrap();
         let registry = StreamRegistry::new();
         if registered {

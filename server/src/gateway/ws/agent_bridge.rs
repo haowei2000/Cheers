@@ -974,10 +974,13 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             )
             .await
             {
-                Ok(msg_id) => {
-                    spawn_bot_mention_pushes(state, bot.bot_id, msg_id);
+                Ok(sent) => {
+                    if !sent.replayed {
+                        spawn_bot_mention_pushes(state, bot.bot_id, sent.msg_id);
+                    }
                     if let Some(client_msg_id) = client_msg_id {
-                        let _ = ws_send(socket, &send_ack_ok(&client_msg_id, msg_id, false)).await;
+                        let _ =
+                            ws_send(socket, &send_ack_ok(&client_msg_id, sent.msg_id, false)).await;
                     }
                 }
                 Err(e) => {

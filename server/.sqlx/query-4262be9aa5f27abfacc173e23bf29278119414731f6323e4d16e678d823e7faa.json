@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT file_id, original_filename, content_type, size_bytes, status, expires_at,\n                summary_3lines\n         FROM file_records\n         WHERE file_id = ANY($1)",
+  "query": "SELECT file_id, original_filename, content_type, size_bytes, status, expires_at,\n                summary_3lines\n         FROM file_records\n         WHERE file_id = ANY($1) AND channel_id = $2",
   "describe": {
     "columns": [
       {
@@ -41,7 +41,8 @@
     ],
     "parameters": {
       "Left": [
-        "TextArray"
+        "TextArray",
+        "Text"
       ]
     },
     "nullable": [
@@ -54,5 +55,5 @@
       true
     ]
   },
-  "hash": "16cefbd87639558f3da25e0a15b8ac3c3b0311545d18b8c0faa9ff8fc66bfbe5"
+  "hash": "4262be9aa5f27abfacc173e23bf29278119414731f6323e4d16e678d823e7faa"
 }

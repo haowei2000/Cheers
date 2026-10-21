@@ -69,6 +69,17 @@ pub struct BotIntent {
     pub file_ids: Vec<String>,
 }
 
+/// A newly-created proactive bot message is its own committed source. It has no
+/// parent execution identity and cannot stand in for an execution result.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BotMessageIntent {
+    pub version: u32,
+    pub author_bot_id: Uuid,
+    pub params: DispatchParams,
+    pub trigger_message: Value,
+    pub file_ids: Vec<String>,
+}
+
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum IntentActor {
@@ -79,6 +90,9 @@ pub(crate) enum IntentActor {
         author_bot_id: Uuid,
         parent_task_id: Uuid,
         parent_execution_id: Uuid,
+    },
+    BotMessage {
+        author_bot_id: Uuid,
     },
 }
 
@@ -114,7 +128,9 @@ impl DispatchInput {
     fn author(&self) -> (Uuid, &'static str) {
         match self.actor {
             IntentActor::Human { author_id } => (author_id, "user"),
-            IntentActor::Bot { author_bot_id, .. } => (author_bot_id, "bot"),
+            IntentActor::Bot { author_bot_id, .. } | IntentActor::BotMessage { author_bot_id } => {
+                (author_bot_id, "bot")
+            }
         }
     }
 
@@ -122,7 +138,7 @@ impl DispatchInput {
         let (author, _) = self.author();
         let valid_depth = match self.actor {
             IntentActor::Human { .. } => self.params.depth == 0,
-            IntentActor::Bot { .. } => {
+            IntentActor::Bot { .. } | IntentActor::BotMessage { .. } => {
                 self.params.depth > 0
                     && self.params.depth <= crate::domain::chains::MAX_BOT_REPLY_DEPTH
                     && author != self.params.bot_id
@@ -215,6 +231,30 @@ pub async fn enqueue_bot(
     .await
 }
 
+pub async fn enqueue_bot_message(
+    tx: &mut Transaction<'_, Postgres>,
+    intent: BotMessageIntent,
+) -> Result<Uuid, AppError> {
+    if intent.version != 2 {
+        return Err(AppError::BadRequest(
+            "invalid bot message dispatch intent version".into(),
+        ));
+    }
+    enqueue(
+        tx,
+        DispatchInput {
+            version: 2,
+            actor: IntentActor::BotMessage {
+                author_bot_id: intent.author_bot_id,
+            },
+            params: intent.params,
+            trigger_message: intent.trigger_message,
+            file_ids: intent.file_ids,
+        },
+    )
+    .await
+}
+
 async fn enqueue(
     tx: &mut Transaction<'_, Postgres>,
     intent: DispatchInput,
@@ -273,7 +313,7 @@ pub(crate) async fn preauthorize(
         )
         .await
         .map_err(IntentPolicyError::from)?,
-        IntentActor::Bot { author_bot_id, .. } => {
+        IntentActor::Bot { author_bot_id, .. } | IntentActor::BotMessage { author_bot_id } => {
             let decision = crate::domain::bot_event_policy::resolve_dispatch_decision_checked(
                 db,
                 &intent.params.bot_id.to_string(),
@@ -336,7 +376,7 @@ pub(crate) async fn authorize_locked(
 ) -> Result<bool, sqlx::Error> {
     let params = &intent.params;
     let source = sqlx::query!(
-        "SELECT sender_id,sender_type,is_deleted,is_partial,channel_seq,chain_id,depth FROM messages
+        "SELECT sender_id,sender_type,is_deleted,is_partial,channel_seq,chain_id,depth,task_id FROM messages
          WHERE msg_id=$1 AND channel_id=$2 FOR SHARE",
         params.trigger_msg_id.to_string(),
         params.channel_id.to_string(),
@@ -367,11 +407,7 @@ pub(crate) async fn authorize_locked(
                 return Ok(false);
             }
         }
-        IntentActor::Bot {
-            parent_task_id,
-            parent_execution_id,
-            ..
-        } => {
+        IntentActor::Bot { .. } | IntentActor::BotMessage { .. } => {
             let decision = crate::domain::bot_event_policy::resolve_dispatch_decision_checked(
                 &mut **tx,
                 &params.bot_id.to_string(),
@@ -390,20 +426,36 @@ pub(crate) async fn authorize_locked(
                 return Ok(false);
             }
             let parent = sqlx::query!(
-                "SELECT task_id,execution_id,status,last_event_type,terminal_client_msg_id,terminal_fingerprint,terminal_committed_at
-                 FROM bot_runs WHERE placeholder_msg_id=$1 AND bot_id=$2 AND channel_id=$3 FOR SHARE",
-                params.trigger_msg_id.to_string(),author_id.to_string(),params.channel_id.to_string(),
+                "SELECT task_id,bot_id,channel_id,execution_id,status,last_event_type,terminal_client_msg_id,terminal_fingerprint,terminal_committed_at
+                 FROM bot_runs WHERE placeholder_msg_id=$1 FOR SHARE",
+                params.trigger_msg_id.to_string(),
             ).fetch_optional(&mut **tx).await?;
-            if !parent.is_some_and(|parent| {
-                parent.task_id == parent_task_id.to_string()
-                    && parent.execution_id.as_deref()
-                        == Some(parent_execution_id.to_string().as_str())
-                    && parent.status == "completed"
-                    && parent.last_event_type.as_deref() == Some("done")
-                    && parent.terminal_client_msg_id.is_some()
-                    && parent.terminal_fingerprint.is_some()
-                    && parent.terminal_committed_at.is_some()
-            }) {
+            if let IntentActor::Bot {
+                parent_task_id,
+                parent_execution_id,
+                ..
+            } = intent.actor
+            {
+                if source.task_id.as_deref() != Some(parent_task_id.to_string().as_str())
+                    || !parent.is_some_and(|parent| {
+                        parent.task_id == parent_task_id.to_string()
+                            && parent.bot_id == author_id.to_string()
+                            && parent.channel_id == params.channel_id.to_string()
+                            && parent.execution_id.as_deref()
+                                == Some(parent_execution_id.to_string().as_str())
+                            && parent.status == "completed"
+                            && parent.last_event_type.as_deref() == Some("done")
+                            && parent.terminal_client_msg_id.is_some()
+                            && parent.terminal_fingerprint.is_some()
+                            && parent.terminal_committed_at.is_some()
+                    })
+                {
+                    return Ok(false);
+                }
+            } else if source.task_id.is_some() || parent.is_some() {
+                // An execution result cannot downgrade its receipt proof merely
+                // by choosing the proactive actor variant, including old rows
+                // whose task_id was absent but whose durable run still exists.
                 return Ok(false);
             }
             let author = sqlx::query!(

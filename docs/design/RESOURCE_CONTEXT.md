@@ -141,9 +141,9 @@ bringing workspace files onto the same governance spine as every other verb.
 
 - **Pull path.** The consuming bot resolves the ref via the `read_workspace` MCP tool →
   resource `workspace.read` `{channel_id, bot_id, path, session_id?}`. The gateway
-  intercepts it at the `resource_req` WS boundary (`agent_bridge::broker_workspace_read`;
-  it needs `AppState` for the workspace RPC, so it can't go through the db-only
-  `resource::dispatch`) and brokers a live read via the identity-free `workspace_call`.
+  routes the bot's HTTP MCP read through `resource_effects::broker_workspace_read`,
+  which needs `AppState` for the workspace RPC beyond the database and locator used
+  by `resource::dispatch`, and brokers a live read via the identity-free `workspace_call`.
 - **Three authorization layers, all enforced at pull time** (`authorize_bot_workspace_read`):
   1. **channel membership** — reader *and* owner must be members of the channel the ref
      was shared in;

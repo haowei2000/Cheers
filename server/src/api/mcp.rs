@@ -2958,7 +2958,13 @@ async fn read_resource(
         "resource": call.resource,
         "params": call.params
     });
-    let response = resource::dispatch(&state.db, Principal::bot(bot_id), &frame).await;
+    let response = resource::dispatch(
+        &state.db,
+        Principal::bot(bot_id),
+        &frame,
+        &state.bot_locator,
+    )
+    .await;
     if response.get("ok").and_then(Value::as_bool) == Some(true) {
         let data = response.get("data").cloned().unwrap_or(Value::Null);
         return Ok(resource_content(uri, &data));

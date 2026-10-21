@@ -25,7 +25,7 @@ use crate::{
         registry::BotLocator,
     },
     infra::db::models::{MessageMention, MESSAGE_SCHEMA_VERSION},
-    resource::{authorize_channel_write, Principal},
+    resource::Principal,
 };
 
 // ── StreamEntry ───────────────────────────────────────────────────────────────
@@ -830,10 +830,15 @@ async fn resolve_session_id(
     None
 }
 
-/// 处理 bot 主动发新消息（send 帧）。
-///
-/// 不同于 delta/done（续写占位），send 是建全新 Message。
-/// 权限检查：bot token 只映射身份；频道写权限由 membership role 决定。
+/// The durable write disposition controls postcommit notifications as well as
+/// publication; a replay still acknowledges the original message identity.
+#[derive(Debug)]
+pub struct SendOutcome {
+    pub msg_id: Uuid,
+    pub replayed: bool,
+}
+
+/// Normalize a proactive send into the shared bot-message creation command.
 pub async fn handle_send(
     registry: &Arc<StreamRegistry>,
     fanout: &Arc<dyn Fanout>,
@@ -841,171 +846,79 @@ pub async fn handle_send(
     bot_locator: &Arc<dyn BotLocator>,
     bot_id: Uuid,
     frame: &Value,
-) -> Result<Uuid, &'static str> {
-    let channel_id: Uuid = frame
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or("missing channel_id")?;
-
-    let principal = Principal::bot(bot_id);
-    authorize_channel_write(db, &principal, channel_id)
-        .await
-        .map_err(|(code, _)| {
-            if code == "INTERNAL_ERROR" {
-                "db error"
-            } else {
-                "bot is not allowed to write to the target channel"
-            }
-        })?;
-
-    let content = frame
-        .get("content")
-        .or_else(|| frame.get("text"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let msg_type = frame
-        .get("msg_type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("text");
-    let reply_to_msg_id = frame
-        .get("in_reply_to_msg_id")
-        .and_then(|v| v.as_str())
+) -> Result<SendOutcome, &'static str> {
+    // Transport aliases normalize before the shared command hashes or validates
+    // input. Capability envelopes and delivery nonces never enter a write key.
+    let mut params = json!({
+        "channel_id": frame.get("channel_id"),
+        "content": frame.get("content").or_else(|| frame.get("text")).and_then(Value::as_str).unwrap_or(""),
+        "msg_type": frame.get("msg_type").and_then(Value::as_str).unwrap_or("text"),
+    });
+    for key in ["file_ids", "mention_ids"] {
+        if let Some(value) = frame.get(key) {
+            params[key] = value.clone();
+        }
+    }
+    if let Some(reply) = frame.get("in_reply_to_msg_id") {
+        params["reply_to_msg_id"] = reply.clone();
+    }
+    if let Some(client_id) = frame
+        .get("client_msg_id")
+        .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string);
-    let file_ids = parse_file_ids(frame.get("file_ids"));
-    let mention_ids = parse_mention_ids(frame.get("mention_ids"));
-    let msg_id = Uuid::new_v4();
-    let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
-        .await
-        .map_err(mention_parse_error_to_static)?;
-
-    // 先落库
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(crate::gateway::log_db_err("stream.send: begin tx"))?;
-    let channel_seq =
-        channel_seq::allocate(&mut tx, channel_id)
-            .await
-            .map_err(crate::gateway::log_db_err(
-                "stream.send: allocate channel_seq",
-            ))?;
-    sqlx::query!(
-        "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, msg_type,
-             is_partial, file_ids, channel_seq, in_reply_to_msg_id)
-         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6, $7, $8)",
-        msg_id.to_string(),
-        channel_id.to_string(),
-        bot_id.to_string(),
-        content,
-        msg_type,
-        serde_json::json!(file_ids.clone()),
-        channel_seq,
-        reply_to_msg_id.as_deref(),
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(crate::gateway::log_db_err("stream.send: insert message"))?;
-    mentions::insert_batch(&mut tx, msg_id, &mentions)
-        .await
-        .map_err(crate::gateway::log_db_err("stream.send: insert mentions"))?;
-    tx.commit()
-        .await
-        .map_err(crate::gateway::log_db_err("stream.send: commit tx"))?;
-
-    // 再 fan-out
-    let wire = WireFrame::channel(
-        channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": msg_id,
-            "channel_id": channel_id,
-            "channel_seq": channel_seq,
-            "sender_type": "bot",
-            "sender_id": bot_id,
-            "content": content,
-            "msg_type": msg_type,
-            "is_partial": false,
-            "reply_to_msg_id": reply_to_msg_id,
-            "file_ids": file_ids,
-            "mentions": mention_dtos(&mentions),
-            "files": [],
-        }),
-    );
-    fanout.broadcast_channel(channel_id, wire).await;
-
-    // 主动 send 里的 @bot 也要能派活。视作 depth=0（与用户发消息触发对等），
-    // 后续 done 链再逐跳 +1 受 MAX_BOT_REPLY_DEPTH 约束。自 @ 过滤与 INITIATE
-    // 门禁在 trigger_bot_replies 内部统一处理。
-    // chain：主动 send 拿不到当前任务上下文，best-effort 继承发送 bot 进行中任务
-    // 的链（让多跳 post_message 级联共享同一条可取消链），无则新起一条（§8）。
-    let chain_id = chain_for_proactive_send(db, channel_id, bot_id, msg_id, &mentions).await;
-    // spawn：同 handle_done，避免下一跳 dispatch 阻塞 connector 读循环。
-    spawn_trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        0,
-        bot_id,
-        mentions,
-        chain_id,
-    );
-
-    Ok(msg_id)
-}
-
-/// Chain assignment for a bot's proactive send / post_message. There is no task
-/// context on this path (same gap as the depth reset), so we best-effort inherit
-/// the chain of the bot's in-flight task — keeping a multi-hop post_message
-/// cascade on ONE cancelable chain — and only root a fresh chain when the bot
-/// isn't already in one AND the message actually triggers a bot (no dead rows).
-async fn chain_for_proactive_send(
-    db: &PgPool,
-    channel_id: Uuid,
-    author_bot_id: Uuid,
-    msg_id: Uuid,
-    mentions: &[mentions::Mention],
-) -> Option<String> {
-    if mentions.is_empty() {
-        return None;
-    }
-    match crate::domain::task_chains::chain_of_active_bot_task(db, channel_id, author_bot_id).await
+        .filter(|id| !id.is_empty())
     {
-        Ok(Some(cid)) => Some(cid),
-        _ => crate::domain::task_chains::start_chain(db, channel_id, msg_id, msg_id)
-            .await
-            .ok()
-            .map(|c| c.to_string()),
+        params["idempotency_key"] = json!(format!("bridge.send:{client_id}"));
     }
+    let created =
+        crate::resource::messages::handle_create(db, &Principal::bot(bot_id), &params, bot_locator)
+            .await
+            .map_err(|(code, detail)| {
+                tracing::warn!(%bot_id, %code, %detail, "bot message command rejected");
+                match code.as_str() {
+                    "INTERNAL_ERROR" => "db error",
+                    "NOT_MEMBER" | "PERMISSION_DENIED" => {
+                        "bot is not allowed to write to the target channel"
+                    }
+                    "MEMBER_NOT_FOUND" => "invalid mention",
+                    "E_IDEMPOTENCY_KEY_REUSED" => {
+                        "client_msg_id was reused for a different message"
+                    }
+                    _ => "invalid message",
+                }
+            })?;
+    let msg_id = created
+        .get("msg_id")
+        .and_then(Value::as_str)
+        .and_then(|id| id.parse().ok())
+        .ok_or("invalid created message")?;
+    let _ = broadcast_created_message(registry, fanout, db, bot_locator, &created).await;
+    Ok(SendOutcome {
+        msg_id,
+        replayed: created
+            .get(crate::resource::idempotency::REPLAY_FLAG)
+            .and_then(Value::as_bool)
+            == Some(true),
+    })
 }
 
-/// `channel.messages.create`（bot 主动 post_message 走的 resource 路径）落库后的副作用：
-/// **live 广播** + **bot@bot 触发**。
-///
-/// `resource::dispatch` 只带 `db`，广播/触发所需的 fanout/registry/bot_locator 由
-/// transport-neutral `resource_effects` 层在 dispatch 成功后统一补做——
-/// 与 [`handle_send`] / [`handle_done`] 的行为对齐（同样的自 @ 过滤 / depth 上限 /
-/// INITIATE 门禁，都在 `trigger_bot_replies` 内部）。`created` 是 `handle_create`
-/// 返回的 `MessageDto` JSON；解析失败则静默跳过（消息已落库，不影响主流程）。
-/// Returns the bot@bot trigger's spawned task handle (or `None` when nothing is
-/// triggered). Production drops it (fire-and-forget); tests `.await` it to observe the
-/// trigger deterministically.
-pub async fn broadcast_and_trigger_created_message(
+/// Publish a committed bot message, then accelerate delivery of intents already
+/// admitted by its write transaction. Cancellation here cannot lose child work.
+/// A receipt replay never repeats publication or creates dispatch decisions.
+pub async fn broadcast_created_message(
     registry: &Arc<StreamRegistry>,
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
     bot_locator: &Arc<dyn BotLocator>,
-    author_bot_id: Uuid,
     created: &Value,
 ) -> Option<tokio::task::JoinHandle<()>> {
+    if created
+        .get(crate::resource::idempotency::REPLAY_FLAG)
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return None;
+    }
     let (Some(msg_id), Some(channel_id)) = (
         created
             .get("msg_id")
@@ -1018,62 +931,26 @@ pub async fn broadcast_and_trigger_created_message(
     ) else {
         return None;
     };
-
-    // 1) live 广播：DTO 原样投递，前端与 handle_send 的 "message" 帧同形（多余字段无害）。
-    let wire = WireFrame::channel(channel_id, "message", created.clone());
-    fanout.broadcast_channel(channel_id, wire).await;
-
-    // 2) bot@bot 触发：从 DTO 的 mentions 还原 Vec<Mention>，depth=0（与用户发消息对等）。
-    let mentions = dto_mentions(created);
-    if mentions.is_empty() {
-        return None;
-    }
-    let channel_seq = created.get("channel_seq").and_then(Value::as_i64)?;
-    // Same proactive-send chain assignment as handle_send: inherit the author
-    // bot's in-flight chain (multi-hop post_message stays one cancelable chain),
-    // else root a new one (§8).
-    let chain_id = chain_for_proactive_send(db, channel_id, author_bot_id, msg_id, &mentions).await;
-    // spawn：同 handle_done / handle_send，避免下一跳 dispatch 阻塞 connector 读循环。
-    Some(spawn_trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        0,
-        author_bot_id,
-        mentions,
-        chain_id,
-    ))
-}
-
-/// 从 `MessageDto` JSON 的 `mentions` 数组还原 [`mentions::Mention`]（丢弃无法解析的项）。
-fn dto_mentions(created: &Value) -> Vec<mentions::Mention> {
-    created
-        .get("mentions")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| {
-                    let member_id = m
-                        .get("member_id")
-                        .and_then(Value::as_str)
-                        .and_then(|s| s.parse::<Uuid>().ok())?;
-                    let member_type = match m.get("member_type").and_then(Value::as_str) {
-                        Some("bot") => mentions::MemberType::Bot,
-                        Some("user") => mentions::MemberType::User,
-                        _ => return None,
-                    };
-                    Some(mentions::Mention {
-                        member_id,
-                        member_type,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    fanout
+        .broadcast_channel(
+            channel_id,
+            WireFrame::channel(channel_id, "message", created.clone()),
+        )
+        .await;
+    let (db, fanout, registry, locator) = (
+        db.clone(),
+        fanout.clone(),
+        registry.clone(),
+        bot_locator.clone(),
+    );
+    Some(tokio::spawn(async move {
+        if let Err(error) =
+            super::dispatch_intents::deliver_trigger(&db, &fanout, &registry, &locator, msg_id)
+                .await
+        {
+            tracing::warn!(%msg_id, %error, "bot message dispatch intents retained for recovery");
+        }
+    }))
 }
 
 fn mention_parse_error_to_static(error: mentions::MentionParseError) -> &'static str {

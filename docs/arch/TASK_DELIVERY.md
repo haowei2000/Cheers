@@ -35,7 +35,7 @@ Source deletion cancels work; a source edit does not replace the accepted input.
 The worker registers streams idempotently and sends through the current control
 connection. The locator waits up to 500 ms for room in its bounded queue. A
 successful enqueue is **not** a connector receipt or proof that execution started;
-a failed enqueue retains a recoverable human intent. The run progresses from
+a failed enqueue retains its recoverable intent. The run progresses from
 `pending` to `prepared` and then to `accepted` only when the execution grant
 commits. Accepted executions are never recovered as new tasks.
 
@@ -44,6 +44,26 @@ the transaction that finalizes the parent message and terminal receipt. The
 children inherit the active chain and next depth, fix their primary sessions and
 handoff references, and use the same run ledger, leases and execution grants as
 human dispatch. No media or locator calls occur inside that transaction.
+
+Proactive bridge `send` and resource `channel.messages.create` use one message
+creation command. Resource dispatch requires the live bot locator so readiness
+is captured before the write transaction. The source message, mentions, inherited
+chain, child intents and optional idempotency receipt then commit together.
+Publication only broadcasts the committed DTO and accelerates delivery of those
+existing intents; it never chooses targets or creates another dispatch.
+
+A bridge `client_msg_id` maps to the shared receipt key
+`bridge.send:<client_msg_id>`. During the existing 24-hour resource receipt
+retention, retries return the original message without repeating broadcasts or
+notifications. Legacy sends without that ID remain
+non-idempotent. Resource retries retain their existing caller-supplied keys.
+The process-local admission memo uses the stable receipt request identity for
+rollback retries; message and task IDs keep their normal creation semantics.
+
+Proactive intents prove that their source is a finalized, unowned bot message
+with no execution ledger entry. Execution-owned sources retain the stronger
+parent task, execution and committed Done receipt proof. One source kind cannot
+be substituted for the other during recovery or execution acceptance.
 
 Admission excludes self mentions, depth beyond five, unavailable targets,
 read-only or disabled bots, inactive chains and denied `DISPATCH` grants. Each
@@ -204,13 +224,13 @@ deployed runtime uses the in-process locator.
 
 ## Recovery limits
 
-Human-message dispatch intents and children admitted by execution-owned `Done`
-results recover automatically until execution acceptance. Human producers include
-REST, scheduled sends, integration delivery and other callers of the shared
-human-message command. Proactive bot sends, resource-created messages and legacy
-completions still commit separately from their direct dispatch effects; a crash
-in those remaining gaps can lose a downstream hop. They do not acquire
-recoverable intents implicitly.
+Human-message dispatch intents and children admitted by execution-owned `Done`,
+proactive bridge sends and resource-created bot messages recover automatically
+until execution acceptance. Human producers include REST, scheduled sends,
+integration delivery and other callers of the shared human-message command.
+Historical/manual completions without an execution grant retain their legacy
+direct dispatch path; they do not acquire recoverable intents implicitly.
+Other direct task producers retain their own delivery contracts.
 
 The `resume` capability remains `ack_only`; it replays no socket event log. Task
 offers come from the run ledger, not this capability. A committed execution grant
@@ -258,3 +278,6 @@ real-process startup recovery, frozen envelopes, lease recovery, session selecti
 and the exclusion of accepted executions from further offers.
 Bot-child tests cover atomic parent/receipt/child rollback, interrupted delivery,
 receipt replay, bot policy revocation, depth and loop limits, and shared recovery.
+Proactive tests exercise both creation adapters, resource and bridge receipt
+replay, chain inheritance, scoped attachments, cross-transport retries and recovery
+after interruption before publication.
