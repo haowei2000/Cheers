@@ -295,6 +295,34 @@ class DeploymentTriggerTests(unittest.TestCase):
         self.assertNotIn("${{ env.IMAGE_GATEWAY }}:main", self.workflow)
         self.assertNotIn("${{ env.IMAGE_FRONTEND }}:main", self.workflow)
 
+    def test_rc_cannot_deploy_or_replace_stable_image_aliases(self):
+        for job in ("deploy-contract", "deploy"):
+            section = self.workflow.split(f"\n  {job}:\n", 1)[1].split("\n    steps:", 1)[0]
+            with self.subTest(job=job):
+                self.assertIn("needs.changes.outputs.prerelease == 'false' &&", section)
+        self.assertEqual(self.workflow.count(
+            "flavor: latest=${{ needs.changes.outputs.prerelease == 'false' }}"
+        ), 2)
+        self.assertEqual(self.workflow.count(
+            "type=semver,pattern={{major}}.{{minor}},enable=${{ needs.changes.outputs.prerelease == 'false' }}"
+        ), 2)
+
+    def test_rc_is_published_only_after_both_images_succeed(self):
+        section = self.workflow.split("\n  publish-rc:\n", 1)[1].split("\n  deploy:\n", 1)[0]
+        self.assertIn("needs.changes.outputs.prerelease == 'true' &&", section)
+        for component in ("gateway", "frontend"):
+            self.assertIn(f"needs.build-{component}.result == 'success'", section)
+        self.assertIn("prerelease: true", section)
+        self.assertIn("make_latest: false", section)
+        self.assertIn("files: rc-images.json", section)
+
+    def test_connector_rc_does_not_change_production_pin_or_latest_release(self):
+        workflow = (MODULE_PATH.parents[1] / ".github/workflows/release-connector.yml").read_text()
+        pin = workflow.split("\n  sync-pin:\n", 1)[1].split("\n    steps:", 1)[0]
+        self.assertIn("!contains(github.ref_name, '-rc.') &&", pin)
+        self.assertEqual(workflow.count("prerelease: ${{ contains(github.ref_name, '-rc.') }}"), 2)
+        self.assertEqual(workflow.count("make_latest: false"), 2)
+
 
 class DockerActionRuntimeTests(unittest.TestCase):
     def test_docker_actions_use_node24_generations(self):
