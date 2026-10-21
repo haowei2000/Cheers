@@ -86,6 +86,20 @@ publishing again. An adapter failure never runs an independent failure update.
 Scheduler expiry and delivery failures recheck undecided state before rewinding
 the cursor; delayed delivery failures must also match the reservation timestamp.
 
+Claim decisions, cancellation, finite-deadline expiry, dispatch failure and
+execution settlement update the claim and its confirmation metadata in the same
+transaction. Only the actual bot-owned confirmation matching its channel and
+claim ID is updated; absent or invalid historical links never redirect a patch
+to another message or stop cancellation from fencing execution. The snapshot
+contains `claim_status`, `resolved` and a monotonic `claim_revision` in the
+existing message JSON. New confirmations start at revision 1. Real state changes
+advance it; repeated cancellation and terminal replay produce no new revision or
+publication. REST responses and `task_claim_updated` events carry the same exact
+`confirmation_message` metadata patch. Clients apply it to their existing message
+state and reject older revisions, including delayed HTTP replies and history.
+Loaded mutable confirmations are revalidated through existing history reads on
+reconnect and warm-cache entry. Claims with no deadline remain non-expiring.
+
 Task-claim approval uses a dedicated `task_claim` actor in that same worker. The
 requester must still be allowed to prompt the selected bot, and the bot must be
 ready with a live primary session before approval can consume `pending`. Offline,

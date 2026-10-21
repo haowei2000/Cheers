@@ -171,6 +171,8 @@ export function ChannelView({
     setVoiceTranscripts,
     loadVoiceTranscript,
   } = useChannelRoster({ channel, preview: isPreview, activeChannelRef });
+  const discussionThreadRef = useRef<Message[]>([]);
+  const discussionMessageUpdatedRef = useRef<((update: Partial<Message> & { msg_id: string }) => void) | null>(null);
   const permissionResolvedRef = useRef<() => void>(() => {});
   const onPermissionResolved = useCallback(
     () => permissionResolvedRef.current(),
@@ -203,6 +205,8 @@ export function ChannelView({
     activeChannelRef,
     patchChannel,
     onPermissionResolved,
+    additionalMessagesRef: discussionThreadRef,
+    additionalMessageUpdatedRef: discussionMessageUpdatedRef,
   });
   // Slash-commands advertised by the channel's bots (⑦ command palette). Flat
   // list across all bots; refreshed on channel open and on reconnect catch-up.
@@ -226,8 +230,6 @@ export function ChannelView({
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [discussionComposerRoot, setDiscussionComposerRoot] =
     useState<Message | null>(null);
-  /** Live+REST rows for the open topic — reply defaults look here, not only the chat window. */
-  const discussionThreadRef = useRef<Message[]>([]);
   const [creatingDiscussion, setCreatingDiscussion] = useState(false);
   const [openDiscussionRequest, setOpenDiscussionRequest] = useState<{
     id: string;
@@ -1462,6 +1464,7 @@ export function ChannelView({
           seq: (previous?.seq ?? 0) + 1,
         }));
       },
+      onContentDataUpdated: handleContentDataUpdated,
       onSuggestionsLoaded: (msgId, questions) => {
         handleContentDataUpdated(msgId, {
           ...((messages.find((m) => m.msg_id === msgId)?.content_data as object) ?? {}),
@@ -1807,6 +1810,7 @@ export function ChannelView({
                     openDiscussionId={openDiscussionRequest?.id ?? null}
                     liveMessages={messages}
                     discussionThreadRef={discussionThreadRef}
+                    messageUpdatedRef={discussionMessageUpdatedRef}
                     footer={
                       !selectMode ? (
                         <>

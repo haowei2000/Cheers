@@ -207,12 +207,7 @@ pub(crate) async fn lock_run(
     .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "task execution no longer exists"))
 }
 
-pub(crate) struct TaskClaimUpdate {
-    pub claim_id: Uuid,
-    pub channel_id: Uuid,
-    pub status: &'static str,
-    pub execution_msg_id: Uuid,
-}
+pub(crate) type TaskClaimUpdate = crate::domain::task_claims::ClaimUpdate;
 
 /// Finish a granted execution and its approved claim under the result's existing
 /// message/run locks. The shared grant/terminal gate precedes all final writes.
@@ -300,10 +295,8 @@ pub(crate) async fn complete(
             "task claim is no longer an active execution",
         ));
     }
-    Ok(Some(TaskClaimUpdate {
-        claim_id,
-        channel_id: execution.channel_id,
-        status,
-        execution_msg_id: request.msg_id,
-    }))
+    let update = crate::domain::task_claims::project_update_tx(tx, claim_id)
+        .await
+        .map_err(TerminalError::database("project terminal task claim"))?;
+    Ok(Some(update))
 }

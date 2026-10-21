@@ -606,20 +606,7 @@ pub async fn handle_done(
     );
     fanout.broadcast_channel(channel_id, wire).await;
     if let Some(update) = claim_update {
-        fanout
-            .broadcast_channel(
-                update.channel_id,
-                WireFrame::channel(
-                    update.channel_id,
-                    "task_claim_updated",
-                    json!({
-                        "claim_id": update.claim_id,
-                        "status": update.status,
-                        "execution_msg_id": update.execution_msg_id,
-                    }),
-                ),
-            )
-            .await;
+        super::resource_effects::publish_claim_update(fanout.as_ref(), &update).await;
     }
 
     if child_count != 0 {

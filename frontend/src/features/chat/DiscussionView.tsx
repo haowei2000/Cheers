@@ -34,10 +34,13 @@ import { ErrorState } from "@/components/ui/error-state";
 import { ItemList, ItemRow } from "@/components/ui/item";
 import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { cn } from "@/lib/cn";
+import { clientSessionGeneration } from "@/lib/clientSession";
 import type { Message } from "@/types";
 import { MessageList } from "./MessageList";
 import { type MessageActionHandlers } from "./MessageItem";
 import { mergeDiscussionMessages } from "./discussionThread";
+import { upsertMessage } from "./messageCollection";
+import { mergeMessageContentData } from "./taskClaimProjection";
 import { TopicPaneResizer } from "./TopicPaneResizer";
 
 interface Props {
@@ -52,6 +55,7 @@ interface Props {
   liveMessages?: Message[];
   /** Lets the composer find bot children that live in this topic, not the chat window. */
   discussionThreadRef?: MutableRefObject<Message[]>;
+  messageUpdatedRef?: MutableRefObject<((update: Partial<Message> & { msg_id: string }) => void) | null>;
   footer?: ReactNode;
   onComposerContextChange: (root: Message | null, creating: boolean) => void;
 }
@@ -172,6 +176,7 @@ export function DiscussionView({
   openDiscussionId,
   liveMessages = [],
   discussionThreadRef,
+  messageUpdatedRef,
   footer,
   onComposerContextChange,
 }: Props) {
@@ -198,6 +203,30 @@ export function DiscussionView({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const storageKey = `cheers:last-discussion:${channelId}`;
   const onComposerContextChangeRef = useRef(onComposerContextChange);
+  const scope = `${channelId}:${selectedId}`;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  useEffect(() => { setLoadingOlder(false); }, [scope]);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  useEffect(() => {
+    if (!messageUpdatedRef) return;
+    const update = (message: Partial<Message> & { msg_id: string }) => {
+      setDetail((current) => current ? {
+        ...current,
+        root: current.root.msg_id === message.msg_id ? upsertMessage([current.root], message)[0] : current.root,
+        replies: current.replies.some((row) => row.msg_id === message.msg_id) ? upsertMessage(current.replies, message) : current.replies,
+      } : current);
+    };
+    messageUpdatedRef.current = update;
+    return () => {
+      if (messageUpdatedRef.current === update) messageUpdatedRef.current = null;
+      if (discussionThreadRef) discussionThreadRef.current = [];
+    };
+  }, [discussionThreadRef, messageUpdatedRef]);
 
   useEffect(() => {
     onComposerContextChangeRef.current = onComposerContextChange;
@@ -286,6 +315,7 @@ export function DiscussionView({
   }, [creating, debouncedQuery, isWide, selectDiscussion, selectedId, storageKey, topics]);
 
   const refreshDetail = useCallback(async (showSpinner = true) => {
+    const generation = clientSessionGeneration();
     if (!selectedId) {
       setDetail(null);
       onComposerContextChangeRef.current(null, creating);
@@ -295,16 +325,22 @@ export function DiscussionView({
     try {
       setDetailError(null);
       const response = await getDiscussion(channelId, selectedId, { limit: 50 });
-      setDetail(response);
+      if (!mountedRef.current || scopeRef.current !== scope || generation !== clientSessionGeneration()) return;
+      setDetail((current) => {
+        const previous = new Map([...(current ? [current.root, ...current.replies] : [])].map((message) => [message.msg_id, message]));
+        const preserve = (message: Message) => ({ ...message, content_data: mergeMessageContentData(previous.get(message.msg_id)?.content_data, message.content_data) });
+        return { ...response, root: preserve(response.root), replies: response.replies.map(preserve) };
+      });
       onComposerContextChangeRef.current(response.root, false);
     } catch (error) {
+      if (!mountedRef.current || scopeRef.current !== scope || generation !== clientSessionGeneration()) return;
       setDetail(null);
       setDetailError(error instanceof Error ? error.message : "Couldn't load this discussion");
       onComposerContextChangeRef.current(null, false);
     } finally {
-      setLoadingDetail(false);
+      if (mountedRef.current && scopeRef.current === scope && generation === clientSessionGeneration()) setLoadingDetail(false);
     }
-  }, [channelId, creating, selectedId]);
+  }, [channelId, creating, selectedId, scope]);
 
   useEffect(() => {
     void refreshDetail();
@@ -360,19 +396,22 @@ export function DiscussionView({
   const loadOlderReplies = async () => {
     const first = detail?.replies[0];
     if (!selectedId || !first || !detail.meta.has_more_before || loadingOlder) return;
+    const generation = clientSessionGeneration();
+    const current = () => mountedRef.current && scopeRef.current === scope && generation === clientSessionGeneration();
     setLoadingOlder(true);
     try {
       const response = await getDiscussion(channelId, selectedId, {
         before: first.msg_id,
         limit: 50,
       });
+      if (!current()) return;
       setDetail((current) => current ? {
         ...current,
         replies: [...response.replies, ...current.replies],
         meta: response.meta,
       } : response);
     } finally {
-      setLoadingOlder(false);
+      if (current()) setLoadingOlder(false);
     }
   };
 

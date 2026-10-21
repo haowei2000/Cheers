@@ -2,7 +2,8 @@
 //! Cancellation only changes the claim row; delivery, grants and completion all
 //! consult that same row before committing further work.
 
-use serde_json::json;
+use serde::Serialize;
+use serde_json::{json, Value};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -38,6 +39,103 @@ pub struct ResolveClaimOutcome {
     pub status: String,
     pub execution_msg_id: Option<Uuid>,
     pub trigger_msg_id: Option<Uuid>,
+    /// Only a committed state change has publication effects.
+    pub update: Option<ClaimUpdate>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ConfirmationMessageUpdate {
+    pub msg_id: Uuid,
+    pub content_data: Value,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ClaimUpdate {
+    pub claim_id: Uuid,
+    pub channel_id: Uuid,
+    pub status: String,
+    pub execution_msg_id: Option<Uuid>,
+    pub confirmation_message: Option<ConfirmationMessageUpdate>,
+}
+
+/// Project a locked claim into its real confirmation, in the caller's transaction.
+/// Never lock an arbitrary message before checking its role and ownership: run
+/// finalization locks execution messages before claims. Invalid historical links
+/// must not invert that order or prevent cancellation from fencing execution.
+pub(crate) async fn project_update_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    claim_id: Uuid,
+) -> Result<ClaimUpdate, sqlx::Error> {
+    let claim = sqlx::query!(
+        "SELECT channel_id,bot_id,status,execution_msg_id,confirmation_message_id,resolved_by,resolution_note
+         FROM task_claim_requests WHERE claim_id=$1 FOR UPDATE",
+        claim_id.to_string(),
+    ).fetch_one(&mut **tx).await?;
+    let confirmation = sqlx::query!(
+        "SELECT msg_id,content_data FROM messages
+         WHERE msg_id=$1 AND channel_id=$2 AND sender_id=$3 AND sender_type='bot'
+           AND msg_type='task_claim_confirmation' AND NOT is_partial AND NOT is_deleted AND NOT is_secret
+           AND content_data->>'claim_id'=$4 FOR UPDATE",
+        claim.confirmation_message_id, claim.channel_id, claim.bot_id, claim_id.to_string(),
+    ).fetch_optional(&mut **tx).await?;
+    let confirmation_message = if let Some(message) = confirmation {
+        let mut data = message.content_data.unwrap_or_default();
+        let revision = data
+            .get("claim_revision")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or_else(|| sqlx::Error::Protocol("claim revision overflow".into()))?;
+        // The scoped JSON claim-id predicate above only admits object metadata.
+        let fields = data
+            .as_object_mut()
+            .ok_or_else(|| sqlx::Error::Protocol("invalid claim confirmation metadata".into()))?;
+        fields.insert("resolved".into(), json!(claim.status != "pending"));
+        fields.insert("claim_status".into(), json!(claim.status));
+        fields.insert("claim_revision".into(), json!(revision));
+        fields.insert("resolved_by".into(), json!(claim.resolved_by));
+        fields.insert("resolution_note".into(), json!(claim.resolution_note));
+        let decision = match claim.status.as_str() {
+            "accepted" | "executing" | "completed" => Some("accept"),
+            "rejected" => Some("reject"),
+            "cancelled" => Some("cancel"),
+            "failed" if claim.resolution_note.as_deref() == Some("expired") => Some("expire"),
+            _ => None,
+        };
+        if let Some(decision) = decision {
+            fields.insert("decision".into(), json!(decision));
+        }
+        sqlx::query!(
+            "UPDATE messages SET content_data=$2 WHERE msg_id=$1",
+            message.msg_id,
+            &data
+        )
+        .execute(&mut **tx)
+        .await?;
+        Some(ConfirmationMessageUpdate {
+            msg_id: message
+                .msg_id
+                .parse()
+                .map_err(|_| sqlx::Error::Protocol("invalid confirmation id".into()))?,
+            content_data: data,
+        })
+    } else {
+        None
+    };
+    Ok(ClaimUpdate {
+        claim_id,
+        channel_id: claim
+            .channel_id
+            .parse()
+            .map_err(|_| sqlx::Error::Protocol("invalid claim channel id".into()))?,
+        status: claim.status,
+        execution_msg_id: claim
+            .execution_msg_id
+            .map(|id| id.parse())
+            .transpose()
+            .map_err(|_| sqlx::Error::Protocol("invalid claim execution id".into()))?,
+        confirmation_message,
+    })
 }
 
 pub enum EvaluationDecision {
@@ -186,7 +284,7 @@ pub async fn complete_evaluation(
     );
     let data = json!({"claim_id":claim_id,"requester_id":source.sender_id,
         "summary":summary,"proposed_action":action,"confidence":confidence,
-        "impact":impact,"resolved":false});
+        "impact":impact,"resolved":false,"claim_status":"pending","claim_revision":1});
     let confirmation = sqlx::query!(
         "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,is_deleted,in_reply_to_msg_id,created_at,channel_seq,content_data)
          VALUES($1,$2,$3,'bot',$4,'task_claim_confirmation',FALSE,FALSE,$5,NOW(),$6,$7)
@@ -466,21 +564,6 @@ pub async fn resolve(
     } else {
         "rejected"
     };
-    sqlx::query!(
-        "UPDATE messages SET content_data=COALESCE(content_data,'{}'::jsonb)
-             || jsonb_build_object('resolved',TRUE,'decision',$2::text,'resolved_by',$3::text)
-         WHERE msg_id=$1 AND channel_id=$4",
-        claim.confirmation_message_id,
-        if params.decision == ClaimDecision::Accept {
-            "accept"
-        } else {
-            "reject"
-        },
-        params.requester_id.to_string(),
-        params.channel_id.to_string(),
-    )
-    .execute(&mut *tx)
-    .await?;
     let changed = sqlx::query!(
         "UPDATE task_claim_requests SET status=$2,resolved_by=$3,resolution_note=$4,
              resolved_at=NOW(),updated_at=NOW(),execution_msg_id=$5
@@ -497,12 +580,14 @@ pub async fn resolve(
     if changed.rows_affected() != 1 {
         return Err(AppError::Conflict("claim is no longer pending".into()));
     }
+    let update = project_update_tx(&mut tx, params.claim_id).await?;
     tx.commit().await?;
     Ok(ResolveClaimOutcome {
         claim_id: params.claim_id,
         status: status.into(),
         execution_msg_id,
         trigger_msg_id,
+        update: Some(update),
     })
 }
 
@@ -515,31 +600,72 @@ pub async fn cancel(
     actor_id: Uuid,
     note: Option<&str>,
 ) -> Result<ResolveClaimOutcome, AppError> {
+    let mut tx = db.begin().await?;
     let changed = sqlx::query!(
         "UPDATE task_claim_requests SET status='cancelled',resolved_by=$3,resolution_note=$4,
              resolved_at=NOW(),updated_at=NOW()
          WHERE claim_id=$1 AND channel_id=$2 AND status IN ('pending','executing') RETURNING claim_id",
         claim_id.to_string(),channel_id.to_string(),actor_id.to_string(),note,
-    ).fetch_optional(db).await?;
+    ).fetch_optional(&mut *tx).await?;
     if changed.is_none() {
-        let status = sqlx::query_scalar!(
-            "SELECT status FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2",
-            claim_id.to_string(),
-            channel_id.to_string(),
-        )
-        .fetch_optional(db)
-        .await?
-        .ok_or(AppError::NotFound)?;
-        if status != "cancelled" {
+        let claim = sqlx::query!(
+            "SELECT status,execution_msg_id FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2",
+            claim_id.to_string(), channel_id.to_string(),
+        ).fetch_optional(&mut *tx).await?.ok_or(AppError::NotFound)?;
+        if claim.status != "cancelled" {
             return Err(AppError::Conflict("claim is no longer pending".into()));
         }
+        tx.commit().await?;
+        return Ok(ResolveClaimOutcome {
+            claim_id,
+            status: claim.status,
+            execution_msg_id: claim
+                .execution_msg_id
+                .map(|id| id.parse())
+                .transpose()
+                .map_err(|_| AppError::Internal("invalid claim execution id".into()))?,
+            trigger_msg_id: None,
+            update: None,
+        });
     }
+    let update = project_update_tx(&mut tx, claim_id).await?;
+    tx.commit().await?;
     Ok(ResolveClaimOutcome {
         claim_id,
-        status: "cancelled".into(),
-        execution_msg_id: None,
+        status: update.status.clone(),
+        execution_msg_id: update.execution_msg_id,
         trigger_msg_id: None,
+        update: Some(update),
     })
+}
+
+/// Finite deadlines remain opt-in data. The sweep updates the same projection
+/// as interactive actions and skips a claim whose decision is still committing.
+pub async fn expire(db: &PgPool) -> Result<Vec<ClaimUpdate>, AppError> {
+    let mut tx = db.begin().await?;
+    let claims = sqlx::query!(
+        "SELECT claim_id FROM task_claim_requests
+         WHERE status IN ('pending','executing') AND expires_at IS NOT NULL AND expires_at<=clock_timestamp()
+         ORDER BY claim_id LIMIT 100 FOR UPDATE SKIP LOCKED",
+    ).fetch_all(&mut *tx).await?;
+    let mut updates = Vec::with_capacity(claims.len());
+    for claim in claims {
+        sqlx::query!(
+            "UPDATE task_claim_requests SET status='failed',resolution_note='expired',
+                 resolved_at=COALESCE(resolved_at,NOW()),updated_at=NOW()
+             WHERE claim_id=$1",
+            claim.claim_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+        let id = claim
+            .claim_id
+            .parse()
+            .map_err(|_| AppError::Internal("invalid claim id".into()))?;
+        updates.push(project_update_tx(&mut tx, id).await?);
+    }
+    tx.commit().await?;
+    Ok(updates)
 }
 
 /// Shared claim fence for delivery/grant/result commits. Legacy accepted claims

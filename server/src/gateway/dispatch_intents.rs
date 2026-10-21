@@ -743,6 +743,14 @@ async fn cancel(
     )
     .fetch_all(&mut *tx)
     .await?;
+    let mut claim_updates = Vec::with_capacity(failed_claims.len());
+    for claim in failed_claims {
+        let id = claim
+            .claim_id
+            .parse()
+            .map_err(|_| sqlx::Error::Protocol("invalid claim id".into()))?;
+        claim_updates.push(crate::domain::task_claims::project_update_tx(&mut tx, id).await?);
+    }
     if let Ok(intent) = DispatchInput::decode(&run.dispatch_input) {
         if let Some(session) = intent.params.session_id {
             sessions::finalize_session_without_active_turns_tx(&mut tx, session)
@@ -767,17 +775,8 @@ async fn cancel(
                 dispatcher::bot_unavailable_frame(channel, msg, bot),
             )
             .await;
-        for claim in failed_claims {
-            fanout
-                .broadcast_channel(
-                    channel,
-                    WireFrame::channel(
-                        channel,
-                        "task_claim_updated",
-                        json!({"claim_id":claim.claim_id,"status":"failed","execution_msg_id":msg}),
-                    ),
-                )
-                .await;
+        for update in claim_updates {
+            super::resource_effects::publish_claim_update(fanout.as_ref(), &update).await;
         }
     }
     Ok(())

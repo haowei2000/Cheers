@@ -56,6 +56,7 @@ enum SocketEvent {
     case messageStream(channelId: String, msgId: String, delta: String)
     case messageDone(channelId: String, MessageDto)
     case messageDeleted(channelId: String, msgId: String)
+    case taskClaimUpdated(TaskClaimUpdate)
     case botTrace(channelId: String, TraceEventDto)
     case memberUpdated(channelId: String, memberId: String?)
     case presence(channelId: String, PresencePayload)
@@ -388,6 +389,15 @@ final class ChatSocket: NSObject {
         return payload.data.channelId
     }
 
+    static func taskClaimUpdate(from data: Data) -> TaskClaimUpdate? {
+        guard let head = try? JSONDecoder().decode(FrameHead.self, from: data),
+              head.type == "task_claim_updated",
+              let payload = try? JSONDecoder().decode(DataEnvelope<TaskClaimUpdate>.self, from: data),
+              head.channelId == payload.data.channelId
+        else { return nil }
+        return payload.data
+    }
+
     private func handleFrame(_ text: String) {
         guard let data = text.data(using: .utf8),
               let head = try? JSONDecoder().decode(FrameHead.self, from: data) else { return }
@@ -440,6 +450,10 @@ final class ChatSocket: NSObject {
             if let channelId = head.channelId,
                let payload = try? JSONDecoder().decode(DataEnvelope<DeletedPayload>.self, from: data) {
                 onEvent?(.messageDeleted(channelId: channelId, msgId: payload.data.msgId))
+            }
+        case "task_claim_updated":
+            if let update = Self.taskClaimUpdate(from: data) {
+                onEvent?(.taskClaimUpdated(update))
             }
         case "bot_trace":
             if let channelId = head.channelId,

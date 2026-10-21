@@ -10,9 +10,8 @@ use uuid::Uuid;
 use crate::{
     api::middleware::Claims,
     app_state::AppState,
-    domain::task_claims::{self, ClaimDecision, ResolveClaimParams},
+    domain::task_claims::{self, ClaimDecision, ResolveClaimOutcome, ResolveClaimParams},
     errors::AppError,
-    gateway::realtime::frame::WireFrame,
 };
 
 #[derive(Debug, Deserialize)]
@@ -290,14 +289,10 @@ pub async fn resolve_claim(
         },
     )
     .await?;
-    let result = json!({"claim_id":outcome.claim_id,"status":outcome.status,"execution_msg_id":outcome.execution_msg_id});
-    state
-        .fanout
-        .broadcast_channel(
-            channel_id,
-            WireFrame::channel(channel_id, "task_claim_updated", result.clone()),
-        )
-        .await;
+    let result = claim_response(channel_id, &outcome);
+    if let Some(update) = &outcome.update {
+        crate::gateway::resource_effects::publish_claim_update(state.fanout.as_ref(), update).await;
+    }
     // The committed intent survives process loss at this boundary. Preparation
     // never blocks the approval response and cannot overwrite a later cancel.
     if let Some(trigger) = outcome.trigger_msg_id {
@@ -322,7 +317,7 @@ pub async fn resolve_claim(
 
 /// POST /api/v1/channels/:channel_id/task-claims/:claim_id/cancel — a channel
 /// administrator cancels a still-pending/executing claim. Idempotent on a
-/// terminal-state hit.
+/// repeated cancellation.
 pub async fn cancel_claim(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -338,54 +333,17 @@ pub async fn cancel_claim(
         input.note.as_deref(),
     )
     .await?;
-    state
-        .fanout
-        .broadcast_channel(
-            channel_id,
-            WireFrame::channel(
-                channel_id,
-                "task_claim_updated",
-                json!({"claim_id": claim_id, "status": "cancelled"}),
-            ),
-        )
-        .await;
-    Ok(Json(
-        json!({"claim_id": outcome.claim_id, "status": outcome.status}),
-    ))
+    if let Some(update) = &outcome.update {
+        crate::gateway::resource_effects::publish_claim_update(state.fanout.as_ref(), update).await;
+    }
+    Ok(Json(claim_response(channel_id, &outcome)))
 }
 
-/// Sweep claims whose `expires_at` is in the past → `failed`. Called on a timer
-/// (e.g. 60 s) from `main.rs`. A claim with `expires_at = NULL` never expires
-/// (default for back-compat / migrated rows).
-pub async fn sweep_expired_claims(db: &sqlx::PgPool) -> Result<u64, AppError> {
-    let result = sqlx::query!(
-        "UPDATE task_claim_requests
-         SET status='failed', resolution_note='expired', updated_at=NOW()
-         WHERE status IN ('pending','executing') AND expires_at IS NOT NULL AND expires_at <= NOW()",
-    )
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected())
-}
-
-/// Wire a pending claim to supersede an earlier, still-pending claim on the same
-/// channel+bot (competing-claim dedup). The older claim is marked superseded so
-/// its audit trail stays intact. No-op if the target is already terminal.
-pub async fn supersede_claim(
-    db: &sqlx::PgPool,
-    channel_id: &str,
-    superseded_claim_id: &str,
-    new_claim_id: &str,
-) -> Result<bool, AppError> {
-    let result = sqlx::query!(
-        "UPDATE task_claim_requests
-         SET superseded_at = NOW(), resolution_note = $3, updated_at = NOW()
-         WHERE claim_id = $1 AND channel_id = $2 AND status = 'pending'",
-        superseded_claim_id,
-        channel_id,
-        format!("superseded by {new_claim_id}"),
-    )
-    .execute(db)
-    .await?;
-    Ok(result.rows_affected() > 0)
+fn claim_response(channel_id: Uuid, outcome: &ResolveClaimOutcome) -> Value {
+    match &outcome.update {
+        Some(update) => json!(update),
+        None => json!({"claim_id":outcome.claim_id,"channel_id":channel_id,
+            "status":outcome.status,"execution_msg_id":outcome.execution_msg_id,
+            "confirmation_message":null}),
+    }
 }

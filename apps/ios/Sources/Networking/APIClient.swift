@@ -991,11 +991,11 @@ struct APIClient: Sendable {
         )
     }
 
-    func resolveTaskClaim(channelId: String, claimId: String, decision: String) async throws {
-        _ = try await postJSON(
+    func resolveTaskClaim(channelId: String, claimId: String, decision: String) async throws -> TaskClaimUpdate {
+        try await postJSON(
             "/channels/\(channelId)/task-claims/\(claimId)/resolve",
             body: ["decision": decision],
-            as: JSONValue.self
+            as: TaskClaimUpdate.self
         )
     }
 
@@ -1008,10 +1008,10 @@ struct APIClient: Sendable {
         ).claims
     }
 
-    func cancelTaskClaim(channelId: String, claimId: String) async throws {
-        _ = try await postJSON(
+    func cancelTaskClaim(channelId: String, claimId: String) async throws -> TaskClaimUpdate {
+        try await postJSON(
             "/channels/\(channelId)/task-claims/\(claimId)/cancel",
-            body: [String: String](), as: JSONValue.self
+            body: [String: String](), as: TaskClaimUpdate.self
         )
     }
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import type { Message, TraceEvent, VoiceTranscriptSegment } from "@/types";
 import { normalizeTraceEvent } from "../traceEvent";
+import { claimConfirmationUpdate } from "../taskClaimProjection";
 import { realtimeTransport, sendResourceRequest, type RealtimeFrame, type RealtimeStatus } from "@/lib/realtimeTransport";
 
 export type { RealtimeStatus } from "@/lib/realtimeTransport";
@@ -79,7 +80,7 @@ interface Callbacks {
 
 /** Channel event interpretation stays with chat; authentication, routing and RPC
  * correlation belong to the app-wide transport. */
-function handleChannelFrame(event: RealtimeFrame, cbs: Callbacks) {
+export function handleChannelFrame(event: RealtimeFrame, cbs: Callbacks) {
   const { type, data } = event;
 
   if (type === "message") {
@@ -102,6 +103,8 @@ function handleChannelFrame(event: RealtimeFrame, cbs: Callbacks) {
     const d = data as { bot_id: string; placeholder_msg_id: string };
     cbs.onBotUnavailable?.(d.bot_id, d.placeholder_msg_id);
   } else if (type === "task_claim_created" || type === "task_claim_updated") {
+    const confirmation = event.channel_id ? claimConfirmationUpdate(data, event.channel_id) : null;
+    if (confirmation) cbs.onContentDataUpdated?.(confirmation.msg_id, confirmation.content_data);
     cbs.onTaskClaimChange?.();
   } else if (type === "presence") {
     const d = data as {

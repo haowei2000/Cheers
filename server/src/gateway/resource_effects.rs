@@ -73,6 +73,30 @@ fn direct_message_notification_payload(channel_id: Uuid, sender_name: &str) -> V
     })
 }
 
+/// Interactive actions, expiry and execution settlement publish the same
+/// committed claim/confirmation snapshot. Replays have no update to publish.
+pub async fn publish_claim_update(
+    fanout: &dyn super::realtime::fanout::Fanout,
+    update: &crate::domain::task_claims::ClaimUpdate,
+) {
+    fanout
+        .broadcast_channel(
+            update.channel_id,
+            WireFrame::channel(update.channel_id, "task_claim_updated", json!(update)),
+        )
+        .await;
+    fanout
+        .broadcast_channel(
+            update.channel_id,
+            WireFrame::channel(
+                update.channel_id,
+                "board_signal",
+                json!({"channel_id":update.channel_id,"board":"activity"}),
+            ),
+        )
+        .await;
+}
+
 /// Dispatch a `resource_req` frame and apply post-write publication. Returns the
 /// `resource_res` frame verbatim from
 /// [`resource::dispatch`] — effects never change the reply, and never fail it.

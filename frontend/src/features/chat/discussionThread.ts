@@ -1,6 +1,7 @@
 /** @file Merge REST discussion detail with live channel messages for one topic. */
 
 import type { Message } from "@/types";
+import { mergeMessageContentData } from "./taskClaimProjection";
 
 /** Whether a message belongs to a discussion root (including the root itself). */
 export function inDiscussionThread(message: Message, rootId: string): boolean {
@@ -33,7 +34,10 @@ export function mergeDiscussionMessages(
         message.is_partial ||
         (message.channel_seq ?? 0) >= (previous.channel_seq ?? 0)
       ) {
-        byId.set(message.msg_id, { ...previous, ...message });
+        byId.set(message.msg_id, {
+          ...previous, ...message,
+          content_data: mergeMessageContentData(previous.content_data, message.content_data),
+        });
       }
       return;
     }

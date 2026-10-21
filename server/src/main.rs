@@ -301,9 +301,19 @@ async fn main() -> anyhow::Result<()> {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
-            match server::api::task_claims::sweep_expired_claims(&sweep_state.db).await {
-                Ok(0) => {}
-                Ok(n) => tracing::info!(expired = n, "task-claim expiry sweep"),
+            match server::domain::task_claims::expire(&sweep_state.db).await {
+                Ok(updates) => {
+                    if !updates.is_empty() {
+                        tracing::info!(expired = updates.len(), "task-claim expiry sweep");
+                    }
+                    for update in updates {
+                        gateway::resource_effects::publish_claim_update(
+                            sweep_state.fanout.as_ref(),
+                            &update,
+                        )
+                        .await;
+                    }
+                }
                 Err(e) => tracing::warn!(err = %e, "task-claim expiry sweep failed"),
             }
         }
