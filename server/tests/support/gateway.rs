@@ -32,6 +32,35 @@ impl Drop for TestGateway {
     }
 }
 impl TestGateway {
+    /// Re-sign only the time claims of a real login token with this fixture's
+    /// temporary key. Account, session, issuer and revocation version stay real.
+    #[allow(dead_code)]
+    pub fn access_token_with_expiry(&self, token: &str, expires_at: u64) -> String {
+        use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Validation};
+        use server::api::middleware::{Claims, JWT_ISSUER};
+
+        let public = std::fs::read(self.directory.join("public.pem")).unwrap();
+        let private = std::fs::read(self.directory.join("private.pem")).unwrap();
+        let mut validation = Validation::new(Algorithm::RS256);
+        validation.validate_nbf = true;
+        validation.set_issuer(&[JWT_ISSUER]);
+        let original = decode::<Claims>(
+            token,
+            &DecodingKey::from_rsa_pem(&public).unwrap(),
+            &validation,
+        )
+        .unwrap();
+        let mut claims = original.claims;
+        claims.exp = expires_at;
+        claims.iat = chrono::Utc::now().timestamp() as u64;
+        encode(
+            &original.header,
+            &claims,
+            &EncodingKey::from_rsa_pem(&private).unwrap(),
+        )
+        .unwrap()
+    }
+
     pub async fn start(db: &PgPool, login: &str, password: &str) -> (Self, String) {
         static PROCESS_SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
         let process_permit = PROCESS_SLOTS

@@ -72,6 +72,10 @@ final class AppModel {
     @ObservationIgnored
     private var lastSessionRefreshAt: Date?
 
+    /// A rejected socket token cannot be reused while refresh is unavailable.
+    @ObservationIgnored
+    private var needsSocketAuthenticationRefresh = false
+
     init() {
         let defaults = UserDefaults.standard
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-reset-session") {
@@ -306,6 +310,7 @@ final class AppModel {
             username: response.username,
             avatarURL: persistedAvatarURL
         )
+        needsSocketAuthenticationRefresh = false
         lastSessionRefreshAt = Date()
         if socket.isAuthed {
             socket.refreshAuthentication(token: accessToken)
@@ -319,27 +324,43 @@ final class AppModel {
     /// the local session so a later timer/foreground wakeup can retry; only a rejected
     /// refresh credential signs the user out.
     func refreshSessionIfNeeded(force: Bool = false) async {
-        guard session != nil,
+        guard let session,
               !isRefreshingSession,
-              let base = baseURL,
-              let refreshToken = KeychainStore.get(Keys.refreshToken)
+              let base = baseURL
         else { return }
-        if !force,
+        guard let refreshToken = KeychainStore.get(Keys.refreshToken) else {
+            if needsSocketAuthenticationRefresh {
+                clearSession()
+            }
+            return
+        }
+        if !force, !needsSocketAuthenticationRefresh,
            let lastSessionRefreshAt,
            Date().timeIntervalSince(lastSessionRefreshAt) < 8 * 60 {
             return
         }
 
+        let attemptedToken = token
+        let isCurrentRefresh = {
+            self.session?.userId == session.userId
+                && self.baseURL == base
+                && self.token == attemptedToken
+                && KeychainStore.get(Keys.refreshToken) == refreshToken
+        }
         isRefreshingSession = true
         defer { isRefreshingSession = false }
         do {
             let response = try await APIClient(baseURL: base, token: nil).refresh(refreshToken: refreshToken)
+            guard isCurrentRefresh() else { return }
             try finishLogin(base: base, response: response)
         } catch APIError.http(let status, _) where status == 401 {
+            guard isCurrentRefresh() else { return }
             clearSession()
         } catch {
+            guard isCurrentRefresh() else { return }
             // Offline/server failures are retryable. Keep using the current access
-            // token when it is still valid and retry on the next minute tick.
+            // token only if the socket has not rejected it; otherwise the next
+            // minute/foreground check retries refresh before connecting again.
             reconnectSocketIfNeeded()
         }
     }
@@ -399,6 +420,7 @@ final class AppModel {
         Task { await messageStore.removeAll() }
         token = nil
         session = nil
+        needsSocketAuthenticationRefresh = false
         lastSessionRefreshAt = nil
         KeychainStore.remove(Keys.token)
         KeychainStore.remove(Keys.refreshToken)
@@ -456,7 +478,8 @@ final class AppModel {
     // MARK: Socket
 
     func connectSocket() {
-        guard let baseURL,
+        guard !needsSocketAuthenticationRefresh,
+              let baseURL,
               let wsURL = APIClient.websocketURL(for: baseURL),
               let token else { return }
         socket.connect(url: wsURL, token: token)
@@ -498,8 +521,10 @@ final class AppModel {
             socketConnected = false
         case .authFailed:
             socketConnected = false
-            // Token rejected on the socket → treat as revoked session.
-            clearSession()
+            needsSocketAuthenticationRefresh = true
+            Task { [weak self] in
+                await self?.refreshSessionIfNeeded(force: true)
+            }
         default:
             break
         }

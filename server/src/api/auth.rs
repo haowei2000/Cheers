@@ -921,13 +921,22 @@ pub async fn refresh(
                 .map(str::to_owned)
         })
         .or_else(|| parse_cookie(&headers, "cheers_csrf"));
-    let rotated = auth_sessions::rotate_refresh_token(
+    let outcome = auth_sessions::rotate_refresh_token(
         &state.db,
         &state.config,
         &refresh_token,
         csrf.as_deref(),
     )
     .await?;
+    let rotated = match outcome {
+        auth_sessions::RefreshOutcome::Rotated(rotated) => rotated,
+        auth_sessions::RefreshOutcome::ReuseRevoked(revoked) => {
+            apply_session_revocations(&state, &revoked);
+            return Err(AppError::Unauthorized(
+                "refresh token reuse detected; session revoked".into(),
+            ));
+        }
+    };
     let client = sqlx::query_scalar!(
         "SELECT client_type FROM auth_sessions WHERE session_id = $1",
         &rotated.session_id,
@@ -963,13 +972,24 @@ pub async fn refresh(
     })
 }
 
+/// Apply only the exact sessions returned by a committed domain command.
+pub(crate) fn apply_session_revocations(
+    state: &AppState,
+    revoked: &auth_sessions::RevokedSessions,
+) {
+    for session_id in &revoked.session_ids {
+        state.fanout.kick_session(revoked.user_id, session_id);
+    }
+}
+
 pub async fn logout_current(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
-    auth_sessions::revoke_session(&state.db, &claims.sub, &claims.sid).await?;
-    if let Ok(uid) = claims.sub.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
+    if let Some(revoked) =
+        auth_sessions::revoke_session(&state.db, &claims.sub, &claims.sid).await?
+    {
+        apply_session_revocations(&state, &revoked);
     }
     Ok(Json(json!({ "ok": true })))
 }
@@ -1001,9 +1021,10 @@ pub async fn revoke_session(
     Extension(claims): Extension<Claims>,
     axum::extract::Path(session_id): axum::extract::Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    if !auth_sessions::revoke_session(&state.db, &claims.sub, &session_id).await? {
-        return Err(AppError::NotFound);
-    }
+    let revoked = auth_sessions::revoke_session(&state.db, &claims.sub, &session_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    apply_session_revocations(&state, &revoked);
     Ok(Json(json!({ "ok": true })))
 }
 

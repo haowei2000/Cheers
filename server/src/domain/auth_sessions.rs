@@ -68,6 +68,31 @@ pub struct RotatedSession {
     pub expires_in: i64,
 }
 
+/// Exact committed session identities whose live browser connections must close.
+#[derive(Debug)]
+pub struct RevokedSessions {
+    pub user_id: Uuid,
+    pub session_ids: Vec<String>,
+}
+
+impl RevokedSessions {
+    fn new(user_id: &str, session_ids: Vec<String>) -> Result<Self, AppError> {
+        Ok(Self {
+            user_id: user_id
+                .parse()
+                .map_err(|_| AppError::Internal("invalid revoked session user id".into()))?,
+            session_ids,
+        })
+    }
+}
+
+pub enum RefreshOutcome {
+    Rotated(RotatedSession),
+    /// Reuse is an authenticated security outcome, committed before it is
+    /// returned. The adapter closes these sessions before returning its 401.
+    ReuseRevoked(RevokedSessions),
+}
+
 #[derive(Debug, Serialize)]
 pub struct SessionSummary {
     pub session_id: String,
@@ -336,7 +361,7 @@ pub async fn rotate_refresh_token(
     config: &Config,
     raw_token: &str,
     csrf_token: Option<&str>,
-) -> Result<RotatedSession, AppError> {
+) -> Result<RefreshOutcome, AppError> {
     let mut tx = db.begin().await?;
     let row = sqlx::query!(
         "SELECT rt.refresh_token_id, rt.session_id, rt.expires_at AS refresh_expires_at,
@@ -364,6 +389,7 @@ pub async fn rotate_refresh_token(
         ));
     }
     if consumed_at.is_some() {
+        let revoked = RevokedSessions::new(&user_id, vec![session_id.clone()])?;
         revoke_session_in_tx(&mut tx, &session_id, "refresh_token_reuse").await?;
         sqlx::query!(
             "INSERT INTO auth_security_events
@@ -376,9 +402,7 @@ pub async fn rotate_refresh_token(
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
-        return Err(AppError::Unauthorized(
-            "refresh token reuse detected; session revoked".into(),
-        ));
+        return Ok(RefreshOutcome::ReuseRevoked(revoked));
     }
 
     let refresh_expires_at: DateTime<Utc> = row.refresh_expires_at.clone();
@@ -429,7 +453,7 @@ pub async fn rotate_refresh_token(
         .id
         .parse()
         .map_err(|_| AppError::Internal("invalid user id".into()))?;
-    Ok(RotatedSession {
+    Ok(RefreshOutcome::Rotated(RotatedSession {
         access_token: auth::create_access_token(
             config,
             user_uuid,
@@ -442,7 +466,7 @@ pub async fn rotate_refresh_token(
         refresh_token: new_token,
         csrf_token: csrf_token.map(str::to_owned),
         expires_in: ACCESS_TOKEN_TTL_SECONDS,
-    })
+    }))
 }
 
 async fn revoke_session_in_tx(
@@ -479,7 +503,7 @@ pub async fn revoke_session(
     db: &PgPool,
     user_id: &str,
     session_id: &str,
-) -> Result<bool, AppError> {
+) -> Result<Option<RevokedSessions>, AppError> {
     let mut tx = db.begin().await?;
     let owned = sqlx::query!(
         "SELECT 1 AS present FROM auth_sessions WHERE session_id = $1 AND user_id = $2 FOR UPDATE",
@@ -489,11 +513,15 @@ pub async fn revoke_session(
     .fetch_optional(&mut *tx)
     .await?
     .is_some();
-    if owned {
+    let revoked = if owned {
+        let revoked = RevokedSessions::new(user_id, vec![session_id.to_owned()])?;
         revoke_session_in_tx(&mut tx, session_id, "user_revoked").await?;
-    }
+        Some(revoked)
+    } else {
+        None
+    };
     tx.commit().await?;
-    Ok(owned)
+    Ok(revoked)
 }
 
 pub async fn revoke_all_sessions(db: &PgPool, user_id: &str) -> Result<(), AppError> {
@@ -652,12 +680,13 @@ pub async fn record_direct_step_up(
 
 /// Identity changes keep the session that authorized the operation but revoke
 /// every other session and every trusted-device credential for the account.
-pub async fn revoke_other_sessions_and_trusted_devices(
-    db: &PgPool,
+/// The caller commits this together with its identity mutation before applying
+/// the returned live-session revocations. Concurrent new logins are separate.
+pub(crate) async fn revoke_other_sessions_and_trusted_devices_tx(
+    tx: &mut Transaction<'_, Postgres>,
     user_id: &str,
     current_session_id: &str,
-) -> Result<(), AppError> {
-    let mut tx = db.begin().await?;
+) -> Result<RevokedSessions, AppError> {
     let rows = sqlx::query!(
         "SELECT session_id FROM auth_sessions
          WHERE user_id = $1 AND session_id <> $2 AND revoked_at IS NULL
@@ -665,21 +694,23 @@ pub async fn revoke_other_sessions_and_trusted_devices(
         user_id,
         current_session_id,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
-    for row in rows {
-        let session_id: String = row.session_id.clone();
-        revoke_session_in_tx(&mut tx, &session_id, "identity_changed").await?;
+    let revoked = RevokedSessions::new(
+        user_id,
+        rows.into_iter().map(|row| row.session_id).collect(),
+    )?;
+    for session_id in &revoked.session_ids {
+        revoke_session_in_tx(tx, session_id, "identity_changed").await?;
     }
     sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW())
          WHERE user_id = $1",
         user_id,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-    tx.commit().await?;
-    Ok(())
+    Ok(revoked)
 }
 
 #[derive(Serialize)]

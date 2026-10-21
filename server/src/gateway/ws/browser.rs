@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 use axum::{
     extract::{
@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
-    api::middleware::{verify_token, Claims},
+    api::middleware::{session_valid_until, verify_token, VerifiedSession},
     app_state::AppState,
     gateway::realtime::{fanout::CloseReason, frame::WireFrame},
 };
@@ -119,12 +119,12 @@ pub async fn ws_handler(
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
     // ── 阶段 1：鉴权（10s 超时）─────────────────────────────────────────────
-    let claims = match auth_phase(&mut socket, &state).await {
+    let session = match auth_phase(&mut socket, &state).await {
         Some(c) => c,
         None => return, // 超时或鉴权失败，连接已关闭
     };
 
-    let user_id: Uuid = match claims.sub.parse() {
+    let user_id: Uuid = match session.claims.sub.parse() {
         Ok(id) => id,
         Err(_) => {
             close(&mut socket, CLOSE_AUTH_FAIL, "invalid user_id in token").await;
@@ -141,41 +141,167 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
     state
         .conn_manager
-        .on_connect(user_id, conn_id, tx.clone(), close_tx);
-    send_control(&mut socket, &ServerControl::AuthOk { user_id }).await;
+        .on_connect(user_id, &session.claims.sid, conn_id, tx.clone(), close_tx);
 
-    // ── 阶段 3：双向读写循环 ───────────────────────────────────────────────
     let mut subscribed: Vec<Uuid> = Vec::new();
+    let result = run_registered_socket(
+        &mut socket,
+        &state,
+        user_id,
+        conn_id,
+        session,
+        &tx,
+        &mut rx,
+        &mut close_rx,
+        &mut subscribed,
+    )
+    .await;
+    if let Err(stop) = result {
+        match stop {
+            SocketStop::Signal(Some(CloseReason::Revoked)) => {
+                close(&mut socket, CLOSE_AUTH_FAIL, "session revoked").await;
+            }
+            SocketStop::Expired => {
+                close(&mut socket, CLOSE_AUTH_FAIL, "authentication expired").await;
+            }
+            SocketStop::Signal(_) => {
+                close(&mut socket, CLOSE_BACKPRESSURE, "send queue full").await;
+            }
+        }
+    }
 
+    state
+        .conn_manager
+        .on_disconnect(user_id, conn_id, &subscribed);
+    for channel_id in &subscribed {
+        broadcast_presence(&state, *channel_id).await;
+    }
+}
+
+#[derive(Debug)]
+enum SocketStop {
+    Signal(Option<CloseReason>),
+    Expired,
+}
+
+/// The current operation is dropped when closing wins. This covers DB/resource
+/// waits and socket writes too, rather than only the next socket receive.
+async fn session_bound<F: Future>(
+    future: F,
+    close_rx: &mut mpsc::Receiver<CloseReason>,
+    valid_until: chrono::DateTime<chrono::Utc>,
+) -> Result<F::Output, SocketStop> {
+    let remaining = (valid_until - chrono::Utc::now())
+        .to_std()
+        .unwrap_or(Duration::ZERO);
+    tokio::select! {
+        biased;
+        reason = close_rx.recv() => Err(SocketStop::Signal(reason)),
+        _ = tokio::time::sleep(remaining) => Err(SocketStop::Expired),
+        result = future => Ok(result),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_registered_socket(
+    socket: &mut WebSocket,
+    state: &AppState,
+    user_id: Uuid,
+    conn_id: Uuid,
+    mut session: VerifiedSession,
+    tx: &mpsc::Sender<WireFrame>,
+    rx: &mut mpsc::Receiver<WireFrame>,
+    close_rx: &mut mpsc::Receiver<CloseReason>,
+    subscribed: &mut Vec<Uuid>,
+) -> Result<(), SocketStop> {
+    // Registration precedes the second authority check. A revocation that
+    // missed the initial registration is therefore caught before AuthOk.
+    let liveness = session_bound(
+        session_valid_until(&state.db, &session.claims),
+        close_rx,
+        session.valid_until,
+    )
+    .await?;
+    match liveness {
+        Ok(Some(valid_until)) => session.valid_until = valid_until,
+        Ok(None) | Err(_) => {
+            session_bound(
+                send_control(
+                    socket,
+                    &ServerControl::AuthErr {
+                        reason: "token revoked or account unavailable".into(),
+                    },
+                ),
+                close_rx,
+                session.valid_until,
+            )
+            .await?;
+            close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
+            return Ok(());
+        }
+    }
+    session_bound(
+        send_control(socket, &ServerControl::AuthOk { user_id }),
+        close_rx,
+        session.valid_until,
+    )
+    .await?;
+
+    enum Next {
+        Incoming(Option<Result<Message, axum::Error>>),
+        Outgoing(Option<WireFrame>),
+    }
     loop {
-        tokio::select! {
-            // 收客户端帧
-            msg = socket.recv() => {
-                match msg {
-                    Some(Ok(Message::Text(text))) => {
-                        let keep_open = handle_client_frame(
-                            &text,
-                            user_id,
-                            conn_id,
-                            &tx,
-                            &mut subscribed,
-                            &mut socket,
-                            &state,
-                        ).await;
-                        if !keep_open {
-                            break;
+        let next = session_bound(
+            async {
+                tokio::select! {
+                    msg = socket.recv() => Next::Incoming(msg),
+                    frame = rx.recv() => Next::Outgoing(frame),
+                }
+            },
+            close_rx,
+            session.valid_until,
+        )
+        .await?;
+        match next {
+            Next::Incoming(msg) => match msg {
+                Some(Ok(Message::Text(text))) => {
+                    let outcome = session_bound(
+                        handle_client_frame(&text, user_id, conn_id, tx, subscribed, socket, state),
+                        close_rx,
+                        session.valid_until,
+                    )
+                    .await?;
+                    match outcome {
+                        ClientOutcome::Continue => {}
+                        ClientOutcome::Close => return Ok(()),
+                        ClientOutcome::Renewed(renewed) => {
+                            session = renewed;
+                            session_bound(
+                                send_control(socket, &ServerControl::AuthOk { user_id }),
+                                close_rx,
+                                session.valid_until,
+                            )
+                            .await?;
                         }
                     }
-                    Some(Ok(Message::Ping(data))) => {
-                        let _ = socket.send(Message::Pong(data)).await;
-                    }
-                    Some(Ok(Message::Close(_))) | None => break,
-                    _ => {}
                 }
-            }
-
-            // 从 fan-out 队列接收帧，发给客户端
-            frame = rx.recv() => {
+                Some(Ok(Message::Ping(data))) => {
+                    if session_bound(
+                        socket.send(Message::Pong(data)),
+                        close_rx,
+                        session.valid_until,
+                    )
+                    .await?
+                    .is_err()
+                    {
+                        return Ok(());
+                    }
+                }
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return Ok(()),
+                _ => {}
+            },
+            Next::Outgoing(frame) => {
                 match frame {
                     Some(f) => {
                         let is_terminal = is_terminal_frame(&f);
@@ -184,40 +310,25 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             Err(_) => continue,
                         };
 
-                        if socket.send(Message::Text(json)).await.is_err() {
+                        if session_bound(
+                            socket.send(Message::Text(json)),
+                            close_rx,
+                            session.valid_until,
+                        )
+                        .await?
+                        .is_err()
+                        {
                             if is_terminal {
                                 // 终态帧发送失败 → 背压关闭（写后投递原则：不丢终态帧）
-                                close(&mut socket, CLOSE_BACKPRESSURE, "send queue full").await;
+                                close(socket, CLOSE_BACKPRESSURE, "send queue full").await;
                             }
-                            break;
+                            return Ok(());
                         }
                     }
-                    None => break,
+                    None => return Ok(()),
                 }
-            }
-
-            // fan-out 的服务端关闭信号：背压（I6，客户端走 REST 补齐）或
-            // 会话吊销（logout/改密/封禁 → kick_user，客户端须重新登录）。
-            reason = close_rx.recv() => {
-                match reason {
-                    Some(CloseReason::Revoked) => {
-                        close(&mut socket, CLOSE_AUTH_FAIL, "session revoked").await;
-                    }
-                    _ => {
-                        close(&mut socket, CLOSE_BACKPRESSURE, "send queue full").await;
-                    }
-                }
-                break;
             }
         }
-    }
-
-    // ── 清理 ──────────────────────────────────────────────────────────────────
-    state
-        .conn_manager
-        .on_disconnect(user_id, conn_id, &subscribed);
-    for channel_id in &subscribed {
-        broadcast_presence(&state, *channel_id).await;
     }
 }
 
@@ -229,7 +340,7 @@ async fn broadcast_presence(state: &AppState, channel_id: Uuid) {
 
 // ── 鉴权阶段 ─────────────────────────────────────────────────────────────────
 
-async fn auth_phase(socket: &mut WebSocket, state: &AppState) -> Option<Claims> {
+async fn auth_phase(socket: &mut WebSocket, state: &AppState) -> Option<VerifiedSession> {
     let deadline = tokio::time::sleep(AUTH_TIMEOUT);
     tokio::pin!(deadline);
 
@@ -263,13 +374,20 @@ async fn auth_phase(socket: &mut WebSocket, state: &AppState) -> Option<Claims> 
                     ClientFrame::Auth { token } => {
                         // 与 HTTP 中间件同一套校验：验签 + DB 吊销检查（token_version /
                         // is_suspended / is_deleted），登出/封禁用户拿旧 JWT 连不上。
-                        match verify_token(&token, state).await {
-                            Ok(claims) => return Some(claims),
-                            Err(reason) => {
+                        match tokio::time::timeout_at(
+                            deadline.deadline(),
+                            verify_token(&token, state),
+                        ).await {
+                            Ok(Ok(claims)) => return Some(claims),
+                            Ok(Err(reason)) => {
                                 send_control(socket, &ServerControl::AuthErr {
                                     reason: reason.to_string(),
                                 }).await;
                                 close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
+                                return None;
+                            }
+                            Err(_) => {
+                                close(socket, CLOSE_AUTH_FAIL, "auth timeout").await;
                                 return None;
                             }
                         }
@@ -287,9 +405,14 @@ async fn auth_phase(socket: &mut WebSocket, state: &AppState) -> Option<Claims> 
 
 // ── 客户端帧处理 ──────────────────────────────────────────────────────────────
 
-/// Handle one client frame. Returns `false` when the server has sent a Close
-/// frame and the connection loop must terminate (auth revoked mid-connection);
-/// channel subscription failures leave the other subscriptions open.
+enum ClientOutcome {
+    Continue,
+    Close,
+    Renewed(VerifiedSession),
+}
+
+/// Channel failures remain local. Re-auth returns its new verified identity so
+/// the outer loop adopts the new expiry before writing the success response.
 async fn handle_client_frame(
     text: &str,
     user_id: Uuid,
@@ -298,7 +421,7 @@ async fn handle_client_frame(
     subscribed: &mut Vec<Uuid>,
     socket: &mut WebSocket,
     state: &AppState,
-) -> bool {
+) -> ClientOutcome {
     let frame: ClientFrame = match serde_json::from_str(text) {
         Ok(f) => f,
         Err(_) => {
@@ -309,7 +432,7 @@ async fn handle_client_frame(
                 },
             )
             .await;
-            return true;
+            return ClientOutcome::Continue;
         }
     };
 
@@ -319,16 +442,38 @@ async fn handle_client_frame(
             // 续期失败即关闭：客户端递上来的就是「此会话已吊销」的证明，绝不能
             // 只回 AuthErr 而让旧 socket 连同其订阅继续存活（覆盖没有走
             // kick_user 的吊销路径，例如运维直接改库 bump token_version）。
-            let verified = verify_token(&token, state).await.and_then(|claims| {
-                if claims.sub.parse::<Uuid>().ok() == Some(user_id) {
-                    Ok(claims)
+            let verified = verify_token(&token, state).await.and_then(|session| {
+                if session.claims.sub.parse::<Uuid>().ok() == Some(user_id) {
+                    Ok(session)
                 } else {
                     Err("cannot change authenticated user")
                 }
             });
             match verified {
-                Ok(_) => {
-                    send_control(socket, &ServerControl::AuthOk { user_id }).await;
+                Ok(mut session) => {
+                    if state
+                        .conn_manager
+                        .rebind_session(user_id, conn_id, &session.claims.sid)
+                    {
+                        // A revoke may have committed before the new binding
+                        // existed. Postbind liveness closes that missed-kick race.
+                        match session_valid_until(&state.db, &session.claims).await {
+                            Ok(Some(valid_until)) => {
+                                session.valid_until = valid_until;
+                                return ClientOutcome::Renewed(session);
+                            }
+                            Ok(None) | Err(_) => {}
+                        }
+                    }
+                    send_control(
+                        socket,
+                        &ServerControl::AuthErr {
+                            reason: "session revoked or connection closing".into(),
+                        },
+                    )
+                    .await;
+                    close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
+                    return ClientOutcome::Close;
                 }
                 Err(e) => {
                     send_control(
@@ -339,7 +484,7 @@ async fn handle_client_frame(
                     )
                     .await;
                     close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
-                    return false;
+                    return ClientOutcome::Close;
                 }
             }
         }
@@ -401,7 +546,7 @@ async fn handle_client_frame(
         ClientFrame::PresenceFocus { channel_id, focus } => {
             // 只对已订阅的频道生效——否则忽略（不能对未加入的频道声明在看态）。
             if !subscribed.contains(&channel_id) {
-                return true;
+                return ClientOutcome::Continue;
             }
             match focus {
                 Some(f) => state
@@ -434,7 +579,7 @@ async fn handle_client_frame(
             }
         }
     }
-    true
+    ClientOutcome::Continue
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────
@@ -451,12 +596,16 @@ async fn send_control(socket: &mut WebSocket, ctrl: &ServerControl) {
 }
 
 async fn close(socket: &mut WebSocket, code: u16, reason: &str) {
-    let _ = socket
-        .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+    // A peer that stopped reading must not retain the revoked registration while
+    // the close frame waits for writable socket capacity.
+    let _ = tokio::time::timeout(
+        Duration::from_secs(1),
+        socket.send(Message::Close(Some(axum::extract::ws::CloseFrame {
             code,
             reason: reason.to_string().into(),
-        })))
-        .await;
+        }))),
+    )
+    .await;
 }
 
 #[cfg(test)]
@@ -464,6 +613,59 @@ mod tests {
     use super::*;
     use crate::gateway::realtime::frame::WireFrame;
     use serde_json::json;
+
+    struct Dropped(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn revocation_drops_a_blocked_operation_before_it_can_emit_its_reply() {
+        use std::sync::{atomic::AtomicBool, Arc};
+        let dropped = Arc::new(AtomicBool::new(false));
+        let observed_drop = dropped.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (close_tx, mut close_rx) = mpsc::channel(1);
+        let running = tokio::spawn(async move {
+            session_bound(
+                async {
+                    let _lifetime = Dropped(dropped);
+                    entered_tx.send(()).unwrap();
+                    std::future::pending::<()>().await;
+                    panic!("a canceled operation must not reach its reply");
+                },
+                &mut close_rx,
+                chrono::Utc::now() + chrono::Duration::minutes(1),
+            )
+            .await
+        });
+        entered_rx.await.unwrap();
+        close_tx.send(CloseReason::Revoked).await.unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(1), running)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            result,
+            Err(SocketStop::Signal(Some(CloseReason::Revoked)))
+        ));
+        assert!(observed_drop.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn authentication_deadline_also_interrupts_a_blocked_operation() {
+        let (_close_tx, mut close_rx) = mpsc::channel(1);
+        let result = session_bound(
+            std::future::pending::<()>(),
+            &mut close_rx,
+            chrono::Utc::now() + chrono::Duration::seconds(5),
+        )
+        .await;
+        assert!(matches!(result, Err(SocketStop::Expired)));
+    }
 
     fn frame(frame_type: &str) -> WireFrame {
         WireFrame::channel(Uuid::new_v4(), frame_type, json!({}))
