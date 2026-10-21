@@ -56,8 +56,8 @@ impl TerminalError {
 
 #[derive(Debug)]
 pub(crate) struct Execution {
-    task_id: Uuid,
-    execution_id: Uuid,
+    pub(crate) task_id: Uuid,
+    pub(crate) execution_id: Uuid,
     pub channel_id: Uuid,
     client_msg_id: String,
     fingerprint: String,

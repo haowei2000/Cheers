@@ -414,6 +414,24 @@ pub async fn handle_done(
             }
         })?;
 
+    // Readiness is an admission snapshot, as on human sends. Never retain a
+    // database transaction while consulting a locator. Once a ready target is
+    // committed below, a subsequent disconnect cannot lose its dispatch intent.
+    let mut ready_targets = Vec::new();
+    if request.execution.is_some() && frame.get("type").and_then(Value::as_str) == Some("done") {
+        for mention in &mentions {
+            if mention.member_type == mentions::MemberType::Bot
+                && mention.member_id != bot_id
+                && bot_locator.is_online(mention.member_id).await
+                && bot_locator
+                    .supports_task_acceptance(mention.member_id)
+                    .await
+            {
+                ready_targets.push(mention.member_id);
+            }
+        }
+    }
+
     // R4: 标记 finalize（先在内存里标记，防止并发 delta 继续写入）
     let finalize_guard = match registry.claim_finalize(msg_id) {
         Ok(guard) => guard,
@@ -531,6 +549,41 @@ pub async fn handle_done(
         .await
         .map_err(TerminalError::database("stream.done: replace mentions"))?;
     task_results::complete(&mut tx, &request).await?;
+    let child_count = if let Some(execution) = request.execution.as_ref() {
+        if frame.get("type").and_then(Value::as_str) == Some("done") {
+            chains::enqueue_terminal_children(
+                &mut tx,
+                channel_id,
+                msg_id,
+                channel_seq,
+                details.depth,
+                bot_id,
+                &mentions,
+                details.chain_id.as_deref(),
+                execution.task_id,
+                execution.execution_id,
+                &ready_targets,
+            )
+            .await
+            .map_err(|error| match error {
+                crate::errors::AppError::Db(error) => {
+                    TerminalError::database("stream.done: enqueue child intents")(error)
+                }
+                other => {
+                    tracing::error!(%other, "terminal child admission failed");
+                    TerminalError {
+                        code: "INTERNAL_ERROR",
+                        detail: "terminal child admission failed",
+                        retryable: true,
+                    }
+                }
+            })?
+        } else {
+            0
+        }
+    } else {
+        0
+    };
     tx.commit()
         .await
         .map_err(TerminalError::database("stream.done: commit tx"))?;
@@ -593,22 +646,41 @@ pub async fn handle_done(
     );
     fanout.broadcast_channel(channel_id, wire).await;
 
-    // depth 上限 / 自 @ 过滤 / bot@bot INITIATE 门禁都在 trigger_bot_replies 内部处理。
-    // chain_id 从本条回复继承，下一跳共享同一条可取消链（§8 gate 也在内部）。
-    // spawn 出去，避免下一跳的 dispatch（S3 拉取 + base64）阻塞本 connector 的读循环。
-    spawn_trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        depth,
-        bot_id,
-        mentions,
-        chain_id,
-    );
+    if request.execution.is_some() {
+        if child_count != 0 {
+            let (db, fanout, registry, locator) = (
+                db.clone(),
+                fanout.clone(),
+                registry.clone(),
+                bot_locator.clone(),
+            );
+            tokio::spawn(async move {
+                if let Err(error) = super::dispatch_intents::deliver_trigger(
+                    &db, &fanout, &registry, &locator, msg_id,
+                )
+                .await
+                {
+                    tracing::warn!(%msg_id, %error, "child dispatch intents retained for recovery");
+                }
+            });
+        }
+    } else {
+        // Legacy/manual completions keep the direct producer path. Durable
+        // execution results above already registered their children before commit.
+        spawn_trigger_bot_replies(
+            db,
+            fanout,
+            registry,
+            bot_locator,
+            channel_id,
+            msg_id,
+            channel_seq,
+            depth,
+            bot_id,
+            mentions,
+            chain_id,
+        );
+    }
 
     // finalize_session 保持 inline：单条快速 UPDATE，且 spawn 会扩大与 acquire_scope_session
     // 无条件 upsert 的 BUSY/IDLE 竞态窗口。

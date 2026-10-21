@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT role FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='user' FOR SHARE",
+  "query": "SELECT status FROM task_chains WHERE chain_id=$1 AND channel_id=$2 FOR SHARE",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "role",
+        "name": "status",
         "type_info": "Varchar"
       }
     ],
@@ -19,5 +19,5 @@
       false
     ]
   },
-  "hash": "9614fc65c07e5ae94440077b4416258da149621ba68fee218a0d8700ef1e7f2f"
+  "hash": "0680fccbc1abccffe29c5d0599679905adb230af6c92a8d09e21061e0201e846"
 }

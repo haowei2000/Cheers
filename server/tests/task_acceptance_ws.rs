@@ -140,8 +140,12 @@ impl Fixture {
     /// Recovery may offer immediately after Ready, before its Pong barrier.
     /// Unlike a fresh admission fixture, receiving that offer is expected here.
     async fn recovering_bridge(&self) -> Bridge {
-        let mut control = self.socket(&self.bot, "control").await;
-        let data = self.socket(&self.bot, "data").await;
+        self.recovering_bot_bridge(&self.bot).await
+    }
+
+    async fn recovering_bot_bridge(&self, bot: &Bot) -> Bridge {
+        let mut control = self.socket(bot, "control").await;
+        let data = self.socket(bot, "data").await;
         send(
             &mut control,
             json!({"type":"ready","v":1,"connector_capabilities":{
@@ -1045,4 +1049,248 @@ async fn error_results_require_capability_authorization_and_keep_their_kind_duri
     kind.as_object_mut().unwrap().remove("message");
     let ack = terminal_ack(&mut reconnected.data, &kind).await;
     assert_terminal_rejection(&ack, "TERMINAL_CONFLICT", false);
+}
+
+#[sqlx::test]
+async fn committed_parent_and_pending_child_recover_together_after_a_real_gateway_crash(
+    db: PgPool,
+) {
+    let mut fixture = Fixture::start(&db).await;
+    let child = fixture.seed_bot(&db).await;
+    let child_session = server::domain::sessions::ensure_primary_session_workspace(
+        &db,
+        child.id,
+        &child.id.to_string(),
+        &fixture.channel.to_string(),
+        Some("/original-child"),
+        &[],
+    )
+    .await
+    .unwrap();
+    let mut parent_bridge = fixture.bridge(true).await;
+    let mut child_control = fixture.socket(&child, "control").await;
+    let child_data = fixture.socket(&child, "data").await;
+    ready(&mut child_control, true).await;
+    let parent = fixture.dispatch(&mut parent_bridge.control).await;
+    let execution = Uuid::new_v4();
+    accept(
+        &mut parent_bridge.control,
+        acceptance(&parent, execution),
+        "granted",
+    )
+    .await;
+    let mut result = terminal(
+        &parent,
+        execution,
+        Uuid::new_v4(),
+        "Committed parent handoff",
+    );
+    result["mention_ids"] = json!([child.id]);
+    let mut blocker = db.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(104731,84)")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::query(&format!("CREATE FUNCTION pause_child_preparation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.bot_id='{}' AND OLD.task_frame IS NULL AND NEW.task_frame IS NOT NULL THEN PERFORM pg_advisory_xact_lock(104731,84); END IF; RETURN NEW; END $$",child.id))
+        .execute(&db).await.unwrap();
+    sqlx::query("CREATE TRIGGER pause_child_preparation BEFORE UPDATE ON bot_runs FOR EACH ROW EXECUTE FUNCTION pause_child_preparation()")
+        .execute(&db).await.unwrap();
+    send(&mut parent_bridge.data, result.clone()).await;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let blocked:bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=104731 AND objid=84 AND NOT granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database()))")
+                .fetch_one(&db).await.unwrap();
+            if blocked { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("parent commit must reach the child's first preparation");
+    let receipt = ledger(&db, &parent).await;
+    assert!(!receipt["terminal_committed_at"].is_null());
+    let before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM bot_runs r WHERE trigger_msg_id=$1")
+            .bind(parent["placeholder_msg_id"].as_str().unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(before["status"], "pending");
+    assert!(before["task_frame"].is_null());
+    assert_eq!(before["dispatch_input"]["actor"]["type"], "bot");
+    drop(fixture.gateway.take());
+    drop(parent_bridge);
+    drop(child_control);
+    drop(child_data);
+    // A killed PG client can remain blocked until the advisory lock is granted.
+    // Release it before waiting for the trigger's relation lock to disappear.
+    blocker.rollback().await.unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        sqlx::query("DROP TRIGGER pause_child_preparation ON bot_runs").execute(&db),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let identity =
+        json!({"task_id":before["task_id"],"placeholder_msg_id":before["placeholder_msg_id"]});
+    age_unaccepted_intent(&db, &identity).await;
+    let later = server::domain::sessions::create_channel_session(
+        &db,
+        child.id,
+        &child.id.to_string(),
+        &fixture.channel.to_string(),
+        "other",
+        Some("/later-child"),
+        &[],
+    )
+    .await
+    .unwrap();
+    server::domain::sessions::set_primary_session(
+        &db,
+        child.id,
+        &fixture.channel.to_string(),
+        later.session_id,
+    )
+    .await
+    .unwrap();
+    fixture.restart(&db).await;
+    let mut recovered = fixture.recovering_bot_bridge(&child).await;
+    let task = next_type(&mut recovered.control, "task").await;
+    assert_eq!(task["task_id"], before["task_id"]);
+    assert_eq!(task["placeholder_msg_id"], before["placeholder_msg_id"]);
+    assert_eq!(task["trigger_message"]["text"], "Committed parent handoff");
+    assert_eq!(task["session_id"], child_session.session_id.to_string());
+    assert_eq!(
+        task["provider_session_key"],
+        child_session.provider_session_key
+    );
+    assert_eq!(task["depth"], 1);
+    assert_eq!(
+        task["context_bundle"],
+        before["dispatch_input"]["params"]["context_bundle"]
+    );
+    accept(
+        &mut recovered.control,
+        acceptance(&task, Uuid::new_v4()),
+        "granted",
+    )
+    .await;
+    let mut parent_reconnected = fixture.recovering_bridge().await;
+    assert_eq!(
+        terminal_ack(&mut parent_reconnected.data, &result).await["ok"],
+        true
+    );
+    accept(
+        &mut parent_reconnected.control,
+        acceptance(&parent, execution),
+        "rejected",
+    )
+    .await;
+    assert_no_task_for(&mut recovered.control, Duration::from_secs(7)).await;
+    let children: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bot_runs WHERE trigger_msg_id=$1")
+        .bind(parent["placeholder_msg_id"].as_str().unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(children, 1);
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM acp_event_log WHERE channel_id=$1 AND name='dispatch'",
+    )
+    .bind(fixture.channel.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(audits, 1);
+}
+
+/// Independent wire fixture: lexical object keys are part of the documented
+/// capability signature, including the original Error kind and execution IDs.
+fn canonical_frame(value: &Value) -> String {
+    match value {
+        Value::Object(fields) => {
+            let sorted = fields.iter().collect::<std::collections::BTreeMap<_, _>>();
+            format!(
+                "{{{}}}",
+                sorted
+                    .into_iter()
+                    .map(|(key, value)| format!(
+                        "{}:{}",
+                        serde_json::to_string(key).unwrap(),
+                        canonical_frame(value)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(canonical_frame)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        _ => value.to_string(),
+    }
+}
+
+#[sqlx::test]
+async fn a_valid_signed_error_with_mentions_commits_without_admitting_child_work(db: PgPool) {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signer};
+    let fixture = Fixture::start(&db).await;
+    sqlx::query("UPDATE bot_accounts SET binding_config=jsonb_set(binding_config,'{acp_security,require_capability}','true') WHERE bot_id=$1")
+        .bind(fixture.bot.id.to_string()).execute(&db).await.unwrap();
+    let child = fixture.seed_bot(&db).await;
+    let mut child_control = fixture.socket(&child, "control").await;
+    let _child_data = fixture.socket(&child, "data").await;
+    ready(&mut child_control, true).await;
+    let mut bridge = fixture.bridge(true).await;
+    let task = fixture.dispatch(&mut bridge.control).await;
+    let execution = Uuid::new_v4();
+    accept(&mut bridge.control, acceptance(&task, execution), "granted").await;
+    let secret = SecretKey::from_bytes(&[42; 32]).unwrap();
+    let public = PublicKey::from(&secret);
+    let key = Keypair { secret, public };
+    let delegation = Uuid::new_v4();
+    sqlx::query("INSERT INTO acp_capability_delegations(delegation_id,bot_id,scope_type,allowed_actions,allowed_resources,public_key,granted_by,expires_at) VALUES($1,$2,'global',$3,ARRAY['*']::text[],$4,$5,NOW()+INTERVAL '1 hour')")
+        .bind(delegation.to_string()).bind(fixture.bot.id.to_string()).bind(vec!["stream"])
+        .bind(STANDARD.encode(key.public.to_bytes())).bind(fixture.user.to_string()).execute(&db).await.unwrap();
+    let mut result = terminal(
+        &task,
+        execution,
+        Uuid::new_v4(),
+        "A signed Error is a result, not a new instruction",
+    );
+    result["type"] = json!("error");
+    result["message"] = result["content"].take();
+    result.as_object_mut().unwrap().remove("content");
+    result["mention_ids"] = json!([child.id]);
+    let timestamp = chrono::Utc::now().timestamp();
+    let nonce = Uuid::new_v4().to_string();
+    let request = Uuid::new_v4().to_string();
+    let signable=format!("anx-cap|v1|type=error|kid={delegation}|ts={timestamp}|nonce={nonce}|request={request}|payload={}",canonical_frame(&result));
+    result["acp_capability"] = json!({"delegation_id":delegation,"ts":timestamp,"nonce":nonce,
+        "request_id":request,"signature":STANDARD.encode(key.sign(signable.as_bytes()).to_bytes())});
+    let signed_ack = terminal_ack(&mut bridge.data, &result).await;
+    assert_eq!(signed_ack["ok"], true, "{signed_ack}");
+    let receipt = ledger(&db, &task).await;
+    assert_eq!(receipt["last_event_type"], "error");
+    assert!(!receipt["terminal_committed_at"].is_null());
+    let uses: i32 = sqlx::query_scalar(
+        "SELECT use_count FROM acp_capability_delegations WHERE delegation_id=$1",
+    )
+    .bind(delegation.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        uses, 1,
+        "the gateway verified the real capability rather than taking the opt-out path"
+    );
+    let children: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bot_runs WHERE trigger_msg_id=$1")
+        .bind(task["placeholder_msg_id"].as_str().unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(children, 0);
+    assert_no_task_before_pong(&mut child_control).await;
 }

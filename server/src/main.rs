@@ -218,7 +218,7 @@ async fn main() -> anyhow::Result<()> {
         push,
     };
 
-    // Recover admitted human dispatches from the existing run ledger. Socket
+    // Recover admitted dispatches from the existing run ledger. Socket
     // enqueue is not a receipt; only an execution grant ends delivery retries.
     gateway::dispatch_intents::spawn(
         state.db.clone(),

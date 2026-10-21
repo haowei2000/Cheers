@@ -533,7 +533,7 @@ pub async fn resolve_provider_account_id_for_bot(
     resolve_provider_account_id_from_binding_config(&value).ok_or(AppError::NotFound)
 }
 
-async fn resolve_provider_account_id_for_bot_tx(
+pub(crate) async fn resolve_provider_account_id_for_bot_tx(
     tx: &mut Transaction<'_, Postgres>,
     bot_id: Uuid,
 ) -> Result<String, AppError> {

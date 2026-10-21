@@ -39,6 +39,20 @@ a failed enqueue retains a recoverable human intent. The run progresses from
 `pending` to `prepared` and then to `accepted` only when the execution grant
 commits. Accepted executions are never recovered as new tasks.
 
+An execution-owned `Done` also registers its admitted downstream bot targets in
+the transaction that finalizes the parent message and terminal receipt. The
+children inherit the active chain and next depth, fix their primary sessions and
+handoff references, and use the same run ledger, leases and execution grants as
+human dispatch. No media or locator calls occur inside that transaction.
+
+Admission excludes self mentions, depth beyond five, unavailable targets,
+read-only or disabled bots, inactive chains and denied `DISPATCH` grants. Each
+policy decision is audited in the same transaction. The existing process-local
+channel budget recognizes deterministic child identities within its window: a
+rolled-back attempt keeps one conservative slot, while a retry of that same child
+reuses it. Recovery and receipt replay consume no new admission slots or audits.
+Offers and grants recheck bot-specific authority rather than human prompt policy.
+
 Historical runs without a dispatch input are not replayable. Other direct
 dispatch producers retain their existing behavior: their run and placeholder
 commit together, and a failed enqueue removes that partial placeholder and emits
@@ -124,9 +138,11 @@ publish another event, notify humans or dispatch another bot turn. A result with
 no matching committed receipt must still pass current execution and authorization
 checks before it can finalize an active placeholder.
 
-The receipt confirms database persistence. Browser fan-out, push notifications and
-downstream bot dispatch remain best-effort effects after that commit. A crash in
-that gap can lose those effects; replay does not run them a second time.
+The receipt confirms database persistence, including admitted child intents for
+an execution-owned `Done`. A crash before fan-out or immediate delivery leaves
+those children recoverable; receipt replay never creates another child. `Error`
+results do not create downstream work. Browser fan-out and push notifications
+remain best-effort effects after commit and are not repeated by receipt replay.
 
 ## Connector result outbox
 
@@ -158,7 +174,7 @@ result.
 The periodic reclaimer deletes old partial rows without registered streams after
 `orphan_reclaim_threshold_secs` (15 minutes by default). A registered stream
 protects a slow active turn from that age-based sweep. Recoverable, unaccepted
-human intents are also excluded from both age-based and disconnect sweeps. Their
+intents are also excluded from both age-based and disconnect sweeps. Their
 durable worker owns recovery until acceptance, cancellation or an authorization
 denial; startup order cannot make the reclaimer erase queued work.
 
@@ -188,11 +204,13 @@ deployed runtime uses the in-process locator.
 
 ## Recovery limits
 
-Human-message dispatch intents recover automatically until execution acceptance.
-This includes REST, scheduled sends, integration delivery and other callers of
-the shared human-message command. Bot-created messages and downstream bot-to-bot
-triggers still commit separately from their dispatch effects; a crash in that gap
-can lose a downstream hop. They do not acquire recoverable intents implicitly.
+Human-message dispatch intents and children admitted by execution-owned `Done`
+results recover automatically until execution acceptance. Human producers include
+REST, scheduled sends, integration delivery and other callers of the shared
+human-message command. Proactive bot sends, resource-created messages and legacy
+completions still commit separately from their direct dispatch effects; a crash
+in those remaining gaps can lose a downstream hop. They do not acquire
+recoverable intents implicitly.
 
 The `resume` capability remains `ack_only`; it replays no socket event log. Task
 offers come from the run ledger, not this capability. A committed execution grant
@@ -238,3 +256,5 @@ retry, and prove that duplicate, denied, stale and timed-out grants never start 
 Dispatch tests cover multi-target transaction rollback, postcommit cancellation,
 real-process startup recovery, frozen envelopes, lease recovery, session selection
 and the exclusion of accepted executions from further offers.
+Bot-child tests cover atomic parent/receipt/child rollback, interrupted delivery,
+receipt replay, bot policy revocation, depth and loop limits, and shared recovery.

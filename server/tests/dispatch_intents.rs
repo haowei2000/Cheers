@@ -914,3 +914,51 @@ async fn cancelling_prepared_work_returns_its_unused_session_to_idle(db: PgPool)
 async fn cancelling_one_prepared_turn_preserves_another_accepted_turns_busy_session(db: PgPool) {
     cancel_prepared_session(&db, true).await;
 }
+
+#[sqlx::test]
+async fn previously_persisted_v1_human_input_still_recovers_and_accepts(db: PgPool) {
+    let fixture = Fixture::seed(&db, 1).await;
+    let trigger = Uuid::new_v4();
+    interrupt_after_commit(&db, &fixture, fixture.message(trigger)).await;
+    let current = runs(&db, trigger).await.remove(0);
+    assert_eq!(current["dispatch_input"]["version"], 2);
+    let input = &current["dispatch_input"];
+    let historical = json!({"version":1,"author_id":input["actor"]["author_id"],
+        "params":input["params"],"trigger_message":input["trigger_message"],"file_ids":input["file_ids"]});
+    sqlx::query("UPDATE bot_runs SET dispatch_input=$2 WHERE trigger_msg_id=$1")
+        .bind(trigger.to_string())
+        .bind(historical)
+        .execute(&db)
+        .await
+        .unwrap();
+    let capture = Locator::ready();
+    let locator: Arc<dyn BotLocator> = capture.clone();
+    dispatch_intents::recover_once(&db, &fanout(), &StreamRegistry::new(), &locator)
+        .await
+        .unwrap();
+    let task = capture.offers().remove(0);
+    assert_eq!(task["task_id"], current["task_id"]);
+    assert_eq!(
+        task["trigger_message"]["text"],
+        "The original admitted instruction"
+    );
+    let grant = server::gateway::task_acceptance::claim(
+        &db,
+        fixture.bots[0],
+        Uuid::new_v4(),
+        task["task_id"].as_str().unwrap().parse().unwrap(),
+        task["placeholder_msg_id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap(),
+        fixture.channel,
+        Uuid::new_v4(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        grant.status,
+        cheers_bridge_protocol::TaskAcceptanceStatus::Granted
+    ));
+}

@@ -1,4 +1,4 @@
-//! Recoverable offers for human-message targets, using the existing run ledger.
+//! Recoverable dispatch offers, using the existing run ledger.
 //! Only explicitly marked, unaccepted runs are recoverable. Acceptance remains
 //! the durable execution fence; a queued offer never proves delivery/execution.
 
@@ -58,11 +58,166 @@ impl HumanIntent {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BotIntent {
+    pub version: u32,
+    pub author_bot_id: Uuid,
+    pub parent_task_id: Uuid,
+    pub parent_execution_id: Uuid,
+    pub params: DispatchParams,
+    pub trigger_message: Value,
+    pub file_ids: Vec<String>,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum IntentActor {
+    Human {
+        author_id: Uuid,
+    },
+    Bot {
+        author_bot_id: Uuid,
+        parent_task_id: Uuid,
+        parent_execution_id: Uuid,
+    },
+}
+
+/// Version 2 makes the source actor explicit. Version 1 human rows remain part
+/// of the persisted protocol and decode into this same normalized representation.
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct DispatchInput {
+    version: u32,
+    actor: IntentActor,
+    pub params: DispatchParams,
+    trigger_message: Value,
+    file_ids: Vec<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum IntentPolicyError {
+    #[error("{0}")]
+    Denied(AppError),
+    #[error("{0}")]
+    Retryable(AppError),
+}
+
+impl From<HumanIntentPolicyError> for IntentPolicyError {
+    fn from(error: HumanIntentPolicyError) -> Self {
+        match error {
+            HumanIntentPolicyError::Denied(error) => Self::Denied(error),
+            HumanIntentPolicyError::Retryable(error) => Self::Retryable(error),
+        }
+    }
+}
+
+impl DispatchInput {
+    fn author(&self) -> (Uuid, &'static str) {
+        match self.actor {
+            IntentActor::Human { author_id } => (author_id, "user"),
+            IntentActor::Bot { author_bot_id, .. } => (author_bot_id, "bot"),
+        }
+    }
+
+    fn validate(&self) -> Result<(), AppError> {
+        let (author, _) = self.author();
+        let valid_depth = match self.actor {
+            IntentActor::Human { .. } => self.params.depth == 0,
+            IntentActor::Bot { .. } => {
+                self.params.depth > 0
+                    && self.params.depth <= crate::domain::chains::MAX_BOT_REPLY_DEPTH
+                    && author != self.params.bot_id
+            }
+        };
+        if self.version != 2
+            || !valid_depth
+            || self.params.session_id.is_none()
+            || self.params.chain_id.is_none()
+            || self.params.provider_session_key.trim().is_empty()
+            || self.trigger_message.get("msg_id").and_then(Value::as_str)
+                != Some(self.params.trigger_msg_id.to_string().as_str())
+            || self.trigger_message.get("user").and_then(Value::as_str)
+                != Some(author.to_string().as_str())
+            || self
+                .trigger_message
+                .get("text")
+                .and_then(Value::as_str)
+                .is_none()
+        {
+            return Err(AppError::BadRequest(
+                "invalid durable dispatch intent".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn decode(input: &Value) -> Result<Self, AppError> {
+        if input.get("version").and_then(Value::as_u64) == Some(1) {
+            let human: HumanIntent = serde_json::from_value(input.clone())
+                .map_err(|error| AppError::BadRequest(error.to_string()))?;
+            human.validate()?;
+            Ok(Self::from(human))
+        } else {
+            let intent: Self = serde_json::from_value(input.clone())
+                .map_err(|error| AppError::BadRequest(error.to_string()))?;
+            intent.validate()?;
+            Ok(intent)
+        }
+    }
+}
+
+impl From<HumanIntent> for DispatchInput {
+    fn from(intent: HumanIntent) -> Self {
+        Self {
+            version: 2,
+            actor: IntentActor::Human {
+                author_id: intent.author_id,
+            },
+            params: intent.params,
+            trigger_message: intent.trigger_message,
+            file_ids: intent.file_ids,
+        }
+    }
+}
+
 /// Called in the human message's transaction. No network/media IO and no BUSY
 /// transition occurs here. An existing tombstone always retains its identity.
 pub async fn enqueue_human(
     tx: &mut Transaction<'_, Postgres>,
     intent: HumanIntent,
+) -> Result<Uuid, AppError> {
+    intent.validate()?;
+    enqueue(tx, DispatchInput::from(intent)).await
+}
+
+pub async fn enqueue_bot(
+    tx: &mut Transaction<'_, Postgres>,
+    intent: BotIntent,
+) -> Result<Uuid, AppError> {
+    if intent.version != 2 {
+        return Err(AppError::BadRequest(
+            "invalid bot dispatch intent version".into(),
+        ));
+    }
+    enqueue(
+        tx,
+        DispatchInput {
+            version: 2,
+            actor: IntentActor::Bot {
+                author_bot_id: intent.author_bot_id,
+                parent_task_id: intent.parent_task_id,
+                parent_execution_id: intent.parent_execution_id,
+            },
+            params: intent.params,
+            trigger_message: intent.trigger_message,
+            file_ids: intent.file_ids,
+        },
+    )
+    .await
+}
+
+async fn enqueue(
+    tx: &mut Transaction<'_, Postgres>,
+    intent: DispatchInput,
 ) -> Result<Uuid, AppError> {
     intent.validate()?;
     let params = &intent.params;
@@ -92,31 +247,48 @@ pub async fn enqueue_human(
     sqlx::query!(
         "INSERT INTO messages
          (msg_id,task_id,channel_id,sender_type,sender_id,content,msg_type,is_partial,depth,chain_id,context_bundle,in_reply_to_msg_id,content_data)
-         VALUES($1,$2,$3,'bot',$4,'','text',TRUE,0,$5,$6,$7,$8)",
+         VALUES($1,$2,$3,'bot',$4,'','text',TRUE,$9,$5,$6,$7,$8)",
         placeholder_id.to_string(), task_id.to_string(), params.channel_id.to_string(),
         params.bot_id.to_string(), params.chain_id, params.context_bundle,
         params.trigger_msg_id.to_string(), params.session_id.map(|sid| json!({"session_id":sid})),
+        params.depth,
     ).execute(&mut **tx).await?;
     Ok(task_id)
 }
 
-/// Full pool-based human policy is evaluated before acquiring any run locks.
+/// Full pool-based actor policy is evaluated before acquiring any run locks.
 /// The fixed target is rechecked; routing and UI source versions are not rerun.
 pub(crate) async fn preauthorize(
     db: &PgPool,
     input: &Value,
-) -> Result<HumanIntent, HumanIntentPolicyError> {
-    use HumanIntentPolicyError::{Denied, Retryable};
-    let intent: HumanIntent = serde_json::from_value(input.clone())
-        .map_err(|error| Denied(AppError::BadRequest(error.to_string())))?;
-    intent.validate().map_err(Denied)?;
-    message_policy::reauthorize_human_intent(
-        db,
-        intent.author_id,
-        intent.params.channel_id,
-        intent.params.bot_id,
-    )
-    .await?;
+) -> Result<DispatchInput, IntentPolicyError> {
+    use IntentPolicyError::{Denied, Retryable};
+    let intent = DispatchInput::decode(input).map_err(Denied)?;
+    match intent.actor {
+        IntentActor::Human { author_id } => message_policy::reauthorize_human_intent(
+            db,
+            author_id,
+            intent.params.channel_id,
+            intent.params.bot_id,
+        )
+        .await
+        .map_err(IntentPolicyError::from)?,
+        IntentActor::Bot { author_bot_id, .. } => {
+            let decision = crate::domain::bot_event_policy::resolve_dispatch_decision_checked(
+                db,
+                &intent.params.bot_id.to_string(),
+                &intent.params.channel_id.to_string(),
+                &author_bot_id.to_string(),
+            )
+            .await
+            .map_err(|error| Retryable(AppError::Db(error)))?;
+            if !decision.allow {
+                return Err(Denied(AppError::Forbidden(
+                    "bot dispatch policy was revoked".into(),
+                )));
+            }
+        }
+    }
     if let Some(bundle) = &intent.params.context_bundle {
         let principal = crate::resource::Principal::bot(intent.params.bot_id);
         for item in crate::domain::context_bundle::bundle_items(bundle) {
@@ -160,36 +332,94 @@ pub(crate) async fn preauthorize(
 /// without requesting a second pool connection while holding locks.
 pub(crate) async fn authorize_locked(
     tx: &mut Transaction<'_, Postgres>,
-    intent: &HumanIntent,
+    intent: &DispatchInput,
 ) -> Result<bool, sqlx::Error> {
     let params = &intent.params;
     let source = sqlx::query!(
-        "SELECT sender_id,sender_type,is_deleted FROM messages
+        "SELECT sender_id,sender_type,is_deleted,is_partial,channel_seq,chain_id,depth FROM messages
          WHERE msg_id=$1 AND channel_id=$2 FOR SHARE",
         params.trigger_msg_id.to_string(),
         params.channel_id.to_string(),
     )
     .fetch_optional(&mut **tx)
     .await?;
-    if !source.is_some_and(|source| {
-        source.sender_id == intent.author_id.to_string()
-            && source.sender_type == "user"
-            && !source.is_deleted
-    }) {
+    let (author_id, author_type) = intent.author();
+    let Some(source) = source else {
+        return Ok(false);
+    };
+    if source.sender_id != author_id.to_string()
+        || source.sender_type != author_type
+        || source.is_deleted
+        || source.is_partial
+        || source.channel_seq != Some(params.trigger_seq)
+    {
         return Ok(false);
     }
-    let author = sqlx::query!(
-        "SELECT is_suspended,is_deleted FROM users WHERE user_id=$1 FOR SHARE",
-        intent.author_id.to_string()
-    )
-    .fetch_optional(&mut **tx)
-    .await?;
-    if !author.is_some_and(|author| !author.is_suspended && !author.is_deleted) {
-        return Ok(false);
+    match intent.actor {
+        IntentActor::Human { .. } => {
+            let author = sqlx::query!(
+                "SELECT is_suspended,is_deleted FROM users WHERE user_id=$1 FOR SHARE",
+                author_id.to_string()
+            )
+            .fetch_optional(&mut **tx)
+            .await?;
+            if !author.is_some_and(|author| !author.is_suspended && !author.is_deleted) {
+                return Ok(false);
+            }
+        }
+        IntentActor::Bot {
+            parent_task_id,
+            parent_execution_id,
+            ..
+        } => {
+            let decision = crate::domain::bot_event_policy::resolve_dispatch_decision_checked(
+                &mut **tx,
+                &params.bot_id.to_string(),
+                &params.channel_id.to_string(),
+                &author_id.to_string(),
+            )
+            .await?;
+            if !decision.allow {
+                return Ok(false);
+            }
+            if source.is_partial
+                || source.channel_seq.is_none()
+                || source.depth.saturating_add(1) != params.depth
+                || source.chain_id.as_deref() != params.chain_id.as_deref()
+            {
+                return Ok(false);
+            }
+            let parent = sqlx::query!(
+                "SELECT task_id,execution_id,status,last_event_type,terminal_client_msg_id,terminal_fingerprint,terminal_committed_at
+                 FROM bot_runs WHERE placeholder_msg_id=$1 AND bot_id=$2 AND channel_id=$3 FOR SHARE",
+                params.trigger_msg_id.to_string(),author_id.to_string(),params.channel_id.to_string(),
+            ).fetch_optional(&mut **tx).await?;
+            if !parent.is_some_and(|parent| {
+                parent.task_id == parent_task_id.to_string()
+                    && parent.execution_id.as_deref()
+                        == Some(parent_execution_id.to_string().as_str())
+                    && parent.status == "completed"
+                    && parent.last_event_type.as_deref() == Some("done")
+                    && parent.terminal_client_msg_id.is_some()
+                    && parent.terminal_fingerprint.is_some()
+                    && parent.terminal_committed_at.is_some()
+            }) {
+                return Ok(false);
+            }
+            let author = sqlx::query!(
+                "SELECT is_disabled FROM bot_accounts WHERE bot_id=$1 FOR SHARE",
+                author_id.to_string()
+            )
+            .fetch_optional(&mut **tx)
+            .await?;
+            if !author.is_some_and(|author| !author.is_disabled) {
+                return Ok(false);
+            }
+        }
     }
     let member = sqlx::query!(
-        "SELECT role FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type='user' FOR SHARE",
-        params.channel_id.to_string(), intent.author_id.to_string(),
+        "SELECT role FROM channel_memberships WHERE channel_id=$1 AND member_id=$2 AND member_type=$3 FOR SHARE",
+        params.channel_id.to_string(), author_id.to_string(),author_type,
     ).fetch_optional(&mut **tx).await?;
     if !member.is_some_and(|member| crate::resource::role_can_write(&member.role)) {
         return Ok(false);
@@ -224,10 +454,11 @@ pub(crate) async fn authorize_locked(
     }
     let files = sqlx::query!(
         "SELECT file_id,status,expires_at FROM file_records
-         WHERE file_id=ANY($1) AND channel_id=$2 AND uploader_id=$3 FOR SHARE",
+         WHERE file_id=ANY($1) AND channel_id=$2 AND ($4::boolean OR uploader_id=$3) FOR SHARE",
         &intent.file_ids,
         params.channel_id.to_string(),
-        intent.author_id.to_string(),
+        author_id.to_string(),
+        author_type == "bot",
     )
     .fetch_all(&mut **tx)
     .await?;
@@ -324,7 +555,7 @@ async fn cancel(
     )
     .execute(&mut *tx)
     .await?;
-    if let Ok(intent) = serde_json::from_value::<HumanIntent>(run.dispatch_input.clone()) {
+    if let Ok(intent) = DispatchInput::decode(&run.dispatch_input) {
         if let Some(session) = intent.params.session_id {
             sessions::finalize_session_without_active_turns_tx(&mut tx, session)
                 .await
@@ -352,7 +583,7 @@ async fn cancel(
     Ok(())
 }
 
-fn valid_frame(frame: &Value, intent: &HumanIntent, task: Uuid, placeholder: Uuid) -> bool {
+fn valid_frame(frame: &Value, intent: &DispatchInput, task: Uuid, placeholder: Uuid) -> bool {
     matches!(serde_json::from_value::<cheers_bridge_protocol::ControlInbound>(frame.clone()),
         Ok(cheers_bridge_protocol::ControlInbound::Task {
             task_id,channel_id,trigger_msg_id,placeholder_msg_id,provider_session_key,session_id,acceptance_required:true,..
@@ -372,11 +603,11 @@ async fn attempt(
 ) -> Result<bool, AppError> {
     let intent = match preauthorize(db, &run.dispatch_input).await {
         Ok(intent) => intent,
-        Err(HumanIntentPolicyError::Denied(error)) => {
+        Err(IntentPolicyError::Denied(error)) => {
             cancel(db, fanout, registry, run, lease, &error.to_string()).await?;
             return Ok(false);
         }
-        Err(HumanIntentPolicyError::Retryable(error)) => return Err(error),
+        Err(IntentPolicyError::Retryable(error)) => return Err(error),
     };
     let task: Uuid = run
         .task_id
@@ -425,7 +656,7 @@ async fn attempt(
     let frame = match &run.task_frame {
         Some(frame) => frame.clone(),
         None => {
-            dispatcher::prepare_human_task(
+            dispatcher::prepare_task_from_snapshot(
                 db,
                 task,
                 &intent.params,
@@ -452,11 +683,11 @@ async fn attempt(
     // while retaining the transaction's connection or mutable run authority.
     match preauthorize(db, &run.dispatch_input).await {
         Ok(_) => {}
-        Err(HumanIntentPolicyError::Denied(error)) => {
+        Err(IntentPolicyError::Denied(error)) => {
             cancel(db, fanout, registry, run, lease, &error.to_string()).await?;
             return Ok(false);
         }
-        Err(HumanIntentPolicyError::Retryable(error)) => return Err(error),
+        Err(IntentPolicyError::Retryable(error)) => return Err(error),
     }
     let mut tx = db.begin().await?;
     let message = sqlx::query!(
@@ -575,23 +806,39 @@ async fn deliver(
     let lease = Uuid::new_v4();
     let runs = claim_due(db, trigger, lease).await?;
     let cache = MediaCache::default();
-    let outcomes = stream::iter(runs).map(|run| {
-        let cache = &cache;
-        async move {
-            let result = tokio::time::timeout(Duration::from_secs(30), attempt(db, fanout, registry, locator, &run, lease, cache)).await;
-            let queued = matches!(result, Ok(Ok(true)));
-            match result {
-                Ok(Err(error)) => tracing::warn!(task_id=run.task_id, %error, "human dispatch retained for retry"),
-                Err(_) => tracing::warn!(task_id=run.task_id, "human dispatch attempt timed out; retained for retry"),
-                _ => {}
+    let outcomes = stream::iter(runs)
+        .map(|run| {
+            let cache = &cache;
+            async move {
+                let result = tokio::time::timeout(
+                    Duration::from_secs(30),
+                    attempt(db, fanout, registry, locator, &run, lease, cache),
+                )
+                .await;
+                let queued = matches!(result, Ok(Ok(true)));
+                match result {
+                    Ok(Err(error)) => {
+                        tracing::warn!(task_id=run.task_id, %error, "dispatch retained for retry")
+                    }
+                    Err(_) => tracing::warn!(
+                        task_id = run.task_id,
+                        "dispatch attempt timed out; retained for retry"
+                    ),
+                    _ => {}
+                }
+                match tokio::time::timeout(Duration::from_secs(5), release(db, &run, lease)).await {
+                    Ok(Ok(())) => {}
+                    _ => tracing::warn!(
+                        task_id = run.task_id,
+                        "dispatch lease release failed; expiry permits recovery"
+                    ),
+                }
+                queued
             }
-            match tokio::time::timeout(Duration::from_secs(5), release(db, &run, lease)).await {
-                Ok(Ok(())) => {}
-                _ => tracing::warn!(task_id=run.task_id, "dispatch lease release failed; expiry permits recovery"),
-            }
-            queued
-        }
-    }).buffer_unordered(4).collect::<Vec<_>>().await;
+        })
+        .buffer_unordered(4)
+        .collect::<Vec<_>>()
+        .await;
     Ok(outcomes.into_iter().filter(|queued| *queued).count())
 }
 
@@ -623,7 +870,7 @@ pub fn spawn(
     tokio::spawn(async move {
         loop {
             if let Err(error) = recover_once(&db, &fanout, &registry, &locator).await {
-                tracing::error!(%error, "human dispatch recovery scan failed");
+                tracing::error!(%error, "dispatch recovery scan failed");
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
         }

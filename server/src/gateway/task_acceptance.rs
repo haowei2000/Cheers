@@ -90,7 +90,7 @@ pub async fn claim(
     channel_id: Uuid,
     execution_id: Uuid,
 ) -> Result<Decision, sqlx::Error> {
-    // The shared human policy uses PgPool. Finish it before retaining a
+    // Shared intent policy uses PgPool. Finish it before retaining a
     // transaction connection/locks; the immutable input is compared again under
     // the run lock, and mutable source/session authority is fenced below.
     let dispatch_input = sqlx::query_scalar!(
@@ -100,13 +100,13 @@ pub async fn claim(
     .fetch_optional(db)
     .await?
     .flatten();
-    let human_intent = match dispatch_input.as_ref() {
+    let intent = match dispatch_input.as_ref() {
         Some(input) => match super::dispatch_intents::preauthorize(db, input).await {
             Ok(intent) => Some(intent),
-            Err(crate::domain::message_policy::HumanIntentPolicyError::Denied(_)) => {
-                return Ok(Decision::rejected("human dispatch authority was revoked"));
+            Err(super::dispatch_intents::IntentPolicyError::Denied(_)) => {
+                return Ok(Decision::rejected("dispatch authority was revoked"));
             }
-            Err(crate::domain::message_policy::HumanIntentPolicyError::Retryable(error)) => {
+            Err(super::dispatch_intents::IntentPolicyError::Retryable(error)) => {
                 return Err(match error {
                     crate::errors::AppError::Db(error) => error,
                     other => sqlx::Error::Protocol(other.to_string()),
@@ -152,8 +152,8 @@ pub async fn claim(
                 match (run.execution_id, run.execution_connection_id) {
                     (None, None) if run.status == "prepared" => {
                         if let Some(current_input) = run.dispatch_input.as_ref() {
-                            let Some(intent) = human_intent.as_ref() else {
-                                return Ok(Decision::rejected("human dispatch input changed"));
+                            let Some(intent) = intent.as_ref() else {
+                                return Ok(Decision::rejected("dispatch input changed"));
                             };
                             if dispatch_input.as_ref() != Some(current_input)
                                 || run.task_frame.is_none()
@@ -168,11 +168,11 @@ pub async fn claim(
                                     .await?
                             {
                                 return Ok(Decision::rejected(
-                                    "human dispatch authority is no longer active",
+                                    "dispatch authority is no longer active",
                                 ));
                             }
                         } else if dispatch_input.is_some() {
-                            return Ok(Decision::rejected("human dispatch input changed"));
+                            return Ok(Decision::rejected("dispatch input changed"));
                         }
                         let granted = sqlx::query!(
                             "UPDATE bot_runs

@@ -17,7 +17,7 @@ pub mod usage;
 pub mod voice;
 
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,6 +383,25 @@ pub async fn authorize_channel_read(
     principal: &Principal,
     channel_id: Uuid,
 ) -> Result<ChannelMembership, (String, String)> {
+    authorize_channel_read_with_executor(db, principal, channel_id).await
+}
+
+pub(crate) async fn authorize_channel_read_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    principal: &Principal,
+    channel_id: Uuid,
+) -> Result<ChannelMembership, (String, String)> {
+    authorize_channel_read_with_executor(&mut **tx, principal, channel_id).await
+}
+
+async fn authorize_channel_read_with_executor<'a, E>(
+    executor: E,
+    principal: &Principal,
+    channel_id: Uuid,
+) -> Result<ChannelMembership, (String, String)>
+where
+    E: Executor<'a, Database = Postgres>,
+{
     let row = sqlx::query!(
         "SELECT role
          FROM channel_memberships
@@ -391,7 +410,7 @@ pub async fn authorize_channel_read(
         principal.principal_id.to_string(),
         principal.member_type(),
     )
-    .fetch_optional(db)
+    .fetch_optional(executor)
     .await
     .map_err(db_err("authorize_channel_read: select membership role"))?;
 

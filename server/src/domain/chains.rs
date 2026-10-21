@@ -1,19 +1,23 @@
 //! Bot@Bot 触发与取消。
 //!
-//! bot 回复 finalize 后，若回复中含 @bot mention 且 depth < MAX_BOT_REPLY_DEPTH，
-//! 则直接 dispatch 下一跳（和用户消息触发 bot 完全一致，无链跟踪）。
+//! Execution-owned Done admits child turns in the parent receipt transaction.
+//! Proactive/resource/legacy bot replies retain their direct postcommit path.
 //! 取消接口（cancel / resolve_chain_id_for_message）保留供已有 cancel-chain API 使用。
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
-use sqlx::PgPool;
+use serde_json::{json, Value};
+use sqlx::{Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
     domain::{
+        bot_event_policy::{self, DispatchDecision},
         mentions::{MemberType, Mention},
         sessions,
     },
+    errors::AppError,
     gateway::{
+        dispatch_intents::{self, BotIntent},
         dispatcher::{self, DispatchParams},
         realtime::fanout::Fanout,
         registry::BotLocator,
@@ -23,6 +27,246 @@ use crate::{
 
 /// bot@bot 触发的最大深度，超出后静默停止。
 pub const MAX_BOT_REPLY_DEPTH: i32 = 5;
+
+/// Admit execution-owned Done mentions in the parent's finalize/receipt
+/// transaction. Ready targets were snapshotted before acquiring this transaction;
+/// all authority, sessions, references, audits and child rows below are DB-only.
+#[allow(clippy::too_many_arguments)]
+pub async fn enqueue_terminal_children(
+    tx: &mut Transaction<'_, Postgres>,
+    channel_id: Uuid,
+    parent_msg_id: Uuid,
+    parent_seq: i64,
+    parent_depth: i32,
+    author_bot_id: Uuid,
+    mentions: &[Mention],
+    chain_id: Option<&str>,
+    parent_task_id: Uuid,
+    parent_execution_id: Uuid,
+    ready_targets: &[Uuid],
+) -> Result<usize, AppError> {
+    if parent_depth >= MAX_BOT_REPLY_DEPTH {
+        return Ok(0);
+    }
+    let mut seen = HashSet::new();
+    let targets: Vec<_> = mentioned_bots(mentions, author_bot_id)
+        .into_iter()
+        .filter(|bot| ready_targets.contains(bot) && seen.insert(*bot))
+        .collect();
+    if targets.is_empty() {
+        return Ok(0);
+    }
+    if let Some(chain_id) = chain_id {
+        let active = sqlx::query_scalar!(
+            "SELECT status FROM task_chains WHERE chain_id=$1 AND channel_id=$2 FOR SHARE",
+            chain_id,
+            channel_id.to_string(),
+        )
+        .fetch_optional(&mut **tx)
+        .await?;
+        if active.as_deref() != Some("active") {
+            return Ok(0);
+        }
+    }
+    let source = sqlx::query!(
+        "SELECT content,created_at,msg_type,in_reply_to_msg_id,file_ids,context_bundle,content_data,chain_id
+         FROM messages WHERE msg_id=$1 AND channel_id=$2 AND sender_id=$3
+           AND sender_type='bot' AND is_partial=FALSE AND is_deleted=FALSE FOR SHARE",
+        parent_msg_id.to_string(), channel_id.to_string(), author_bot_id.to_string(),
+    ).fetch_optional(&mut **tx).await?.ok_or_else(|| AppError::Conflict("parent result is not finalized by this bot".into()))?;
+    if source.chain_id.as_deref() != chain_id {
+        return Err(AppError::Conflict("parent task chain changed".into()));
+    }
+    let author_name = sqlx::query_scalar!(
+        "SELECT COALESCE(NULLIF(display_name,''),username) AS \"name!\" FROM bot_accounts WHERE bot_id=$1",
+        author_bot_id.to_string(),
+    ).fetch_optional(&mut **tx).await?.ok_or(AppError::NotFound)?;
+    let file_ids: Vec<String> = source
+        .file_ids
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|error| AppError::Internal(format!("invalid parent attachment IDs: {error}")))?
+        .unwrap_or_default();
+    let source_session = match source
+        .content_data
+        .as_ref()
+        .and_then(|data| data.get("session_id"))
+        .and_then(Value::as_str)
+    {
+        Some(session) => Some(
+            session
+                .parse::<Uuid>()
+                .map_err(|_| AppError::Internal("invalid parent session_id".into()))?,
+        ),
+        None => sessions::resolve_primary_session_tx(tx, author_bot_id, &channel_id.to_string())
+            .await?
+            .map(|session| session.session_id),
+    };
+    let mut plan_params = json!({"channel_id":channel_id});
+    if let Some(session) = source_session {
+        plan_params["session_id"] = json!(session);
+    }
+    let mut items = source
+        .context_bundle
+        .as_ref()
+        .map(crate::domain::context_bundle::bundle_items)
+        .unwrap_or_default();
+    items.push(json!({"verb":"channel.plan.read","params":plan_params,
+        "label":"Plan (handoff)","kind":"plan"}));
+    items.push(
+        json!({"verb":"channel.activity.read","params":{"channel_id":channel_id},
+        "label":"Recent decisions (handoff)","kind":"activity"}),
+    );
+    let handoff =
+        json!({"origin":"handoff","from":{"type":"bot","id":author_bot_id},"items":items});
+    let trigger_message = json!({"msg_id":parent_msg_id,"user":author_bot_id,
+        "sender_name":author_name,"text":source.content,"timestamp":source.created_at.to_rfc3339(),
+        "msg_type":source.msg_type,"in_reply_to_msg_id":source.in_reply_to_msg_id});
+    let next_depth = parent_depth.saturating_add(1);
+    let mut effective_chain = chain_id.map(ToString::to_string);
+    let mut admitted = 0;
+    for bot_id in targets {
+        let eligible = sqlx::query!(
+            "SELECT b.bot_id FROM channel_memberships m JOIN bot_accounts b ON b.bot_id=m.member_id
+             WHERE m.channel_id=$1 AND m.member_type='bot' AND m.member_id=$2
+               AND m.role IN ('owner','admin','member') AND b.is_disabled=FALSE FOR SHARE OF m,b",
+            channel_id.to_string(),
+            bot_id.to_string(),
+        )
+        .fetch_optional(&mut **tx)
+        .await?
+        .is_some();
+        let mut decision = if eligible {
+            bot_event_policy::resolve_dispatch_decision_checked(
+                &mut **tx,
+                &bot_id.to_string(),
+                &channel_id.to_string(),
+                &author_bot_id.to_string(),
+            )
+            .await?
+        } else {
+            DispatchDecision {
+                allow: false,
+                reason: "target_unavailable",
+            }
+        };
+        let placeholder = dispatcher::derive_placeholder_id(parent_msg_id, bot_id);
+        if decision.allow
+            && !crate::infra::ratelimit::bot_dispatch_limiter()
+                .try_hit_once(&channel_id.to_string(), &placeholder.to_string())
+        {
+            decision = DispatchDecision {
+                allow: false,
+                reason: "dispatch_budget",
+            };
+        }
+        let mut session = None;
+        if decision.allow {
+            session =
+                sessions::resolve_primary_session_tx(tx, bot_id, &channel_id.to_string()).await?;
+            if session.is_none() {
+                let account =
+                    crate::domain::messages::resolve_provider_account_id_for_bot_tx(tx, bot_id)
+                        .await?;
+                session = sessions::ensure_live_dispatch_primary_tx(
+                    tx,
+                    bot_id,
+                    &account,
+                    &channel_id.to_string(),
+                )
+                .await?;
+            }
+            if session.is_none() {
+                decision = DispatchDecision {
+                    allow: false,
+                    reason: "session_unavailable",
+                };
+            }
+        }
+        if decision.allow {
+            if effective_chain.is_none() {
+                let chain = crate::domain::task_chains::start_chain_tx(
+                    tx,
+                    channel_id,
+                    parent_task_id,
+                    parent_msg_id,
+                )
+                .await?
+                .to_string();
+                sqlx::query!(
+                    "UPDATE messages SET chain_id=$2 WHERE msg_id=$1 AND chain_id IS NULL",
+                    parent_msg_id.to_string(),
+                    &chain
+                )
+                .execute(&mut **tx)
+                .await?;
+                let updated = sqlx::query!(
+                    "UPDATE bot_runs SET chain_id=$4 WHERE task_id=$1 AND execution_id=$2
+                     AND placeholder_msg_id=$3 AND bot_id=$5 AND channel_id=$6
+                     AND chain_id IS NULL AND status='completed' AND last_event_type='done'",
+                    parent_task_id.to_string(),
+                    parent_execution_id.to_string(),
+                    parent_msg_id.to_string(),
+                    &chain,
+                    author_bot_id.to_string(),
+                    channel_id.to_string(),
+                )
+                .execute(&mut **tx)
+                .await?;
+                if updated.rows_affected() != 1 {
+                    return Err(AppError::Conflict("parent execution chain changed".into()));
+                }
+                effective_chain = Some(chain);
+            }
+            let context_bundle = crate::domain::context_bundle::finalize_bundle_for_target_tx(
+                tx,
+                &handoff,
+                crate::resource::Principal::bot(bot_id),
+                channel_id,
+            )
+            .await?;
+            let session =
+                session.ok_or_else(|| AppError::Internal("allowed child has no session".into()))?;
+            dispatch_intents::enqueue_bot(
+                tx,
+                BotIntent {
+                    version: 2,
+                    author_bot_id,
+                    parent_task_id,
+                    parent_execution_id,
+                    params: DispatchParams {
+                        trigger_msg_id: parent_msg_id,
+                        trigger_seq: parent_seq,
+                        bot_id,
+                        channel_id,
+                        depth: next_depth,
+                        provider_session_key: session.provider_session_key,
+                        session_id: Some(session.session_id),
+                        chain_id: effective_chain.clone(),
+                        context_bundle: Some(context_bundle),
+                    },
+                    trigger_message: trigger_message.clone(),
+                    file_ids: file_ids.clone(),
+                },
+            )
+            .await?;
+            admitted += 1;
+        }
+        // Do not stop at a full window: later targets may already own an
+        // admission slot from this exact parent's rolled-back attempt.
+        record_dispatch_audit_with_executor(
+            &mut **tx,
+            author_bot_id,
+            bot_id,
+            channel_id,
+            effective_chain.as_deref(),
+            next_depth,
+            &decision,
+        )
+        .await?;
+    }
+    Ok(admitted)
+}
 
 /// bot 消息（回复 finalize 或主动 send）落库后，触发消息里的 @bot mention，
 /// depth+1 后 dispatch。三重防护：
@@ -312,24 +556,15 @@ async fn record_dispatch_audit(
     depth: i32,
     decision: &crate::domain::bot_event_policy::DispatchDecision,
 ) {
-    let payload = serde_json::json!({
-        "initiator_bot_id": initiator_bot_id.to_string(),
-        "target_bot_id": target_bot_id.to_string(),
-        "channel_id": channel_id.to_string(),
-        "chain_id": chain_id,
-        "depth": depth,
-        "decision": if decision.allow { "allow" } else { "deny" },
-        "reason": decision.reason,
-    });
-    if let Err(err) = sqlx::query!(
-        "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
-         VALUES ($1, $2, $3, NULL, 'dispatch', 'cheers', $4::text::jsonb)",
-        Uuid::new_v4().to_string(),
-        target_bot_id.to_string(),
-        channel_id.to_string(),
-        payload.to_string(),
+    if let Err(err) = record_dispatch_audit_with_executor(
+        db,
+        initiator_bot_id,
+        target_bot_id,
+        channel_id,
+        chain_id,
+        depth,
+        decision,
     )
-    .execute(db)
     .await
     {
         tracing::warn!(
@@ -339,6 +574,41 @@ async fn record_dispatch_audit(
             "dispatch audit write failed"
         );
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_dispatch_audit_with_executor<'a, E>(
+    executor: E,
+    initiator_bot_id: Uuid,
+    target_bot_id: Uuid,
+    channel_id: Uuid,
+    chain_id: Option<&str>,
+    depth: i32,
+    decision: &DispatchDecision,
+) -> Result<(), sqlx::Error>
+where
+    E: Executor<'a, Database = Postgres>,
+{
+    let payload = serde_json::json!({
+        "initiator_bot_id": initiator_bot_id.to_string(),
+        "target_bot_id": target_bot_id.to_string(),
+        "channel_id": channel_id.to_string(),
+        "chain_id": chain_id,
+        "depth": depth,
+        "decision": if decision.allow { "allow" } else { "deny" },
+        "reason": decision.reason,
+    });
+    sqlx::query!(
+        "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
+         VALUES ($1, $2, $3, NULL, 'dispatch', 'cheers', $4::text::jsonb)",
+        Uuid::new_v4().to_string(),
+        target_bot_id.to_string(),
+        channel_id.to_string(),
+        payload.to_string(),
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 async fn resolve_provider_account_id_for_bot(

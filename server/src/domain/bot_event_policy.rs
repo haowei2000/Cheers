@@ -17,7 +17,7 @@
 //! `request_permission` per `operation_kind`); the two compose.
 
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres};
 
 use crate::errors::AppError;
 
@@ -326,17 +326,8 @@ pub async fn resolve_dispatch_decision(
     channel_id: &str,
     initiator_bot_id: &str,
 ) -> DispatchDecision {
-    match load_rules(db, target_bot_id).await {
-        Ok(rules) => match resolve_dispatch_opt(&rules, channel_id, initiator_bot_id) {
-            Some(allow) => DispatchDecision {
-                allow,
-                reason: "rule",
-            },
-            None => DispatchDecision {
-                allow: default_access_for(EV_PROMPT, Capability::Dispatch),
-                reason: "default_allow",
-            },
-        },
+    match resolve_dispatch_decision_checked(db, target_bot_id, channel_id, initiator_bot_id).await {
+        Ok(decision) => decision,
         Err(err) => {
             tracing::warn!(
                 target_bot = %target_bot_id,
@@ -350,6 +341,32 @@ pub async fn resolve_dispatch_decision(
             }
         }
     }
+}
+
+/// The same DISPATCH decision without suppressing storage failures. Admission
+/// uses the parent's transaction; retries use the pool without auditing again.
+pub(crate) async fn resolve_dispatch_decision_checked<'a, E>(
+    executor: E,
+    target_bot_id: &str,
+    channel_id: &str,
+    initiator_bot_id: &str,
+) -> Result<DispatchDecision, sqlx::Error>
+where
+    E: Executor<'a, Database = Postgres>,
+{
+    let rules = load_rules_with_executor(executor, target_bot_id).await?;
+    Ok(
+        match resolve_dispatch_opt(&rules, channel_id, initiator_bot_id) {
+            Some(allow) => DispatchDecision {
+                allow,
+                reason: "rule",
+            },
+            None => DispatchDecision {
+                allow: default_access_for(EV_PROMPT, Capability::Dispatch),
+                reason: "default_allow",
+            },
+        },
+    )
 }
 
 // ── Dynamic group membership (friends | channel:<id> | workspace:<id>) ──────
@@ -468,13 +485,23 @@ async fn is_workspace_member(db: &PgPool, workspace_id: &str, user_id: &str) -> 
 /// enforcement path (resolve / effective_matrix / gates) goes through — so an
 /// expired grant simply stops matching and the membership default takes over.
 pub async fn load_rules(db: &PgPool, bot_id: &str) -> Result<Vec<Rule>, AppError> {
+    Ok(load_rules_with_executor(db, bot_id).await?)
+}
+
+async fn load_rules_with_executor<'a, E>(
+    executor: E,
+    bot_id: &str,
+) -> Result<Vec<Rule>, sqlx::Error>
+where
+    E: Executor<'a, Database = Postgres>,
+{
     let rows = sqlx::query!(
         "SELECT channel_id, subject_kind, subject_id, event_class, capability, decision
          FROM bot_event_access
          WHERE bot_id = $1 AND (expires_at IS NULL OR expires_at > NOW())",
         bot_id,
     )
-    .fetch_all(db)
+    .fetch_all(executor)
     .await?;
     Ok(rows
         .into_iter()

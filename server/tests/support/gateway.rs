@@ -3,14 +3,19 @@ use sqlx::{ConnectOptions, PgPool};
 use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
+    sync::{Arc, OnceLock},
     time::Duration,
 };
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
 
 /// Own the process and temporary keys even if an assertion panics.
 pub struct TestGateway {
     process: Option<Child>,
     directory: PathBuf,
+    // Each real server owns its production PG pool. Bound process resources
+    // while leaving the races within an individual gateway fully concurrent.
+    _process_permit: OwnedSemaphorePermit,
 }
 impl Drop for TestGateway {
     fn drop(&mut self) {
@@ -18,16 +23,29 @@ impl Drop for TestGateway {
             let _ = process.kill();
             let _ = process.wait();
         }
+        if std::thread::panicking() {
+            if let Ok(log) = std::fs::read_to_string(self.directory.join("gateway.log")) {
+                eprintln!("test gateway log after failure:\n{log}");
+            }
+        }
         let _ = std::fs::remove_dir_all(&self.directory);
     }
 }
 impl TestGateway {
     pub async fn start(db: &PgPool, login: &str, password: &str) -> (Self, String) {
+        static PROCESS_SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+        let process_permit = PROCESS_SLOTS
+            .get_or_init(|| Arc::new(Semaphore::new(4)))
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("gateway process semaphore remains open");
         let directory = std::env::temp_dir().join(format!("cheers-http-test-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         let mut gateway = Self {
             process: None,
             directory,
+            _process_permit: process_permit,
         };
         let private = gateway.directory.join("private.pem");
         let public = gateway.directory.join("public.pem");

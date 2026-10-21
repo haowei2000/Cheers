@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT file_id,status,expires_at FROM file_records\n         WHERE file_id=ANY($1) AND channel_id=$2 AND uploader_id=$3 FOR SHARE",
+  "query": "SELECT file_id,status,expires_at FROM file_records\n         WHERE file_id=ANY($1) AND channel_id=$2 AND ($4::boolean OR uploader_id=$3) FOR SHARE",
   "describe": {
     "columns": [
       {
@@ -23,7 +23,8 @@
       "Left": [
         "TextArray",
         "Text",
-        "Text"
+        "Text",
+        "Bool"
       ]
     },
     "nullable": [
@@ -32,5 +33,5 @@
       true
     ]
   },
-  "hash": "08b1e9b53a3bf4e1ac33721944d6a1a72e58bc5955bbcff59f8258bde979be2b"
+  "hash": "b0213d6524b691e0d22d10016b140b9bb58af64c2c070abb44e3d6a4adb45de4"
 }

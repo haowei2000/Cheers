@@ -534,6 +534,34 @@ pub async fn resolve_primary_session_tx(
     .transpose()
 }
 
+/// The dispatch fallback may create an idle primary, but must not promote a
+/// closed deterministic session merely to discover afterward that it is dead.
+/// Callers treat `None` as a permanent unavailable destination.
+pub(crate) async fn ensure_live_dispatch_primary_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    channel_id: &str,
+) -> Result<Option<SessionHandle>, AppError> {
+    let key = primary_provider_session_key(channel_id, bot_id);
+    let status = sqlx::query_scalar!(
+        "SELECT status FROM cheers_sessions
+         WHERE provider=$1 AND provider_account_id=$2 AND provider_session_key=$3 FOR UPDATE",
+        PROVIDER,
+        provider_account_id,
+        key,
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    if status.is_some_and(|status| matches!(status.as_str(), "terminated" | "revoked" | "expired"))
+    {
+        return Ok(None);
+    }
+    ensure_primary_session_workspace_tx(tx, bot_id, provider_account_id, channel_id, None, &[])
+        .await?;
+    resolve_primary_session_tx(tx, bot_id, channel_id).await
+}
+
 /// Make an existing channel session the bot's PRIMARY — the session Auto/mention
 /// messages route to. The binding role is the source of truth: demote the current
 /// primary binding to 'other' and promote the target, in one transaction (the

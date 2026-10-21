@@ -266,9 +266,9 @@ pub(crate) fn placeholder_frame(params: &DispatchParams, placeholder_id: Uuid) -
     )
 }
 
-/// Hydrate a frozen human trigger using the same media/config/wire builders as
+/// Hydrate a frozen trigger using the same media/config/wire builders as
 /// direct dispatch. Call outside a transaction; its result is persisted once.
-pub(crate) async fn prepare_human_task(
+pub(crate) async fn prepare_task_from_snapshot(
     db: &PgPool,
     task_id: Uuid,
     params: &DispatchParams,

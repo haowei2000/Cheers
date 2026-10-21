@@ -245,12 +245,7 @@ pub async fn finalize_bundle_for_target(
 ) -> Value {
     let mut kept: Vec<Value> = Vec::new();
     for item in bundle_items(bundle) {
-        let cid = item
-            .get("params")
-            .and_then(|p| p.get("channel_id"))
-            .and_then(Value::as_str)
-            .and_then(|s| s.parse::<uuid::Uuid>().ok())
-            .unwrap_or(fallback_channel);
+        let cid = item_channel(&item, fallback_channel);
         if crate::resource::authorize_channel_read(db, &target, cid)
             .await
             .is_ok()
@@ -258,6 +253,45 @@ pub async fn finalize_bundle_for_target(
             kept.push(item);
         }
     }
+    finish_target_bundle(bundle, target, kept)
+}
+
+/// Transactional finalization shares the read-authority query and output shape.
+/// A missing membership drops that reference; a failed query aborts admission
+/// rather than permanently freezing an empty context after a storage outage.
+pub(crate) async fn finalize_bundle_for_target_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    bundle: &Value,
+    target: crate::resource::Principal,
+    fallback_channel: uuid::Uuid,
+) -> Result<Value, crate::errors::AppError> {
+    let mut kept = Vec::new();
+    for item in bundle_items(bundle) {
+        let cid = item_channel(&item, fallback_channel);
+        match crate::resource::authorize_channel_read_tx(tx, &target, cid).await {
+            Ok(_) => kept.push(item),
+            Err((code, message)) if code == "INTERNAL_ERROR" => {
+                return Err(crate::errors::AppError::Internal(message));
+            }
+            Err(_) => {}
+        }
+    }
+    Ok(finish_target_bundle(bundle, target, kept))
+}
+
+fn item_channel(item: &Value, fallback: uuid::Uuid) -> uuid::Uuid {
+    item.get("params")
+        .and_then(|params| params.get("channel_id"))
+        .and_then(Value::as_str)
+        .and_then(|id| id.parse().ok())
+        .unwrap_or(fallback)
+}
+
+fn finish_target_bundle(
+    bundle: &Value,
+    target: crate::resource::Principal,
+    mut kept: Vec<Value>,
+) -> Value {
     dedup_items_by_verb_params(&mut kept);
     let mut top = bundle.as_object().cloned().unwrap_or_default();
     top.insert("items".into(), Value::Array(kept));
