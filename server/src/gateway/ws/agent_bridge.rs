@@ -1466,7 +1466,7 @@ fn policy_rules_cache() -> &'static std::sync::Mutex<
 
 /// TTL-cached wrapper over [`bot_event_policy::load_rules`]. Serves a cloned copy of the
 /// bot's rules on a cache hit within [`POLICY_RULES_TTL`]; otherwise refreshes from the
-/// DB and repopulates. Preserves `load_rules`' error contract so the caller can fail-open.
+/// DB and repopulates. Preserves `load_rules`' error contract so the caller can fail closed.
 async fn cached_load_rules(
     state: &AppState,
     bot_id: Uuid,
@@ -1488,8 +1488,8 @@ async fn cached_load_rules(
 
 /// Live per-subscriber SEE (docs/arch/ACP_EVENT_TAXONOMY.md): the online channel
 /// users allowed to SEE an agent event of `event_class` for `bot`. Platform admins
-/// bypass; absent rules → members allowed (the default). Fail-open on a rules error
-/// (return everyone online) so a query hiccup never *hides* the bot's activity.
+/// bypass; absent rules → members allowed (the default). Policy or membership
+/// storage failures exclude affected recipients rather than dropping a DENY.
 pub(crate) async fn allowed_seers(
     state: &AppState,
     bot_id: Uuid,
@@ -1502,7 +1502,7 @@ pub(crate) async fn allowed_seers(
     }
     let rules = match cached_load_rules(state, bot_id).await {
         Ok(r) => r,
-        Err(_) => return online,
+        Err(_) => return Vec::new(),
     };
     // Fast path: `resolve_access` for `See` only ever consults `see`-capability rules
     // for this event_class, and the membership default for `See` is always allow. So
@@ -1516,7 +1516,7 @@ pub(crate) async fn allowed_seers(
     }
     let mut chan_role: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut platform_admin: std::collections::HashSet<String> = std::collections::HashSet::new();
-    if let Ok(rows) = sqlx::query!(
+    let rows = match sqlx::query!(
         "SELECT cm.member_id, cm.role AS crole, u.role AS prole
          FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id
          WHERE cm.channel_id = $1 AND cm.member_type = 'user'",
@@ -1525,14 +1525,14 @@ pub(crate) async fn allowed_seers(
     .fetch_all(&state.db)
     .await
     {
-        for r in rows {
-            let mid: String = r.member_id.clone();
-            if let Some(c) = Some(r.crole.clone()) {
-                chan_role.insert(mid.clone(), c);
-            }
-            if matches!(Some(r.prole.as_str()), Some("system_admin") | Some("admin")) {
-                platform_admin.insert(mid);
-            }
+        Ok(rows) => rows,
+        Err(_) => return Vec::new(),
+    };
+    for r in rows {
+        let mid: String = r.member_id;
+        chan_role.insert(mid.clone(), r.crole);
+        if matches!(r.prole.as_str(), "system_admin" | "admin") {
+            platform_admin.insert(mid);
         }
     }
     let bot_s = bot_id.to_string();
@@ -1544,9 +1544,14 @@ pub(crate) async fn allowed_seers(
             out.push(uid);
             continue;
         }
-        let role = chan_role.get(&id).map(String::as_str).unwrap_or("member");
-        let groups =
-            crate::domain::bot_event_policy::matched_groups(&state.db, &bot_s, &id, &rules).await;
+        let Some(role) = chan_role.get(&id).map(String::as_str) else {
+            continue;
+        };
+        let Ok(groups) =
+            crate::domain::bot_event_policy::matched_groups(&state.db, &bot_s, &id, &rules).await
+        else {
+            continue;
+        };
         if crate::domain::bot_event_policy::resolve_access(
             &rules,
             &chan_s,

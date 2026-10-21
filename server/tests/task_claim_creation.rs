@@ -99,7 +99,7 @@ impl Fixture {
             .bind(channel.to_string()).bind(user.to_string()).execute(db).await.unwrap();
         sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_type,sender_id,content,msg_type,is_partial,channel_seq) VALUES($1,$2,'user',$3,$4,'text',FALSE,1)")
             .bind(source.to_string()).bind(channel.to_string()).bind(user.to_string()).bind(Self::SOURCE).execute(db).await.unwrap();
-        sqlx::query("INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode,confidence_threshold) VALUES($1,$2,'off',0.75)")
+        sqlx::query("INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode,confidence_threshold,next_eligible_at) VALUES($1,$2,'text',0.75,NOW()+INTERVAL '1 day')")
             .bind(channel.to_string()).bind(bot.to_string()).execute(db).await.unwrap();
         sqlx::query("INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,dispatched_at) VALUES($1,$2,$3,1,1,'dispatched',NOW())")
             .bind(evaluation.to_string()).bind(channel.to_string()).bind(bot.to_string()).execute(db).await.unwrap();

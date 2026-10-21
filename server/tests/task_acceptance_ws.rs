@@ -221,7 +221,18 @@ async fn send(socket: &mut Socket, frame: Value) {
 }
 
 async fn next_type(socket: &mut Socket, expected: &str) -> Value {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    next_type_with_timeout(socket, expected, Duration::from_secs(10)).await
+}
+
+async fn next_recovered_task(socket: &mut Socket) -> Value {
+    // Startup can first observe the connector offline. Recovery then combines
+    // a five-second retry delay with a five-second polling loop; allow two
+    // recovery windows while retaining the normal protocol deadline above.
+    next_type_with_timeout(socket, "task", Duration::from_secs(20)).await
+}
+
+async fn next_type_with_timeout(socket: &mut Socket, expected: &str, timeout: Duration) -> Value {
+    tokio::time::timeout(timeout, async {
         loop {
             match socket
                 .next()
@@ -372,7 +383,7 @@ async fn real_startup_preserves_old_unaccepted_work_and_reoffers_the_exact_froze
         .execute(&db).await.unwrap();
     fixture.restart(&db).await;
     let mut restarted = fixture.recovering_bridge().await;
-    let recovered = next_type(&mut restarted.control, "task").await;
+    let recovered = next_recovered_task(&mut restarted.control).await;
     // This goes through main's actual startup worker and orphan reclaimer. No
     // test calls recover_once, so missing production wiring cannot pass.
     assert_eq!(recovered, original);
@@ -512,7 +523,7 @@ async fn a_process_crash_after_human_commit_recovers_the_pending_input_without_a
     age_unaccepted_intent(&db, &identity).await;
     fixture.restart(&db).await;
     let mut recovered = fixture.recovering_bridge().await;
-    let task = next_type(&mut recovered.control, "task").await;
+    let task = next_recovered_task(&mut recovered.control).await;
     assert_eq!(task["task_id"], before["task_id"]);
     assert_eq!(task["placeholder_msg_id"], before["placeholder_msg_id"]);
     assert_eq!(
@@ -1264,7 +1275,7 @@ async fn committed_parent_and_pending_child_recover_together_after_a_real_gatewa
     .unwrap();
     fixture.restart(&db).await;
     let mut recovered = fixture.recovering_bot_bridge(&child).await;
-    let task = next_type(&mut recovered.control, "task").await;
+    let task = next_recovered_task(&mut recovered.control).await;
     assert_eq!(task["task_id"], before["task_id"]);
     assert_eq!(task["placeholder_msg_id"], before["placeholder_msg_id"]);
     assert_eq!(task["trigger_message"]["text"], "Committed parent handoff");
@@ -1459,7 +1470,7 @@ async fn proactive_child_crash(db: PgPool, resource_post: bool) {
     .await;
     fixture.restart(&db).await;
     let mut recovered = fixture.recovering_bot_bridge(&child).await;
-    let task = next_type(&mut recovered.control, "task").await;
+    let task = next_recovered_task(&mut recovered.control).await;
     assert_eq!(task["task_id"], before["task_id"]);
     assert_eq!(task["placeholder_msg_id"], before["placeholder_msg_id"]);
     assert_eq!(task["trigger_message"]["text"], "Durable proactive handoff");
@@ -1575,7 +1586,7 @@ impl Fixture {
             )
             .await;
         let seq = source["channel_seq"].as_i64().unwrap();
-        sqlx::query("INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode) VALUES($1,$2,'off') ON CONFLICT(channel_id,bot_id) DO NOTHING")
+        sqlx::query("INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode,next_eligible_at) VALUES($1,$2,'text',NOW()+INTERVAL '1 day') ON CONFLICT(channel_id,bot_id) DO UPDATE SET mode='text',next_eligible_at=EXCLUDED.next_eligible_at")
             .bind(self.channel.to_string()).bind(self.bot.id.to_string()).execute(db).await.unwrap();
         let evaluation = Uuid::new_v4();
         sqlx::query("INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,dispatched_at) VALUES($1,$2,$3,$4,$4,'dispatched',NOW())")
@@ -1844,7 +1855,7 @@ async fn an_approved_claim_recovers_after_process_loss_with_its_original_private
     .unwrap();
     fixture.restart(&db).await;
     let mut recovered = fixture.recovering_bridge().await;
-    let task = next_type(&mut recovered.control, "task").await;
+    let task = next_recovered_task(&mut recovered.control).await;
     assert_eq!(task["task_id"], before["task_id"]);
     assert_eq!(task["placeholder_msg_id"], before["placeholder_msg_id"]);
     assert_eq!(task["session_id"], original_session);

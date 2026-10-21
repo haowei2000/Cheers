@@ -6,10 +6,9 @@
 //! workspace. The retained workspace route uses the same policy checks for
 //! consumers that intentionally need one slice.
 //!
-//! SECURITY: unlike the in-channel live fanout (`allowed_seers`, which fails
-//! open by design), this aggregation surface fails CLOSED — any per-row policy
-//! error drops the row. A DB hiccup must not reveal every pending approval in
-//! the workspace to every member.
+//! SECURITY: policy errors drop affected rows, matching the in-channel live
+//! fanout's fail-closed policy reads. A DB hiccup must not reveal every pending
+//! approval in the workspace to every member.
 
 use axum::{
     extract::{Path, Query, State},
@@ -49,8 +48,8 @@ fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))
 }
 
-/// The caller's channel role for the event-policy matrix (default `member`).
-async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
+/// The caller's current channel role for the event-policy matrix.
+async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> Result<String, AppError> {
     sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
@@ -58,11 +57,9 @@ async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
         uid.to_string(),
     )
     .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten()
-    .and_then(|r| Some(r.role.clone()))
-    .unwrap_or_else(|| "member".to_string())
+    .await?
+    .map(|r| r.role)
+    .ok_or_else(|| AppError::Forbidden("not a channel member".into()))
 }
 
 /// Resolve (may_see, may_answer) for one pending card — the same SEE gate and
@@ -145,7 +142,10 @@ async fn load_policy_caches(
         let Ok(rules) = bot_event_policy::load_rules(&state.db, &bid).await else {
             continue;
         };
-        let groups = bot_event_policy::matched_groups(&state.db, &bid, &uid_s, &rules).await;
+        let Ok(groups) = bot_event_policy::matched_groups(&state.db, &bid, &uid_s, &rules).await
+        else {
+            continue;
+        };
         rules_by_bot.insert(p.bot_id, rules);
         groups_by_bot.insert(p.bot_id, groups);
     }
@@ -170,7 +170,9 @@ pub async fn get_fleet_badge(
         let role = match roles.get(&p.channel_id) {
             Some(r) => r.clone(),
             None => {
-                let r = channel_role(&state, p.channel_id, uid).await;
+                let Ok(r) = channel_role(&state, p.channel_id, uid).await else {
+                    continue;
+                };
                 roles.insert(p.channel_id, r.clone());
                 r
             }
@@ -387,7 +389,9 @@ async fn build_fleet(
         let role = match roles.get(&p.channel_id) {
             Some(r) => r.clone(),
             None => {
-                let r = channel_role(state, p.channel_id, uid).await;
+                let Ok(r) = channel_role(state, p.channel_id, uid).await else {
+                    continue;
+                };
                 roles.insert(p.channel_id, r.clone());
                 r
             }

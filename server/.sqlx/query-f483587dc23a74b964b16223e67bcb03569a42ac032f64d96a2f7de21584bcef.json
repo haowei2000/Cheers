@@ -1,70 +1,61 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,last_evaluated_seq,policy\n        FROM channel_bot_monitoring\n        WHERE mode <> 'off' AND (next_eligible_at IS NULL OR next_eligible_at <= NOW())\n        ORDER BY COALESCE(next_eligible_at,created_at) LIMIT 20",
+  "query": "SELECT mode,scope,debounce_seconds,min_interval_seconds,\n                max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,\n                last_evaluated_seq,policy FROM channel_bot_monitoring\n         WHERE channel_id=$1 AND bot_id=$2 AND mode<>'off'\n           AND (next_eligible_at IS NULL OR next_eligible_at<=clock_timestamp())\n         FOR UPDATE SKIP LOCKED",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "channel_id",
-        "type_info": "Varchar"
-      },
-      {
-        "ordinal": 1,
-        "name": "bot_id",
-        "type_info": "Varchar"
-      },
-      {
-        "ordinal": 2,
         "name": "mode",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 1,
         "name": "scope",
         "type_info": "Text"
       },
       {
-        "ordinal": 4,
+        "ordinal": 2,
         "name": "debounce_seconds",
         "type_info": "Int4"
       },
       {
-        "ordinal": 5,
+        "ordinal": 3,
         "name": "min_interval_seconds",
         "type_info": "Int4"
       },
       {
-        "ordinal": 6,
+        "ordinal": 4,
         "name": "max_evaluations_per_hour",
         "type_info": "Int4"
       },
       {
-        "ordinal": 7,
+        "ordinal": 5,
         "name": "batch_size",
         "type_info": "Int4"
       },
       {
-        "ordinal": 8,
+        "ordinal": 6,
         "name": "confidence_threshold",
         "type_info": "Float8"
       },
       {
-        "ordinal": 9,
+        "ordinal": 7,
         "name": "last_evaluated_seq",
         "type_info": "Int8"
       },
       {
-        "ordinal": 10,
+        "ordinal": 8,
         "name": "policy",
         "type_info": "Jsonb"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text",
+        "Text"
+      ]
     },
     "nullable": [
-      false,
-      false,
       false,
       false,
       false,
@@ -76,5 +67,5 @@
       false
     ]
   },
-  "hash": "768562168ad4536d49c1868b46a915437d1795493d7dbd0d5bd10ba37ced9f1e"
+  "hash": "f483587dc23a74b964b16223e67bcb03569a42ac032f64d96a2f7de21584bcef"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*) AS \"value!\" FROM task_claim_evaluations WHERE channel_id=$1 AND bot_id=$2 AND reserved_at > NOW()-INTERVAL '1 hour'",
+  "query": "SELECT COUNT(*) AS \"value!\" FROM task_claim_evaluations\n           WHERE channel_id=$1 AND bot_id=$2 AND reserved_at>clock_timestamp()-INTERVAL '1 hour'",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "adf4ac84da6eaae332f71c5a1eb43d7fd1ff50563f921bdb47408c2a22c63d75"
+  "hash": "04e1083a7ff48b13afbb6774b71b07a6bfe61d148ce5d3161ee147c9eba475a7"
 }

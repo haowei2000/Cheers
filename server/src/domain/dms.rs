@@ -1,7 +1,7 @@
 //! Direct messages are two-member `type='dm'` channels.  Their workspace is an
 //! internal personal-workspace anchor only; access is always membership-driven.
 
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::domain::workspaces;
@@ -170,6 +170,15 @@ pub async fn find_or_create_dm(
 }
 
 pub(crate) async fn is_blocked(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bool, AppError> {
+    let mut connection = db.acquire().await?;
+    is_blocked_with_connection(&mut connection, a, b).await
+}
+
+async fn is_blocked_with_connection(
+    connection: &mut PgConnection,
+    a: &str,
+    b: &str,
+) -> Result<bool, AppError> {
     let ok: bool = sqlx::query!(
         "SELECT EXISTS(
             SELECT 1 AS present FROM user_blocks
@@ -179,7 +188,7 @@ pub(crate) async fn is_blocked(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bo
         a,
         b,
     )
-    .fetch_one(db)
+    .fetch_one(connection)
     .await?
     .ok
     .clone()
@@ -189,7 +198,11 @@ pub(crate) async fn is_blocked(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bo
 
 /// For a 1:1 DM channel, the *other* user member's id (None for non-DM channels
 /// or self-DMs/bot-DMs). Used to enforce blocking on ongoing DM sends.
-async fn dm_peer(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<Option<String>, AppError> {
+async fn dm_peer_with_connection(
+    connection: &mut PgConnection,
+    channel_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<String>, AppError> {
     let peer = sqlx::query!(
         "SELECT cm.member_id
          FROM channels c
@@ -200,20 +213,20 @@ async fn dm_peer(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<Option<
         channel_id.to_string(),
         user_id.to_string(),
     )
-    .fetch_optional(db)
+    .fetch_optional(connection)
     .await?
     .and_then(|row| Some(row.member_id.clone()));
     Ok(peer)
 }
 
 /// Blocking must be rechecked when a message executes, even for an old DM or schedule.
-pub(crate) async fn ensure_can_message(
-    db: &PgPool,
+pub(crate) async fn ensure_can_message_with_connection(
+    connection: &mut PgConnection,
     channel_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AppError> {
-    if let Some(peer) = dm_peer(db, channel_id, user_id).await? {
-        if is_blocked(db, &user_id.to_string(), &peer).await? {
+    if let Some(peer) = dm_peer_with_connection(connection, channel_id, user_id).await? {
+        if is_blocked_with_connection(connection, &user_id.to_string(), &peer).await? {
             return Err(AppError::Forbidden(
                 "you can't message a user you've blocked or who has blocked you".into(),
             ));

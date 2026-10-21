@@ -1,6 +1,6 @@
 //! Approval commits the claim, its private source and its dispatch intent together.
-//! Cancellation only changes the claim row; delivery, grants and completion all
-//! consult that same row before committing further work.
+//! Cancellation projects the same claim authority into its confirmation;
+//! delivery, grants and completion consult it before committing further work.
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -163,13 +163,40 @@ pub async fn complete_evaluation(
     db: &PgPool,
     params: CompleteEvaluationParams,
 ) -> Result<CompleteEvaluationOutcome, AppError> {
-    let mut tx = db.begin().await?;
-    let evaluation = sqlx::query!(
-        "SELECT channel_id,source_seq_to,status FROM task_claim_evaluations
-         WHERE evaluation_id=$1 AND bot_id=$2 AND ($3::text IS NULL OR channel_id=$3) FOR UPDATE",
+    // Identify only the authenticated reservation, then retain monitoring before
+    // evaluation, matching reservation/recovery maintenance. An already consumed
+    // evaluation still reaches its harmless duplicate response before any gate.
+    let channel_id = sqlx::query_scalar!(
+        "SELECT channel_id FROM task_claim_evaluations
+         WHERE evaluation_id=$1 AND bot_id=$2 AND ($3::text IS NULL OR channel_id=$3)",
         params.evaluation_id.to_string(),
         params.bot_id.to_string(),
         params.channel_id.map(|id| id.to_string()),
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let channel_id = channel_id
+        .parse::<Uuid>()
+        .map_err(|_| AppError::Internal("invalid evaluation channel id".into()))?;
+    let mut tx = db.begin().await?;
+    // Follow parent-before-child FK cascade order. Cache authority here, but do
+    // not reject it until after the consumed-evaluation duplicate short circuit.
+    let may_claim = task_acceptance::may_execute(&mut tx, params.bot_id, channel_id, None).await?;
+    let monitoring = sqlx::query!(
+        "SELECT mode,confidence_threshold::float8 AS \"threshold!\" FROM channel_bot_monitoring
+         WHERE channel_id=$1 AND bot_id=$2 FOR SHARE",
+        channel_id.to_string(),
+        params.bot_id.to_string(),
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let evaluation = sqlx::query!(
+        "SELECT channel_id,source_seq_to,status FROM task_claim_evaluations
+         WHERE evaluation_id=$1 AND bot_id=$2 AND channel_id=$3 FOR UPDATE",
+        params.evaluation_id.to_string(),
+        params.bot_id.to_string(),
+        channel_id.to_string(),
     )
     .fetch_optional(&mut *tx)
     .await?
@@ -211,18 +238,13 @@ pub async fn complete_evaluation(
             confidence.clamp(0.0, 1.0)
         }
     };
-    // The scheduler locks monitoring before evaluation. Reading its current
-    // threshold without a row lock avoids reversing that order here.
-    let threshold = sqlx::query_scalar!(
-        "SELECT confidence_threshold::float8 AS \"threshold!\" FROM channel_bot_monitoring
-         WHERE channel_id=$1 AND bot_id=$2",
-        channel_id.to_string(),
-        params.bot_id.to_string(),
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::Conflict("task-claim monitoring is no longer configured".into()))?;
-    if confidence < threshold {
+    let monitoring = monitoring.ok_or_else(|| {
+        AppError::Conflict("task-claim monitoring is no longer configured".into())
+    })?;
+    if monitoring.mode == "off" {
+        return Err(AppError::Conflict("task-claim monitoring is off".into()));
+    }
+    if confidence < monitoring.threshold {
         finish_evaluation(
             &mut tx,
             params.evaluation_id,
@@ -254,11 +276,23 @@ pub async fn complete_evaluation(
     if summary.is_empty() {
         return Err(AppError::BadRequest("claim source message is empty".into()));
     }
-    if !task_acceptance::may_execute(&mut tx, params.bot_id, channel_id, None).await? {
+    if !may_claim {
         return Err(AppError::Forbidden(
             "bot may no longer create task claims here".into(),
         ));
     }
+    // The requester is the real source author. Use the same policy command as
+    // scheduler admission and ordinary human dispatch, after source/bot locks.
+    let requester = source
+        .sender_id
+        .parse::<Uuid>()
+        .map_err(|_| AppError::Internal("invalid evaluation requester id".into()))?;
+    message_policy::reauthorize_human_intent_tx(&mut tx, requester, channel_id, params.bot_id)
+        .await
+        .map_err(|error| match error {
+            message_policy::HumanIntentPolicyError::Denied(error)
+            | message_policy::HumanIntentPolicyError::Retryable(error) => error,
+        })?;
     let bot_name = sqlx::query_scalar!(
         "SELECT COALESCE(NULLIF(display_name,''),username) AS \"name!\" FROM bot_accounts WHERE bot_id=$1",
         params.bot_id.to_string(),

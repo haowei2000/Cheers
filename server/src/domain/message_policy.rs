@@ -5,13 +5,13 @@
 //! default bots, and explicit sessions.
 
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
     domain::{dms, messages::CreateMessageParams},
     errors::AppError,
-    resource::{authorize_channel_write, Principal},
+    resource::{authorize_channel_write_with_connection, Principal},
 };
 
 /// Durable intents keep their accepted target, but do not keep permission to run
@@ -50,8 +50,47 @@ pub(crate) async fn reauthorize_human_intent(
     channel_id: Uuid,
     bot_id: Uuid,
 ) -> Result<(), HumanIntentPolicyError> {
-    let role = authorize_human_send(db, user_id, channel_id).await?;
-    authorize_channel_write(db, &Principal::bot(bot_id), channel_id)
+    let mut connection = db.acquire().await.map_err(AppError::Db)?;
+    reauthorize_human_intent_with_connection(&mut connection, user_id, channel_id, bot_id).await
+}
+
+/// Apply the same current prompt/consent policy on the caller's transaction
+/// connection, after the caller has locked its source and bot authority rows.
+pub(crate) async fn reauthorize_human_intent_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> Result<(), HumanIntentPolicyError> {
+    // These locks only stabilize identity/role. The shared policy below decides
+    // authority using fresh reads after any concurrent user/member write ends.
+    sqlx::query!(
+        "SELECT user_id FROM users WHERE user_id=$1 FOR SHARE",
+        user_id.to_string(),
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::Db)?;
+    sqlx::query!(
+        "SELECT member_id FROM channel_memberships
+         WHERE channel_id=$1 AND member_id=$2 AND member_type='user' FOR SHARE",
+        channel_id.to_string(),
+        user_id.to_string(),
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::Db)?;
+    reauthorize_human_intent_with_connection(tx, user_id, channel_id, bot_id).await
+}
+
+async fn reauthorize_human_intent_with_connection(
+    connection: &mut PgConnection,
+    user_id: Uuid,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> Result<(), HumanIntentPolicyError> {
+    let role = authorize_human_send_with_connection(connection, user_id, channel_id).await?;
+    authorize_channel_write_with_connection(connection, &Principal::bot(bot_id), channel_id)
         .await
         .map_err(|(code, message)| {
             HumanIntentPolicyError::from(if code == "INTERNAL_ERROR" {
@@ -60,7 +99,7 @@ pub(crate) async fn reauthorize_human_intent(
                 AppError::Forbidden(message)
             })
         })?;
-    if filter_prompt_bots(db, user_id, channel_id, &role, vec![bot_id])
+    if filter_prompt_bots_with_connection(connection, user_id, channel_id, &role, vec![bot_id])
         .await?
         .is_empty()
     {
@@ -68,7 +107,8 @@ pub(crate) async fn reauthorize_human_intent(
             "not authorized to prompt the accepted bot".into(),
         )));
     }
-    ensure_bot_consents(db, &user_id.to_string(), channel_id, &[bot_id]).await?;
+    ensure_bot_consents_with_connection(connection, &user_id.to_string(), channel_id, &[bot_id])
+        .await?;
     Ok(())
 }
 
@@ -77,22 +117,32 @@ pub(crate) async fn authorize_human_send(
     user_id: Uuid,
     channel_id: Uuid,
 ) -> Result<String, AppError> {
-    let membership = authorize_channel_write(db, &Principal::user(user_id), channel_id)
-        .await
-        .map_err(|(code, message)| match code.as_str() {
-            "INTERNAL_ERROR" => AppError::Internal(message),
-            _ => AppError::Forbidden(message),
-        })?;
+    let mut connection = db.acquire().await?;
+    authorize_human_send_with_connection(&mut connection, user_id, channel_id).await
+}
+
+async fn authorize_human_send_with_connection(
+    connection: &mut PgConnection,
+    user_id: Uuid,
+    channel_id: Uuid,
+) -> Result<String, AppError> {
+    let membership =
+        authorize_channel_write_with_connection(connection, &Principal::user(user_id), channel_id)
+            .await
+            .map_err(|(code, message)| match code.as_str() {
+                "INTERNAL_ERROR" => AppError::Internal(message),
+                _ => AppError::Forbidden(message),
+            })?;
     let author = sqlx::query!(
         "SELECT is_suspended, is_deleted FROM users WHERE user_id = $1",
         user_id.to_string(),
     )
-    .fetch_optional(db)
+    .fetch_optional(&mut *connection)
     .await?;
     if author.is_none_or(|user| user.is_suspended || user.is_deleted) {
         return Err(AppError::Forbidden("message author is not active".into()));
     }
-    dms::ensure_can_message(db, channel_id, user_id).await?;
+    dms::ensure_can_message_with_connection(connection, channel_id, user_id).await?;
     Ok(membership.role)
 }
 
@@ -105,10 +155,24 @@ pub(crate) async fn filter_prompt_bots(
     role: &str,
     candidates: Vec<Uuid>,
 ) -> Result<Vec<Uuid>, AppError> {
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut connection = db.acquire().await?;
+    filter_prompt_bots_with_connection(&mut connection, user_id, channel_id, role, candidates).await
+}
+
+async fn filter_prompt_bots_with_connection(
+    connection: &mut PgConnection,
+    user_id: Uuid,
+    channel_id: Uuid,
+    role: &str,
+    candidates: Vec<Uuid>,
+) -> Result<Vec<Uuid>, AppError> {
     let mut allowed = Vec::with_capacity(candidates.len());
     for bot_id in candidates {
-        let may_prompt = crate::domain::acp_policy::allows(
-            db,
+        let may_prompt = crate::domain::acp_policy::allows_with_connection(
+            connection,
             &bot_id.to_string(),
             &channel_id.to_string(),
             &user_id.to_string(),
@@ -137,6 +201,19 @@ pub(crate) async fn ensure_bot_consents(
     if bot_ids.is_empty() {
         return Ok(());
     }
+    let mut connection = db.acquire().await?;
+    ensure_bot_consents_with_connection(&mut connection, user_id, channel_id, bot_ids).await
+}
+
+async fn ensure_bot_consents_with_connection(
+    connection: &mut PgConnection,
+    user_id: &str,
+    channel_id: Uuid,
+    bot_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if bot_ids.is_empty() {
+        return Ok(());
+    }
     let rows = sqlx::query!(
         "SELECT b.bot_id, COALESCE(b.display_name,b.username) AS bot_name, b.processor_name,
                 b.processor_privacy_url, b.processor_data_use, b.processor_policy_version
@@ -144,7 +221,7 @@ pub(crate) async fn ensure_bot_consents(
          WHERE m.channel_id = $1 AND m.member_type = 'bot' AND b.external_processor = TRUE",
         channel_id.to_string(),
     )
-    .fetch_all(db)
+    .fetch_all(&mut *connection)
     .await?;
     let mut missing = Vec::new();
     for row in rows {
@@ -159,7 +236,7 @@ pub(crate) async fn ensure_bot_consents(
             channel_id.to_string(),
             &bot_id,
             &version,
-        ).fetch_optional(db).await?.is_some();
+        ).fetch_optional(&mut *connection).await?.is_some();
         if !consented {
             missing.push(json!({
                 "bot_id": bot_id,

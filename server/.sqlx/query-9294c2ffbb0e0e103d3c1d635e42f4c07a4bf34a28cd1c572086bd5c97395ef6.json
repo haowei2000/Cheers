@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SET LOCAL search_path = pg_catalog",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "9294c2ffbb0e0e103d3c1d635e42f4c07a4bf34a28cd1c572086bd5c97395ef6"
+}

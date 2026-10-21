@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mode,confidence_threshold::float8 AS \"threshold!\" FROM channel_bot_monitoring\n         WHERE channel_id=$1 AND bot_id=$2 FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "threshold!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "1cb9c4555e2b676853da5c949f7155312be4dbceaff02155e459e24485ba0216"
+}

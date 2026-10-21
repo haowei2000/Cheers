@@ -40,6 +40,8 @@ impl Evaluation {
             .execute(db)
             .await
             .unwrap();
+        sqlx::query("INSERT INTO workspace_memberships(workspace_id,user_id,role,status) VALUES($1,$2,'member','active')")
+            .bind(workspace.to_string()).bind(user.to_string()).execute(db).await.unwrap();
         sqlx::query("INSERT INTO bot_accounts(bot_id,username) VALUES($1,$2)")
             .bind(bot.to_string())
             .bind(format!("recovery-bot-{bot}"))
@@ -48,6 +50,8 @@ impl Evaluation {
             .unwrap();
         sqlx::query("INSERT INTO channel_memberships(channel_id,member_id,member_type,role) VALUES($1,$2,'bot','member')")
             .bind(channel.to_string()).bind(bot.to_string()).execute(db).await.unwrap();
+        sqlx::query("INSERT INTO channel_memberships(channel_id,member_id,member_type,role) VALUES($1,$2,'user','member')")
+            .bind(channel.to_string()).bind(user.to_string()).execute(db).await.unwrap();
         sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,channel_seq) VALUES($1,$2,$3,'user','Investigate the actual request','text',1)")
             .bind(source.to_string()).bind(channel.to_string()).bind(user.to_string()).execute(db).await.unwrap();
         sqlx::query("INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode,last_evaluated_seq,confidence_threshold) VALUES($1,$2,'text',1,0.75)")
@@ -131,7 +135,7 @@ async fn concurrent_canonical_completion_preserves_its_decision_and_monitoring_c
     };
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT status,source_seq_from,source_seq_to,dispatched_at FROM task_claim_evaluations%')")
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT channel_id FROM channel_bot_monitoring%')")
                 .fetch_one(&db).await.unwrap();
             if waiting {
                 break;
@@ -140,11 +144,11 @@ async fn concurrent_canonical_completion_preserves_its_decision_and_monitoring_c
         }
     })
     .await
-    .expect("failed delivery must wait for the canonical decision");
+    .expect("failed delivery must wait for the canonical monitoring/evaluation decision");
     blocker.rollback().await.unwrap();
     let completed = tokio::time::timeout(Duration::from_secs(10), complete)
         .await
-        .expect("completion does not wait on scheduler monitoring locks")
+        .expect("completion must commit before failed delivery proceeds")
         .unwrap()
         .unwrap();
     assert!(completed.newly_decided);

@@ -17,7 +17,7 @@ pub mod usage;
 pub mod voice;
 
 use serde_json::{json, Value};
-use sqlx::{Executor, PgPool, Postgres, Transaction};
+use sqlx::{Executor, PgConnection, PgPool, Postgres, Transaction};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -440,7 +440,26 @@ pub async fn authorize_channel_write(
     principal: &Principal,
     channel_id: Uuid,
 ) -> Result<ChannelMembership, (String, String)> {
-    let membership = authorize_channel_read(db, principal, channel_id).await?;
+    authorize_channel_write_with_executor(db, principal, channel_id).await
+}
+
+pub(crate) async fn authorize_channel_write_with_connection(
+    connection: &mut PgConnection,
+    principal: &Principal,
+    channel_id: Uuid,
+) -> Result<ChannelMembership, (String, String)> {
+    authorize_channel_write_with_executor(connection, principal, channel_id).await
+}
+
+async fn authorize_channel_write_with_executor<'a, E>(
+    executor: E,
+    principal: &Principal,
+    channel_id: Uuid,
+) -> Result<ChannelMembership, (String, String)>
+where
+    E: Executor<'a, Database = Postgres>,
+{
+    let membership = authorize_channel_read_with_executor(executor, principal, channel_id).await?;
 
     if role_can_write(&membership.role) {
         Ok(membership)

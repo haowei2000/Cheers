@@ -125,7 +125,7 @@ impl Fixture {
         sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_type,sender_id,content,msg_type,is_partial,channel_seq) VALUES($1,$2,'user',$3,'Please investigate this lifecycle task','text',FALSE,1)")
             .bind(source.to_string()).bind(channel.to_string()).bind(user.to_string()).execute(db).await.unwrap();
         sqlx::query(
-            "INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode) VALUES($1,$2,'off')",
+            "INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode,next_eligible_at) VALUES($1,$2,'text',NOW()+INTERVAL '1 day')",
         )
         .bind(channel.to_string())
         .bind(bot.to_string())

@@ -4,10 +4,11 @@
 
 use chrono::{DateTime, Timelike, Utc};
 use serde_json::{json, Value};
-use sqlx::PgPool;
-use std::time::Duration;
+use sqlx::{PgPool, Postgres, Transaction};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use uuid::Uuid;
 
+use super::{registry::BotLocator, task_acceptance};
 use crate::app_state::AppState;
 
 const POLL_SECONDS: u64 = 2;
@@ -17,22 +18,27 @@ pub fn spawn(state: AppState) {
         let mut tick = tokio::time::interval(Duration::from_secs(POLL_SECONDS));
         loop {
             tick.tick().await;
-            if let Err(error) = run_once(&state).await {
+            if let Err(error) = run_once(&state.db, &state.bot_locator).await {
                 tracing::error!(%error, "task-claim scheduler tick failed");
             }
         }
     });
 }
 
-async fn run_once(state: &AppState) -> anyhow::Result<()> {
-    recover_expired_evaluations(&state.db).await?;
-    let rows = sqlx::query_as!(crate::infra::db::query_rows::MonitoringRow, r###"SELECT channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,last_evaluated_seq,policy
+pub async fn run_once(db: &PgPool, locator: &Arc<dyn BotLocator>) -> anyhow::Result<()> {
+    recover_expired_evaluations(db).await?;
+    let rows = sqlx::query!(
+        "SELECT channel_id,bot_id
         FROM channel_bot_monitoring
         WHERE mode <> 'off' AND (next_eligible_at IS NULL OR next_eligible_at <= NOW())
-        ORDER BY COALESCE(next_eligible_at,created_at) LIMIT 20"###,
-    ).fetch_all(&state.db).await?;
+        ORDER BY COALESCE(next_eligible_at,created_at) LIMIT 20",
+    )
+    .fetch_all(db)
+    .await?;
     for row in rows {
-        if let Err(error) = schedule_one(state, row).await {
+        if let Err(error) =
+            schedule_one(db, locator, row.channel_id.parse()?, row.bot_id.parse()?).await
+        {
             tracing::warn!(%error, "task-claim evaluation scheduling failed");
         }
     }
@@ -40,8 +46,8 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
 }
 
 /// Recover only reservations that remain undecided after acquiring their locks.
-/// Monitoring precedes evaluation everywhere in scheduler maintenance; canonical
-/// completion locks evaluation without retaining a monitoring lock.
+/// Monitoring precedes evaluation in both scheduler maintenance and canonical
+/// completion, after the latter has locked bot/member authority.
 pub async fn recover_expired_evaluations(db: &PgPool) -> Result<u64, sqlx::Error> {
     let changed = sqlx::query!(
         r#"WITH monitoring AS MATERIALIZED (
@@ -121,163 +127,268 @@ pub async fn fail_delivery(
     Ok(true)
 }
 
-async fn schedule_one(
-    state: &AppState,
-    row: crate::infra::db::query_rows::MonitoringRow,
-) -> anyhow::Result<()> {
-    let channel_id: Uuid = row.channel_id.clone().parse()?;
-    let bot_id: Uuid = row.bot_id.clone().parse()?;
-    if !state.bot_locator.is_online(bot_id).await {
-        sqlx::query!(
-            "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '15 seconds' WHERE channel_id=$1 AND bot_id=$2",
-            channel_id.to_string(),
-            bot_id.to_string(),
-        ).execute(&state.db).await?;
-        return Ok(());
-    }
-    let mode: String = row.mode.clone();
-    let last: i64 = row.last_evaluated_seq.clone();
-    let batch: i32 = row.batch_size.clone();
-    let max_hourly: i32 = row.max_evaluations_per_hour.clone();
-    let debounce: i32 = row.debounce_seconds.clone();
-    let interval: i32 = row.min_interval_seconds.clone();
-    let confidence: f64 = row
-        .confidence_threshold
-        .clone()
-        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
-    let policy: serde_json::Value = row.policy.clone();
-    // Quiet-hours gate: if the policy declares a quiet window and we are inside
-    // it, pause (re-arm at the top of the hour — the sweeper will re-check on
-    // the next tick). `quiet_hours: { "start": "22:00", "end": "07:00" }`.
-    if let Some(window) = policy.get("quiet_hours") {
-        if in_quiet_window(window) {
-            sqlx::query!(
-                "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '10 minutes' WHERE channel_id=$1 AND bot_id=$2",
-                channel_id.to_string(),
-                bot_id.to_string(),
-            ).execute(&state.db).await?;
-            return Ok(());
-        }
-    }
-    let hourly: i64 = sqlx::query_scalar!(
-        r#"SELECT COUNT(*) AS "value!" FROM task_claim_evaluations WHERE channel_id=$1 AND bot_id=$2 AND reserved_at > NOW()-INTERVAL '1 hour'"#,
+async fn defer_monitoring(
+    tx: &mut Transaction<'_, Postgres>,
+    channel_id: Uuid,
+    bot_id: Uuid,
+    seconds: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE channel_bot_monitoring SET next_eligible_at=clock_timestamp()+make_interval(secs=>$3::int4)
+         WHERE channel_id=$1 AND bot_id=$2",
         channel_id.to_string(),
         bot_id.to_string(),
-    ).fetch_one(&state.db).await?;
-    if hourly >= i64::from(max_hourly) {
+        seconds,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn schedule_one(
+    db: &PgPool,
+    locator: &Arc<dyn BotLocator>,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> anyhow::Result<()> {
+    // The due scan owns no configuration snapshot. A slow/offline locator must
+    // not make an old selection overwrite a later monitoring change.
+    if !locator.is_online(bot_id).await {
         sqlx::query!(
-            "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '5 minutes' WHERE channel_id=$1 AND bot_id=$2",
+            "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '15 seconds'
+             WHERE channel_id=$1 AND bot_id=$2 AND mode<>'off'
+               AND (next_eligible_at IS NULL OR next_eligible_at<=NOW())",
             channel_id.to_string(),
             bot_id.to_string(),
-        ).execute(&state.db).await?;
-        return Ok(());
-    }
-    let include_voice = mode != "text";
-    let candidates = sqlx::query!(
-        r#"SELECT seq,kind,actor,text,created_at FROM (
-        SELECT channel_seq AS seq,'message'::text AS kind,COALESCE(NULLIF(u.display_name,''),u.username,m.sender_id) AS actor,m.content AS text,m.created_at
-        FROM messages m LEFT JOIN users u ON m.sender_type='user' AND u.user_id=m.sender_id
-        WHERE m.channel_id=$1 AND m.sender_type='user' AND NOT m.is_partial AND NOT m.is_deleted AND NOT m.is_secret AND m.channel_seq>$2
-        UNION ALL
-        SELECT v.channel_seq,'voice_transcript',COALESCE(NULLIF(u.display_name,''),u.username,v.user_id),v.text,v.finalized_at
-        FROM voice_transcript_segments v LEFT JOIN users u ON u.user_id=v.user_id
-        WHERE v.channel_id=$1 AND $3 AND v.channel_seq>$2
-      ) activity ORDER BY seq LIMIT $4"#,
-        channel_id.to_string(),
-        last,
-        include_voice,
-        i64::from(batch),
-    ).fetch_all(&state.db).await?;
-    if candidates.is_empty() {
-        sqlx::query!(
-            "UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '10 seconds' WHERE channel_id=$1 AND bot_id=$2",
-            channel_id.to_string(),
-            bot_id.to_string(),
-        ).execute(&state.db).await?;
-        return Ok(());
-    }
-    let newest: chrono::DateTime<chrono::Utc> = candidates
-        .last()
-        .unwrap()
-        .created_at
-        .clone()
-        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
-    let age = chrono::Utc::now()
-        .signed_duration_since(newest)
-        .num_seconds();
-    // Immediate triggers (policy.immediate_triggers keywords present in the
-    // newest candidate's text) bypass the debounce window so a directed request
-    // is evaluated without waiting for the silence period.
-    let immediate_triggers: Vec<String> = policy
-        .get("immediate_triggers")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    let newest_text: String = candidates
-        .last()
-        .and_then(|r| r.text.clone())
-        .unwrap_or_default();
-    let is_immediate = immediate_triggers
-        .iter()
-        .any(|kw| !kw.is_empty() && newest_text.to_lowercase().contains(&kw.to_lowercase()));
-    if !is_immediate && age < i64::from(debounce) {
-        sqlx::query!(
-            "UPDATE channel_bot_monitoring SET next_eligible_at=$3 WHERE channel_id=$1 AND bot_id=$2",
-            channel_id.to_string(),
-            bot_id.to_string(),
-            newest + chrono::Duration::seconds(i64::from(debounce)),
         )
-        .execute(&state.db)
+        .execute(db)
         .await?;
         return Ok(());
     }
-    let from: i64 = candidates.first().unwrap().seq.unwrap_or_default();
-    let to: i64 = candidates.last().unwrap().seq.unwrap_or_default();
-    let new_evaluation_id = Uuid::new_v4();
-    let mut tx = state.db.begin().await?;
-    let reserved = sqlx::query!(
-        "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3,next_eligible_at=NOW()+make_interval(secs=>$4::int4),updated_at=NOW() WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$5",
-        channel_id.to_string(),
-        bot_id.to_string(),
-        to,
-        interval,
-        last,
-    ).execute(&mut *tx).await?.rows_affected()==1;
-    if !reserved {
-        tx.rollback().await?;
+    let mut tx = db.begin().await?;
+    // Parent bot/member authority precedes its monitoring/evaluation children,
+    // including the FK cascade order used when a bot is deleted.
+    let may_evaluate = task_acceptance::may_execute(&mut tx, bot_id, channel_id, None).await?;
+    let row = sqlx::query_as!(crate::infra::db::query_rows::MonitoringRow,
+        "SELECT mode,scope,debounce_seconds,min_interval_seconds,
+                max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,
+                last_evaluated_seq,policy FROM channel_bot_monitoring
+         WHERE channel_id=$1 AND bot_id=$2 AND mode<>'off'
+           AND (next_eligible_at IS NULL OR next_eligible_at<=clock_timestamp())
+         FOR UPDATE SKIP LOCKED",
+        channel_id.to_string(), bot_id.to_string(),
+    ).fetch_optional(&mut *tx).await?;
+    let Some(row) = row else {
+        return Ok(());
+    };
+    // Online is a transport property. Use the same enabled/writable bot gate as
+    // execution grants before reading any channel activity.
+    if !may_evaluate {
+        defer_monitoring(&mut tx, channel_id, bot_id, 15).await?;
+        tx.commit().await?;
         return Ok(());
     }
-    // A lost connector rewinds the cursor and marks its reservation failed.
-    // The range itself stays unique so retries must reactivate that durable
-    // evaluation instead of attempting a duplicate insert.  Reusing its ID
-    // also keeps Activity history and any late connector response coherent.
-    let reservation = sqlx::query!(
-        "INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,reserved_at,dispatched_at) \
-         VALUES($1,$2,$3,$4,$5,'dispatched',NOW(),NOW()) \
-         ON CONFLICT(channel_id,bot_id,source_seq_from,source_seq_to) DO UPDATE \
-         SET status='dispatched', error=NULL, reserved_at=NOW(), dispatched_at=NOW(), completed_at=NULL \
-         WHERE task_claim_evaluations.status='failed' \
-         RETURNING evaluation_id, dispatched_at AS \"dispatched_at!\"",
-        new_evaluation_id.to_string(),
+    if row.policy.get("quiet_hours").is_some_and(in_quiet_window) {
+        defer_monitoring(&mut tx, channel_id, bot_id, 600).await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+    let hourly = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "value!" FROM task_claim_evaluations
+           WHERE channel_id=$1 AND bot_id=$2 AND reserved_at>clock_timestamp()-INTERVAL '1 hour'"#,
         channel_id.to_string(),
         bot_id.to_string(),
-        from,
-        to,
     )
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| anyhow::anyhow!("evaluation range is already active"))?;
-    tx.commit().await?;
+    .fetch_one(&mut *tx)
+    .await?;
+    if hourly >= i64::from(row.max_evaluations_per_hour) {
+        defer_monitoring(&mut tx, channel_id, bot_id, 300).await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+    let candidates = sqlx::query!(
+        r#"SELECT id AS "id!",seq AS "seq!",kind AS "kind!",author_id AS "author_id!",
+                  actor AS "actor!",text AS "text!",created_at AS "created_at!" FROM (
+          SELECT m.msg_id AS id,m.channel_seq AS seq,'message'::text AS kind,m.sender_id AS author_id,
+                 COALESCE(NULLIF(u.display_name,''),u.username,m.sender_id) AS actor,
+                 m.content AS text,m.created_at
+          FROM messages m LEFT JOIN users u ON u.user_id=m.sender_id
+          WHERE m.channel_id=$1 AND m.sender_type='user' AND NOT m.is_partial
+            AND NOT m.is_deleted AND NOT m.is_secret AND m.channel_seq>$2
+          UNION ALL
+          SELECT v.segment_id,v.channel_seq,'voice_transcript',v.user_id,
+                 COALESCE(NULLIF(u.display_name,''),u.username,v.user_id),v.text,v.finalized_at
+          FROM voice_transcript_segments v LEFT JOIN users u ON u.user_id=v.user_id
+          WHERE v.channel_id=$1 AND $3 AND v.channel_seq>$2 AND v.deleted_at IS NULL
+        ) activity ORDER BY seq LIMIT $4"#,
+        channel_id.to_string(), row.last_evaluated_seq, row.mode != "text", i64::from(row.batch_size),
+    ).fetch_all(&mut *tx).await?;
+    if candidates.is_empty() {
+        defer_monitoring(&mut tx, channel_id, bot_id, 10).await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+    // Lock the actual selected sources and compare their bodies after any lock
+    // wait. Never disclose an old copy of a deleted, hidden or edited source.
+    let message_ids: Vec<String> = candidates
+        .iter()
+        .filter(|r| r.kind == "message")
+        .map(|r| r.id.clone())
+        .collect();
+    let segment_ids: Vec<String> = candidates
+        .iter()
+        .filter(|r| r.kind == "voice_transcript")
+        .map(|r| r.id.clone())
+        .collect();
+    let messages = sqlx::query!(
+        "SELECT msg_id,sender_id,channel_seq,content FROM messages
+         WHERE channel_id=$1 AND msg_id=ANY($2) AND sender_type='user'
+           AND NOT is_partial AND NOT is_deleted AND NOT is_secret ORDER BY msg_id FOR SHARE",
+        channel_id.to_string(),
+        &message_ids,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let segments = sqlx::query!(
+        "SELECT segment_id,user_id,channel_seq,text FROM voice_transcript_segments
+         WHERE channel_id=$1 AND segment_id=ANY($2) AND deleted_at IS NULL ORDER BY segment_id FOR SHARE",
+        channel_id.to_string(), &segment_ids,
+    ).fetch_all(&mut *tx).await?;
+    for candidate in &candidates {
+        let unchanged = if candidate.kind == "message" {
+            messages.iter().any(|m| {
+                m.msg_id == candidate.id
+                    && m.sender_id == candidate.author_id
+                    && m.channel_seq == Some(candidate.seq)
+                    && m.content == candidate.text
+            })
+        } else {
+            segments.iter().any(|v| {
+                v.segment_id == candidate.id
+                    && v.user_id == candidate.author_id
+                    && v.channel_seq == candidate.seq
+                    && v.text == candidate.text
+            })
+        };
+        if !unchanged {
+            return Ok(());
+        }
+    }
+    let mut authors = HashMap::new();
+    let mut eligible = Vec::new();
+    for candidate in &candidates {
+        let author = candidate.author_id.parse::<Uuid>()?;
+        let allowed = if let Some(allowed) = authors.get(&author) {
+            *allowed
+        } else {
+            use crate::domain::message_policy::{
+                reauthorize_human_intent_tx, HumanIntentPolicyError,
+            };
+            let allowed =
+                match reauthorize_human_intent_tx(&mut tx, author, channel_id, bot_id).await {
+                    Ok(()) => true,
+                    Err(HumanIntentPolicyError::Denied(_)) => false,
+                    Err(HumanIntentPolicyError::Retryable(error)) => return Err(error.into()),
+                };
+            authors.insert(author, allowed);
+            allowed
+        };
+        if allowed {
+            eligible.push(candidate);
+        }
+    }
+    let from = candidates[0].seq;
+    let Some(newest) = eligible.last() else {
+        // A pending evaluation owns this cursor for delivery/lease recovery.
+        // Scanning a denied tail must not take that recovery position away.
+        let pending = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM task_claim_evaluations
+               WHERE channel_id=$1 AND bot_id=$2 AND status='dispatched'
+                 AND source_seq_to=$3) AS "pending!""#,
+            channel_id.to_string(),
+            bot_id.to_string(),
+            row.last_evaluated_seq,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if pending {
+            defer_monitoring(&mut tx, channel_id, bot_id, 10).await?;
+            tx.commit().await?;
+            return Ok(());
+        }
+        // Denial is authoritative, unlike a DB outage. Advance a wholly denied
+        // window without spending evaluation budget so it cannot block later work.
+        sqlx::query!(
+            "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3,
+                 next_eligible_at=clock_timestamp()+INTERVAL '10 seconds',updated_at=NOW()
+             WHERE channel_id=$1 AND bot_id=$2",
+            channel_id.to_string(),
+            bot_id.to_string(),
+            candidates.last().unwrap().seq,
+        )
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    };
+    let immediate = row
+        .policy
+        .get("immediate_triggers")
+        .and_then(Value::as_array)
+        .is_some_and(|triggers| {
+            triggers.iter().filter_map(Value::as_str).any(|keyword| {
+                !keyword.is_empty() && newest.text.to_lowercase().contains(&keyword.to_lowercase())
+            })
+        });
+    if !immediate
+        && Utc::now()
+            .signed_duration_since(newest.created_at)
+            .num_seconds()
+            < i64::from(row.debounce_seconds)
+    {
+        sqlx::query!(
+            "UPDATE channel_bot_monitoring SET next_eligible_at=$3 WHERE channel_id=$1 AND bot_id=$2",
+            channel_id.to_string(),bot_id.to_string(),newest.created_at+chrono::Duration::seconds(i64::from(row.debounce_seconds)),
+        ).execute(&mut *tx).await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+    // The final source must be an actually disclosed, authorized activity. Keep
+    // denied trailing rows for the next scan so retry rewind still owns its range.
+    let to = newest.seq;
+    sqlx::query!(
+        "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3,
+             next_eligible_at=clock_timestamp()+make_interval(secs=>$4::int4),updated_at=NOW()
+         WHERE channel_id=$1 AND bot_id=$2",
+        channel_id.to_string(),
+        bot_id.to_string(),
+        to,
+        row.min_interval_seconds,
+    )
+    .execute(&mut *tx)
+    .await?;
+    let reservation = sqlx::query!(
+        r#"INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,reserved_at,dispatched_at)
+         VALUES($1,$2,$3,$4,$5,'dispatched',clock_timestamp(),clock_timestamp())
+         ON CONFLICT(channel_id,bot_id,source_seq_from,source_seq_to) DO UPDATE
+         SET status='dispatched',error=NULL,reserved_at=clock_timestamp(),dispatched_at=clock_timestamp(),completed_at=NULL
+         WHERE task_claim_evaluations.status='failed'
+         RETURNING evaluation_id,dispatched_at AS "dispatched_at!""#,
+        Uuid::new_v4().to_string(),channel_id.to_string(),bot_id.to_string(),from,to,
+    ).fetch_optional(&mut *tx).await?
+        .ok_or_else(|| anyhow::anyhow!("evaluation range is already active"))?;
+    let confidence = row
+        .confidence_threshold
+        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
+    let items: Vec<Value> = eligible.iter().map(|r| json!({"seq":r.seq,"kind":r.kind,"actor":r.actor,"text":r.text,"created_at":r.created_at.to_rfc3339()})).collect();
     let evaluation_id: Uuid = reservation.evaluation_id.parse()?;
-    let items: Vec<Value> = candidates.into_iter().map(|r| json!({"seq":r.seq.clone().unwrap_or_default(),"kind":r.kind.clone().unwrap_or_default(),"actor":r.actor.clone().unwrap_or_default(),"text":r.text.clone().unwrap_or_default(),"created_at":r.created_at.clone().map(|d|d.to_rfc3339())})).collect();
-    let frame = json!({"type":"claim_evaluation","v":1,"evaluation_id":evaluation_id,"channel_id":channel_id,"provider_session_key":format!("cheers:claim-evaluation:{channel_id}:{bot_id}"),"scope":row.scope.clone(),"confidence_threshold":confidence,"source_seq_from":from,"source_seq_to":to,"activity":items});
-    if !state.bot_locator.dispatch_task(bot_id, frame).await {
+    let frame = json!({"type":"claim_evaluation","v":1,"evaluation_id":evaluation_id,"channel_id":channel_id,
+        "provider_session_key":format!("cheers:claim-evaluation:{channel_id}:{bot_id}"),"scope":row.scope,
+        "confidence_threshold":confidence,"source_seq_from":from,"source_seq_to":to,"activity":items});
+    tx.commit().await?;
+    if !locator.dispatch_task(bot_id, frame).await {
         fail_delivery(
-            &state.db,
+            db,
             evaluation_id,
             channel_id,
             bot_id,

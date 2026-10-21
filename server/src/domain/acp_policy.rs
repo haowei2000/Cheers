@@ -7,7 +7,7 @@
 //! name→class mapping, so every gate (prompt, permission resolve, …) goes through
 //! the same brain.
 
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 
 use crate::domain::{
     acp_events,
@@ -27,11 +27,47 @@ pub async fn allows(
     acp_event_name: &str,
     cap: Capability,
 ) -> Result<bool, AppError> {
+    if acp_events::classify(acp_event_name)
+        .and_then(|e| e.event_class)
+        .is_none()
+    {
+        return Ok(true);
+    }
+    let mut connection = db.acquire().await?;
+    allows_with_connection(
+        &mut connection,
+        bot_id,
+        channel_id,
+        user_id,
+        role,
+        acp_event_name,
+        cap,
+    )
+    .await
+}
+
+/// The same gate on the caller's connection, including a transaction connection.
+/// Rule and dynamic-group reads must succeed before a decision can be returned.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn allows_with_connection(
+    connection: &mut PgConnection,
+    bot_id: &str,
+    channel_id: &str,
+    user_id: &str,
+    role: &str,
+    acp_event_name: &str,
+    cap: Capability,
+) -> Result<bool, AppError> {
     let Some(class) = acp_events::classify(acp_event_name).and_then(|e| e.event_class) else {
         return Ok(true);
     };
-    crate::domain::bot_event_policy::resolve(db, bot_id, channel_id, user_id, role, class, cap)
-        .await
+    let rules = bot_event_policy::load_rules_with_executor(&mut *connection, bot_id).await?;
+    let groups =
+        bot_event_policy::matched_groups_with_connection(connection, bot_id, user_id, &rules)
+            .await?;
+    Ok(bot_event_policy::resolve_access(
+        &rules, channel_id, user_id, role, &groups, class, cap,
+    ))
 }
 
 /// In-memory twin of [`allows`]: same name→class mapping and gate, but resolves
@@ -61,13 +97,33 @@ pub fn allows_with_rules(
 mod tests {
     use super::*;
 
-    // Pure mapping sanity: an unmodeled event is never gated (returns Ok(true)
-    // without touching the DB — classify() returns None first).
     #[tokio::test]
-    async fn unmodeled_event_is_not_gated() {
-        // A bogus name has no registry class → allowed regardless of DB.
-        // (We can't build a PgPool here, so assert the classify() short-circuit
-        // directly: an unknown name has no event_class.)
-        assert!(acp_events::classify("session/nonexistent").is_none());
+    async fn modeled_policy_failure_is_not_an_allow_but_unmodeled_events_need_no_db() {
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused_policy_test")
+            .unwrap();
+        db.close().await;
+        let result = allows(
+            &db,
+            "bot",
+            "channel",
+            "user",
+            "member",
+            "session/prompt",
+            Capability::Initiate,
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::Db(sqlx::Error::PoolClosed))));
+        assert!(allows(
+            &db,
+            "bot",
+            "channel",
+            "user",
+            "member",
+            "session/nonexistent",
+            Capability::Initiate,
+        )
+        .await
+        .unwrap());
     }
 }

@@ -86,6 +86,34 @@ publishing again. An adapter failure never runs an independent failure update.
 Scheduler expiry and delivery failures recheck undecided state before rewinding
 the cursor; delayed delivery failures must also match the reservation timestamp.
 
+Monitoring admission reads its current configuration under a lock; the due scan
+only selects identities. It uses the same enabled/writable bot gate as execution
+grants before reading activity. Every real message author and transcript speaker
+must pass the shared human prompt policy, including current membership, active
+account, DM blocking, INITIATE permission and current external-processor consent.
+Pool and transaction entry points use one connection-based implementation; a
+dynamic-group lookup failure propagates instead of discarding a deny rule.
+Selected sources are locked and compared before disclosure; deleted transcripts
+are excluded. No locator or pool acquisition runs while these locks are held.
+
+Authoritative author denials filter only that author's activity. A wholly denied
+window advances the scan cursor without creating an evaluation or spending its
+hourly budget, once no dispatched evaluation still owns that cursor for recovery.
+A mixed window ends at its last authorized activity, so the final source is
+actually disclosed and failed-delivery rewind retains the same range.
+Database errors roll back admission rather than consuming the cursor. The source
+and permission checks define the committed admission boundary; a later revocation
+cannot retract an activity frame already queued to the connector.
+
+Fresh claims recheck current monitoring, bot and source-author authority through
+the same policy command. Bot/member authority precedes monitoring and evaluation,
+matching parent deletion cascades and scheduler maintenance. Consumed evaluations
+still return their duplicate result before enforcing current permissions; scoped
+Ignore/Error diagnostics can retire a private reservation without creating a
+claim. Voice activities retain their real speaker identity. Claims currently
+require a finalized user message; supporting transcript sources needs an explicit
+source contract.
+
 Claim decisions, cancellation, finite-deadline expiry, dispatch failure and
 execution settlement update the claim and its confirmation metadata in the same
 transaction. Only the actual bot-owned confirmation matching its channel and

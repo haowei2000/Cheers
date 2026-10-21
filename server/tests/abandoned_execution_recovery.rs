@@ -230,7 +230,7 @@ impl Fixture {
     async fn claim(&self, db: &PgPool, prepare: bool, accept: bool) -> Turn {
         let evaluation = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode) VALUES($1,$2,'off')",
+            "INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode,next_eligible_at) VALUES($1,$2,'text',NOW()+INTERVAL '1 day')",
         )
         .bind(self.channel.to_string())
         .bind(self.bot.to_string())
