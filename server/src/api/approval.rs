@@ -12,15 +12,13 @@ use serde_json::{json, Value};
 
 use uuid::Uuid;
 
-use std::collections::HashMap;
-
 use crate::{
     api::middleware::Claims,
     app_state::AppState,
     domain::{
         approval::{self, AuditEvent},
         auth_sessions,
-        bot_event_policy::{self, Capability},
+        bot_event_policy::{self, AccessBatch, Capability},
     },
     errors::AppError,
     gateway::realtime::frame::WireFrame,
@@ -65,45 +63,26 @@ pub(crate) async fn filter_traces_by_see(
     let role = channel_role(state, channel_id, uid).await?;
     let uid_s = uid.to_string();
     let chan_s = channel_id.to_string();
-    // Load each referenced bot's rules + the requester's group memberships once.
-    let mut rules_by_bot: HashMap<String, Vec<bot_event_policy::Rule>> = HashMap::new();
-    let mut groups_by_bot: HashMap<String, Vec<String>> = HashMap::new();
-    for ev in &events {
-        if let Some(bid) = ev.get("bot_id").and_then(Value::as_str) {
-            if !rules_by_bot.contains_key(bid) {
-                let rules = bot_event_policy::load_rules(&state.db, bid).await?;
-                let groups =
-                    bot_event_policy::matched_groups(&state.db, bid, &uid_s, &rules).await?;
-                rules_by_bot.insert(bid.to_string(), rules);
-                groups_by_bot.insert(bid.to_string(), groups);
+    let mut access = AccessBatch::new(&state.db);
+    let mut visible = Vec::with_capacity(events.len());
+    for event in events {
+        let may_see = match event.get("bot_id").and_then(Value::as_str) {
+            None => true, // non-bot trace: no policy
+            Some(bot_id) => {
+                let class = match event.get("kind").and_then(Value::as_str) {
+                    Some("approval") => bot_event_policy::EV_PERMISSION_REQUEST,
+                    _ => bot_event_policy::EV_TOOL_CALL,
+                };
+                access
+                    .may_see(bot_id, &chan_s, &uid_s, &role, false, class)
+                    .await?
             }
+        };
+        if may_see {
+            visible.push(event);
         }
     }
-    Ok(events
-        .into_iter()
-        .filter(|ev| {
-            let Some(bid) = ev.get("bot_id").and_then(Value::as_str) else {
-                return true; // non-bot trace: no policy
-            };
-            let Some(rules) = rules_by_bot.get(bid) else {
-                return false;
-            };
-            let groups = groups_by_bot.get(bid).map(Vec::as_slice).unwrap_or(&[]);
-            let class = match ev.get("kind").and_then(Value::as_str) {
-                Some("approval") => bot_event_policy::EV_PERMISSION_REQUEST,
-                _ => bot_event_policy::EV_TOOL_CALL,
-            };
-            bot_event_policy::resolve_access(
-                rules,
-                &chan_s,
-                &uid_s,
-                &role,
-                groups,
-                class,
-                Capability::See,
-            )
-        })
-        .collect())
+    Ok(visible)
 }
 
 /// Channel-membership gate (system_admin/admin bypass), mirroring messages.rs.
@@ -519,7 +498,9 @@ pub async fn list_message_trace(
     let uid = user_id(&claims)?;
     ensure_member(&state, channel_id, uid, &claims.role).await?;
     let limit = q.limit.clamp(1, 1000);
-    let events = crate::domain::trace::list_for_message(&state.db, &msg_id, limit).await?;
+    let events =
+        crate::domain::trace::list_for_message(&state.db, &channel_id.to_string(), &msg_id, limit)
+            .await?;
     let events = filter_traces_by_see(&state, channel_id, uid, &claims.role, events).await?;
     Ok(Json(json!({ "events": events })))
 }

@@ -70,29 +70,6 @@ pub(crate) async fn allows_with_connection(
     ))
 }
 
-/// In-memory twin of [`allows`]: same name→class mapping and gate, but resolves
-/// against already-loaded `rules` + the requester's precomputed `matched_groups`
-/// instead of hitting the DB. Lets a caller batch-load a bot's rules/groups ONCE
-/// (via [`bot_event_policy::load_rules`] + [`bot_event_policy::matched_groups`])
-/// and then decide many rows for that bot with zero further round-trips. The
-/// decision is identical to `allows` for the same inputs — unmodeled events are
-/// not gated here either (`true`).
-#[allow(clippy::too_many_arguments)]
-pub fn allows_with_rules(
-    rules: &[bot_event_policy::Rule],
-    channel_id: &str,
-    user_id: &str,
-    role: &str,
-    matched_groups: &[String],
-    acp_event_name: &str,
-    cap: Capability,
-) -> bool {
-    let Some(class) = acp_events::classify(acp_event_name).and_then(|e| e.event_class) else {
-        return true;
-    };
-    bot_event_policy::resolve_access(rules, channel_id, user_id, role, matched_groups, class, cap)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

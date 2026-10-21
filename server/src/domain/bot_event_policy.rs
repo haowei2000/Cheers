@@ -18,6 +18,7 @@
 
 use serde_json::{json, Value};
 use sqlx::{Executor, PgConnection, PgPool, Postgres};
+use std::collections::HashMap;
 
 use crate::errors::AppError;
 
@@ -155,6 +156,117 @@ pub struct Rule {
     pub event_class: String,
     pub capability: String,
     pub allow: bool,
+}
+
+/// Policy reads shared by one request or broadcast. Repeated rows/viewers reuse
+/// the same bot rules and (bot, user) group result, including failed lookups.
+/// A new operation always reloads current rules, expiry and group membership.
+pub(crate) struct AccessBatch<'a> {
+    db: &'a PgPool,
+    // None records an unavailable policy, not an empty/default-allow rule set.
+    bots: HashMap<String, Option<BotAccess>>,
+}
+
+struct BotAccess {
+    rules: Vec<Rule>,
+    groups: HashMap<String, Option<Vec<String>>>,
+}
+
+impl<'a> AccessBatch<'a> {
+    pub(crate) fn new(db: &'a PgPool) -> Self {
+        Self {
+            db,
+            bots: HashMap::new(),
+        }
+    }
+
+    /// The caller proves channel access and supplies its actual channel role.
+    /// Keep the complete rule set: one subject can resolve multiple capabilities
+    /// and event classes within this operation.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn allows(
+        &mut self,
+        bot_id: &str,
+        channel_id: &str,
+        user_id: &str,
+        role: &str,
+        event_class: &str,
+        capability: Capability,
+    ) -> Result<bool, AppError> {
+        if !self.bots.contains_key(bot_id) {
+            match load_rules(self.db, bot_id).await {
+                Ok(rules) => {
+                    self.bots.insert(
+                        bot_id.to_owned(),
+                        Some(BotAccess {
+                            rules,
+                            groups: HashMap::new(),
+                        }),
+                    );
+                }
+                Err(error) => {
+                    self.bots.insert(bot_id.to_owned(), None);
+                    return Err(error);
+                }
+            }
+        }
+        let policy = self
+            .bots
+            .get_mut(bot_id)
+            .and_then(Option::as_mut)
+            .ok_or_else(|| AppError::Internal("bot event policy is unavailable".into()))?;
+        if !policy.groups.contains_key(user_id) {
+            match matched_groups(self.db, bot_id, user_id, &policy.rules).await {
+                Ok(groups) => {
+                    policy.groups.insert(user_id.to_owned(), Some(groups));
+                }
+                Err(error) => {
+                    policy.groups.insert(user_id.to_owned(), None);
+                    return Err(error);
+                }
+            }
+        }
+        let groups = policy
+            .groups
+            .get(user_id)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| AppError::Internal("bot policy groups are unavailable".into()))?;
+        Ok(resolve_access(
+            &policy.rules,
+            channel_id,
+            user_id,
+            role,
+            groups,
+            event_class,
+            capability,
+        ))
+    }
+
+    /// Platform administration bypasses visibility rules, never RESPOND. Each
+    /// adapter must establish its own channel/subscription scope before calling.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn may_see(
+        &mut self,
+        bot_id: &str,
+        channel_id: &str,
+        user_id: &str,
+        role: &str,
+        is_platform_admin: bool,
+        event_class: &str,
+    ) -> Result<bool, AppError> {
+        if is_platform_admin {
+            return Ok(true);
+        }
+        self.allows(
+            bot_id,
+            channel_id,
+            user_id,
+            role,
+            event_class,
+            Capability::See,
+        )
+        .await
+    }
 }
 
 /// Pure resolution. Most-specific-wins; within each scope the precedence is

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT cm.member_id, cm.role AS crole, u.role AS prole\n         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id\n         WHERE cm.channel_id = $1 AND cm.member_type = 'user'",
+  "query": "SELECT cm.member_id, cm.role AS crole, u.role AS prole\n         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id\n         WHERE cm.channel_id = $1 AND cm.member_type = 'user' AND cm.member_id=ANY($2)",
   "describe": {
     "columns": [
       {
@@ -21,7 +21,8 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Text",
+        "TextArray"
       ]
     },
     "nullable": [
@@ -30,5 +31,5 @@
       false
     ]
   },
-  "hash": "692e93041fd14c2b90de5d44213f36d1b698806fe03b735516f1e6cdddcd76ab"
+  "hash": "b035a51a5fd0bb8aa6372f91d25c0915ee48959fb5e2d1990aed6048b854dc8c"
 }
