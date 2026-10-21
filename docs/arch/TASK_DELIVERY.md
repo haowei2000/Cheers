@@ -74,6 +74,18 @@ rolled-back attempt keeps one conservative slot, while a retry of that same chil
 reuses it. Recovery and receipt replay consume no new admission slots or audits.
 Offers and grants recheck bot-specific authority rather than human prompt policy.
 
+Task-claim evaluation completion has one domain writer. MCP decisions and legacy
+WS JSON decisions consume the same bot-scoped reservation under a row lock.
+The requester and task text come from its visible, finalized user source;
+model-supplied summaries, actions and impact cannot replace that source. A claim,
+confirmation message, requester mention, sequence allocation and completed
+evaluation commit together. A database failure leaves the reservation dispatched
+for retry. Both adapters share publication after commit. A later WS completion or
+error after an MCP decision is acknowledged as a duplicate without writing or
+publishing again. An adapter failure never runs an independent failure update.
+Scheduler expiry and delivery failures recheck undecided state before rewinding
+the cursor; delayed delivery failures must also match the reservation timestamp.
+
 Task-claim approval uses a dedicated `task_claim` actor in that same worker. The
 requester must still be allowed to prompt the selected bot, and the bot must be
 ready with a live primary session before approval can consume `pending`. Offline,

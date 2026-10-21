@@ -10,7 +10,11 @@
 
 > **Runtime update (2026-10-21):** The remainder preserves the original proposal.
 > Current execution behavior is defined in [Task Delivery](../arch/TASK_DELIVERY.md)
-> and `server/src/domain/task_claims.rs`. The mentioned requester approves through
+> and `server/src/domain/task_claims.rs`. MCP and legacy WS evaluation results use
+> that same domain writer: one reservation, one atomic claim/confirmation/mention
+> commit, and shared postcommit publication. Task text and requester are derived
+> from the visible user source. Late WS diagnostics cannot replace an MCP decision.
+> The mentioned requester approves through
 > REST; acceptance requires writable membership, prompt policy/consent and a ready
 > bot with a live primary session. Confirmation metadata, a private approval
 > trigger, its durable intent and `executing` claim state commit together.

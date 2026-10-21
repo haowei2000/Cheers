@@ -40,6 +40,205 @@ pub struct ResolveClaimOutcome {
     pub trigger_msg_id: Option<Uuid>,
 }
 
+pub enum EvaluationDecision {
+    Claim { confidence: f64 },
+    Ignore,
+    Failed { reason: String },
+}
+
+pub struct CompleteEvaluationParams {
+    pub bot_id: Uuid,
+    pub evaluation_id: Uuid,
+    pub channel_id: Option<Uuid>,
+    pub decision: EvaluationDecision,
+}
+
+pub struct CompleteEvaluationOutcome {
+    pub data: serde_json::Value,
+    pub newly_decided: bool,
+}
+
+/// MCP and connector results consume the same scoped evaluation exactly once.
+/// The row lock precedes interpretation of a late decision: an empty diagnostic
+/// after a successful MCP submission cannot overwrite its committed result.
+pub async fn complete_evaluation(
+    db: &PgPool,
+    params: CompleteEvaluationParams,
+) -> Result<CompleteEvaluationOutcome, AppError> {
+    let mut tx = db.begin().await?;
+    let evaluation = sqlx::query!(
+        "SELECT channel_id,source_seq_to,status FROM task_claim_evaluations
+         WHERE evaluation_id=$1 AND bot_id=$2 AND ($3::text IS NULL OR channel_id=$3) FOR UPDATE",
+        params.evaluation_id.to_string(),
+        params.bot_id.to_string(),
+        params.channel_id.map(|id| id.to_string()),
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let channel_id = evaluation
+        .channel_id
+        .parse::<Uuid>()
+        .map_err(|_| AppError::Internal("invalid evaluation channel id".into()))?;
+    let base = |status: &str| json!({"evaluation_id":params.evaluation_id,"channel_id":channel_id,"status":status});
+    if evaluation.status != "dispatched" {
+        return Ok(CompleteEvaluationOutcome {
+            data: json!({"evaluation_id":params.evaluation_id,"channel_id":channel_id,"duplicate":true}),
+            newly_decided: false,
+        });
+    }
+    let confidence = match params.decision {
+        EvaluationDecision::Failed { reason } => {
+            finish_evaluation(&mut tx, params.evaluation_id, "failed", Some(&reason)).await?;
+            tx.commit().await?;
+            return Ok(CompleteEvaluationOutcome {
+                data: base("failed"),
+                newly_decided: true,
+            });
+        }
+        EvaluationDecision::Ignore => {
+            finish_evaluation(&mut tx, params.evaluation_id, "ignored", None).await?;
+            tx.commit().await?;
+            return Ok(CompleteEvaluationOutcome {
+                data: base("ignored"),
+                newly_decided: true,
+            });
+        }
+        EvaluationDecision::Claim { confidence } => {
+            if !confidence.is_finite() {
+                return Err(AppError::BadRequest(
+                    "claim confidence must be finite".into(),
+                ));
+            }
+            confidence.clamp(0.0, 1.0)
+        }
+    };
+    // The scheduler locks monitoring before evaluation. Reading its current
+    // threshold without a row lock avoids reversing that order here.
+    let threshold = sqlx::query_scalar!(
+        "SELECT confidence_threshold::float8 AS \"threshold!\" FROM channel_bot_monitoring
+         WHERE channel_id=$1 AND bot_id=$2",
+        channel_id.to_string(),
+        params.bot_id.to_string(),
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::Conflict("task-claim monitoring is no longer configured".into()))?;
+    if confidence < threshold {
+        finish_evaluation(
+            &mut tx,
+            params.evaluation_id,
+            "ignored",
+            Some("below confidence threshold"),
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok(CompleteEvaluationOutcome {
+            data: base("ignored"),
+            newly_decided: true,
+        });
+    }
+    let source = sqlx::query!(
+        "SELECT m.msg_id,m.sender_id,m.content,u.username FROM messages m
+         JOIN users u ON u.user_id=m.sender_id
+         WHERE m.channel_id=$1 AND m.channel_seq=$2 AND m.sender_type='user'
+           AND m.is_partial=FALSE AND m.is_deleted=FALSE AND m.is_secret=FALSE
+         FOR SHARE OF m,u",
+        channel_id.to_string(),
+        evaluation.source_seq_to,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| {
+        AppError::BadRequest("claim evaluation source is not an available user message".into())
+    })?;
+    let summary: String = source.content.trim().chars().take(1000).collect();
+    if summary.is_empty() {
+        return Err(AppError::BadRequest("claim source message is empty".into()));
+    }
+    if !task_acceptance::may_execute(&mut tx, params.bot_id, channel_id, None).await? {
+        return Err(AppError::Forbidden(
+            "bot may no longer create task claims here".into(),
+        ));
+    }
+    let bot_name = sqlx::query_scalar!(
+        "SELECT COALESCE(NULLIF(display_name,''),username) AS \"name!\" FROM bot_accounts WHERE bot_id=$1",
+        params.bot_id.to_string(),
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let claim_id = Uuid::new_v4();
+    let confirmation_id = Uuid::new_v4();
+    let action = "Start the requested work and report the result in this channel.";
+    let impact = "medium";
+    finish_evaluation(&mut tx, params.evaluation_id, "completed", None).await?;
+    sqlx::query!(
+        "INSERT INTO task_claim_requests(claim_id,evaluation_id,channel_id,bot_id,summary,proposed_action,confidence,impact,requester_id,source_message_id,confirmation_message_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7::float8,$8,$9,$10,$11)",
+        claim_id.to_string(), params.evaluation_id.to_string(), channel_id.to_string(),
+        params.bot_id.to_string(), &summary, action, confidence, impact,
+        &source.sender_id, &source.msg_id, confirmation_id.to_string(),
+    ).execute(&mut *tx).await?;
+    let seq = super::channel_seq::allocate(&mut tx, channel_id).await?;
+    let content = format!(
+        "@{} {bot_name} 想认领这个任务：{summary}\n\n{action}",
+        source.username,
+    );
+    let data = json!({"claim_id":claim_id,"requester_id":source.sender_id,
+        "summary":summary,"proposed_action":action,"confidence":confidence,
+        "impact":impact,"resolved":false});
+    let confirmation = sqlx::query!(
+        "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,is_deleted,in_reply_to_msg_id,created_at,channel_seq,content_data)
+         VALUES($1,$2,$3,'bot',$4,'task_claim_confirmation',FALSE,FALSE,$5,NOW(),$6,$7)
+         RETURNING created_at",
+        confirmation_id.to_string(), channel_id.to_string(), params.bot_id.to_string(),
+        &content, &source.msg_id, seq, &data,
+    ).fetch_one(&mut *tx).await?;
+    sqlx::query!(
+        "INSERT INTO message_mentions(msg_id,member_id,member_type) VALUES($1,$2,'user')",
+        confirmation_id.to_string(),
+        &source.sender_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(CompleteEvaluationOutcome {
+        data: json!({"claim_id":claim_id,"evaluation_id":params.evaluation_id,
+            "channel_id":channel_id,"bot_id":params.bot_id,"summary":summary,
+            "proposed_action":action,"confidence":confidence,"impact":impact,"status":"pending",
+            "confirmation_message":{"msg_id":confirmation_id,"channel_id":channel_id,
+                "channel_seq":seq,"sender_type":"bot","sender_id":params.bot_id,
+                "sender_name":bot_name,"content":content,"msg_type":"task_claim_confirmation",
+                "is_partial":false,"created_at":confirmation.created_at.to_rfc3339(),
+                "reply_to_msg_id":source.msg_id,"mentions":[{"member_id":source.sender_id,"member_type":"user"}],
+                "content_data":data}}),
+        newly_decided: true,
+    })
+}
+
+async fn finish_evaluation(
+    tx: &mut Transaction<'_, Postgres>,
+    evaluation_id: Uuid,
+    status: &str,
+    error: Option<&str>,
+) -> Result<(), AppError> {
+    let changed = sqlx::query!(
+        "UPDATE task_claim_evaluations SET status=$2,error=$3,completed_at=NOW()
+         WHERE evaluation_id=$1 AND status='dispatched'",
+        evaluation_id.to_string(),
+        status,
+        error,
+    )
+    .execute(&mut **tx)
+    .await?;
+    if changed.rows_affected() != 1 {
+        return Err(AppError::Conflict(
+            "task-claim evaluation was already decided".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Admission performs pool-based policy/readiness checks before retaining a
 /// transaction connection. Network/media preparation belongs to the worker.
 pub async fn resolve(

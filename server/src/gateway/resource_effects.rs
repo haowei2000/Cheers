@@ -20,6 +20,49 @@ use crate::{
     resource::{self, Principal},
 };
 
+/// Publish a committed evaluation once, regardless of its ingress transport.
+/// Duplicates have no timeline/Activity effects; a failed transaction never
+/// produces a success payload for either adapter to publish.
+pub async fn publish_claim_evaluation(fanout: &dyn super::realtime::fanout::Fanout, data: &Value) {
+    if data.get("duplicate").and_then(Value::as_bool) == Some(true) {
+        return;
+    }
+    let Some(channel_id) = data
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse::<Uuid>().ok())
+    else {
+        return;
+    };
+    if let Some(message) = data.get("confirmation_message") {
+        fanout
+            .broadcast_channel(
+                channel_id,
+                WireFrame::channel(channel_id, "message", message.clone()),
+            )
+            .await;
+    }
+    if data.get("status").and_then(Value::as_str) == Some("pending") {
+        fanout
+            .broadcast_channel(
+                channel_id,
+                WireFrame::channel(channel_id, "task_claim_created", data.clone()),
+            )
+            .await;
+    }
+    // Ignore/failure has no timeline message; refresh the Activity board too.
+    fanout
+        .broadcast_channel(
+            channel_id,
+            WireFrame::channel(
+                channel_id,
+                "board_signal",
+                json!({ "channel_id": channel_id, "board": "activity" }),
+            ),
+        )
+        .await;
+}
+
 fn direct_message_notification_payload(channel_id: Uuid, sender_name: &str) -> Value {
     json!({
         "kind": "dm",
@@ -105,56 +148,7 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
         }
         Some("channel.task_claims.evaluate") => {
             if let Some(data) = resp.get("data") {
-                if let Some(message) = data.get("confirmation_message") {
-                    if let Some(channel_id) = message
-                        .get("channel_id")
-                        .and_then(Value::as_str)
-                        .and_then(|v| v.parse::<Uuid>().ok())
-                    {
-                        state
-                            .fanout
-                            .broadcast_channel(
-                                channel_id,
-                                WireFrame::channel(channel_id, "message", message.clone()),
-                            )
-                            .await;
-                    }
-                }
-                if data.get("status").and_then(Value::as_str) == Some("pending") {
-                    if let Some(channel_id) = data
-                        .get("channel_id")
-                        .and_then(Value::as_str)
-                        .and_then(|v| v.parse::<Uuid>().ok())
-                    {
-                        state
-                            .fanout
-                            .broadcast_channel(
-                                channel_id,
-                                WireFrame::channel(channel_id, "task_claim_created", data.clone()),
-                            )
-                            .await;
-                    }
-                }
-            }
-            // An ignored or failed decision does not create a chat message, so
-            // explicitly refresh the Activity ViewBoard for every MCP decision.
-            if let Some(channel_id) = frame
-                .get("params")
-                .and_then(|params| params.get("channel_id"))
-                .and_then(Value::as_str)
-                .and_then(|value| value.parse::<Uuid>().ok())
-            {
-                state
-                    .fanout
-                    .broadcast_channel(
-                        channel_id,
-                        WireFrame::channel(
-                            channel_id,
-                            "board_signal",
-                            json!({ "channel_id": channel_id, "board": "activity" }),
-                        ),
-                    )
-                    .await;
+                publish_claim_evaluation(state.fanout.as_ref(), data).await;
             }
         }
         // A bot left → the member set changed, so re-broadcast the full presence.

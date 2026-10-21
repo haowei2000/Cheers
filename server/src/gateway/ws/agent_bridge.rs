@@ -986,7 +986,7 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             };
             match crate::gateway::task_claim_scheduler::complete(
                 &state.db,
-                state,
+                state.fanout.as_ref(),
                 bot.bot_id,
                 evaluation_id,
                 frame.get("content").and_then(Value::as_str),
@@ -998,28 +998,22 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                     let _ = ws_send(socket, &json!({"type":"task_claim_ack","v":BRIDGE_PROTOCOL_VERSION,"evaluation_id":evaluation_id,"ok":true,"data":result})).await;
                 }
                 Err(error) => {
-                    // A claim decision may have reached the model successfully but
-                    // still fail while writing the durable claim/confirmation.
-                    // Record that boundary explicitly: leaving it as `dispatched`
-                    // makes the UI look as if monitoring never ran and blocks
-                    // immediate retries until the lease expires.
+                    // The shared transaction owns state transitions. A failed
+                    // write stays retryable; an unknown/foreign evaluation must
+                    // never be failed by an unscoped fallback UPDATE.
                     tracing::error!(
                         %evaluation_id,
                         bot_id = %bot.bot_id,
                         error = %error,
                         "task-claim completion failed"
                     );
-                    if let Err(update_error) = sqlx::query!(
-                        "UPDATE task_claim_evaluations SET status='failed', error=$2, completed_at=NOW() WHERE evaluation_id=$1 AND status='dispatched'",
-                        evaluation_id.to_string(),
-                        format!("claim completion failed: {error}"),
-                    )
-                    .execute(&state.db)
-                    .await
-                    {
-                        tracing::error!(%evaluation_id, error = %update_error, "could not record task-claim completion failure");
-                    }
-                    let _ = ws_send(socket, &json!({"type":"task_claim_ack","v":BRIDGE_PROTOCOL_VERSION,"evaluation_id":evaluation_id,"ok":false,"error":error.to_string()})).await;
+                    let message = match error {
+                        crate::errors::AppError::Db(_) | crate::errors::AppError::Internal(_) => {
+                            "could not complete task-claim evaluation".to_string()
+                        }
+                        other => other.to_string(),
+                    };
+                    let _ = ws_send(socket, &json!({"type":"task_claim_ack","v":BRIDGE_PROTOCOL_VERSION,"evaluation_id":evaluation_id,"ok":false,"error":message})).await;
                 }
             }
         }

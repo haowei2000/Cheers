@@ -1565,10 +1565,9 @@ async fn a_valid_signed_error_with_mentions_commits_without_admitting_child_work
 }
 
 impl Fixture {
-    /// Derive requester, source and confirmation through the production writer.
-    /// The scheduler reservation is seeded to avoid making approval tests wait
-    /// for its debounce/ACP evaluation loop.
-    async fn pending_claim(&self, db: &PgPool) -> Value {
+    /// Keep the real human source, but seed the scheduler reservation so tests
+    /// do not need to wait for debounce or run an ACP process.
+    async fn dispatched_claim_evaluation(&self, db: &PgPool) -> Uuid {
         let source = self
             .post(
                 &format!("/channels/{}/messages", self.channel),
@@ -1581,6 +1580,12 @@ impl Fixture {
         let evaluation = Uuid::new_v4();
         sqlx::query("INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,dispatched_at) VALUES($1,$2,$3,$4,$4,'dispatched',NOW())")
             .bind(evaluation.to_string()).bind(self.channel.to_string()).bind(self.bot.id.to_string()).bind(seq).execute(db).await.unwrap();
+        evaluation
+    }
+
+    /// Derive requester, source and confirmation through the production writer.
+    async fn pending_claim(&self, db: &PgPool) -> Value {
+        let evaluation = self.dispatched_claim_evaluation(db).await;
         server::domain::sessions::ensure_primary_session_workspace(
             db,
             self.bot.id,
@@ -1601,6 +1606,138 @@ impl Fixture {
             .await
             .unwrap()
     }
+
+    async fn evaluation_state(&self, db: &PgPool, evaluation: Uuid) -> Value {
+        sqlx::query_scalar(
+            "SELECT to_jsonb(e) FROM task_claim_evaluations e WHERE evaluation_id=$1",
+        )
+        .bind(evaluation.to_string())
+        .fetch_one(db)
+        .await
+        .unwrap()
+    }
+
+    async fn evaluation_publication_counts(
+        &self,
+        db: &PgPool,
+        evaluation: Uuid,
+    ) -> (i64, i64, i64, i64) {
+        sqlx::query_as(
+            "SELECT (SELECT COUNT(*) FROM task_claim_requests WHERE evaluation_id=$1),
+                    (SELECT COUNT(*) FROM messages WHERE channel_id=$2 AND msg_type='task_claim_confirmation'),
+                    (SELECT COUNT(*) FROM message_mentions mm JOIN messages m ON m.msg_id=mm.msg_id
+                     WHERE m.channel_id=$2 AND m.msg_type='task_claim_confirmation'),
+                    next_seq FROM channels WHERE channel_id=$2",
+        )
+        .bind(evaluation.to_string())
+        .bind(self.channel.to_string())
+        .fetch_one(db)
+        .await
+        .unwrap()
+    }
+}
+
+async fn evaluation_ack(data: &mut Socket, frame: &Value) -> Value {
+    send(data, frame.clone()).await;
+    let ack = next_type(data, "task_claim_ack").await;
+    assert_eq!(ack["v"], 1);
+    assert_eq!(ack["evaluation_id"], frame["evaluation_id"]);
+    ack
+}
+
+#[sqlx::test]
+async fn claim_evaluation_ws_rejects_foreign_bots_and_preserves_the_owners_committed_decision(
+    db: PgPool,
+) {
+    let fixture = Fixture::start(&db).await;
+    let evaluation = fixture.dispatched_claim_evaluation(&db).await;
+    let peer = fixture.seed_bot(&db).await;
+    let mut foreign_data = fixture.socket(&peer, "data").await;
+    let mut owner_data = fixture.socket(&fixture.bot, "data").await;
+    let decision = json!({"type":"claim_evaluation_result","v":1,"evaluation_id":evaluation,
+        "content":json!({"decision":"claim","confidence":1.0}).to_string()});
+    let failure = json!({"type":"claim_evaluation_result","v":1,"evaluation_id":evaluation,
+        "error":"late ACP runtime failure"});
+    let dispatched = fixture.evaluation_state(&db, evaluation).await;
+    let before = fixture.evaluation_publication_counts(&db, evaluation).await;
+    assert_eq!(dispatched["status"], "dispatched");
+    assert_eq!((before.0, before.1, before.2), (0, 0, 0));
+    for forged in [&decision, &failure] {
+        let ack = evaluation_ack(&mut foreign_data, forged).await;
+        assert_eq!(ack["ok"], false, "{ack}");
+        assert!(ack["error"].is_string(), "{ack}");
+        assert_eq!(fixture.evaluation_state(&db, evaluation).await, dispatched);
+        assert_eq!(
+            fixture.evaluation_publication_counts(&db, evaluation).await,
+            before,
+            "the WS error boundary cannot fail another bot's evaluation"
+        );
+    }
+
+    let ack = evaluation_ack(&mut owner_data, &decision).await;
+    assert_eq!(ack["ok"], true, "{ack}");
+    assert_eq!(ack["data"]["status"], "pending");
+    let committed = fixture.evaluation_state(&db, evaluation).await;
+    assert_eq!(committed["status"], "completed");
+    let claim = fixture.claim_status(&db, &ack["data"]).await;
+    assert_eq!(claim["bot_id"], fixture.bot.id.to_string());
+    let counts = fixture.evaluation_publication_counts(&db, evaluation).await;
+    assert_eq!(counts, (1, 1, 1, before.3 + 1));
+
+    let late = evaluation_ack(&mut owner_data, &failure).await;
+    assert_eq!(late["ok"], true, "{late}");
+    assert_eq!(late["data"]["duplicate"], true);
+    assert_eq!(fixture.evaluation_state(&db, evaluation).await, committed);
+    assert_eq!(fixture.claim_status(&db, &ack["data"]).await, claim);
+    assert_eq!(
+        fixture.evaluation_publication_counts(&db, evaluation).await,
+        counts,
+        "a late runtime error cannot downgrade the decision or publish another confirmation"
+    );
+}
+
+#[sqlx::test]
+async fn claim_evaluation_ws_commit_failure_nacks_without_consuming_the_evaluation(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let evaluation = fixture.dispatched_claim_evaluation(&db).await;
+    let mut data = fixture.socket(&fixture.bot, "data").await;
+    let decision = json!({"type":"claim_evaluation_result","v":1,"evaluation_id":evaluation,
+        "content":json!({"decision":"claim","confidence":1.0}).to_string()});
+    let dispatched = fixture.evaluation_state(&db, evaluation).await;
+    let before = fixture.evaluation_publication_counts(&db, evaluation).await;
+    sqlx::raw_sql("CREATE FUNCTION reject_claim_confirmation_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected claim confirmation commit failure'; END $$; CREATE CONSTRAINT TRIGGER reject_claim_confirmation_commit AFTER INSERT ON messages DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.msg_type='task_claim_confirmation') EXECUTE FUNCTION reject_claim_confirmation_commit()")
+        .execute(&db).await.unwrap();
+    let ack = evaluation_ack(&mut data, &decision).await;
+    assert_eq!(ack["ok"], false, "{ack}");
+    assert!(ack["error"].is_string(), "{ack}");
+    assert_eq!(
+        fixture.evaluation_state(&db, evaluation).await,
+        dispatched,
+        "the WS NACK must not convert a rolled-back write into a failed evaluation"
+    );
+    assert_eq!(
+        fixture.evaluation_publication_counts(&db, evaluation).await,
+        before,
+        "claim, confirmation, mentions and channel sequence must all roll back"
+    );
+    sqlx::raw_sql("DROP TRIGGER reject_claim_confirmation_commit ON messages; DROP FUNCTION reject_claim_confirmation_commit()")
+        .execute(&db).await.unwrap();
+    let retried = evaluation_ack(&mut data, &decision).await;
+    assert_eq!(retried["ok"], true, "{retried}");
+    assert_eq!(retried["data"]["status"], "pending");
+    assert_eq!(
+        fixture.evaluation_state(&db, evaluation).await["status"],
+        "completed"
+    );
+    let counts = fixture.evaluation_publication_counts(&db, evaluation).await;
+    assert_eq!(counts, (1, 1, 1, before.3 + 1));
+    let repeated = evaluation_ack(&mut data, &decision).await;
+    assert_eq!(repeated["ok"], true, "{repeated}");
+    assert_eq!(repeated["data"]["duplicate"], true);
+    assert_eq!(
+        fixture.evaluation_publication_counts(&db, evaluation).await,
+        counts
+    );
 }
 
 #[sqlx::test]

@@ -1,16 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT channel_id,status FROM task_claim_evaluations WHERE evaluation_id=$1 AND bot_id=$2",
+  "query": "SELECT channel_id FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2 FOR UPDATE",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
         "name": "channel_id",
-        "type_info": "Varchar"
-      },
-      {
-        "ordinal": 1,
-        "name": "status",
         "type_info": "Varchar"
       }
     ],
@@ -21,9 +16,8 @@
       ]
     },
     "nullable": [
-      false,
       false
     ]
   },
-  "hash": "101e592187ac1fa561215e1190bd8142697e2415183116d2f5ab73771b095da5"
+  "hash": "948eaf96d3ea66e1336e6790f982ad18849a1a35ab17fa7647c1299835af3547"
 }

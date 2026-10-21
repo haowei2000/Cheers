@@ -2,32 +2,15 @@
 //! Monitoring is opt-in (`mode != off`). PostgreSQL owns cursors, rate limits and
 //! reservations; connectors only decide whether the reserved activity is theirs.
 
-use chrono::Timelike;
+use chrono::{DateTime, Timelike, Utc};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::{app_state::AppState, gateway::realtime::frame::WireFrame};
+use crate::app_state::AppState;
 
 const POLL_SECONDS: u64 = 2;
-
-/// Task-claim decisions are background work: there is no chat message for an
-/// ignore or a failure. Nudge the Activity ViewBoard whenever one reaches a
-/// terminal state so operators do not have to refresh to discover it.
-async fn signal_activity(state: &AppState, channel_id: Uuid) {
-    state
-        .fanout
-        .broadcast_channel(
-            channel_id,
-            WireFrame::channel(
-                channel_id,
-                "board_signal",
-                json!({ "channel_id": channel_id, "board": "activity" }),
-            ),
-        )
-        .await;
-}
 
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
@@ -42,20 +25,7 @@ pub fn spawn(state: AppState) {
 }
 
 async fn run_once(state: &AppState) -> anyhow::Result<()> {
-    // Re-open ranges whose connector vanished mid-evaluation. The cursor rewind
-    // is conditional on still pointing at that exact reservation, so it cannot
-    // overwrite a later successful reservation.
-    sqlx::Executor::execute(&state.db, sqlx::query!(
-        r#"WITH stale AS (
-        SELECT evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to
-        FROM task_claim_evaluations WHERE status='dispatched' AND dispatched_at < NOW()-INTERVAL '10 minutes'
-      ), rewound AS (
-        UPDATE channel_bot_monitoring m SET last_evaluated_seq=s.source_seq_from-1,next_eligible_at=NOW()
-        FROM stale s WHERE m.channel_id=s.channel_id AND m.bot_id=s.bot_id AND m.last_evaluated_seq=s.source_seq_to
-        RETURNING s.evaluation_id
-      ) UPDATE task_claim_evaluations e SET status='failed',error='evaluation lease expired',completed_at=NOW()
-        FROM rewound r WHERE e.evaluation_id=r.evaluation_id"#,
-    )).await?;
+    recover_expired_evaluations(&state.db).await?;
     let rows = sqlx::query_as!(crate::infra::db::query_rows::MonitoringRow, r###"SELECT channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,last_evaluated_seq,policy
         FROM channel_bot_monitoring
         WHERE mode <> 'off' AND (next_eligible_at IS NULL OR next_eligible_at <= NOW())
@@ -67,6 +37,88 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Recover only reservations that remain undecided after acquiring their locks.
+/// Monitoring precedes evaluation everywhere in scheduler maintenance; canonical
+/// completion locks evaluation without retaining a monitoring lock.
+pub async fn recover_expired_evaluations(db: &PgPool) -> Result<u64, sqlx::Error> {
+    let changed = sqlx::query!(
+        r#"WITH monitoring AS MATERIALIZED (
+          SELECT m.channel_id,m.bot_id FROM channel_bot_monitoring m
+          WHERE EXISTS (
+            SELECT 1 FROM task_claim_evaluations e
+            WHERE e.channel_id=m.channel_id AND e.bot_id=m.bot_id
+              AND e.status='dispatched' AND e.dispatched_at<clock_timestamp()-INTERVAL '10 minutes'
+          )
+          ORDER BY m.channel_id,m.bot_id LIMIT 20 FOR UPDATE OF m SKIP LOCKED
+        ), stale AS MATERIALIZED (
+          SELECT e.evaluation_id,e.channel_id,e.bot_id,e.source_seq_from,e.source_seq_to
+          FROM task_claim_evaluations e JOIN monitoring m
+            ON e.channel_id=m.channel_id AND e.bot_id=m.bot_id
+          WHERE e.status='dispatched' AND e.dispatched_at<clock_timestamp()-INTERVAL '10 minutes'
+          ORDER BY e.evaluation_id LIMIT 100 FOR UPDATE OF e SKIP LOCKED
+        ), rewound AS (
+          UPDATE channel_bot_monitoring m
+          SET last_evaluated_seq=s.source_seq_from-1,next_eligible_at=NOW(),updated_at=NOW()
+          FROM stale s WHERE m.channel_id=s.channel_id AND m.bot_id=s.bot_id
+            AND m.last_evaluated_seq=s.source_seq_to
+        )
+        UPDATE task_claim_evaluations e
+        SET status='failed',error='evaluation lease expired',completed_at=NOW()
+        FROM stale s WHERE e.evaluation_id=s.evaluation_id AND e.status='dispatched'"#,
+    )
+    .execute(db)
+    .await?;
+    Ok(changed.rows_affected())
+}
+
+/// A failed socket delivery can return after a decision or a newer attempt.
+/// Fence it to the actual committed reservation timestamp before touching either
+/// the monitoring cursor or the evaluation's terminal state.
+pub async fn fail_delivery(
+    db: &PgPool,
+    evaluation_id: Uuid,
+    channel_id: Uuid,
+    bot_id: Uuid,
+    dispatched_at: DateTime<Utc>,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = db.begin().await?;
+    let monitoring = sqlx::query!(
+        "SELECT channel_id FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2 FOR UPDATE",
+        channel_id.to_string(), bot_id.to_string(),
+    ).fetch_optional(&mut *tx).await?;
+    if monitoring.is_none() {
+        return Ok(false);
+    }
+    let evaluation = sqlx::query!(
+        "SELECT status,source_seq_from,source_seq_to,dispatched_at FROM task_claim_evaluations
+         WHERE evaluation_id=$1 AND channel_id=$2 AND bot_id=$3 FOR UPDATE",
+        evaluation_id.to_string(),
+        channel_id.to_string(),
+        bot_id.to_string(),
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(evaluation) = evaluation else {
+        return Ok(false);
+    };
+    if evaluation.status != "dispatched" || evaluation.dispatched_at != Some(dispatched_at) {
+        return Ok(false);
+    }
+    sqlx::query!(
+        "UPDATE channel_bot_monitoring
+         SET last_evaluated_seq=$3::int8-1,next_eligible_at=NOW()+INTERVAL '15 seconds',updated_at=NOW()
+         WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$4",
+        channel_id.to_string(),bot_id.to_string(),evaluation.source_seq_from,evaluation.source_seq_to,
+    ).execute(&mut *tx).await?;
+    sqlx::query!(
+        "UPDATE task_claim_evaluations SET status='failed',error='bot went offline',completed_at=NOW()
+         WHERE evaluation_id=$1 AND status='dispatched' AND dispatched_at=$2",
+        evaluation_id.to_string(), dispatched_at,
+    ).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 async fn schedule_one(
@@ -203,13 +255,13 @@ async fn schedule_one(
     // The range itself stays unique so retries must reactivate that durable
     // evaluation instead of attempting a duplicate insert.  Reusing its ID
     // also keeps Activity history and any late connector response coherent.
-    let evaluation_id: String = sqlx::query_scalar!(
+    let reservation = sqlx::query!(
         "INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,reserved_at,dispatched_at) \
          VALUES($1,$2,$3,$4,$5,'dispatched',NOW(),NOW()) \
          ON CONFLICT(channel_id,bot_id,source_seq_from,source_seq_to) DO UPDATE \
          SET status='dispatched', error=NULL, reserved_at=NOW(), dispatched_at=NOW(), completed_at=NULL \
          WHERE task_claim_evaluations.status='failed' \
-         RETURNING evaluation_id",
+         RETURNING evaluation_id, dispatched_at AS \"dispatched_at!\"",
         new_evaluation_id.to_string(),
         channel_id.to_string(),
         bot_id.to_string(),
@@ -220,246 +272,96 @@ async fn schedule_one(
     .await?
     .ok_or_else(|| anyhow::anyhow!("evaluation range is already active"))?;
     tx.commit().await?;
+    let evaluation_id: Uuid = reservation.evaluation_id.parse()?;
     let items: Vec<Value> = candidates.into_iter().map(|r| json!({"seq":r.seq.clone().unwrap_or_default(),"kind":r.kind.clone().unwrap_or_default(),"actor":r.actor.clone().unwrap_or_default(),"text":r.text.clone().unwrap_or_default(),"created_at":r.created_at.clone().map(|d|d.to_rfc3339())})).collect();
     let frame = json!({"type":"claim_evaluation","v":1,"evaluation_id":evaluation_id,"channel_id":channel_id,"provider_session_key":format!("cheers:claim-evaluation:{channel_id}:{bot_id}"),"scope":row.scope.clone(),"confidence_threshold":confidence,"source_seq_from":from,"source_seq_to":to,"activity":items});
     if !state.bot_locator.dispatch_task(bot_id, frame).await {
-        let mut tx = state.db.begin().await?;
-        sqlx::query!(
-            "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3::int8-1,next_eligible_at=NOW()+INTERVAL '15 seconds' WHERE channel_id=$1 AND bot_id=$2 AND last_evaluated_seq=$4",
-            channel_id.to_string(),
-            bot_id.to_string(),
-            from,
-            to,
-        ).execute(&mut *tx).await?;
-        sqlx::query!(
-            "UPDATE task_claim_evaluations SET status='failed',error='bot went offline',completed_at=NOW() WHERE evaluation_id=$1",
-            &evaluation_id,
-        ).execute(&mut *tx).await?;
-        tx.commit().await?;
+        fail_delivery(
+            &state.db,
+            evaluation_id,
+            channel_id,
+            bot_id,
+            reservation.dispatched_at,
+        )
+        .await?;
     }
     Ok(())
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct Decision {
-    decision: String,
-    summary: Option<String>,
-    proposed_action: Option<String>,
-    confidence: Option<f64>,
-    impact: Option<String>,
+#[serde(rename_all = "snake_case")]
+enum LegacyDecision {
+    Claim,
+    Ignore,
 }
 
-/// Complete one evaluation from the connector. The connector returns the agent's
-/// strict JSON decision; the gateway validates policy and is the only claim writer.
+#[derive(Debug, serde::Deserialize)]
+struct Decision {
+    decision: LegacyDecision,
+    confidence: Option<f64>,
+}
+
+/// Decode legacy WS results, then use the same transaction and postcommit
+/// publication as MCP. Current connectors also send a final WS diagnostic after
+/// their MCP decision, so an already-consumed reservation is a harmless ACK.
 pub async fn complete(
     db: &PgPool,
-    state: &AppState,
+    fanout: &dyn super::realtime::fanout::Fanout,
     bot_id: Uuid,
     evaluation_id: Uuid,
     content: Option<&str>,
     error: Option<&str>,
-) -> anyhow::Result<Value> {
-    let eval = sqlx::query!(
-        "SELECT channel_id,status FROM task_claim_evaluations WHERE evaluation_id=$1 AND bot_id=$2",
-        evaluation_id.to_string(),
-        bot_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await?;
-    let Some(eval) = eval else {
-        anyhow::bail!("unknown evaluation");
+) -> Result<Value, crate::errors::AppError> {
+    use crate::domain::task_claims::{
+        complete_evaluation, CompleteEvaluationParams, EvaluationDecision,
     };
-    if eval.status.clone() != "dispatched" {
-        return Ok(json!({"evaluation_id":evaluation_id,"duplicate":true}));
-    }
-    let channel_id: Uuid = eval.channel_id.clone().parse()?;
-    if let Some(error) = error {
-        sqlx::query!(
-            "UPDATE task_claim_evaluations SET status='failed',error=$2,completed_at=NOW() WHERE evaluation_id=$1",
-            evaluation_id.to_string(),
-            error,
-        ).execute(db).await?;
-        signal_activity(state, channel_id).await;
-        return Ok(json!({"evaluation_id":evaluation_id,"status":"failed"}));
-    }
-    let cleaned = content
-        .unwrap_or("")
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
-    let decision: Decision = match serde_json::from_str(cleaned) {
-        Ok(value) => value,
-        Err(error) => {
-            // A malformed model response is a protocol failure, not a valid
-            // negative decision. Keeping it distinct prevents silent false
-            // negatives and makes prompt/provider regressions diagnosable.
-            tracing::warn!(
-                %evaluation_id,
-                error = %error,
-                raw_decision = %cleaned.chars().take(2000).collect::<String>(),
-                "task-claim model returned invalid JSON"
-            );
-            // Empty output is normally an interrupted ACP/model session, not an
-            // invalid decision. Persist a concise operator-facing reason for the
-            // Activity board while retaining the detailed cause in gateway logs.
-            let reason = if cleaned.is_empty() {
-                "bot session ended without a task-claim decision"
-            } else {
-                "invalid model decision JSON"
-            };
-            sqlx::query!(
-                "UPDATE task_claim_evaluations SET status='failed',error=$2,completed_at=NOW() WHERE evaluation_id=$1",
-                evaluation_id.to_string(),
-                reason,
-            )
-                .execute(db)
-                .await?;
-            signal_activity(state, channel_id).await;
-            return Ok(json!({"evaluation_id":evaluation_id,"status":"failed"}));
+    let decision = if let Some(error) = error {
+        EvaluationDecision::Failed {
+            reason: error.to_string(),
+        }
+    } else {
+        let cleaned = content
+            .unwrap_or("")
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+        match serde_json::from_str::<Decision>(cleaned) {
+            Ok(Decision {
+                decision: LegacyDecision::Claim,
+                confidence,
+            }) => EvaluationDecision::Claim {
+                confidence: confidence.unwrap_or(0.0),
+            },
+            Ok(Decision {
+                decision: LegacyDecision::Ignore,
+                ..
+            }) => EvaluationDecision::Ignore,
+            Err(_) => EvaluationDecision::Failed {
+                reason: if cleaned.is_empty() {
+                    "bot session ended without a task-claim decision"
+                } else {
+                    "invalid model decision JSON"
+                }
+                .into(),
+            },
         }
     };
-    tracing::info!(
-        %evaluation_id,
-        decision = %decision.decision,
-        confidence = ?decision.confidence,
-        "task-claim model decision received"
-    );
-    if decision.decision != "claim" {
-        sqlx::query!(
-            "UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1",
-            evaluation_id.to_string(),
-        )
-        .execute(db)
-        .await?;
-        signal_activity(state, channel_id).await;
-        return Ok(json!({"evaluation_id":evaluation_id,"status":"ignored"}));
-    }
-    let threshold: f64 = sqlx::query_scalar!(
-        r#"SELECT confidence_threshold::float8 AS "value!" FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2"#,
-        channel_id.to_string(),
-        bot_id.to_string(),
-    ).fetch_one(db).await?;
-    let confidence = decision.confidence.unwrap_or(0.0).clamp(0.0, 1.0);
-    if confidence < threshold {
-        sqlx::query!(
-            "UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1",
-            evaluation_id.to_string(),
-        )
-        .execute(db)
-        .await?;
-        signal_activity(state, channel_id).await;
-        return Ok(json!({"evaluation_id":evaluation_id,"status":"below_threshold"}));
-    }
-    let source = sqlx::query!(
-        "SELECT m.msg_id AS \"msg_id?\", m.sender_id AS \"sender_id?\", m.content AS \"content?\" FROM task_claim_evaluations e
-         LEFT JOIN messages m ON m.channel_id=e.channel_id AND m.channel_seq=e.source_seq_to
-         WHERE e.evaluation_id=$1 LIMIT 1",
-        evaluation_id.to_string(),
+    let outcome = complete_evaluation(
+        db,
+        CompleteEvaluationParams {
+            bot_id,
+            evaluation_id,
+            channel_id: None,
+            decision,
+        },
     )
-    .fetch_optional(db)
     .await?;
-    let source_message_id = source.as_ref().and_then(|r| r.msg_id.clone());
-    let requester_id = source.as_ref().and_then(|r| r.sender_id.clone());
-    let source_text = source
-        .as_ref()
-        .and_then(|r| r.content.clone())
-        .unwrap_or_default();
-    // The model only decides claim/ignore. The gateway owns the durable task
-    // description, avoiding an overlong JSON answer being truncated by a
-    // provider before the closing brace arrives.
-    let summary = decision
-        .summary
-        .unwrap_or_default()
-        .trim()
-        .chars()
-        .take(1000)
-        .collect::<String>();
-    let summary = if summary.is_empty() {
-        source_text.trim().chars().take(1000).collect::<String>()
-    } else {
-        summary
-    };
-    let action = decision
-        .proposed_action
-        .unwrap_or_default()
-        .trim()
-        .chars()
-        .take(4000)
-        .collect::<String>();
-    let action = if action.is_empty() {
-        "Start the requested work and report the result in this channel.".to_string()
-    } else {
-        action
-    };
-    if summary.is_empty() {
-        anyhow::bail!("claim decision has no source activity summary");
+    if outcome.newly_decided {
+        super::resource_effects::publish_claim_evaluation(fanout, &outcome.data).await;
     }
-    let impact = decision
-        .impact
-        .filter(|v| matches!(v.as_str(), "low" | "medium" | "high"))
-        .unwrap_or_else(|| "medium".into());
-    let claim_id = Uuid::new_v4();
-    let mut tx = db.begin().await?;
-    sqlx::query!(
-        "UPDATE task_claim_evaluations SET status='completed',completed_at=NOW() WHERE evaluation_id=$1 AND status='dispatched'",
-        evaluation_id.to_string(),
-    ).execute(&mut *tx).await?;
-    sqlx::query!(
-        "INSERT INTO task_claim_requests(claim_id,evaluation_id,channel_id,bot_id,summary,proposed_action,confidence,impact,requester_id,source_message_id) VALUES($1,$2,$3,$4,$5,$6,$7::float8,$8,$9,$10) ON CONFLICT(evaluation_id) DO NOTHING",
-        claim_id.to_string(),
-        evaluation_id.to_string(),
-        channel_id.to_string(),
-        bot_id.to_string(),
-        &summary,
-        &action,
-        confidence,
-        &impact,
-        requester_id.as_deref(),
-        source_message_id.as_deref(),
-    ).execute(&mut *tx).await?;
-    tx.commit().await?;
-    if let (Some(requester_id), Some(source_message_id)) = (requester_id, source_message_id) {
-        let confirmation_id = Uuid::new_v4();
-        let requester_name =
-            sqlx::query_scalar!("SELECT username FROM users WHERE user_id=$1", &requester_id,)
-                .fetch_optional(db)
-                .await?
-                .unwrap_or_else(|| "there".into());
-        let mut tx = db.begin().await?;
-        let seq = crate::domain::channel_seq::allocate(&mut tx, channel_id).await?;
-        let content = format!("@{requester_name} OpenCode 想认领这个任务：{summary}\n\n{action}");
-        sqlx::query!(
-            "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,is_deleted,in_reply_to_msg_id,created_at,channel_seq,content_data) VALUES($1,$2,$3,'bot',$4,'task_claim_confirmation',FALSE,FALSE,$5,NOW(),$6,$7)",
-            confirmation_id.to_string(),
-            channel_id.to_string(),
-            bot_id.to_string(),
-            &content,
-            &source_message_id,
-            seq,
-            json!({"claim_id":claim_id,"requester_id":requester_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"resolved":false}),
-        ).execute(&mut *tx).await?;
-        sqlx::query!(
-            "INSERT INTO message_mentions(msg_id,member_id,member_type) VALUES($1,$2,'user')",
-            confirmation_id.to_string(),
-            &requester_id,
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query!(
-            "UPDATE task_claim_requests SET confirmation_message_id=$2,updated_at=NOW() WHERE claim_id=$1",
-            claim_id.to_string(),
-            confirmation_id.to_string(),
-        )
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "message", json!({"msg_id":confirmation_id,"channel_id":channel_id,"channel_seq":seq,"sender_type":"bot","sender_id":bot_id,"sender_name":"OpenCode","content":content,"msg_type":"task_claim_confirmation","is_partial":false,"reply_to_msg_id":source_message_id,"mentions":[{"member_id":requester_id,"member_type":"user"}],"content_data":{"claim_id":claim_id,"requester_id":requester_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"resolved":false}}))).await;
-    }
-    state.fanout.broadcast_channel(channel_id,WireFrame::channel(channel_id,"task_claim_created",json!({"claim_id":claim_id,"evaluation_id":evaluation_id,"channel_id":channel_id,"bot_id":bot_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"status":"pending"}))).await;
-    signal_activity(state, channel_id).await;
-    Ok(json!({"evaluation_id":evaluation_id,"claim_id":claim_id,"status":"pending"}))
+    Ok(outcome.data)
 }
 
 /// True when the current local time falls inside the policy's quiet-hours window.
