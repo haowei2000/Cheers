@@ -52,11 +52,20 @@ impl Scenario {
             .execute(db)
             .await
             .unwrap();
+        let bot = Uuid::new_v4();
+        sqlx::query("INSERT INTO bot_accounts(bot_id,username) VALUES($1,$2)")
+            .bind(bot.to_string())
+            .bind(format!("reclaimer-{bot}"))
+            .execute(db)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO channel_memberships(channel_id,member_id,member_type,role) VALUES($1,$2,'bot','member')")
+            .bind(channel.to_string()).bind(bot.to_string()).execute(db).await.unwrap();
         let recorded = Arc::new(RecordingFanout::default());
         let locator = InProcessBotLocator::new();
         let mut scenario = Self {
             channel,
-            bot: Uuid::new_v4(),
+            bot,
             generation: Uuid::nil(),
             registry: StreamRegistry::new(),
             bot_locator: locator.clone(),
@@ -82,15 +91,17 @@ impl Scenario {
 
     async fn placeholder(&self, db: &PgPool, bot: Uuid, registered: bool) -> Uuid {
         let message = Uuid::new_v4();
-        sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,created_at) VALUES($1,$2,$3,'bot','','text',TRUE,NOW()-INTERVAL '1 hour')")
+        let task = Uuid::new_v4();
+        sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,created_at,task_id) VALUES($1,$2,$3,'bot','','text',TRUE,NOW()-INTERVAL '1 hour',$4)")
             .bind(message.to_string()).bind(self.channel.to_string()).bind(bot.to_string())
+            .bind(task.to_string())
             .execute(db).await.unwrap();
         if registered {
             self.registry.register(StreamEntry {
                 msg_id: message,
                 bot_id: bot,
                 channel_id: self.channel,
-                task_id: Uuid::new_v4(),
+                task_id: task,
                 trigger_msg_id: Uuid::new_v4(),
                 session_id: None,
                 finalized: false,
@@ -98,6 +109,50 @@ impl Scenario {
             });
         }
         message
+    }
+
+    async fn accepted_placeholder(&self, db: &PgPool) -> (Uuid, Uuid, Uuid) {
+        let message = self.placeholder(db, self.bot, true).await;
+        let task: String = sqlx::query_scalar("SELECT task_id FROM messages WHERE msg_id=$1")
+            .bind(message.to_string())
+            .fetch_one(db)
+            .await
+            .unwrap();
+        let task = Uuid::parse_str(&task).unwrap();
+        let trigger = self.registry.trigger_msg_id(message).unwrap();
+        sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,channel_seq,created_at) VALUES($1,$2,$3,'bot','Recovery trigger','text',FALSE,1,NOW()-INTERVAL '2 hours')")
+            .bind(trigger.to_string()).bind(self.channel.to_string()).bind(self.bot.to_string()).execute(db).await.unwrap();
+        sqlx::query("UPDATE channels SET next_seq=1 WHERE channel_id=$1")
+            .bind(self.channel.to_string())
+            .execute(db)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE messages SET in_reply_to_msg_id=$2 WHERE msg_id=$1")
+            .bind(message.to_string())
+            .bind(trigger.to_string())
+            .execute(db)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO bot_runs(bot_run_id,task_id,channel_id,trigger_msg_id,bot_id,placeholder_msg_id,binding_type,status) VALUES($1,$1,$2,$3,$4,$5,'acp','prepared')")
+            .bind(task.to_string()).bind(self.channel.to_string()).bind(trigger.to_string())
+            .bind(self.bot.to_string()).bind(message.to_string()).execute(db).await.unwrap();
+        let execution = Uuid::new_v4();
+        let grant = server::gateway::task_acceptance::claim(
+            db,
+            self.bot,
+            self.generation,
+            task,
+            message,
+            self.channel,
+            execution,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            grant.status,
+            cheers_bridge_protocol::TaskAcceptanceStatus::Granted
+        ));
+        (message, task, execution)
     }
 
     async fn sweep(&self, db: &PgPool, generation: Uuid) -> ReclaimReport {
@@ -227,7 +282,7 @@ async fn failed_delete_reopens_claim_for_a_fenced_retry(db: PgPool) {
 #[sqlx::test]
 async fn in_flight_terminal_claim_is_retried_after_cancellation(db: PgPool) {
     let scenario = Scenario::seed(&db).await;
-    let message = scenario.placeholder(&db, scenario.bot, true).await;
+    let (message, task, execution) = scenario.accepted_placeholder(&db).await;
     let mut lock = db.begin().await.unwrap();
     sqlx::query("SELECT msg_id FROM messages WHERE msg_id=$1 FOR UPDATE")
         .bind(message.to_string())
@@ -240,6 +295,7 @@ async fn in_flight_terminal_claim_is_retried_after_cancellation(db: PgPool) {
         let fanout = scenario.fanout.clone();
         let locator = scenario.bot_locator.clone();
         let bot = scenario.bot;
+        let channel = scenario.channel;
         tokio::spawn(async move {
             stream::handle_done(
                 &registry,
@@ -248,7 +304,8 @@ async fn in_flight_terminal_claim_is_retried_after_cancellation(db: PgPool) {
                 &locator,
                 bot,
                 "account",
-                &json!({"msg_id":message,"content":"pending terminal"}),
+                &json!({"type":"done","client_msg_id":Uuid::new_v4(),"msg_id":message,"content":"pending terminal",
+                    "execution":{"task_id":task,"execution_id":execution,"channel_id":channel}}),
             )
             .await
         })

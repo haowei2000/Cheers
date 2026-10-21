@@ -34,7 +34,12 @@ Agent Bridge 使用两条 WebSocket：
 | 通道 | 路径 | 用途 |
 |------|------|------|
 | control | `/ws/agent-bridge/control` | 连接握手、频道 membership 快照、加入/移除通知、心跳 |
-| data | `/ws/agent-bridge/data` | 推送用户消息，接收 `reply` / `delta` / `done` / `error` / 文件上传 |
+| data | `/ws/agent-bridge/data` | 接收 `send` / `delta` / `done` / `error` / 文件上传 |
+
+任务由 control 通道下发，provider 必须先取得已提交的执行凭证，再运行任务。
+每个 `done` 或任务 `error` 必须携带获准的 `execution` 元组和稳定的 UUID
+`client_msg_id`；旧 `reply` 别名及缺少执行身份的结果都会被拒绝。
+主动发布消息使用 `send` 或 MCP，完整契约见 [任务投递](../arch/TASK_DELIVERY.md)。
 
 后端是 `server/` 下的 Rust（Axum）网关，默认监听 `8000`（`PORT` 环境变量默认值，见 `server/src/config.rs`）；Docker Compose 中该服务名为 `gateway`。下面示例用变量表示：
 

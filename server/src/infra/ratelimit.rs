@@ -216,7 +216,7 @@ pub fn bot_status_limiter() -> &'static MinIntervalLimiter {
 /// Process-global bot@bot dispatch budget, keyed by `channel_id`: at most 30
 /// bot triggers per 60-second window per channel. Every bot@bot fan-out path
 /// (reply chains, proactive `send`, `post_message`, and group `@all`/`@bots`
-/// expansion) funnels through `trigger_bot_replies`, so this one budget bounds
+/// expansion) shares transactional child admission, so this one budget bounds
 /// both runaway callback loops — the proactive-send paths reset the per-message
 /// depth counter to 0, so the depth cap alone can't stop a ping-pong — and the
 /// wide fan-out a single `@all` in a bot-heavy channel would otherwise unleash.

@@ -1,10 +1,5 @@
-/// 任务派发器。
-///
-/// 职责：
-/// - 幂等检查（占位是否已存在）
-/// - 创建 is_partial=true 占位消息
-/// - 注册到 StreamRegistry
-/// - 通过 BotLocator 发 control WS task 帧
+//! Shared task-frame preparation and direct dispatch for task-claim approvals.
+//! Human messages and bot mentions use the recoverable dispatch-intent worker.
 use std::sync::Arc;
 
 use serde_json::{json, Value};
@@ -31,14 +26,14 @@ pub struct DispatchParams {
     pub session_id: Option<Uuid>,
     /// The bot@bot chain this hop belongs to (DECENTRALIZED_MESH §8). Stamped onto
     /// the placeholder so the whole cascade is cancelable as one unit and the
-    /// dispatch gate can block hops of a cancelled chain. `None` for un-tracked
-    /// dispatch (a targeted session, or a message that triggers no bot).
+    /// dispatch gate can block hops of a cancelled chain. Direct task-claim
+    /// approvals currently use `None`.
     pub chain_id: Option<String>,
     /// Gateway-assembled resource context for this dispatch (docs/design/RESOURCE_CONTEXT.md,
     /// F2 handoff). When `Some`, it OVERRIDES any bundle on the trigger message and
     /// becomes the target's task-frame `context_bundle` — this is how a bot@bot hop
-    /// hands the initiator's plan/decisions to the next agent. `None` on the human
-    /// path, so the trigger message's own (human-attached) bundle flows through.
+    /// hands the initiator's plan/decisions to the next agent. Human producers
+    /// finalize the selected context against the target before admission.
     pub context_bundle: Option<Value>,
 }
 

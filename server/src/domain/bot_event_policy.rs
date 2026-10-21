@@ -311,40 +311,12 @@ pub async fn can_bot_read_workspace(
 pub struct DispatchDecision {
     pub allow: bool,
     /// `"rule"` (a stored bot rule decided it), `"default_allow"` (no rule → the
-    /// backward-compatible default), or `"policy_unavailable"` (the rule store
-    /// couldn't be read → fail-closed deny).
+    /// backward-compatible default). Storage failures propagate to the caller.
     pub reason: &'static str,
 }
 
-/// Load + resolve a bot-to-bot dispatch gate, **fail-closed**: unlike the human
-/// INITIATE gate (which fails open so a message still posts), a dispatch whose
-/// policy can't be evaluated is denied — a governance gate must not silently open
-/// when its own store is unreachable. "No rule" still means allow (the default).
-pub async fn resolve_dispatch_decision(
-    db: &PgPool,
-    target_bot_id: &str,
-    channel_id: &str,
-    initiator_bot_id: &str,
-) -> DispatchDecision {
-    match resolve_dispatch_decision_checked(db, target_bot_id, channel_id, initiator_bot_id).await {
-        Ok(decision) => decision,
-        Err(err) => {
-            tracing::warn!(
-                target_bot = %target_bot_id,
-                initiator_bot = %initiator_bot_id,
-                %err,
-                "dispatch policy load failed; fail-closed deny"
-            );
-            DispatchDecision {
-                allow: false,
-                reason: "policy_unavailable",
-            }
-        }
-    }
-}
-
-/// The same DISPATCH decision without suppressing storage failures. Admission
-/// uses the parent's transaction; retries use the pool without auditing again.
+/// Load and resolve DISPATCH without suppressing storage failures. Admission
+/// uses the source transaction; retries use the pool without auditing again.
 pub(crate) async fn resolve_dispatch_decision_checked<'a, E>(
     executor: E,
     target_bot_id: &str,

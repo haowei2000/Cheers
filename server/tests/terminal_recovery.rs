@@ -156,11 +156,26 @@ impl Turn {
     async fn accepted(db: &PgPool, registered: bool) -> Self {
         let mut turn = Self::seed(db, registered).await;
         let execution = Uuid::new_v4();
-        sqlx::query("INSERT INTO bot_runs(bot_run_id,task_id,channel_id,trigger_msg_id,bot_id,placeholder_msg_id,binding_type,status,execution_id,execution_connection_id,accepted_at) VALUES($1,$1,$2,$3,$4,$5,'acp','accepted',$6,$7,NOW())")
+        sqlx::query("INSERT INTO bot_runs(bot_run_id,task_id,channel_id,trigger_msg_id,bot_id,placeholder_msg_id,binding_type,status) VALUES($1,$1,$2,$3,$4,$5,'acp','prepared')")
             .bind(turn.task_id.to_string()).bind(turn.channel.to_string())
             .bind(turn.trigger.to_string())
             .bind(turn.bot.to_string()).bind(turn.placeholder.to_string())
-            .bind(execution.to_string()).bind(Uuid::new_v4().to_string()).execute(db).await.unwrap();
+            .execute(db).await.unwrap();
+        let grant = server::gateway::task_acceptance::claim(
+            db,
+            turn.bot,
+            Uuid::new_v4(),
+            turn.task_id,
+            turn.placeholder,
+            turn.channel,
+            execution,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            grant.status,
+            cheers_bridge_protocol::TaskAcceptanceStatus::Granted
+        ));
         turn.execution_id = Some(execution);
         turn
     }
@@ -360,7 +375,7 @@ async fn terminal_commit_failure_can_retry_without_consuming_a_sequence(db: PgPo
 
 #[sqlx::test]
 async fn cancellation_during_terminal_update_releases_the_claim_for_retry(db: PgPool) {
-    let turn = Turn::seed(&db, true).await;
+    let turn = Turn::accepted(&db, true).await;
     let blocker = block_terminal_update(&db).await;
     let done = turn.spawn_done(&db);
     wait_until_update_is_blocked(&db).await;
@@ -378,7 +393,7 @@ async fn cancellation_during_terminal_update_releases_the_claim_for_retry(db: Pg
 
 #[sqlx::test]
 async fn cancellation_after_commit_does_not_retain_a_stream_claim(db: PgPool) {
-    let mut turn = Turn::seed(&db, true).await;
+    let mut turn = Turn::accepted(&db, true).await;
     let paused = Arc::new(PausedTerminalFanout {
         recorded: turn.recorded.clone(),
         entered: tokio::sync::Notify::new(),
@@ -392,18 +407,19 @@ async fn cancellation_after_commit_does_not_retain_a_stream_claim(db: PgPool) {
     turn.assert_final(&db).await;
     done.abort();
     assert!(done.await.unwrap_err().is_cancelled());
-    assert!(
+    assert_eq!(
         tokio::time::timeout(Duration::from_secs(10), turn.done(&db))
             .await
-            .expect("a committed turn must reject replay before terminal delivery")
-            .is_err()
+            .expect("a committed result replays while its original fanout is cancelled")
+            .unwrap(),
+        TerminalOutcome::Replayed
     );
     turn.assert_final(&db).await;
 }
 
 #[sqlx::test]
 async fn concurrent_done_frames_commit_and_broadcast_only_once(db: PgPool) {
-    let turn = Turn::seed(&db, true).await;
+    let turn = Turn::accepted(&db, true).await;
     let blocker = block_terminal_update(&db).await;
     let first = turn.spawn_done(&db);
     wait_until_update_is_blocked(&db).await;
@@ -422,19 +438,19 @@ async fn concurrent_done_frames_commit_and_broadcast_only_once(db: PgPool) {
         .expect("the winning terminal frame should commit");
     remove_block(&db).await;
     turn.assert_final(&db).await;
-    assert!(turn.done(&db).await.is_err());
+    assert_eq!(turn.done(&db).await.unwrap(), TerminalOutcome::Replayed);
     turn.assert_final(&db).await;
 }
 
 #[sqlx::test]
 async fn restart_with_an_empty_stream_registry_can_finalize_the_durable_placeholder(db: PgPool) {
-    let turn = Turn::seed(&db, false).await;
+    let turn = Turn::accepted(&db, false).await;
     assert!(!turn.registry.contains(turn.placeholder));
     turn.done(&db)
         .await
         .expect("durable ownership must allow done replay after gateway restart");
     turn.assert_final(&db).await;
-    assert!(turn.done(&db).await.is_err());
+    assert_eq!(turn.done(&db).await.unwrap(), TerminalOutcome::Replayed);
     turn.assert_final(&db).await;
 }
 
@@ -554,4 +570,70 @@ async fn an_inflight_result_retries_until_the_single_commit_can_be_acknowledged(
     remove_block(&db).await;
     assert_eq!(turn.done(&db).await.unwrap(), TerminalOutcome::Replayed);
     turn.assert_final(&db).await;
+}
+
+#[sqlx::test]
+async fn legacy_or_unowned_terminal_frames_cannot_change_messages_receipts_or_registry(db: PgPool) {
+    for case in ["accepted", "missing_run", "old_status"] {
+        let turn = if case == "accepted" {
+            Turn::accepted(&db, true).await
+        } else {
+            Turn::seed(&db, true).await
+        };
+        if case == "old_status" {
+            sqlx::query("INSERT INTO bot_runs(bot_run_id,task_id,channel_id,trigger_msg_id,bot_id,placeholder_msg_id,binding_type,status) VALUES($1,$1,$2,$3,$4,$5,'acp','placeholder_created')")
+                .bind(turn.task_id.to_string()).bind(turn.channel.to_string()).bind(turn.trigger.to_string())
+                .bind(turn.bot.to_string()).bind(turn.placeholder.to_string()).execute(&db).await.unwrap();
+        }
+        let before: Option<Value> =
+            sqlx::query_scalar("SELECT to_jsonb(r) FROM bot_runs r WHERE placeholder_msg_id=$1")
+                .bind(turn.placeholder.to_string())
+                .fetch_optional(&db)
+                .await
+                .unwrap();
+        let shapes: &[&str] = if case == "accepted" {
+            &["missing", "null"]
+        } else {
+            &["missing", "null", "ungranted"]
+        };
+        for shape in shapes {
+            let mut frame = turn.frame();
+            frame["type"] = json!("done");
+            frame["client_msg_id"] = json!(turn.terminal_client_msg_id);
+            match *shape {
+                "missing" => {
+                    frame.as_object_mut().unwrap().remove("execution");
+                }
+                "null" => frame["execution"] = Value::Null,
+                "ungranted" => {
+                    // Well-formed IDs cannot repair a missing or historical grant.
+                    frame["execution"] = json!({"task_id":turn.task_id,"execution_id":Uuid::new_v4(),"channel_id":turn.channel});
+                }
+                _ => unreachable!(),
+            }
+            let error = turn.submit(&db, &frame).await.unwrap_err();
+            let expected = if *shape != "ungranted" {
+                "INVALID_FRAME"
+            } else if case == "missing_run" {
+                "TERMINAL_GONE"
+            } else {
+                "TERMINAL_FORBIDDEN"
+            };
+            assert_eq!(error.code, expected, "{case}/{shape}");
+            assert!(!error.retryable);
+            turn.assert_partial(&db).await;
+            assert_eq!(turn.registry.active_channels(turn.bot), vec![turn.channel]);
+            let after: Option<Value> = sqlx::query_scalar(
+                "SELECT to_jsonb(r) FROM bot_runs r WHERE placeholder_msg_id=$1",
+            )
+            .bind(turn.placeholder.to_string())
+            .fetch_optional(&db)
+            .await
+            .unwrap();
+            assert_eq!(
+                after, before,
+                "{case}/{shape} must not create a grant or receipt"
+            );
+        }
+    }
 }

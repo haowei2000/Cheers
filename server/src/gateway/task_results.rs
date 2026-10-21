@@ -67,7 +67,7 @@ pub(crate) struct Execution {
 #[derive(Debug)]
 pub(crate) struct TerminalRequest {
     pub msg_id: Uuid,
-    pub execution: Option<Execution>,
+    pub execution: Execution,
 }
 
 fn uuid(value: Option<&Value>) -> Result<Uuid, TerminalError> {
@@ -85,31 +85,32 @@ fn uuid(value: Option<&Value>) -> Result<Uuid, TerminalError> {
 impl TerminalRequest {
     pub(crate) fn parse(frame: &Value) -> Result<Self, TerminalError> {
         let msg_id = uuid(frame.get("msg_id"))?;
-        let execution = match frame.get("execution") {
-            None | Some(Value::Null) => None,
-            Some(execution) => {
-                let kind = match frame.get("type").and_then(Value::as_str) {
-                    Some("done") => "done",
-                    Some("error") => "error",
-                    _ => {
-                        return Err(TerminalError::rejected(
-                            "INVALID_FRAME",
-                            "execution result must be done or error",
-                        ))
-                    }
-                };
-                Some(Execution {
-                    task_id: uuid(execution.get("task_id"))?,
-                    execution_id: uuid(execution.get("execution_id"))?,
-                    channel_id: uuid(execution.get("channel_id"))?,
-                    client_msg_id: uuid(frame.get("client_msg_id"))?.to_string(),
-                    // Preserve every immutable unsigned field, including original
-                    // Done/Error kind and provider/session context. A retry may
-                    // only refresh its capability envelope, not its result.
-                    fingerprint: crate::infra::crypto::json_fingerprint(frame, &["acp_capability"]),
-                    kind,
-                })
+        let execution = frame
+            .get("execution")
+            .filter(|value| value.is_object())
+            .ok_or_else(|| {
+                TerminalError::rejected("INVALID_FRAME", "task execution identity is required")
+            })?;
+        let kind = match frame.get("type").and_then(Value::as_str) {
+            Some("done") => "done",
+            Some("error") => "error",
+            _ => {
+                return Err(TerminalError::rejected(
+                    "INVALID_FRAME",
+                    "execution result must be done or error",
+                ))
             }
+        };
+        let execution = Execution {
+            task_id: uuid(execution.get("task_id"))?,
+            execution_id: uuid(execution.get("execution_id"))?,
+            channel_id: uuid(execution.get("channel_id"))?,
+            client_msg_id: uuid(frame.get("client_msg_id"))?.to_string(),
+            // Preserve every immutable unsigned field, including original
+            // Done/Error kind and provider/session context. A retry may
+            // only refresh its capability envelope, not its result.
+            fingerprint: crate::infra::crypto::json_fingerprint(frame, &["acp_capability"]),
+            kind,
         };
         Ok(Self { msg_id, execution })
     }
@@ -134,20 +135,7 @@ impl Run {
         bot_id: Uuid,
         request: &TerminalRequest,
     ) -> Result<Option<TerminalOutcome>, TerminalError> {
-        let Some(execution) = request.execution.as_ref() else {
-            // Prepared/accepted ACP tasks require the explicit durable grant;
-            // a legacy-shaped Done cannot bypass it. Old/manual runs without
-            // the execution-grant contract keep their existing finalization.
-            if self.execution_id.is_some()
-                || matches!(self.status.as_str(), "prepared" | "accepted")
-            {
-                return Err(TerminalError::rejected(
-                    "INVALID_FRAME",
-                    "task execution identity is required",
-                ));
-            }
-            return Ok(None);
-        };
+        let execution = &request.execution;
         if self.bot_id != bot_id.to_string()
             || self.task_id != execution.task_id.to_string()
             || self.channel_id != execution.channel_id.to_string()
@@ -187,9 +175,6 @@ pub async fn replay(
     bot_id: Uuid,
     frame: &Value,
 ) -> Result<Option<TerminalOutcome>, TerminalError> {
-    if frame.get("execution").is_none_or(Value::is_null) {
-        return Ok(None);
-    }
     let request = TerminalRequest::parse(frame)?;
     let run = sqlx::query_as!(
         Run,
@@ -208,7 +193,7 @@ pub async fn replay(
 pub(crate) async fn lock_run(
     tx: &mut Transaction<'_, Postgres>,
     request: &TerminalRequest,
-) -> Result<Option<Run>, TerminalError> {
+) -> Result<Run, TerminalError> {
     sqlx::query_as!(
         Run,
         "SELECT task_id,bot_id,channel_id,binding_type,status,execution_id,
@@ -218,16 +203,15 @@ pub(crate) async fn lock_run(
     )
     .fetch_optional(&mut **tx)
     .await
-    .map_err(TerminalError::database("lock terminal run"))
+    .map_err(TerminalError::database("lock terminal run"))?
+    .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "task execution no longer exists"))
 }
 
 pub(crate) async fn complete(
     tx: &mut Transaction<'_, Postgres>,
     request: &TerminalRequest,
 ) -> Result<(), TerminalError> {
-    let Some(execution) = request.execution.as_ref() else {
-        return Ok(());
-    };
+    let execution = &request.execution;
     let result = sqlx::query!(
         "UPDATE bot_runs SET terminal_client_msg_id=$2,terminal_fingerprint=$3,
          terminal_committed_at=NOW(),status=$4,last_event_type=$5,updated_at=NOW()

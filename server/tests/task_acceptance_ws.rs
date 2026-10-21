@@ -906,6 +906,73 @@ async fn wrong_execution_tuple_or_authenticated_bot_cannot_commit_another_result
 }
 
 #[sqlx::test]
+async fn terminal_results_require_execution_but_protocol_errors_are_not_results(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let mut bridge = fixture.bridge(true).await;
+    let task = fixture.dispatch(&mut bridge.control).await;
+    let execution = Uuid::new_v4();
+    accept(&mut bridge.control, acceptance(&task, execution), "granted").await;
+    let result = terminal(&task, execution, Uuid::new_v4(), "Granted completion");
+    let before = partial_and_clock(&db, &task).await;
+
+    // An unscoped connector diagnostic has no result/receipt identity. The Pong
+    // confirms it was handled without accidentally answering with a terminal ACK.
+    send(
+        &mut bridge.data,
+        json!({"type":"error","v":1,"client_msg_id":Uuid::new_v4(),
+            "message":"connector protocol diagnostic"}),
+    )
+    .await;
+    let barrier = Uuid::new_v4().as_bytes().to_vec();
+    bridge
+        .data
+        .send(Message::Ping(barrier.clone()))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match bridge
+                .data
+                .next()
+                .await
+                .expect("data remains open")
+                .unwrap()
+            {
+                Message::Text(text) => panic!("unexpected diagnostic response: {text}"),
+                Message::Ping(bytes) => bridge.data.send(Message::Pong(bytes)).await.unwrap(),
+                Message::Pong(bytes) if bytes == barrier => break,
+                Message::Close(reason) => panic!("data closed: {reason:?}"),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("data ping must confirm the preceding diagnostic completed");
+
+    for kind in ["done", "error"] {
+        for execution_value in [None, Some(Value::Null)] {
+            let mut unscoped = result.clone();
+            unscoped["type"] = json!(kind);
+            if kind == "error" {
+                unscoped["message"] = unscoped["content"].take();
+                unscoped.as_object_mut().unwrap().remove("content");
+            }
+            match execution_value {
+                Some(value) => unscoped["execution"] = value,
+                None => {
+                    unscoped.as_object_mut().unwrap().remove("execution");
+                }
+            }
+            let ack = terminal_ack(&mut bridge.data, &unscoped).await;
+            assert_terminal_rejection(&ack, "INVALID_FRAME", false);
+            assert_eq!(partial_and_clock(&db, &task).await, before);
+            assert!(ledger(&db, &task).await["terminal_client_msg_id"].is_null());
+        }
+    }
+    assert_eq!(terminal_ack(&mut bridge.data, &result).await["ok"], true);
+}
+
+#[sqlx::test]
 async fn a_reclaimed_placeholder_cannot_be_recreated_by_terminal_delivery(db: PgPool) {
     let fixture = Fixture::start(&db).await;
     let mut bridge = fixture.bridge(true).await;
@@ -1052,7 +1119,7 @@ async fn error_results_require_capability_authorization_and_keep_their_kind_duri
     assert_terminal_rejection(&ack, "TERMINAL_FORBIDDEN", false);
     assert_eq!(partial_and_clock(&db, &task).await, before);
 
-    // Legacy aliases must not route an execution-owned result around capability checks.
+    // The retired alias is rejected independently of execution/capability fields.
     let mut reply = result.clone();
     reply["type"] = json!("reply");
     reply["text"] = reply["message"].take();
@@ -1063,10 +1130,14 @@ async fn error_results_require_capability_authorization_and_keep_their_kind_duri
     assert_eq!(rejected["ok"], false);
     assert_eq!(rejected["code"], "INVALID_FRAME");
     reply.as_object_mut().unwrap().remove("execution");
-    send(&mut bridge.data, reply).await;
+    send(&mut bridge.data, reply.clone()).await;
     let rejected = next_type(&mut bridge.data, "send_ack").await;
     assert_eq!(rejected["ok"], false);
-    assert_eq!(rejected["code"], "REPLY_REJECTED");
+    assert_eq!(rejected["code"], "INVALID_FRAME");
+    reply.as_object_mut().unwrap().remove("client_msg_id");
+    send(&mut bridge.data, reply).await;
+    let rejected = next_type(&mut bridge.data, "error").await;
+    assert_eq!(rejected["code"], "INVALID_FRAME");
     assert_eq!(partial_and_clock(&db, &task).await, before);
 
     // Disabling the opt-in capability requirement takes effect on a newly

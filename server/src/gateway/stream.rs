@@ -309,52 +309,6 @@ pub async fn handle_delta(
     Ok(())
 }
 
-/// bot@bot 回复触发从数据 WS 读循环里 spawn 出去执行。触发的下一跳
-/// （acquire_scope_session + dispatch 的 S3 拉取 + base64）耗时可达数百 ms；若 inline
-/// await，会 head-of-line 阻塞该 connector 上多路复用的所有其他流。此时源消息已落库、
-/// 终态帧已广播、ack 已发出——链的排序不属于协议契约，故安全后台化。
-/// Returns the spawned task's handle. Production callers drop it (fire-and-forget —
-/// that IS the point: don't block the read loop). Tests can `.await` it to observe the
-/// otherwise-async trigger deterministically.
-#[allow(clippy::too_many_arguments)]
-fn spawn_trigger_bot_replies(
-    db: &PgPool,
-    fanout: &Arc<dyn Fanout>,
-    registry: &Arc<StreamRegistry>,
-    bot_locator: &Arc<dyn BotLocator>,
-    channel_id: Uuid,
-    msg_id: Uuid,
-    channel_seq: i64,
-    depth: i32,
-    author_bot_id: Uuid,
-    mentions: Vec<mentions::Mention>,
-    chain_id: Option<String>,
-) -> tokio::task::JoinHandle<()> {
-    let db = db.clone();
-    let fanout = fanout.clone();
-    let registry = registry.clone();
-    let bot_locator = bot_locator.clone();
-    tokio::spawn(async move {
-        if let Err(e) = chains::trigger_bot_replies(
-            &db,
-            &fanout,
-            &registry,
-            &bot_locator,
-            channel_id,
-            msg_id,
-            channel_seq,
-            depth,
-            author_bot_id,
-            &mentions,
-            chain_id.as_deref(),
-        )
-        .await
-        {
-            tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
-        }
-    })
-}
-
 /// 处理 bot 发来的 done 帧。
 ///
 /// 写后投递原则：先更新 PG，再 fan-out 终态帧。
@@ -389,20 +343,10 @@ pub async fn handle_done(
     let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
     let mention_ids = parse_mention_ids(frame.get("mention_ids"));
 
-    // The execution's channel is checked against the locked message and run
-    // below. Legacy/manual turns obtain the routing channel from their message.
-    let channel_id = match request.execution.as_ref() {
-        Some(execution) => execution.channel_id,
-        None => sqlx::query_scalar!(
-            "SELECT channel_id FROM messages WHERE msg_id=$1",
-            msg_id.to_string()
-        )
-        .fetch_optional(db)
-        .await
-        .map_err(TerminalError::database("read terminal channel"))?
-        .and_then(|channel| channel.parse().ok())
-        .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "message no longer exists"))?,
-    };
+    // Routing comes from the required grant and is checked against the locked
+    // message and run before any result is committed.
+    let execution = &request.execution;
+    let channel_id = execution.channel_id;
     let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
         .await
         .map_err(|error| match error {
@@ -418,7 +362,7 @@ pub async fn handle_done(
     // database transaction while consulting a locator. Once a ready target is
     // committed below, a subsequent disconnect cannot lose its dispatch intent.
     let mut ready_targets = Vec::new();
-    if request.execution.is_some() && frame.get("type").and_then(Value::as_str) == Some("done") {
+    if frame.get("type").and_then(Value::as_str) == Some("done") {
         for mention in &mentions {
             if mention.member_type == mentions::MemberType::Bot
                 && mention.member_id != bot_id
@@ -462,17 +406,10 @@ pub async fn handle_done(
         "stream.done: lock message",
     ))?;
     let run = task_results::lock_run(&mut tx, &request).await?;
-    if let Some(run) = run {
-        if let Some(outcome) = run.validate(bot_id, &request)? {
-            // Drop rolls back the provisional sequence allocation. A replay
-            // never repeats message writes, session changes or completion effects.
-            return Ok(outcome);
-        }
-    } else if request.execution.is_some() {
-        return Err(TerminalError::rejected(
-            "TERMINAL_GONE",
-            "task execution no longer exists",
-        ));
+    if let Some(outcome) = run.validate(bot_id, &request)? {
+        // Drop rolls back the provisional sequence allocation. A replay
+        // never repeats message writes, session changes or completion effects.
+        return Ok(outcome);
     }
     let message = message
         .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "message no longer exists"))?;
@@ -549,38 +486,34 @@ pub async fn handle_done(
         .await
         .map_err(TerminalError::database("stream.done: replace mentions"))?;
     task_results::complete(&mut tx, &request).await?;
-    let child_count = if let Some(execution) = request.execution.as_ref() {
-        if frame.get("type").and_then(Value::as_str) == Some("done") {
-            chains::enqueue_terminal_children(
-                &mut tx,
-                channel_id,
-                msg_id,
-                channel_seq,
-                details.depth,
-                bot_id,
-                &mentions,
-                details.chain_id.as_deref(),
-                execution.task_id,
-                execution.execution_id,
-                &ready_targets,
-            )
-            .await
-            .map_err(|error| match error {
-                crate::errors::AppError::Db(error) => {
-                    TerminalError::database("stream.done: enqueue child intents")(error)
+    let child_count = if frame.get("type").and_then(Value::as_str) == Some("done") {
+        chains::enqueue_terminal_children(
+            &mut tx,
+            channel_id,
+            msg_id,
+            channel_seq,
+            details.depth,
+            bot_id,
+            &mentions,
+            details.chain_id.as_deref(),
+            execution.task_id,
+            execution.execution_id,
+            &ready_targets,
+        )
+        .await
+        .map_err(|error| match error {
+            crate::errors::AppError::Db(error) => {
+                TerminalError::database("stream.done: enqueue child intents")(error)
+            }
+            other => {
+                tracing::error!(%other, "terminal child admission failed");
+                TerminalError {
+                    code: "INTERNAL_ERROR",
+                    detail: "terminal child admission failed",
+                    retryable: true,
                 }
-                other => {
-                    tracing::error!(%other, "terminal child admission failed");
-                    TerminalError {
-                        code: "INTERNAL_ERROR",
-                        detail: "terminal child admission failed",
-                        retryable: true,
-                    }
-                }
-            })?
-        } else {
-            0
-        }
+            }
+        })?
     } else {
         0
     };
@@ -603,15 +536,11 @@ pub async fn handle_done(
         .map_err(TerminalError::database(
             "stream.done: read channel_seq column",
         ))?;
-    let depth = details.depth.clone();
     let file_ids: Vec<String> =
         serde_json::from_value(details.file_ids.clone().unwrap_or(serde_json::Value::Null))
             .unwrap_or_default();
     let msg_type = details.msg_type.clone();
     let reply_to_msg_id = details.reply_to_msg_id.clone();
-    // The chain this reply belongs to — propagated to any next hop so the whole
-    // bot@bot cascade shares one cancelable chain (§8).
-    let chain_id = details.chain_id.clone();
 
     // Resolve attachment metadata, including the status of retired historical
     // records, so the live frame can render unavailable attachments explicitly.
@@ -646,44 +575,24 @@ pub async fn handle_done(
     );
     fanout.broadcast_channel(channel_id, wire).await;
 
-    if request.execution.is_some() {
-        if child_count != 0 {
-            let (db, fanout, registry, locator) = (
-                db.clone(),
-                fanout.clone(),
-                registry.clone(),
-                bot_locator.clone(),
-            );
-            tokio::spawn(async move {
-                if let Err(error) = super::dispatch_intents::deliver_trigger(
-                    &db, &fanout, &registry, &locator, msg_id,
-                )
-                .await
-                {
-                    tracing::warn!(%msg_id, %error, "child dispatch intents retained for recovery");
-                }
-            });
-        }
-    } else {
-        // Legacy/manual completions keep the direct producer path. Durable
-        // execution results above already registered their children before commit.
-        spawn_trigger_bot_replies(
-            db,
-            fanout,
-            registry,
-            bot_locator,
-            channel_id,
-            msg_id,
-            channel_seq,
-            depth,
-            bot_id,
-            mentions,
-            chain_id,
+    if child_count != 0 {
+        let (db, fanout, registry, locator) = (
+            db.clone(),
+            fanout.clone(),
+            registry.clone(),
+            bot_locator.clone(),
         );
+        tokio::spawn(async move {
+            if let Err(error) =
+                super::dispatch_intents::deliver_trigger(&db, &fanout, &registry, &locator, msg_id)
+                    .await
+            {
+                tracing::warn!(%msg_id, %error, "child dispatch intents retained for recovery");
+            }
+        });
     }
 
-    // finalize_session 保持 inline：单条快速 UPDATE，且 spawn 会扩大与 acquire_scope_session
-    // 无条件 upsert 的 BUSY/IDLE 竞态窗口。
+    // Finish session bookkeeping before acknowledging this newly committed result.
     if let Some(sid) =
         resolve_session_id(db, bot_id, provider_account_id, frame, entry_session_id).await
     {

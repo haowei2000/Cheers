@@ -726,7 +726,11 @@ async fn handle_data(
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(frame) = serde_json::from_str::<Value>(&text) {
                             malformed = 0;
-                            let terminal = matches!(frame.get("type").and_then(Value::as_str), Some("done" | "error"));
+                            let terminal = match frame.get("type").and_then(Value::as_str) {
+                                Some("done") => true,
+                                Some("error") => frame.get("msg_id").is_some(),
+                                _ => false,
+                            };
                             // An exact committed receipt is a read-only answer:
                             // its original session may now be idle or belong to
                             // newer work, so do not authorize/touch it as a write.
@@ -868,14 +872,11 @@ async fn handle_data(
     crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
 }
 
-/// Data-stream dispatch stays STRING-routed on purpose (unlike the typed
-/// control dispatch): several readers deliberately tolerate legacy shapes a
-/// strict `proto::DataOutbound` parse would reject — `delta` accepts
-/// `delta|content`, `done`/`reply`/`send` accept `content|text`, and `reply`
-/// isn't a variant at all (retired TS connector frame). Those aliases are
-/// wire-compat contracts, not drift; the typed schema both ends COMPILE
-/// against plus the golden fixtures already pin the canonical shapes (see
-/// bridge_frames::tests::to_gateway_fixtures_parse_typed).
+/// Route raw data payloads so handlers can validate their operation-specific
+/// identity and return correlated protocol errors. Done/Error require a granted
+/// execution and always answer with terminal_ack; the retired reply alias is
+/// explicitly rejected. The shared schema and golden fixtures pin the canonical
+/// producer shapes (see bridge_frames::tests::to_gateway_fixtures_parse_typed).
 async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socket: &mut WebSocket) {
     let ftype = frame.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -914,51 +915,26 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                 msg_id = frame.get("msg_id").and_then(|v| v.as_str()).unwrap_or(""),
                 "terminal (done) frame received"
             );
-            handle_terminal_frame(frame, state, bot, socket, TerminalAckKind::Terminal).await;
+            handle_terminal_frame(frame, state, bot, socket).await;
         }
 
         "error" => {
             if frame.get("msg_id").is_some() {
                 // Preserve the original kind and fields in the immutable receipt.
-                handle_terminal_frame(frame, state, bot, socket, TerminalAckKind::Terminal).await;
+                handle_terminal_frame(frame, state, bot, socket).await;
             } else {
                 tracing::debug!(bot_id = %bot.bot_id, "connector protocol error frame received");
             }
         }
 
         "reply" => {
-            // Execution-owned results use the authenticated Done/Error protocol.
-            // The legacy alias has no stream-capability contract and cannot
-            // carry a grant through normalization to bypass that authorization.
-            if frame
-                .get("execution")
-                .is_some_and(|execution| !execution.is_null())
-            {
-                let response = match client_msg_id(frame) {
-                    Some(client_msg_id) => send_ack_err(
-                        &client_msg_id,
-                        "INVALID_FRAME",
-                        "execution results must use done or error",
-                    ),
-                    None => {
-                        bridge_error("INVALID_FRAME", "execution results must use done or error")
-                    }
-                };
-                let _ = ws_send(socket, &response).await;
-                return;
-            }
-            let mut normalized = frame.clone();
-            normalized["type"] = json!("done");
-            if normalized.get("msg_id").and_then(Value::as_str).is_none() {
-                if let Some(reply_to) = frame.get("reply_to_msg_id").and_then(Value::as_str) {
-                    normalized["msg_id"] = json!(reply_to);
-                }
-            }
-            if normalized.get("content").and_then(Value::as_str).is_none() {
-                normalized["content"] =
-                    json!(frame.get("text").and_then(Value::as_str).unwrap_or(""));
-            }
-            handle_terminal_frame(&normalized, state, bot, socket, TerminalAckKind::Send).await;
+            let detail =
+                "reply is retired; task results must use done or error with an execution identity";
+            let response = match client_msg_id(frame) {
+                Some(client_msg_id) => send_ack_err(&client_msg_id, "INVALID_FRAME", detail),
+                None => bridge_error("INVALID_FRAME", detail),
+            };
+            let _ = ws_send(socket, &response).await;
         }
 
         // ── bot 主动发新消息 ───────────────────────────────────────────────
@@ -1592,12 +1568,6 @@ pub(crate) async fn allowed_seers(
     out
 }
 
-#[derive(Debug, Clone, Copy)]
-enum TerminalAckKind {
-    Terminal,
-    Send,
-}
-
 async fn reject_terminal_frame(frame: &Value, socket: &mut WebSocket, error: TerminalError) {
     let response = match client_msg_id(frame) {
         Some(client_msg_id) => {
@@ -1645,7 +1615,6 @@ async fn handle_terminal_frame(
     state: &AppState,
     bot: &BotInfo,
     socket: &mut WebSocket,
-    ack_kind: TerminalAckKind,
 ) {
     let client_msg_id = client_msg_id(frame);
     let msg_id = frame
@@ -1730,23 +1699,13 @@ async fn handle_terminal_frame(
                 .await;
                 return;
             };
-            let ack = match ack_kind {
-                TerminalAckKind::Terminal => terminal_ack_ok(&client_msg_id, msg_id),
-                TerminalAckKind::Send => send_ack_ok(&client_msg_id, msg_id, true),
-            };
+            let ack = terminal_ack_ok(&client_msg_id, msg_id);
             let _ = ws_send(socket, &ack).await;
         }
         Err(e) => {
             tracing::warn!(bot_id = %bot.bot_id, err = %e, "terminal frame rejected");
             if let Some(client_msg_id) = client_msg_id {
-                let ack = match ack_kind {
-                    TerminalAckKind::Terminal => {
-                        terminal_ack_err(&client_msg_id, e.code, e.detail, e.retryable)
-                    }
-                    TerminalAckKind::Send => {
-                        send_ack_err(&client_msg_id, "REPLY_REJECTED", e.detail)
-                    }
-                };
+                let ack = terminal_ack_err(&client_msg_id, e.code, e.detail, e.retryable);
                 let _ = ws_send(socket, &ack).await;
             } else {
                 let _ = ws_send(socket, &bridge_error(e.code, e.detail)).await;

@@ -3464,84 +3464,143 @@ async fn user_trigger_starts_chain_and_tags_placeholder(db: PgPool) {
     assert!(task_chains::is_active(&db, &chain_id).await);
 }
 
-/// Cancelling a chain flips it to `cancelled`, returns its in-flight bots, and the
-/// dispatch gate then blocks every downstream hop. A second cancel is idempotent.
+/// A cancelled chain rejects an already-granted result before it can admit a
+/// downstream bot. Repeating cancellation does not repeat cancellation effects.
 #[sqlx::test]
 async fn cancel_chain_blocks_downstream_and_is_idempotent(db: PgPool) {
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
     let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
     let bot_a = seed_bot(&db).await;
     add_member(&db, ch, bot_a, "bot").await;
     let bot_b = seed_bot(&db).await;
     add_member(&db, ch, bot_b, "bot").await;
-
-    let root = Uuid::new_v4();
-    let chain = task_chains::start_chain(&db, ch, root, root)
+    let transport = InProcessBotLocator::new();
+    let (mut a_control, _a_data) = ready_resource_bot(&transport, bot_a);
+    let (mut b_control, _b_data) = ready_resource_bot(&transport, bot_b);
+    let locator: Arc<dyn BotLocator> = transport.clone();
+    let registry = StreamRegistry::new();
+    let publisher = fanout();
+    messages::create_message(
+        &db,
+        &publisher,
+        &registry,
+        &locator,
+        CreateMessageParams {
+            context_bundle: None,
+            user_id: user,
+            channel_id: ch,
+            content: "start A".into(),
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids: vec![bot_a],
+            mention_names: vec![],
+            session_id: None,
+            msg_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let task = tokio::time::timeout(std::time::Duration::from_secs(5), a_control.recv())
         .await
         .unwrap()
-        .to_string();
-
-    // An in-flight placeholder for bot A, tagged with the chain.
-    let a_placeholder = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id)
-         VALUES ($1, $2, 'bot', $3, '', TRUE, 1, $4)",
-    )
-    .bind(a_placeholder.to_string())
-    .bind(ch.to_string())
-    .bind(bot_a.to_string())
-    .bind(&chain)
-    .execute(&db)
-    .await
-    .unwrap();
-
-    // Cancel → status cancelled, returns A's in-flight placeholder, gate closes.
-    let inflight = task_chains::cancel_chain(&db, &chain, user).await.unwrap();
-    assert_eq!(
-        inflight,
-        vec![(a_placeholder, bot_a)],
-        "cancel returns in-flight bots"
-    );
-    assert!(
-        !task_chains::is_active(&db, &chain).await,
-        "gate is closed after cancel"
-    );
-
-    // A downstream hop on this (now cancelled) chain is dropped by the gate.
-    let counter = Arc::new(CountingBotLocator::default());
-    let bot_locator: Arc<dyn BotLocator> = counter.clone();
-    server::domain::chains::trigger_bot_replies(
+        .unwrap();
+    let task_id: Uuid = task["task_id"].as_str().unwrap().parse().unwrap();
+    let a_placeholder: Uuid = task["placeholder_msg_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let execution = Uuid::new_v4();
+    let grant = server::gateway::task_acceptance::claim(
         &db,
-        &fanout(),
-        &StreamRegistry::new(),
-        &bot_locator,
-        ch,
-        Uuid::new_v4(),
-        1,
-        0,
         bot_a,
-        &[server::domain::mentions::Mention {
-            member_id: bot_b,
-            member_type: server::domain::mentions::MemberType::Bot,
-        }],
-        Some(&chain),
+        transport.control_generation(bot_a).await.unwrap(),
+        task_id,
+        a_placeholder,
+        ch,
+        execution,
     )
     .await
     .unwrap();
+    assert!(matches!(
+        grant.status,
+        cheers_bridge_protocol::TaskAcceptanceStatus::Granted
+    ));
+    let chain: String = sqlx::query_scalar("SELECT chain_id FROM messages WHERE msg_id=$1")
+        .bind(a_placeholder.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
     assert_eq!(
-        counter.dispatched.load(Ordering::SeqCst),
-        0,
-        "cancelled chain gates all downstream dispatch"
+        task_chains::cancel_chain(&db, &chain, user).await.unwrap(),
+        vec![(a_placeholder, bot_a)],
+        "cancel returns the actually granted in-flight turn"
     );
+    assert!(!task_chains::is_active(&db, &chain).await);
 
-    // Idempotent: a second cancel changes nothing and returns empty.
+    let frame = serde_json::json!({
+        "type":"done", "v":1, "client_msg_id":Uuid::new_v4(), "msg_id":a_placeholder,
+        "content":"ask B next", "mention_ids":[bot_b],
+        "execution":{"task_id":task_id,"execution_id":execution,"channel_id":ch}
+    });
+    let provider_account: String =
+        sqlx::query_scalar("SELECT provider_account_id FROM cheers_sessions WHERE session_id=$1")
+            .bind(task["session_id"].as_str().unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let error = stream::handle_done(
+        &registry,
+        &publisher,
+        &db,
+        &locator,
+        bot_a,
+        &provider_account,
+        &frame,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code, "TERMINAL_FORBIDDEN");
+    assert!(!error.retryable);
+    let state: (bool, Option<i64>) =
+        sqlx::query_as("SELECT is_partial,channel_seq FROM messages WHERE msg_id=$1")
+            .bind(a_placeholder.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(state, (true, None));
+    let receipt: (String, Option<chrono::DateTime<chrono::Utc>>) =
+        sqlx::query_as("SELECT status,terminal_committed_at FROM bot_runs WHERE task_id=$1")
+            .bind(task_id.to_string())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(receipt, ("accepted".into(), None));
+    let next_seq: i64 = sqlx::query_scalar("SELECT next_seq FROM channels WHERE channel_id=$1")
+        .bind(ch.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(next_seq, 1, "the rejected result cannot consume a sequence");
+    let child_runs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bot_runs WHERE bot_id=$1")
+        .bind(bot_b.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(child_runs, 0);
+    assert!(
+        b_control.try_recv().is_err(),
+        "no downstream task was offered"
+    );
     assert!(
         task_chains::cancel_chain(&db, &chain, user)
             .await
             .unwrap()
             .is_empty(),
-        "second cancel is a no-op"
+        "second cancellation is a no-op"
     );
 }
 

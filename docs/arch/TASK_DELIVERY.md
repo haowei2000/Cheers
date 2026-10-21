@@ -139,10 +139,15 @@ or browser fan-out can suspend. An old claim cannot reopen or remove a replaceme
 task with the same message ID.
 
 A terminal result can also finalize an existing partial row after a gateway
-restart, when no memory entry remains. Standard task results carry the original
+restart, when no memory entry remains. All `done` and task `error` results require the original
 `execution` tuple (task, execution and channel IDs), plus their placeholder and
 stable UUID `client_msg_id`. Delivery on another connection does not transfer execution
 ownership or obtain another execution grant.
+
+Missing or malformed execution identities are rejected before claiming a stream
+or writing a message. A partial message alone, including a historical/manual row,
+does not authorize completion. The retired `reply` alias is rejected; producers
+must use `done` or `error`, and publish proactive messages through `send` or MCP.
 
 The gateway records the terminal receipt and a fingerprint of the unsigned result
 in `bot_runs` in the same transaction as message finalization. Only the capability
@@ -228,9 +233,10 @@ Human-message dispatch intents and children admitted by execution-owned `Done`,
 proactive bridge sends and resource-created bot messages recover automatically
 until execution acceptance. Human producers include REST, scheduled sends,
 integration delivery and other callers of the shared human-message command.
-Historical/manual completions without an execution grant retain their legacy
-direct dispatch path; they do not acquire recoverable intents implicitly.
-Other direct task producers retain their own delivery contracts.
+Completions without an execution grant are rejected, so there is no separate
+postcommit mention-dispatch path. Task-claim approval still uses direct task
+dispatch and retains its own delivery contract; its results require the same
+execution grant and terminal receipt as other tasks.
 
 The `resume` capability remains `ack_only`; it replays no socket event log. Task
 offers come from the run ledger, not this capability. A committed execution grant
