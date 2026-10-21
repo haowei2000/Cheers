@@ -120,10 +120,6 @@ pub(crate) async fn prepare_task_from_snapshot(
     ))
 }
 
-pub(crate) struct FailedPlaceholder {
-    pub(crate) channel_id: Uuid,
-}
-
 /// A terminal transient frame: the placeholder has been deleted and the client
 /// must remove its local copy before displaying an unavailable-bot toast.
 pub(crate) fn bot_unavailable_frame(channel_id: Uuid, msg_id: Uuid, bot_id: Uuid) -> WireFrame {
@@ -392,38 +388,6 @@ pub async fn load_pinned_context(
         }
     }
     Ok(out)
-}
-
-pub(crate) async fn remove_placeholder(
-    db: &PgPool,
-    placeholder_id: Uuid,
-) -> Result<Option<FailedPlaceholder>, sqlx::Error> {
-    let Some(channel_id) = sqlx::query!(
-        "SELECT channel_id
-         FROM messages
-         WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
-        placeholder_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await?
-    .and_then(|row| Some(row.channel_id.clone()))
-    .and_then(|raw| raw.parse::<Uuid>().ok()) else {
-        return Ok(None);
-    };
-
-    let result = sqlx::query!(
-        "DELETE FROM messages
-         WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
-        placeholder_id.to_string(),
-    )
-    .execute(db)
-    .await?;
-
-    if result.rows_affected() == 0 {
-        return Ok(None);
-    }
-
-    Ok(Some(FailedPlaceholder { channel_id }))
 }
 
 /// Workspace roots plus the gateway's persisted session-specific desired config.

@@ -668,6 +668,60 @@ pub async fn expire(db: &PgPool) -> Result<Vec<ClaimUpdate>, AppError> {
     Ok(updates)
 }
 
+/// Failed delivery and abandoned executions share the persisted execution link.
+/// Recovery validates identity without requiring permission to keep executing.
+pub(crate) async fn fail_execution_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    expected_claim: Option<Uuid>,
+    msg_id: Uuid,
+    bot_id: Uuid,
+    channel_id: Uuid,
+    reason: &str,
+) -> Result<Option<ClaimUpdate>, sqlx::Error> {
+    let claims = sqlx::query!(
+        "SELECT claim_id,bot_id,channel_id,status FROM task_claim_requests
+         WHERE execution_msg_id=$1 ORDER BY claim_id FOR UPDATE",
+        msg_id.to_string(),
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    let Some(claim) = claims.first() else {
+        return if expected_claim.is_some() {
+            Err(sqlx::Error::Protocol(
+                "task claim execution link is missing".into(),
+            ))
+        } else {
+            Ok(None)
+        };
+    };
+    if claims.len() != 1
+        || expected_claim.is_some_and(|id| claim.claim_id != id.to_string())
+        || claim.bot_id != bot_id.to_string()
+        || claim.channel_id != channel_id.to_string()
+    {
+        return Err(sqlx::Error::Protocol(
+            "inconsistent task claim execution link".into(),
+        ));
+    }
+    if claim.status != "executing" {
+        return Ok(None);
+    }
+    let id = claim
+        .claim_id
+        .parse()
+        .map_err(|_| sqlx::Error::Protocol("invalid claim id".into()))?;
+    sqlx::query!(
+        "UPDATE task_claim_requests SET status='failed',
+             resolution_note=COALESCE(resolution_note,$2),updated_at=NOW()
+         WHERE claim_id=$1",
+        claim.claim_id,
+        reason,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(Some(project_update_tx(tx, id).await?))
+}
+
 /// Shared claim fence for delivery/grant/result commits. Legacy accepted claims
 /// can be found by their real execution link even without a placeholder marker.
 pub(crate) async fn lock_execution_claim(

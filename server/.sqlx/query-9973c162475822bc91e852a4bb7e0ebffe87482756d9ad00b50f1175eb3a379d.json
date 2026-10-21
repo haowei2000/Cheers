@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bot_run_id,task_id,channel_id,bot_id,binding_type,status,dispatch_input,\n                execution_id,accepted_at,terminal_client_msg_id,terminal_fingerprint,terminal_committed_at\n         FROM bot_runs WHERE placeholder_msg_id=$1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_run_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "task_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "binding_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "dispatch_input",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "execution_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "accepted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "terminal_client_msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "terminal_fingerprint",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "terminal_committed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9973c162475822bc91e852a4bb7e0ebffe87482756d9ad00b50f1175eb3a379d"
+}

@@ -275,6 +275,22 @@ Already committed messages remain intact. Transient `bot_unavailable` frames
 remove reclaimed bubbles from connected browsers; no synthetic bot reply is added
 to history.
 
+Age-based and disconnect reclamation share one transaction under the existing
+message/run locks. It rechecks recoverable offers and live streams, deletes only
+an abandoned partial, and marks its owned run `failed` with `last_event_type` set
+to `reclaimed`. The execution identity remains as a tombstone; reclamation writes
+no terminal receipt and consumes no channel sequence. Any existing receipt or
+inconsistent run identity protects the row instead of overwriting its result.
+Its linked executing claim fails through the same projection command used by a
+cancelled offer; already resolved claims remain unchanged. A persisted session
+reference must belong to the original bot/channel before the shared session
+finalizer can release it, and another active partial keeps that session busy.
+Legacy partials without a run or session retain their existing cleanup behavior.
+After lock waits, disconnect reclamation rechecks its control generation before
+commit. A database failure or superseding reconnect rolls back the deletion,
+run, claim, confirmation and session together. Memory cleanup and notifications
+run only after commit, and a protected row keeps its stream registration.
+
 Data-only cleanup removes its own binding. Offline recovery requires an actual
 control close or kick; stopping an ACP runtime does not itself prove that its
 sibling control socket closed. Data-only loss with a surviving control connection
@@ -343,3 +359,6 @@ receipt replay, bot policy revocation, depth and loop limits, and shared recover
 Proactive tests exercise both creation adapters, resource and bridge receipt
 replay, chain inheritance, scoped attachments, cross-transport retries and recovery
 after interruption before publication.
+Abandonment tests cover atomic run/claim/session settlement without a receipt,
+late-result rejection, shared and closed sessions, foreign references, receipt
+protection, commit rollback and a reconnect during a session-lock wait.

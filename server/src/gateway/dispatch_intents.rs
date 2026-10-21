@@ -709,8 +709,8 @@ async fn cancel(
     reason: &str,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.begin().await?;
-    sqlx::query!(
-        "SELECT msg_id FROM messages WHERE msg_id=$1 FOR UPDATE",
+    let message = sqlx::query!(
+        "SELECT content_data FROM messages WHERE msg_id=$1 FOR UPDATE",
         run.placeholder_msg_id
     )
     .fetch_optional(&mut *tx)
@@ -731,26 +731,31 @@ async fn cancel(
     )
     .execute(&mut *tx)
     .await?;
-    let failed_claims = sqlx::query!(
-        "UPDATE task_claim_requests SET status='failed',
-             resolution_note=COALESCE(resolution_note,$4),updated_at=NOW()
-         WHERE execution_msg_id=$1 AND bot_id=$2 AND channel_id=$3 AND status='executing'
-         RETURNING claim_id",
-        run.placeholder_msg_id,
-        canceled.bot_id,
-        canceled.channel_id,
+    let persisted_id = |value: &str| {
+        value
+            .parse::<Uuid>()
+            .map_err(|_| sqlx::Error::Protocol("invalid dispatch identity".into()))
+    };
+    let expected_claim = message
+        .as_ref()
+        .and_then(|message| message.content_data.as_ref())
+        .and_then(|data| data.get("task_claim_id"))
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| sqlx::Error::Protocol("invalid dispatch claim identity".into()))
+                .and_then(persisted_id)
+        })
+        .transpose()?;
+    let claim_update = crate::domain::task_claims::fail_execution_tx(
+        &mut tx,
+        expected_claim,
+        persisted_id(&run.placeholder_msg_id)?,
+        persisted_id(&canceled.bot_id)?,
+        persisted_id(&canceled.channel_id)?,
         reason,
     )
-    .fetch_all(&mut *tx)
     .await?;
-    let mut claim_updates = Vec::with_capacity(failed_claims.len());
-    for claim in failed_claims {
-        let id = claim
-            .claim_id
-            .parse()
-            .map_err(|_| sqlx::Error::Protocol("invalid claim id".into()))?;
-        claim_updates.push(crate::domain::task_claims::project_update_tx(&mut tx, id).await?);
-    }
     if let Ok(intent) = DispatchInput::decode(&run.dispatch_input) {
         if let Some(session) = intent.params.session_id {
             sessions::finalize_session_without_active_turns_tx(&mut tx, session)
@@ -775,7 +780,7 @@ async fn cancel(
                 dispatcher::bot_unavailable_frame(channel, msg, bot),
             )
             .await;
-        for update in claim_updates {
+        if let Some(update) = claim_update {
             super::resource_effects::publish_claim_update(fanout.as_ref(), &update).await;
         }
     }
