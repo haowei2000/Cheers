@@ -207,11 +207,57 @@ pub(crate) async fn lock_run(
     .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "task execution no longer exists"))
 }
 
+pub(crate) struct TaskClaimUpdate {
+    pub claim_id: Uuid,
+    pub channel_id: Uuid,
+    pub status: &'static str,
+    pub execution_msg_id: Uuid,
+}
+
+/// Finish a granted execution and its approved claim under the result's existing
+/// message/run locks. The shared grant/terminal gate precedes all final writes.
 pub(crate) async fn complete(
     tx: &mut Transaction<'_, Postgres>,
     request: &TerminalRequest,
-) -> Result<(), TerminalError> {
+    bot_id: Uuid,
+    expected_claim_id: Option<Uuid>,
+) -> Result<Option<TaskClaimUpdate>, TerminalError> {
     let execution = &request.execution;
+    let claim_id = crate::domain::task_claims::lock_execution_claim(
+        tx,
+        expected_claim_id,
+        request.msg_id,
+        bot_id,
+        execution.channel_id,
+    )
+    .await
+    .map_err(|error| match error {
+        crate::errors::AppError::Db(error) => {
+            TerminalError::database("lock terminal task claim")(error)
+        }
+        crate::errors::AppError::NotFound => {
+            TerminalError::rejected("TERMINAL_GONE", "task claim no longer exists")
+        }
+        crate::errors::AppError::Forbidden(_) | crate::errors::AppError::Conflict(_) => {
+            TerminalError::rejected(
+                "TERMINAL_FORBIDDEN",
+                "task claim is no longer an active execution for this bot and channel",
+            )
+        }
+        other => {
+            tracing::error!(%other, "terminal task claim validation failed");
+            TerminalError {
+                code: "INTERNAL_ERROR",
+                detail: "task claim validation failed",
+                retryable: true,
+            }
+        }
+    })?;
+    let status = if execution.kind == "error" {
+        "failed"
+    } else {
+        "completed"
+    };
     let result = sqlx::query!(
         "UPDATE bot_runs SET terminal_client_msg_id=$2,terminal_fingerprint=$3,
          terminal_committed_at=NOW(),status=$4,last_event_type=$5,updated_at=NOW()
@@ -219,11 +265,7 @@ pub(crate) async fn complete(
         request.msg_id.to_string(),
         execution.client_msg_id,
         execution.fingerprint,
-        if execution.kind == "error" {
-            "failed"
-        } else {
-            "completed"
-        },
+        status,
         execution.kind,
     )
     .execute(&mut **tx)
@@ -235,5 +277,33 @@ pub(crate) async fn complete(
             "task execution disappeared before its receipt was recorded",
         ));
     }
-    Ok(())
+    let Some(claim_id) = claim_id else {
+        return Ok(None);
+    };
+    let updated = sqlx::query!(
+        "UPDATE task_claim_requests SET status=$5,updated_at=NOW()
+         WHERE claim_id=$1 AND execution_msg_id=$2 AND bot_id=$3 AND channel_id=$4
+           AND status='executing' AND superseded_at IS NULL
+           AND (expires_at IS NULL OR expires_at>clock_timestamp())",
+        claim_id.to_string(),
+        request.msg_id.to_string(),
+        bot_id.to_string(),
+        execution.channel_id.to_string(),
+        status,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(TerminalError::database("complete terminal task claim"))?;
+    if updated.rows_affected() != 1 {
+        return Err(TerminalError::rejected(
+            "TERMINAL_FORBIDDEN",
+            "task claim is no longer an active execution",
+        ));
+    }
+    Ok(Some(TaskClaimUpdate {
+        claim_id,
+        channel_id: execution.channel_id,
+        status,
+        execution_msg_id: request.msg_id,
+    }))
 }

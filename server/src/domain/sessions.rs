@@ -511,27 +511,47 @@ pub async fn resolve_primary_session_tx(
     channel_id: &str,
 ) -> Result<Option<SessionHandle>, AppError> {
     let row = sqlx::query!(
-        "SELECT s.session_id, s.provider_session_key
+        "SELECT b.binding_id, s.session_id, s.provider_session_key
          FROM cheers_session_bindings b
          JOIN cheers_sessions s ON s.session_id = b.session_id
          WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3
            AND b.role = 'primary'
            AND s.status NOT IN ('terminated', 'revoked', 'expired')
-         LIMIT 1 FOR SHARE OF b, s",
+         LIMIT 1 FOR SHARE OF s",
         bot_id.to_string(),
         SESSION_SCOPE_CHANNEL,
         channel_id,
     )
     .fetch_optional(&mut **tx)
     .await?;
-    row.map(|row| {
-        Ok(SessionHandle {
-            session_id: Uuid::parse_str(&row.session_id)
-                .map_err(|_| AppError::Internal("invalid primary session_id".into()))?,
-            provider_session_key: row.provider_session_key,
-        })
-    })
-    .transpose()
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    // Offering/finalizing a turn locks its session before its bindings. Lock
+    // only the session above, then revalidate the exact selected binding; a
+    // concurrent promotion must abort admission rather than silently retarget it.
+    let binding = sqlx::query!(
+        "SELECT binding_id FROM cheers_session_bindings
+         WHERE binding_id=$1 AND session_id=$2 AND bot_id=$3
+           AND scope_type=$4 AND scope_id=$5 AND role='primary' FOR SHARE",
+        row.binding_id,
+        row.session_id,
+        bot_id.to_string(),
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    if binding.is_none() {
+        return Err(AppError::Conflict(
+            "primary session changed during admission".into(),
+        ));
+    }
+    Ok(Some(SessionHandle {
+        session_id: Uuid::parse_str(&row.session_id)
+            .map_err(|_| AppError::Internal("invalid primary session_id".into()))?,
+        provider_session_key: row.provider_session_key,
+    }))
 }
 
 /// The dispatch fallback may create an idle primary, but must not promote a
@@ -696,12 +716,12 @@ pub async fn resolve_channel_session_tx(
     session_id: Uuid,
 ) -> Result<(Uuid, String), AppError> {
     let row = sqlx::query!(
-        "SELECT s.bot_id, s.provider_session_key
+        "SELECT b.binding_id, s.bot_id, s.provider_session_key
          FROM cheers_session_bindings b
          JOIN cheers_sessions s ON s.session_id = b.session_id
          WHERE b.scope_type = $1 AND b.scope_id = $2 AND b.session_id = $3
            AND s.status NOT IN ('terminated', 'revoked', 'expired')
-         LIMIT 1 FOR SHARE OF b, s",
+         LIMIT 1 FOR SHARE OF s",
         SESSION_SCOPE_CHANNEL,
         channel_id,
         session_id.to_string(),
@@ -709,6 +729,19 @@ pub async fn resolve_channel_session_tx(
     .fetch_optional(&mut **tx)
     .await?
     .ok_or(AppError::NotFound)?;
+    let binding = sqlx::query!(
+        "SELECT binding_id FROM cheers_session_bindings
+         WHERE binding_id=$1 AND session_id=$2 AND scope_type=$3 AND scope_id=$4 FOR SHARE",
+        row.binding_id,
+        session_id.to_string(),
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    if binding.is_none() {
+        return Err(AppError::NotFound);
+    }
     let bot_id = Uuid::parse_str(&row.bot_id)
         .map_err(|_| AppError::Internal("invalid session bot_id".into()))?;
     Ok((bot_id, row.provider_session_key))
@@ -858,31 +891,12 @@ where
     Ok(())
 }
 
+/// Complete standalone session bookkeeping with the same active-turn fence as
+/// terminal commits and canceled offers.
 pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
-    let now = Utc::now();
-    sqlx::query!(
-        "UPDATE cheers_sessions
-         SET status = $1, last_used_at = $2, updated_at = $2
-         WHERE session_id = $3",
-        SESSION_STATUS_IDLE,
-        now,
-        session_id.to_string(),
-    )
-    .execute(db)
-    .await
-    .map_err(AppError::Db)?;
-
-    sqlx::query!(
-        "UPDATE cheers_session_bindings
-         SET detached_at = COALESCE(detached_at, $1)
-         WHERE session_id = $2 AND detached_at IS NULL",
-        now,
-        session_id.to_string(),
-    )
-    .execute(db)
-    .await
-    .map_err(AppError::Db)?;
-
+    let mut tx = db.begin().await?;
+    finalize_session_without_active_turns_tx(&mut tx, session_id).await?;
+    tx.commit().await?;
     Ok(())
 }
 

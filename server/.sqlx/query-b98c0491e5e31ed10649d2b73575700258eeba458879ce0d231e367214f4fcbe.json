@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT binding_id FROM cheers_session_bindings\n         WHERE binding_id=$1 AND session_id=$2 AND bot_id=$3\n           AND scope_type=$4 AND scope_id=$5 AND role='primary' FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "binding_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b98c0491e5e31ed10649d2b73575700258eeba458879ce0d231e367214f4fcbe"
+}

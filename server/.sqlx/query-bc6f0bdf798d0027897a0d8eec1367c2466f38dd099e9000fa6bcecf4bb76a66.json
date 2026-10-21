@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT channel_id, sender_id, sender_type, is_partial, is_deleted, channel_seq, chain_id\n         FROM messages WHERE msg_id = $1 FOR UPDATE",
+  "query": "SELECT channel_id, sender_id, sender_type, is_partial, is_deleted, channel_seq, chain_id,content_data\n         FROM messages WHERE msg_id = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -37,6 +37,11 @@
         "ordinal": 6,
         "name": "chain_id",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "content_data",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
@@ -51,8 +56,9 @@
       false,
       false,
       true,
+      true,
       true
     ]
   },
-  "hash": "b9ba508f710bfd259bcb418d6b120ac420846c6f4a575cf2b529ea41054112ec"
+  "hash": "bc6f0bdf798d0027897a0d8eec1367c2466f38dd099e9000fa6bcecf4bb76a66"
 }

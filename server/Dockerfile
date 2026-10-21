@@ -47,6 +47,7 @@ COPY packages/cheers-interactive-core /app/packages/cheers-interactive-core
 COPY design-system/a2ui-catalog.json /app/design-system/a2ui-catalog.json
 COPY frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json /app/frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json
 COPY server/src ./src
+COPY server/build.rs ./build.rs
 COPY server/migrations ./migrations
 COPY server/.sqlx ./.sqlx
 COPY server/queries ./queries

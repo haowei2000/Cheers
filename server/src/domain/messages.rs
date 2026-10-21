@@ -72,7 +72,7 @@ pub struct CreateMessageParams {
     pub session_id: Option<Uuid>,
     /// Optional resource-context bundle attached to this message
     /// (docs/design/RESOURCE_CONTEXT.md). Persisted on the row and threaded into
-    /// any triggered bot's task frame via `dispatcher::load_task_context`.
+    /// any triggered bot's task frame via the frozen dispatch input and shared task-frame builder.
     pub context_bundle: Option<serde_json::Value>,
     /// Pre-chosen message id, for a caller that must be able to retry safely.
     ///

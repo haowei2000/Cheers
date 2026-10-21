@@ -34,6 +34,7 @@ pub mod sessions;
 pub mod stt_settings;
 pub mod suggestions;
 pub mod task_chains;
+pub mod task_claims;
 pub mod tool_presentation;
 pub mod tool_request;
 pub mod trace;

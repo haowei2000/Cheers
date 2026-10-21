@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests SET status=$5,updated_at=NOW()\n         WHERE claim_id=$1 AND execution_msg_id=$2 AND bot_id=$3 AND channel_id=$4\n           AND status='executing' AND superseded_at IS NULL\n           AND (expires_at IS NULL OR expires_at>clock_timestamp())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "22d18fb342639dfab2bcb2fec1bc3a2686e8cecbe07408c0f37b44ae50d054bf"
+}

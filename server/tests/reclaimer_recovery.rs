@@ -297,16 +297,8 @@ async fn in_flight_terminal_claim_is_retried_after_cancellation(db: PgPool) {
         let bot = scenario.bot;
         let channel = scenario.channel;
         tokio::spawn(async move {
-            stream::handle_done(
-                &registry,
-                &fanout,
-                &db,
-                &locator,
-                bot,
-                "account",
-                &json!({"type":"done","client_msg_id":Uuid::new_v4(),"msg_id":message,"content":"pending terminal",
-                    "execution":{"task_id":task,"execution_id":execution,"channel_id":channel}}),
-            )
+            stream::handle_done(&registry, &fanout, &db, &locator, bot, &json!({"type":"done","client_msg_id":Uuid::new_v4(),"msg_id":message,"content":"pending terminal",
+                    "execution":{"task_id":task,"execution_id":execution,"channel_id":channel}}))
             .await
         })
     };

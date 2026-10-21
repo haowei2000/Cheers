@@ -191,7 +191,6 @@ impl Turn {
             db,
             &self.locator,
             self.bot,
-            "",
             frame,
         )
         .await
@@ -210,7 +209,7 @@ impl Turn {
             self.frame(),
         );
         tokio::spawn(async move {
-            stream::handle_done(&registry, &fanout, &db, &locator, bot, "", &frame).await
+            stream::handle_done(&registry, &fanout, &db, &locator, bot, &frame).await
         })
     }
 

@@ -80,11 +80,34 @@ pub struct BotMessageIntent {
     pub file_ids: Vec<String>,
 }
 
+/// Human approval of one proactive task claim. Its secret trigger is not a
+/// published chat message; the claim row is the authority for this source.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ClaimIntent {
+    pub version: u32,
+    pub claim_id: Uuid,
+    pub requester_id: Uuid,
+    pub params: DispatchParams,
+    pub trigger_message: Value,
+    pub file_ids: Vec<String>,
+}
+
+pub fn claim_trigger_id(claim_id: Uuid) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        format!("cheers:task-claim:{claim_id}").as_bytes(),
+    )
+}
+
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum IntentActor {
     Human {
         author_id: Uuid,
+    },
+    TaskClaim {
+        claim_id: Uuid,
+        requester_id: Uuid,
     },
     Bot {
         author_bot_id: Uuid,
@@ -127,7 +150,11 @@ impl From<HumanIntentPolicyError> for IntentPolicyError {
 impl DispatchInput {
     fn author(&self) -> (Uuid, &'static str) {
         match self.actor {
-            IntentActor::Human { author_id } => (author_id, "user"),
+            IntentActor::Human { author_id }
+            | IntentActor::TaskClaim {
+                requester_id: author_id,
+                ..
+            } => (author_id, "user"),
             IntentActor::Bot { author_bot_id, .. } | IntentActor::BotMessage { author_bot_id } => {
                 (author_bot_id, "bot")
             }
@@ -138,6 +165,12 @@ impl DispatchInput {
         let (author, _) = self.author();
         let valid_depth = match self.actor {
             IntentActor::Human { .. } => self.params.depth == 0,
+            IntentActor::TaskClaim { claim_id, .. } => {
+                self.params.depth == 0
+                    && self.params.trigger_seq == 0
+                    && self.params.trigger_msg_id == claim_trigger_id(claim_id)
+                    && self.file_ids.is_empty()
+            }
             IntentActor::Bot { .. } | IntentActor::BotMessage { .. } => {
                 self.params.depth > 0
                     && self.params.depth <= crate::domain::chains::MAX_BOT_REPLY_DEPTH
@@ -255,6 +288,29 @@ pub async fn enqueue_bot_message(
     .await
 }
 
+pub async fn enqueue_claim(
+    tx: &mut Transaction<'_, Postgres>,
+    intent: ClaimIntent,
+) -> Result<Uuid, AppError> {
+    if intent.version != 2 {
+        return Err(AppError::BadRequest("invalid claim intent version".into()));
+    }
+    enqueue(
+        tx,
+        DispatchInput {
+            version: 2,
+            actor: IntentActor::TaskClaim {
+                claim_id: intent.claim_id,
+                requester_id: intent.requester_id,
+            },
+            params: intent.params,
+            trigger_message: intent.trigger_message,
+            file_ids: intent.file_ids,
+        },
+    )
+    .await
+}
+
 async fn enqueue(
     tx: &mut Transaction<'_, Postgres>,
     intent: DispatchInput,
@@ -284,13 +340,20 @@ async fn enqueue(
             .parse()
             .map_err(|_| AppError::Internal("invalid durable task identity".into()));
     }
+    let content_data = match intent.actor {
+        IntentActor::TaskClaim { claim_id, .. } => Some(json!({
+            "session_id": params.session_id,
+            "task_claim_id": claim_id,
+        })),
+        _ => params.session_id.map(|sid| json!({"session_id":sid})),
+    };
     sqlx::query!(
         "INSERT INTO messages
          (msg_id,task_id,channel_id,sender_type,sender_id,content,msg_type,is_partial,depth,chain_id,context_bundle,in_reply_to_msg_id,content_data)
          VALUES($1,$2,$3,'bot',$4,'','text',TRUE,$9,$5,$6,$7,$8)",
         placeholder_id.to_string(), task_id.to_string(), params.channel_id.to_string(),
         params.bot_id.to_string(), params.chain_id, params.context_bundle,
-        params.trigger_msg_id.to_string(), params.session_id.map(|sid| json!({"session_id":sid})),
+        params.trigger_msg_id.to_string(), content_data,
         params.depth,
     ).execute(&mut **tx).await?;
     Ok(task_id)
@@ -305,7 +368,11 @@ pub(crate) async fn preauthorize(
     use IntentPolicyError::{Denied, Retryable};
     let intent = DispatchInput::decode(input).map_err(Denied)?;
     match intent.actor {
-        IntentActor::Human { author_id } => message_policy::reauthorize_human_intent(
+        IntentActor::Human { author_id }
+        | IntentActor::TaskClaim {
+            requester_id: author_id,
+            ..
+        } => message_policy::reauthorize_human_intent(
             db,
             author_id,
             intent.params.channel_id,
@@ -376,7 +443,7 @@ pub(crate) async fn authorize_locked(
 ) -> Result<bool, sqlx::Error> {
     let params = &intent.params;
     let source = sqlx::query!(
-        "SELECT sender_id,sender_type,is_deleted,is_partial,channel_seq,chain_id,depth,task_id FROM messages
+        "SELECT sender_id,sender_type,is_deleted,is_partial,is_secret,msg_type,content_data,channel_seq,chain_id,depth,task_id FROM messages
          WHERE msg_id=$1 AND channel_id=$2 FOR SHARE",
         params.trigger_msg_id.to_string(),
         params.channel_id.to_string(),
@@ -391,12 +458,45 @@ pub(crate) async fn authorize_locked(
         || source.sender_type != author_type
         || source.is_deleted
         || source.is_partial
-        || source.channel_seq != Some(params.trigger_seq)
     {
         return Ok(false);
     }
+    if let IntentActor::TaskClaim {
+        claim_id,
+        requester_id,
+    } = intent.actor
+    {
+        if !source.is_secret
+            || source.msg_type != "task_claim"
+            || source.channel_seq.is_some()
+            || source.task_id.is_some()
+            || source.chain_id.as_deref() != params.chain_id.as_deref()
+            || source
+                .content_data
+                .as_ref()
+                .and_then(|data| data.get("claim_id"))
+                .and_then(Value::as_str)
+                != Some(claim_id.to_string().as_str())
+        {
+            return Ok(false);
+        }
+        let claim = sqlx::query!(
+            "SELECT requester_id,resolved_by FROM task_claim_requests WHERE claim_id=$1 FOR UPDATE",
+            claim_id.to_string(),
+        )
+        .fetch_optional(&mut **tx)
+        .await?;
+        if !claim.is_some_and(|claim| {
+            claim.requester_id.as_deref() == Some(requester_id.to_string().as_str())
+                && claim.resolved_by.as_deref() == Some(requester_id.to_string().as_str())
+        }) {
+            return Ok(false);
+        }
+    } else if source.channel_seq != Some(params.trigger_seq) || source.is_secret {
+        return Ok(false);
+    }
     match intent.actor {
-        IntentActor::Human { .. } => {
+        IntentActor::Human { .. } | IntentActor::TaskClaim { .. } => {
             let author = sqlx::query!(
                 "SELECT is_suspended,is_deleted FROM users WHERE user_id=$1 FOR SHARE",
                 author_id.to_string()
@@ -525,13 +625,37 @@ pub(crate) async fn authorize_locked(
     }) {
         return Ok(false);
     }
-    super::task_acceptance::may_execute(
+    if !super::task_acceptance::may_execute(
         tx,
         params.bot_id,
         params.channel_id,
         params.chain_id.as_deref(),
     )
-    .await
+    .await?
+    {
+        return Ok(false);
+    }
+    // All source/session/policy locks are held now. Expiry remains clock-based,
+    // so check it after those waits using the same claim gate as grants/results.
+    if let IntentActor::TaskClaim { claim_id, .. } = intent.actor {
+        let placeholder = dispatcher::derive_placeholder_id(params.trigger_msg_id, params.bot_id);
+        return match crate::domain::task_claims::lock_execution_claim(
+            tx,
+            Some(claim_id),
+            placeholder,
+            params.bot_id,
+            params.channel_id,
+        )
+        .await
+        {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(AppError::Db(error)) => Err(error),
+            Err(AppError::Internal(detail)) => Err(sqlx::Error::Protocol(detail)),
+            Err(_) => Ok(false),
+        };
+    }
+    Ok(true)
 }
 
 #[derive(sqlx::FromRow)]
@@ -607,6 +731,18 @@ async fn cancel(
     )
     .execute(&mut *tx)
     .await?;
+    let failed_claims = sqlx::query!(
+        "UPDATE task_claim_requests SET status='failed',
+             resolution_note=COALESCE(resolution_note,$4),updated_at=NOW()
+         WHERE execution_msg_id=$1 AND bot_id=$2 AND channel_id=$3 AND status='executing'
+         RETURNING claim_id",
+        run.placeholder_msg_id,
+        canceled.bot_id,
+        canceled.channel_id,
+        reason,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
     if let Ok(intent) = DispatchInput::decode(&run.dispatch_input) {
         if let Some(session) = intent.params.session_id {
             sessions::finalize_session_without_active_turns_tx(&mut tx, session)
@@ -631,6 +767,18 @@ async fn cancel(
                 dispatcher::bot_unavailable_frame(channel, msg, bot),
             )
             .await;
+        for claim in failed_claims {
+            fanout
+                .broadcast_channel(
+                    channel,
+                    WireFrame::channel(
+                        channel,
+                        "task_claim_updated",
+                        json!({"claim_id":claim.claim_id,"status":"failed","execution_msg_id":msg}),
+                    ),
+                )
+                .await;
+        }
     }
     Ok(())
 }

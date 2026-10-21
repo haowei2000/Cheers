@@ -1630,7 +1630,6 @@ async fn handle_terminal_frame(
         &state.db,
         &state.bot_locator,
         bot.bot_id,
-        &bot.provider_account_id,
         frame,
     )
     .await
@@ -1641,18 +1640,6 @@ async fn handle_terminal_frame(
             }
         }
         Ok(TerminalOutcome::Committed) => {
-            if let Some(mid) = msg_id {
-                if let Ok(Some(row)) = sqlx::query!(
-                    "UPDATE task_claim_requests SET status='completed',updated_at=NOW() WHERE execution_msg_id=$1 AND status='executing' RETURNING claim_id,channel_id",
-                    mid.to_string(),
-                ).fetch_optional(&state.db)
-                .await
-                {
-                    if let Ok(channel_id) = row.channel_id.clone().parse::<Uuid>() {
-                        state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "task_claim_updated", json!({"claim_id": row.claim_id.clone(),"status":"completed","execution_msg_id":mid}))).await;
-                    }
-                }
-            }
             // A finalized turn may have @mentioned humans (mention_ids on the
             // done frame) — same out-of-app nudge as the send/post_message paths.
             if let Some(mid) = msg_id {

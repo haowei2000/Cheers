@@ -10,11 +10,9 @@ use uuid::Uuid;
 use crate::{
     api::middleware::Claims,
     app_state::AppState,
+    domain::task_claims::{self, ClaimDecision, ResolveClaimParams},
     errors::AppError,
-    gateway::{
-        dispatcher::{self, DispatchParams, MediaCache},
-        realtime::frame::WireFrame,
-    },
+    gateway::realtime::frame::WireFrame,
 };
 
 #[derive(Debug, Deserialize)]
@@ -270,138 +268,60 @@ pub async fn resolve_claim(
     Path((channel_id, claim_id)): Path<(Uuid, Uuid)>,
     Json(input): Json<ResolveInput>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = actor(&state, channel_id, &claims, false).await?;
-    if !matches!(input.decision.as_str(), "accept" | "reject") {
-        return Err(AppError::BadRequest(
-            "decision must be accept or reject".into(),
-        ));
-    }
-    let requester_id = sqlx::query_scalar!(
-        "SELECT requester_id FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2 AND status='pending'",
-        claim_id.to_string(),
-        channel_id.to_string(),
-    ).fetch_optional(&state.db).await?
-        .flatten()
-        .ok_or_else(|| AppError::Conflict("claim is no longer pending".into()))?;
-    if requester_id != user_id.to_string() {
-        return Err(AppError::Forbidden(
-            "only the mentioned task requester can resolve this claim".into(),
-        ));
-    }
-    let status = if input.decision == "accept" {
-        "accepted"
-    } else {
-        "rejected"
-    };
-    // Resolve dispatch prerequisites before consuming the one-way pending state.
-    // Previously a missing PRIMARY session returned 409 only after the claim had
-    // already become accepted, making the approval impossible to retry.
-    let dispatch_session = if status == "accepted" {
-        let bot_id = sqlx::query_scalar!(
-            "SELECT bot_id FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2 AND status='pending'",
-            claim_id.to_string(),
-            channel_id.to_string(),
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| AppError::Conflict("claim is no longer pending".into()))?
-        .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("invalid bot id".into()))?;
-        Some(
-            crate::domain::sessions::resolve_primary_session(
-                &state.db,
-                bot_id,
-                &channel_id.to_string(),
-            )
-            .await?
-            .ok_or_else(|| AppError::Conflict("bot has no primary channel session".into()))?,
-        )
-    } else {
-        None
-    };
-    let row = sqlx::query!(
-        r#"UPDATE task_claim_requests SET status=$3,resolved_by=$4,resolution_note=$5,resolved_at=NOW(),updated_at=NOW() WHERE claim_id=$1 AND channel_id=$2 AND status='pending' RETURNING bot_id,summary,proposed_action"#,
-        claim_id.to_string(),
-        channel_id.to_string(),
-        status,
-        user_id.to_string(),
-        input.note.as_deref(),
-    ).fetch_optional(&state.db).await?;
-    let Some(row) = row else {
-        return Err(AppError::Conflict("claim is no longer pending".into()));
-    };
-    // Persist the response on the confirmation message too. This keeps the
-    // inline controls collapsed after a page reload, not only in local React
-    // state after the click.
-    sqlx::query!(
-        "UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('resolved', TRUE, 'decision', $2::text, 'resolved_by', $3::text) WHERE msg_id = (SELECT confirmation_message_id FROM task_claim_requests WHERE claim_id=$1)",
-        claim_id.to_string(),
-        &input.decision,
-        user_id.to_string(),
-    )
-    .execute(&state.db)
-    .await?;
-    let bot_id: Uuid = row
-        .bot_id
-        .clone()
-        .parse()
-        .map_err(|_| AppError::Internal("invalid bot id".into()))?;
-    let summary: String = row.summary.clone();
-    let action: String = row.proposed_action.clone();
-    let mut execution_msg_id = None;
-    if status == "accepted" {
-        // A private trigger row gives the existing dispatcher one durable, idempotent
-        // trigger identity without publishing a fake human message to the channel.
-        let trigger_id = Uuid::new_v5(
-            &Uuid::NAMESPACE_URL,
-            format!("cheers:task-claim:{claim_id}").as_bytes(),
-        );
-        sqlx::query!(
-            "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_secret,is_partial) VALUES($1,$2,$3,'user',$4,'task_claim',TRUE,FALSE) ON CONFLICT(msg_id) DO NOTHING",
-            trigger_id.to_string(),
-            channel_id.to_string(),
-            user_id.to_string(),
-            format!("Approved proactive task claim.\nSummary: {summary}\nRequested action: {action}\nComplete the requested work and report the result in this channel."),
-        ).execute(&state.db).await?;
-        let session = dispatch_session.expect("accepted claims preflight a primary session");
-        let result = dispatcher::dispatch(&state.db,&state.fanout,&state.stream_registry,&state.bot_locator,DispatchParams { trigger_msg_id: trigger_id,trigger_seq: 0,bot_id,channel_id,depth: 0,provider_session_key: session.1,session_id: Some(session.0),chain_id: None,context_bundle: Some(json!({"kind":"task_claim","claim_id":claim_id,"summary":summary,"proposed_action":action})) },&MediaCache::default()).await;
-        match result {
-            dispatcher::DispatchResult::Dispatched { placeholder_msg_id } => {
-                execution_msg_id = Some(placeholder_msg_id.to_string());
-                sqlx::query!(
-                    "UPDATE task_claim_requests SET status='executing',execution_msg_id=$2,updated_at=NOW() WHERE claim_id=$1",
-                    claim_id.to_string(),
-                    execution_msg_id.as_deref(),
-                ).execute(&state.db).await?;
-            }
-            dispatcher::DispatchResult::AlreadyInProgress => {
-                let placeholder_msg_id = Uuid::new_v5(
-                    &Uuid::NAMESPACE_DNS,
-                    format!("{trigger_id}:{bot_id}").as_bytes(),
-                );
-                execution_msg_id = Some(placeholder_msg_id.to_string());
-                sqlx::query!(
-                    "UPDATE task_claim_requests SET status='executing',execution_msg_id=$2,updated_at=NOW() WHERE claim_id=$1",
-                    claim_id.to_string(),
-                    execution_msg_id.as_deref(),
-                ).execute(&state.db).await?;
-            }
-            dispatcher::DispatchResult::BotOffline | dispatcher::DispatchResult::DbError(_) => {
-                sqlx::query!(
-                    "UPDATE task_claim_requests SET status='failed',resolution_note=COALESCE(resolution_note,'Bot is offline'),updated_at=NOW() WHERE claim_id=$1",
-                    claim_id.to_string(),
-                ).execute(&state.db).await?;
-            }
+    let requester_id = actor(&state, channel_id, &claims, false).await?;
+    let decision = match input.decision.as_str() {
+        "accept" => ClaimDecision::Accept,
+        "reject" => ClaimDecision::Reject,
+        _ => {
+            return Err(AppError::BadRequest(
+                "decision must be accept or reject".into(),
+            ))
         }
+    };
+    let outcome = task_claims::resolve(
+        &state.db,
+        state.bot_locator.as_ref(),
+        ResolveClaimParams {
+            channel_id,
+            claim_id,
+            requester_id,
+            decision,
+            note: input.note,
+        },
+    )
+    .await?;
+    let result = json!({"claim_id":outcome.claim_id,"status":outcome.status,"execution_msg_id":outcome.execution_msg_id});
+    state
+        .fanout
+        .broadcast_channel(
+            channel_id,
+            WireFrame::channel(channel_id, "task_claim_updated", result.clone()),
+        )
+        .await;
+    // The committed intent survives process loss at this boundary. Preparation
+    // never blocks the approval response and cannot overwrite a later cancel.
+    if let Some(trigger) = outcome.trigger_msg_id {
+        let (db, fanout, registry, locator) = (
+            state.db.clone(),
+            state.fanout.clone(),
+            state.stream_registry.clone(),
+            state.bot_locator.clone(),
+        );
+        tokio::spawn(async move {
+            if let Err(error) = crate::gateway::dispatch_intents::deliver_trigger(
+                &db, &fanout, &registry, &locator, trigger,
+            )
+            .await
+            {
+                tracing::warn!(%claim_id,%error,"approved task claim retained for delivery recovery");
+            }
+        });
     }
-    state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id,"task_claim_updated",json!({"claim_id":claim_id,"status":if execution_msg_id.is_some(){"executing"}else{status},"execution_msg_id":execution_msg_id}))).await;
-    Ok(Json(
-        json!({"claim_id":claim_id,"status":if execution_msg_id.is_some(){"executing"}else{status},"execution_msg_id":execution_msg_id}),
-    ))
+    Ok(Json(result))
 }
 
-/// POST /api/v1/channels/:channel_id/task-claims/:claim_id/cancel — claimant bot
-/// or channel admin cancels a still-pending/executing claim. Idempotent on a
+/// POST /api/v1/channels/:channel_id/task-claims/:claim_id/cancel — a channel
+/// administrator cancels a still-pending/executing claim. Idempotent on a
 /// terminal-state hit.
 pub async fn cancel_claim(
     State(state): State<AppState>,
@@ -410,32 +330,14 @@ pub async fn cancel_claim(
     Json(input): Json<CancelInput>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = actor(&state, channel_id, &claims, true).await?;
-    let row = sqlx::query!(
-        "UPDATE task_claim_requests
-         SET status='cancelled', resolved_by=$3, resolution_note=$4, resolved_at=NOW(), updated_at=NOW()
-         WHERE claim_id=$1 AND channel_id=$2 AND status IN ('pending','executing')
-         RETURNING status",
-        claim_id.to_string(),
-        channel_id.to_string(),
-        user_id.to_string(),
+    let outcome = task_claims::cancel(
+        &state.db,
+        channel_id,
+        claim_id,
+        user_id,
         input.note.as_deref(),
-    ).fetch_optional(&state.db)
+    )
     .await?;
-    if row.is_none() {
-        // Either the claim doesn't exist or it's already terminal — report which.
-        let existing: Option<String> = sqlx::query_scalar!(
-            "SELECT status FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2",
-            claim_id.to_string(),
-            channel_id.to_string(),
-        )
-        .fetch_optional(&state.db)
-        .await?;
-        return match existing.as_deref() {
-            Some("cancelled") => Ok(Json(json!({"claim_id": claim_id, "status": "cancelled"}))),
-            Some(_) => Err(AppError::Conflict("claim is no longer pending".into())),
-            None => Err(AppError::NotFound),
-        };
-    }
     state
         .fanout
         .broadcast_channel(
@@ -447,7 +349,9 @@ pub async fn cancel_claim(
             ),
         )
         .await;
-    Ok(Json(json!({"claim_id": claim_id, "status": "cancelled"})))
+    Ok(Json(
+        json!({"claim_id": outcome.claim_id, "status": outcome.status}),
+    ))
 }
 
 /// Sweep claims whose `expires_at` is in the past → `failed`. Called on a timer

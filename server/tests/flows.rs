@@ -31,7 +31,7 @@ use server::domain::dms;
 use server::domain::messages::{self, CreateMessageParams};
 use server::domain::workspaces;
 use server::domain::{auth_sessions, channel_seq};
-use server::gateway::dispatcher::{self, DispatchParams, DispatchResult};
+use server::gateway::dispatch_intents;
 use server::gateway::realtime::fanout::{Fanout, InProcessFanout};
 use server::gateway::registry::{BotLocator, BotRegistry, InProcessBotLocator};
 use server::gateway::stream::{self, StreamRegistry};
@@ -379,149 +379,143 @@ impl BotLocator for CountingBotLocator {
     }
 }
 
-/// 并发双触发同一 (trigger_msg_id, bot_id)：占位由 INSERT…ON CONFLICT 单点定胜负，
-/// 只有胜者派发 task。断言 dispatch_task 恰好调用一次，且只落一条占位。
+/// Concurrent recoverers elect one delivery from an actual human admission.
+/// An accepted run remains a tombstone after its placeholder is reclaimed.
 #[sqlx::test]
 async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
+    struct AdmissionBarrier(tokio::sync::Notify);
+    #[async_trait]
+    impl Fanout for AdmissionBarrier {
+        async fn broadcast_channel(
+            &self,
+            _channel: Uuid,
+            frame: server::gateway::realtime::frame::WireFrame,
+        ) {
+            if frame.frame_type == "message" && frame.data["sender_type"] == "user" {
+                self.0.notify_one();
+                std::future::pending::<()>().await;
+            }
+        }
+        async fn broadcast_user(
+            &self,
+            _user: Uuid,
+            _frame: server::gateway::realtime::frame::WireFrame,
+        ) {
+        }
+    }
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
-
-    let fanout = fanout();
+    let author = seed_user(&db).await;
+    add_member(&db, ch, author, "user").await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
     let registry = StreamRegistry::new();
     let counter = Arc::new(CountingBotLocator::default());
-    let bot_locator: Arc<dyn BotLocator> = counter.clone();
-
+    let locator: Arc<dyn BotLocator> = counter.clone();
     let trigger = Uuid::new_v4();
-    let bot = Uuid::new_v4();
-    let trigger_author = seed_user(&db).await;
-    add_member(&db, ch, trigger_author, "user").await;
-
-    // Dispatch is only valid for a durable same-channel trigger. Migration 0071
-    // enforces that contract so placeholders always have a resolvable thread root.
-    sqlx::query(
-        "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, is_partial)
-         VALUES ($1, $2, 'user', $3, 'trigger', FALSE)",
-    )
-    .bind(trigger.to_string())
-    .bind(ch.to_string())
-    .bind(trigger_author.to_string())
-    .execute(&db)
-    .await
-    .unwrap();
-
-    let make_params = || DispatchParams {
-        context_bundle: None,
-        trigger_msg_id: trigger,
-        trigger_seq: 0,
-        bot_id: bot,
-        channel_id: ch,
-        depth: 0,
-        provider_session_key: "cheers:test".into(),
-        session_id: None,
-        chain_id: None,
-    };
-
-    // 两个并发 dispatch 抢同一占位。
-    let (a, b) = {
-        let (db1, f1, r1, l1, p1) = (
+    let barrier = Arc::new(AdmissionBarrier(tokio::sync::Notify::new()));
+    let request = {
+        let (db, registry, locator, barrier) = (
             db.clone(),
-            fanout.clone(),
             registry.clone(),
-            bot_locator.clone(),
-            make_params(),
+            locator.clone(),
+            barrier.clone(),
         );
-        let (db2, f2, r2, l2, p2) = (
-            db.clone(),
-            fanout.clone(),
-            registry.clone(),
-            bot_locator.clone(),
-            make_params(),
-        );
-        let h1 = tokio::spawn(async move {
-            dispatcher::dispatch(&db1, &f1, &r1, &l1, p1, &dispatcher::MediaCache::default()).await
-        });
-        let h2 = tokio::spawn(async move {
-            dispatcher::dispatch(&db2, &f2, &r2, &l2, p2, &dispatcher::MediaCache::default()).await
-        });
-        (h1.await.unwrap(), h2.await.unwrap())
-    };
-
-    // 一个胜者 Dispatched，一个败者 AlreadyInProgress（顺序不定）。
-    let outcomes = [&a, &b];
-    let dispatched = outcomes
-        .iter()
-        .filter(|r| matches!(r, DispatchResult::Dispatched { .. }))
-        .count();
-    let already = outcomes
-        .iter()
-        .filter(|r| matches!(r, DispatchResult::AlreadyInProgress))
-        .count();
-    assert_eq!(dispatched, 1, "恰好一个 dispatch 胜出");
-    assert_eq!(already, 1, "另一个应为 AlreadyInProgress");
-
-    // R5 核心：task 只派发一次。
-    assert_eq!(
-        counter.dispatched.load(Ordering::SeqCst),
-        1,
-        "dispatch_task 必须只被调用一次"
-    );
-
-    // 只落一条占位行。
-    let count: i64 = sqlx::query(
-        "SELECT COUNT(*) AS c FROM messages WHERE channel_id = $1 AND sender_type = 'bot'",
-    )
-    .bind(ch.to_string())
-    .fetch_one(&db)
-    .await
-    .unwrap()
-    .try_get("c")
-    .unwrap();
-    assert_eq!(count, 1, "并发双触发只应产生一条占位");
-
-    let placeholder = outcomes
-        .iter()
-        .find_map(|result| match result {
-            DispatchResult::Dispatched { placeholder_msg_id } => Some(*placeholder_msg_id),
-            _ => None,
+        tokio::spawn(async move {
+            let publisher: Arc<dyn Fanout> = barrier;
+            messages::create_message(
+                &db,
+                &publisher,
+                &registry,
+                &locator,
+                CreateMessageParams {
+                    user_id: author,
+                    channel_id: ch,
+                    content: "Concurrent recovery".into(),
+                    msg_type: None,
+                    reply_to_msg_id: None,
+                    file_ids: vec![],
+                    mention_ids: vec![bot],
+                    mention_names: vec![],
+                    session_id: None,
+                    context_bundle: None,
+                    msg_id: Some(trigger),
+                },
+            )
+            .await
         })
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), barrier.0.notified())
+        .await
         .unwrap();
-    let original_task: String =
-        sqlx::query_scalar("SELECT task_id FROM bot_runs WHERE placeholder_msg_id=$1")
-            .bind(placeholder.to_string())
-            .fetch_one(&db)
+    request.abort();
+    assert!(request.await.unwrap_err().is_cancelled());
+    let publisher = fanout();
+    let (a, b) = tokio::join!(
+        dispatch_intents::deliver_trigger(&db, &publisher, &registry, &locator, trigger),
+        dispatch_intents::deliver_trigger(&db, &publisher, &registry, &locator, trigger),
+    );
+    assert_eq!(a.unwrap() + b.unwrap(), 1, "one DB lease wins the offer");
+    assert_eq!(counter.dispatched.load(Ordering::SeqCst), 1);
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT task_id,placeholder_msg_id FROM bot_runs WHERE trigger_msg_id=$1")
+            .bind(trigger.to_string())
+            .fetch_all(&db)
             .await
             .unwrap();
+    assert_eq!(rows.len(), 1);
+    let task: Uuid = rows[0].0.parse().unwrap();
+    let placeholder: Uuid = rows[0].1.parse().unwrap();
+    let grant = server::gateway::task_acceptance::claim(
+        &db,
+        bot,
+        Uuid::new_v4(),
+        task,
+        placeholder,
+        ch,
+        Uuid::new_v4(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        grant.status,
+        cheers_bridge_protocol::TaskAcceptanceStatus::Granted
+    ));
     sqlx::query("DELETE FROM messages WHERE msg_id=$1")
         .bind(placeholder.to_string())
         .execute(&db)
         .await
         .unwrap();
     registry.remove(placeholder);
-    let retry = dispatcher::dispatch(
-        &db,
-        &fanout,
-        &registry,
-        &bot_locator,
-        make_params(),
-        &dispatcher::MediaCache::default(),
-    )
-    .await;
-    assert!(matches!(retry, DispatchResult::AlreadyInProgress));
+    assert_eq!(
+        dispatch_intents::deliver_trigger(&db, &publisher, &registry, &locator, trigger)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        dispatch_intents::recover_once(&db, &publisher, &registry, &locator)
+            .await
+            .unwrap(),
+        0
+    );
     assert_eq!(counter.dispatched.load(Ordering::SeqCst), 1);
-    let retained_task: String =
+    let retained: String =
         sqlx::query_scalar("SELECT task_id FROM bot_runs WHERE placeholder_msg_id=$1")
             .bind(placeholder.to_string())
             .fetch_one(&db)
             .await
             .unwrap();
-    assert_eq!(retained_task, original_task);
+    assert_eq!(retained, task.to_string());
     let recreated: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE msg_id=$1")
         .bind(placeholder.to_string())
         .fetch_one(&db)
         .await
         .unwrap();
-    assert_eq!(recreated, 0, "cleanup must not mint another task identity");
+    assert_eq!(
+        recreated, 0,
+        "accepted cleanup cannot mint another task identity"
+    );
 }
 
 // ── #330：频道内并发发送的多条不同用户消息，每条都应各自落库+各自派发一次 ──────
@@ -645,66 +639,45 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
 
     let fanout = fanout();
     let registry = StreamRegistry::new();
-    let locator: Arc<dyn BotLocator> = Arc::new(CountingBotLocator::default());
     let bot = seed_bot(&db).await;
     add_member(&db, ch, bot, "bot").await;
-
+    let transport = InProcessBotLocator::new();
+    let (mut control, _data) = ready_resource_bot(&transport, bot);
+    let locator: Arc<dyn BotLocator> = transport.clone();
     let trigger = Uuid::new_v4();
-    let provider_key = server::domain::sessions::primary_provider_session_key(&ch.to_string(), bot);
-    let session = server::domain::sessions::acquire_scope_session(
-        &db,
-        bot,
-        &bot.to_string(),
-        &provider_key,
-        server::domain::sessions::SESSION_SCOPE_CHANNEL,
-        &ch.to_string(),
-        None,
-        "primary",
-    )
-    .await
-    .unwrap()
-    .session_id;
     let trigger_author = seed_user(&db).await;
     add_member(&db, ch, trigger_author, "user").await;
-
-    // A production dispatch always follows a persisted channel message. Keep
-    // the fixture aligned with the database reply/thread invariant.
-    sqlx::query(
-        "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, is_partial)
-         VALUES ($1, $2, 'user', $3, 'trigger', FALSE)",
-    )
-    .bind(trigger.to_string())
-    .bind(ch.to_string())
-    .bind(trigger_author.to_string())
-    .execute(&db)
-    .await
-    .unwrap();
-
-    // 派发占位（在线 → Dispatched），并注册流。
-    let res = dispatcher::dispatch(
+    messages::create_message(
         &db,
         &fanout,
         &registry,
         &locator,
-        DispatchParams {
-            context_bundle: None,
-            trigger_msg_id: trigger,
-            trigger_seq: 0,
-            bot_id: bot,
+        CreateMessageParams {
+            user_id: trigger_author,
             channel_id: ch,
-            depth: 0,
-            provider_session_key: provider_key,
-            session_id: Some(session),
-            chain_id: None,
+            content: "trigger".into(),
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids: vec![bot],
+            mention_names: vec![],
+            session_id: None,
+            context_bundle: None,
+            msg_id: Some(trigger),
         },
-        &dispatcher::MediaCache::default(),
     )
-    .await;
-    let placeholder = match res {
-        DispatchResult::Dispatched { placeholder_msg_id } => placeholder_msg_id,
-        _ => panic!("expected Dispatched"),
-    };
+    .await
+    .unwrap();
+    let task = tokio::time::timeout(std::time::Duration::from_secs(5), control.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let placeholder: Uuid = task["placeholder_msg_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let session: Uuid = task["session_id"].as_str().unwrap().parse().unwrap();
 
     // Nested under trigger + session stamped before finalize.
     let pre =
@@ -739,7 +712,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
     let grant = server::gateway::task_acceptance::claim(
         &db,
         bot,
-        Uuid::new_v4(),
+        transport.control_generation(bot).await.unwrap(),
         task_id.parse().unwrap(),
         placeholder,
         ch,
@@ -774,7 +747,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
     let frame = serde_json::json!({ "type":"done", "client_msg_id":Uuid::new_v4(),
         "msg_id": placeholder, "content": "hello", "execution":{
             "task_id":task_id,"execution_id":execution_id,"channel_id":ch} });
-    let first = stream::handle_done(&registry, &fanout, &db, &locator, bot, "", &frame)
+    let first = stream::handle_done(&registry, &fanout, &db, &locator, bot, &frame)
         .await
         .expect("first done should finalize");
     assert_eq!(first, stream::TerminalOutcome::Committed);
@@ -791,7 +764,11 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
     let seq: Option<i64> = row.try_get("channel_seq").unwrap();
     let content: String = row.try_get("content").unwrap();
     assert!(!is_partial, "done 后占位应 finalize");
-    assert_eq!(seq, Some(1), "finalize 时才分配 seq=1（占位期不耗 seq）");
+    assert_eq!(
+        seq,
+        Some(2),
+        "the human trigger takes seq 1; finalizing the placeholder takes seq 2"
+    );
     assert_eq!(content, "hello");
     let reply_to_after: Option<String> = row.try_get("in_reply_to_msg_id").unwrap();
     assert_eq!(
@@ -822,10 +799,10 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
     );
 
     // An exact retransmission acknowledges its original commit, without effects.
-    let second = stream::handle_done(&registry, &fanout, &db, &locator, bot, "", &frame).await;
+    let second = stream::handle_done(&registry, &fanout, &db, &locator, bot, &frame).await;
     assert_eq!(second.unwrap(), stream::TerminalOutcome::Replayed);
 
-    // I2: replay consumes no sequence, so next_seq remains 1.
+    // I2: replay consumes no sequence, so next_seq remains 2.
     let next_seq: i64 = sqlx::query("SELECT next_seq FROM channels WHERE channel_id = $1")
         .bind(ch.to_string())
         .fetch_one(&db)
@@ -833,7 +810,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
         .unwrap()
         .try_get("next_seq")
         .unwrap();
-    assert_eq!(next_seq, 1, "二次 finalize 不得消费 seq（事务回滚，无洞）");
+    assert_eq!(next_seq, 2, "二次 finalize 不得消费 seq（事务回滚，无洞）");
 }
 
 // ── M2 Slice 0：resource dispatch / fs.* 回归锁 ────────────────────────────────
@@ -3503,10 +3480,35 @@ async fn cancel_chain_blocks_downstream_and_is_idempotent(db: PgPool) {
     )
     .await
     .unwrap();
-    let task = tokio::time::timeout(std::time::Duration::from_secs(5), a_control.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    // The command commits admission; an inline offer may defer to the common
+    // worker. This in-process fixture owns no main loop, so drive that worker
+    // while preferring a task that has already arrived on the real transport.
+    let offered = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let mut retry = tokio::time::interval(std::time::Duration::from_millis(100));
+        loop {
+            tokio::select! {
+                biased;
+                task = a_control.recv() => break task.expect("A's control transport must remain open"),
+                _ = retry.tick() => {
+                    dispatch_intents::recover_once(&db, &publisher, &registry, &locator)
+                        .await.expect("the common worker must be able to scan admitted work");
+                }
+            }
+        }
+    }).await;
+    let task = match offered {
+        Ok(task) => task,
+        Err(_) => {
+            let runs: Vec<Value> = sqlx::query_scalar(
+                "SELECT to_jsonb(r) FROM bot_runs r WHERE channel_id=$1 ORDER BY bot_id",
+            )
+            .bind(ch.to_string())
+            .fetch_all(&db)
+            .await
+            .unwrap();
+            panic!("the common worker did not offer A's admitted task: {runs:#?}");
+        }
+    };
     let task_id: Uuid = task["task_id"].as_str().unwrap().parse().unwrap();
     let a_placeholder: Uuid = task["placeholder_msg_id"]
         .as_str()
@@ -3546,23 +3548,9 @@ async fn cancel_chain_blocks_downstream_and_is_idempotent(db: PgPool) {
         "content":"ask B next", "mention_ids":[bot_b],
         "execution":{"task_id":task_id,"execution_id":execution,"channel_id":ch}
     });
-    let provider_account: String =
-        sqlx::query_scalar("SELECT provider_account_id FROM cheers_sessions WHERE session_id=$1")
-            .bind(task["session_id"].as_str().unwrap())
-            .fetch_one(&db)
-            .await
-            .unwrap();
-    let error = stream::handle_done(
-        &registry,
-        &publisher,
-        &db,
-        &locator,
-        bot_a,
-        &provider_account,
-        &frame,
-    )
-    .await
-    .unwrap_err();
+    let error = stream::handle_done(&registry, &publisher, &db, &locator, bot_a, &frame)
+        .await
+        .unwrap_err();
     assert_eq!(error.code, "TERMINAL_FORBIDDEN");
     assert!(!error.retryable);
     let state: (bool, Option<i64>) =

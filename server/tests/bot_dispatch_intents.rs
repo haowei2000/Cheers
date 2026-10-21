@@ -201,7 +201,6 @@ impl Turn {
             db,
             &self.locator,
             self.author,
-            &self.author.to_string(),
             frame,
         )
         .await
@@ -266,16 +265,7 @@ async fn pause_after_commit(db: &PgPool, turn: &mut Turn) {
         turn.frame(),
     );
     let request = tokio::spawn(async move {
-        stream::handle_done(
-            &registry,
-            &fanout,
-            &db,
-            &locator,
-            author,
-            &author.to_string(),
-            &frame,
-        )
-        .await
+        stream::handle_done(&registry, &fanout, &db, &locator, author, &frame).await
     });
     tokio::time::timeout(Duration::from_secs(5), barrier.entered.notified())
         .await

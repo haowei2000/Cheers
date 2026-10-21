@@ -1,7 +1,8 @@
 # Task Delivery and Completion
 
 This document describes the current Rust gateway and Rust ACP connector. The
-implementation is authoritative: `server/src/gateway/{dispatch_intents,dispatcher,registry,stream,reclaimer}.rs`
+implementation is authoritative: `server/src/domain/{task_claims,sessions}.rs`,
+`server/src/gateway/{dispatch_intents,dispatcher,registry,stream,reclaimer}.rs`
 and `packages/cheers-acp-connector-rs/src/bridge_runtime/`.
 
 ## Dispatch
@@ -73,10 +74,24 @@ rolled-back attempt keeps one conservative slot, while a retry of that same chil
 reuses it. Recovery and receipt replay consume no new admission slots or audits.
 Offers and grants recheck bot-specific authority rather than human prompt policy.
 
-Historical runs without a dispatch input are not replayable. Other direct
-dispatch producers retain their existing behavior: their run and placeholder
-commit together, and a failed enqueue removes that partial placeholder and emits
-`bot_unavailable`.
+Task-claim approval uses a dedicated `task_claim` actor in that same worker. The
+requester must still be allowed to prompt the selected bot, and the bot must be
+ready with a live primary session before approval can consume `pending`. Offline,
+policy, session or database failures leave the approval available for retry.
+The confirmation update, secret approval trigger, task chain, run, placeholder
+and claim's `executing` state plus execution-message ID share one commit. No
+offer can race ahead of that state, and no later dispatch callback rewrites it.
+
+The secret trigger retains a NULL channel sequence; its task-frame sequence is
+zero. Its real claim ID and requester prove this distinct source. It cannot be
+decoded as an ordinary published human message. Recovery freezes its original
+session/key and instructions and checks the approved claim, including expiry
+after row-lock waits. The placeholder also retains the real claim ID after
+acceptance clears the large dispatch input.
+
+All current standard task producers share this preparation and offer path.
+Historical runs without a dispatch input are not replayable. Private claim
+evaluations and suggestion requests remain separate from executable tasks.
 
 Standard tasks require negotiated `task_acceptance` on the current control
 connection. The dispatcher checks it before preparing a turn and again atomically
@@ -95,8 +110,9 @@ sending `task_accept` with its task, placeholder, channel and fresh execution ID
 The gateway locks the matching message and run, revalidates bot enablement,
 writable membership and active task chain, then commits the first execution ID
 and authenticated control connection ID to `bot_runs` before replying.
-For recoverable human intents, it also checks the original sender and selected
-session. Acceptance clears the stored dispatch input and large task envelope in
+For recoverable intents, it also checks their source authority and selected
+session. Approved claims must remain executable both for a first grant and for
+same-owner reconfirmation. Acceptance clears the stored dispatch input and large task envelope in
 that transaction, retaining the execution identity and later terminal receipt.
 
 `task_acceptance.status` has three values:
@@ -155,6 +171,19 @@ signature envelope is excluded from that fingerprint. An exact committed retry
 returns the same successful ACK, including after a gateway restart or subsequent
 message deletion. A changed result, receipt ID, execution or bot is rejected.
 The receipt is retained with the execution tombstone.
+
+An approved claim settles in that same transaction: `done` changes `executing`
+to `completed`, while task `error` changes it to `failed`. A cancelled, expired,
+superseded or mismatched claim cannot publish a fresh result. Database failure
+rolls back the receipt, message and claim together. Claim updates are broadcast
+after commit; receipt replay does not repeat them.
+
+Session bookkeeping also commits with the result, using the session identity on
+the stored placeholder. Caller-supplied session fields cannot redirect it. The
+session becomes idle and its binding detaches only when no other active partial
+turn remains; closed session states remain closed. Selection, offering and
+finalization lock the session before its binding, and selection revalidates the
+exact binding after a lock wait.
 
 Receipt replay is a read-only operation on the authenticated bot connection. It
 runs before active-session authorization because a successful completion already
@@ -229,14 +258,15 @@ deployed runtime uses the in-process locator.
 
 ## Recovery limits
 
-Human-message dispatch intents and children admitted by execution-owned `Done`,
-proactive bridge sends and resource-created bot messages recover automatically
+Human-message and approved task-claim intents, plus children admitted by execution-owned `Done`,
+proactive bridge sends and resource-created bot messages, recover automatically
 until execution acceptance. Human producers include REST, scheduled sends,
 integration delivery and other callers of the shared human-message command.
 Completions without an execution grant are rejected, so there is no separate
-postcommit mention-dispatch path. Task-claim approval still uses direct task
-dispatch and retains its own delivery contract; its results require the same
-execution grant and terminal receipt as other tasks.
+postcommit mention-dispatch path. Cancellation or expiry of an approved claim
+prevents further offers and grants, including reconfirmation of an existing
+grant, and rejects any fresh result. The worker retires unaccepted intents when
+their authority is withdrawn; accepted executions are never offered again.
 
 The `resume` capability remains `ack_only`; it replays no socket event log. Task
 offers come from the run ledger, not this capability. A committed execution grant

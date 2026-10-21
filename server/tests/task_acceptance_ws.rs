@@ -1563,3 +1563,313 @@ async fn a_valid_signed_error_with_mentions_commits_without_admitting_child_work
     assert_eq!(children, 0);
     assert_no_task_before_pong(&mut child_control).await;
 }
+
+impl Fixture {
+    /// Derive requester, source and confirmation through the production writer.
+    /// The scheduler reservation is seeded to avoid making approval tests wait
+    /// for its debounce/ACP evaluation loop.
+    async fn pending_claim(&self, db: &PgPool) -> Value {
+        let source = self
+            .post(
+                &format!("/channels/{}/messages", self.channel),
+                json!({"content":"Please perform this approved claim"}),
+            )
+            .await;
+        let seq = source["channel_seq"].as_i64().unwrap();
+        sqlx::query("INSERT INTO channel_bot_monitoring(channel_id,bot_id,mode) VALUES($1,$2,'off') ON CONFLICT(channel_id,bot_id) DO NOTHING")
+            .bind(self.channel.to_string()).bind(self.bot.id.to_string()).execute(db).await.unwrap();
+        let evaluation = Uuid::new_v4();
+        sqlx::query("INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,dispatched_at) VALUES($1,$2,$3,$4,$4,'dispatched',NOW())")
+            .bind(evaluation.to_string()).bind(self.channel.to_string()).bind(self.bot.id.to_string()).bind(seq).execute(db).await.unwrap();
+        server::domain::sessions::ensure_primary_session_workspace(
+            db,
+            self.bot.id,
+            &self.bot.id.to_string(),
+            &self.channel.to_string(),
+            Some("/approved-workspace"),
+            &[],
+        )
+        .await
+        .unwrap();
+        server::resource::task_claims::handle_evaluate(db,&server::resource::Principal::bot(self.bot.id),
+            &json!({"channel_id":self.channel,"evaluation_id":evaluation,"decision":"claim","confidence":1.0})).await.unwrap()
+    }
+    async fn claim_status(&self, db: &PgPool, claim: &Value) -> Value {
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM task_claim_requests r WHERE claim_id=$1")
+            .bind(claim["claim_id"].as_str().unwrap())
+            .fetch_one(db)
+            .await
+            .unwrap()
+    }
+}
+
+#[sqlx::test]
+async fn an_approved_claim_recovers_after_process_loss_with_its_original_private_trigger_and_session(
+    db: PgPool,
+) {
+    let mut fixture = Fixture::start(&db).await;
+    let pending = fixture.pending_claim(&db).await;
+    let bridge = fixture.bridge(true).await;
+    let key: i64 = 6_742_029;
+    let mut blocker = db.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(key)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::query(&format!("CREATE FUNCTION pause_claim_preparation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.task_frame IS NULL AND NEW.task_frame IS NOT NULL THEN PERFORM pg_advisory_xact_lock({key}::bigint); END IF; RETURN NEW; END $$"))
+        .execute(&db).await.unwrap();
+    sqlx::query("CREATE TRIGGER pause_claim_preparation BEFORE UPDATE ON bot_runs FOR EACH ROW EXECUTE FUNCTION pause_claim_preparation()")
+        .execute(&db).await.unwrap();
+    let approval = {
+        let client = fixture.client.clone();
+        let token = fixture.token.clone();
+        let endpoint = format!(
+            "{}/api/v1/channels/{}/task-claims/{}/resolve",
+            fixture.base,
+            fixture.channel,
+            pending["claim_id"].as_str().unwrap()
+        );
+        tokio::spawn(async move {
+            client
+                .post(endpoint)
+                .bearer_auth(token)
+                .json(&json!({"decision":"accept"}))
+                .send()
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(10),async {
+        loop {
+            let waiting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND NOT granted AND objid=$1::bigint::oid)")
+                .bind(key).fetch_one(&db).await.unwrap();
+            if waiting {break;} tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("claim preparation must wait after approval commit");
+    let committed = fixture.claim_status(&db, &pending).await;
+    assert_eq!(committed["status"], "executing");
+    let before: Value =
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM bot_runs r WHERE placeholder_msg_id=$1")
+            .bind(committed["execution_msg_id"].as_str().unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(before["status"], "pending");
+    assert!(before["task_frame"].is_null());
+    let params = &before["dispatch_input"]["params"];
+    let original_session = params["session_id"].clone();
+    let original_key = params["provider_session_key"].clone();
+    let original_text = before["dispatch_input"]["trigger_message"]["text"].clone();
+    let private: (bool, Option<i64>, String) =
+        sqlx::query_as("SELECT is_secret,channel_seq,msg_type FROM messages WHERE msg_id=$1")
+            .bind(before["trigger_msg_id"].as_str().unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(private, (true, None, "task_claim".into()));
+    drop(fixture.gateway.take());
+    drop(bridge);
+    let _ = approval.await;
+    // A killed backend may still wait on its advisory lock; release before DDL.
+    sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(key)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    drop(blocker);
+    sqlx::raw_sql(
+        "DROP TRIGGER pause_claim_preparation ON bot_runs; DROP FUNCTION pause_claim_preparation()",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let identity =
+        json!({"task_id":before["task_id"],"placeholder_msg_id":before["placeholder_msg_id"]});
+    age_unaccepted_intent(&db, &identity).await;
+    let later = server::domain::sessions::create_channel_session(
+        &db,
+        fixture.bot.id,
+        &fixture.bot.id.to_string(),
+        &fixture.channel.to_string(),
+        "other",
+        Some("/later-primary"),
+        &[],
+    )
+    .await
+    .unwrap();
+    server::domain::sessions::set_primary_session(
+        &db,
+        fixture.bot.id,
+        &fixture.channel.to_string(),
+        later.session_id,
+    )
+    .await
+    .unwrap();
+    fixture.restart(&db).await;
+    let mut recovered = fixture.recovering_bridge().await;
+    let task = next_type(&mut recovered.control, "task").await;
+    assert_eq!(task["task_id"], before["task_id"]);
+    assert_eq!(task["placeholder_msg_id"], before["placeholder_msg_id"]);
+    assert_eq!(task["session_id"], original_session);
+    assert_eq!(task["provider_session_key"], original_key);
+    assert_eq!(task["trigger_message"]["text"], original_text);
+    assert_eq!(task["cwd"], "/approved-workspace");
+    assert_eq!(
+        task["trigger_seq"], 0,
+        "the private approval trigger never pretends to be a published human sequence"
+    );
+    let execution = Uuid::new_v4();
+    accept(
+        &mut recovered.control,
+        acceptance(&task, execution),
+        "granted",
+    )
+    .await;
+    let result = terminal(&task, execution, Uuid::new_v4(), "Recovered approved work");
+    assert_eq!(terminal_ack(&mut recovered.data, &result).await["ok"], true);
+    assert_eq!(
+        fixture.claim_status(&db, &pending).await["status"],
+        "completed"
+    );
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bot_runs WHERE trigger_msg_id=$1")
+        .bind(task["trigger_msg_id"].as_str().unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    drop(fixture.gateway.take());
+    drop(recovered);
+    fixture.restart(&db).await;
+    let mut replay = fixture.recovering_bridge().await;
+    assert_eq!(terminal_ack(&mut replay.data, &result).await["ok"], true);
+    assert_no_task_for(&mut replay.control, Duration::from_secs(7)).await;
+    assert_eq!(
+        fixture.claim_status(&db, &pending).await["status"],
+        "completed"
+    );
+}
+
+#[sqlx::test]
+async fn task_claim_http_errors_match_persisted_state_and_fast_results_are_not_overwritten(
+    db: PgPool,
+) {
+    let fixture = Fixture::start(&db).await;
+    let mut pending = fixture.pending_claim(&db).await;
+    let endpoint = |claim: &Value| {
+        format!(
+            "{}/api/v1/channels/{}/task-claims/{}/resolve",
+            fixture.base,
+            fixture.channel,
+            claim["claim_id"].as_str().unwrap()
+        )
+    };
+    let response = fixture
+        .client
+        .post(endpoint(&pending))
+        .bearer_auth(&fixture.token)
+        .json(&json!({"decision":"accept"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::CONFLICT,
+        "offline approval remains retryable"
+    );
+    assert_eq!(
+        fixture.claim_status(&db, &pending).await["status"],
+        "pending"
+    );
+    let mut bridge = fixture.bridge(true).await;
+    for kind in ["done", "error"] {
+        if kind == "error" {
+            pending = fixture.pending_claim(&db).await;
+        }
+        let approval = {
+            let client = fixture.client.clone();
+            let token = fixture.token.clone();
+            let url = endpoint(&pending);
+            tokio::spawn(async move {
+                client
+                    .post(url)
+                    .bearer_auth(token)
+                    .json(&json!({"decision":"accept"}))
+                    .send()
+                    .await
+                    .unwrap()
+            })
+        };
+        let task = next_type(&mut bridge.control, "task").await;
+        let execution = Uuid::new_v4();
+        accept(&mut bridge.control, acceptance(&task, execution), "granted").await;
+        let mut result = terminal(&task, execution, Uuid::new_v4(), "Immediate claim result");
+        if kind == "error" {
+            result["type"] = json!("error");
+            result["message"] = json!("Immediate claim failure");
+            result.as_object_mut().unwrap().remove("content");
+        }
+        assert_eq!(terminal_ack(&mut bridge.data, &result).await["ok"], true);
+        let response = approval.await.unwrap();
+        let status = response.status();
+        let body: Value = response.json().await.unwrap();
+        assert!(status.is_success(), "{status}: {body}");
+        assert_eq!(body["execution_msg_id"], task["placeholder_msg_id"]);
+        let expected = if kind == "done" {
+            "completed"
+        } else {
+            "failed"
+        };
+        assert_eq!(
+            fixture.claim_status(&db, &pending).await["status"],
+            expected,
+            "late approval work cannot overwrite a terminal result"
+        );
+        let list: Value = fixture
+            .client
+            .get(format!(
+                "{}/api/v1/channels/{}/task-claims",
+                fixture.base, fixture.channel
+            ))
+            .bearer_auth(&fixture.token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let row = list["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["claim_id"] == pending["claim_id"])
+            .unwrap();
+        assert_eq!(row["status"], expected);
+        assert_eq!(terminal_ack(&mut bridge.data, &result).await["ok"], true);
+        assert_eq!(
+            fixture.claim_status(&db, &pending).await["status"],
+            expected
+        );
+    }
+    let failed = fixture.pending_claim(&db).await;
+    sqlx::raw_sql("CREATE FUNCTION reject_approved_claim() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected approval DB failure'; END $$; CREATE CONSTRAINT TRIGGER reject_approved_claim AFTER INSERT ON bot_runs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_approved_claim()")
+        .execute(&db).await.unwrap();
+    let response = fixture
+        .client
+        .post(endpoint(&failed))
+        .bearer_auth(&fixture.token)
+        .json(&json!({"decision":"accept"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body: Value = response.json().await.unwrap();
+    assert!(
+        !body.to_string().to_lowercase().contains("offline"),
+        "a DB failure cannot be reported as a connector outage: {body}"
+    );
+    let state = fixture.claim_status(&db, &failed).await;
+    assert_eq!(state["status"], "pending");
+    assert!(state["execution_msg_id"].is_null());
+    assert!(state["resolution_note"].is_null());
+    assert_no_task_before_pong(&mut bridge.control).await;
+}

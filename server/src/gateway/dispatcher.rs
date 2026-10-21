@@ -1,17 +1,10 @@
-//! Shared task-frame preparation and direct dispatch for task-claim approvals.
-//! Human messages and bot mentions use the recoverable dispatch-intent worker.
-use std::sync::Arc;
+//! Shared task-frame preparation for the recoverable dispatch-intent worker.
 
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{
-    registry::BotLocator,
-    stream::{StreamEntry, StreamRegistry},
-};
-use crate::domain::sessions;
-use crate::gateway::realtime::{fanout::Fanout, frame::WireFrame};
+use crate::gateway::realtime::frame::WireFrame;
 use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 
 /// 派发参数。
@@ -26,8 +19,7 @@ pub struct DispatchParams {
     pub session_id: Option<Uuid>,
     /// The bot@bot chain this hop belongs to (DECENTRALIZED_MESH §8). Stamped onto
     /// the placeholder so the whole cascade is cancelable as one unit and the
-    /// dispatch gate can block hops of a cancelled chain. Direct task-claim
-    /// approvals currently use `None`.
+    /// dispatch gate can block hops of a cancelled chain.
     pub chain_id: Option<String>,
     /// Gateway-assembled resource context for this dispatch (docs/design/RESOURCE_CONTEXT.md,
     /// F2 handoff). When `Some`, it OVERRIDES any bundle on the trigger message and
@@ -37,24 +29,12 @@ pub struct DispatchParams {
     pub context_bundle: Option<Value>,
 }
 
-/// 派发结果。
-pub enum DispatchResult {
-    /// 成功派发，返回占位 msg_id。
-    Dispatched { placeholder_msg_id: Uuid },
-    /// 幂等：该 (trigger_msg_id, bot_id) 已有占位且仍在处理，跳过。
-    AlreadyInProgress,
-    /// bot 不在线。
-    BotOffline,
-    /// 数据库错误。
-    DbError(String),
-}
-
 /// Per-trigger memo for the S3-backed context that every bot triggered by the SAME
 /// message would otherwise re-fetch independently: attachment bytes (an image can be
 /// up to 8 MB, GET + base64 per bot), audio transcripts, and the channel's pinned
 /// prompt blocks. Callers create one instance before their per-bot dispatch loop and
-/// pass `&cache` into each `dispatch`, so each object is fetched at most once per
-/// trigger. Per-bot inlining decisions (budget, audio capability) are unchanged — only
+/// pass `&cache` into task preparation, so repeated offers reuse reads within a
+/// recovery batch. Per-bot inlining decisions (budget, audio capability) are unchanged — only
 /// the byte fetch is shared. `None`/miss is memoized too (best-effort: don't re-hit S3).
 #[derive(Default)]
 pub struct MediaCache {
@@ -77,158 +57,6 @@ impl MediaCache {
         let blocks = load_pinned_context(db, channel_id).await?;
         self.pinned.lock().await.insert(channel_id, blocks.clone());
         Ok(blocks)
-    }
-}
-
-pub async fn dispatch(
-    db: &PgPool,
-    fanout: &Arc<dyn Fanout>,
-    registry: &StreamRegistry,
-    bot_locator: &Arc<dyn BotLocator>,
-    params: DispatchParams,
-    media_cache: &MediaCache,
-) -> DispatchResult {
-    // Capability belongs to the current control binding, so a legacy/replaced
-    // connector cannot bypass the durable execution grant by ignoring a field.
-    if !bot_locator.supports_task_acceptance(params.bot_id).await {
-        if let Some(session_id) = params.session_id {
-            let _ = sessions::finalize_session(db, session_id).await;
-        }
-        return DispatchResult::BotOffline;
-    }
-    // Resolve desired configuration before creating a turn. A failed metadata
-    // read must not run the agent under a fallback model or permission mode.
-    let workspace = match load_session_settings(db, &params.provider_session_key).await {
-        Ok(settings) => settings,
-        Err(error) => return DispatchResult::DbError(error.to_string()),
-    };
-    // The deterministic placeholder identifies this trigger/bot pair. Its unique
-    // run record elects one dispatcher in the same transaction as the message;
-    // retaining the run prevents redispatch even after placeholder cleanup.
-    let placeholder_id = derive_placeholder_id(params.trigger_msg_id, params.bot_id);
-    let task_id = Uuid::new_v4();
-
-    // Finish potentially slow context/media reads before creating a live turn.
-    // Offline recovery must not see an entry that is still waiting on S3.
-    let mut task_context = load_task_context(db, params.trigger_msg_id, params.bot_id, media_cache)
-        .await
-        .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
-    task_context.pinned = media_cache
-        .pinned_context(db, params.channel_id)
-        .await
-        .unwrap_or_else(|error| {
-            tracing::warn!(%error, "pinned context read failed; omitting on direct dispatch");
-            Vec::new()
-        });
-    // A gateway-assembled handoff bundle (bot@bot) overrides the trigger message's
-    // own bundle; otherwise the human-attached bundle read above flows through.
-    if params.context_bundle.is_some() {
-        task_context.context_bundle = params.context_bundle.clone();
-    }
-    // Per-session ACP root set (cwd + additionalDirectories) stored on the session
-    // row; absent → the connector falls back to its default_cwd.
-    let task_frame = build_task_frame(
-        task_id,
-        params.channel_id,
-        params.trigger_msg_id,
-        params.trigger_seq,
-        params.depth,
-        placeholder_id,
-        &params.provider_session_key,
-        params.session_id,
-        task_context,
-        workspace,
-    );
-
-    // Nest the bot turn under its trigger so clients render it as a sub-message
-    // (not an independent top-level row). Persist session_id on content_data so
-    // a human Reply can reuse the same session/model without a separate lookup.
-    let content_data = params.session_id.map(|sid| json!({ "session_id": sid }));
-    match create_placeholder(
-        db,
-        task_id,
-        placeholder_id,
-        params.channel_id,
-        params.bot_id,
-        params.trigger_msg_id,
-        params.depth,
-        params.chain_id.as_deref(),
-        params.context_bundle.as_ref(),
-        content_data.as_ref(),
-    )
-    .await
-    {
-        Ok(true) => {}                                         // 胜者：本次插入占位，继续派发
-        Ok(false) => return DispatchResult::AlreadyInProgress, // 占位已存在（败者 / 重投）
-        Err(e) => return DispatchResult::DbError(e),
-    }
-
-    // ── 注册 StreamEntry ─────────────────────────────────────────────────────
-    registry.register(StreamEntry {
-        msg_id: placeholder_id,
-        bot_id: params.bot_id,
-        channel_id: params.channel_id,
-        task_id,
-        trigger_msg_id: params.trigger_msg_id,
-        session_id: params.session_id,
-        finalized: false,
-        last_touched_ms: Default::default(),
-    });
-
-    // ── fan-out 占位气泡给浏览器（终态帧，先落库再投递）─────────────────────
-    let bubble = placeholder_frame(&params, placeholder_id);
-    fanout.broadcast_channel(params.channel_id, bubble).await;
-    tracing::debug!(
-        bot_id = %params.bot_id,
-        channel_id = %params.channel_id,
-        placeholder_msg_id = %placeholder_id,
-        "placeholder created and empty bubble fanned out"
-    );
-
-    let delivered = bot_locator.dispatch_task(params.bot_id, task_frame).await;
-
-    if !delivered {
-        // The placeholder is an internal streaming affordance, not a chat event.
-        // Remove it rather than persisting "[bot offline]" as a bot message, then
-        // send one terminal transient frame so active clients can dismiss it and
-        // show an error toast. History remains free of failed pseudo-replies.
-        if let Ok(Some(failed)) = remove_placeholder(db, placeholder_id).await {
-            fanout
-                .broadcast_channel(
-                    failed.channel_id,
-                    bot_unavailable_frame(failed.channel_id, placeholder_id, params.bot_id),
-                )
-                .await;
-        }
-        registry.remove(placeholder_id);
-        if let Some(session_id) = params.session_id {
-            let _ = sessions::finalize_session(db, session_id).await;
-        }
-        return DispatchResult::BotOffline;
-    }
-
-    // The bot is now working on this turn. The matching "idle" signal is the
-    // turn's `message_done` (or the offline/failed done-frame above) — clients
-    // (Fleet view, chat) pair the two; no separate end frame is needed.
-    let processing = WireFrame::channel(
-        params.channel_id,
-        "bot_processing",
-        json!({ "bot_id": params.bot_id, "channel_id": params.channel_id }),
-    );
-    fanout
-        .broadcast_channel(params.channel_id, processing)
-        .await;
-
-    tracing::info!(
-        bot_id = %params.bot_id,
-        channel_id = %params.channel_id,
-        trigger_msg_id = %params.trigger_msg_id,
-        placeholder_msg_id = %placeholder_id,
-        task_id = %task_id,
-        "task dispatched to bot"
-    );
-    DispatchResult::Dispatched {
-        placeholder_msg_id: placeholder_id,
     }
 }
 
@@ -261,8 +89,8 @@ pub(crate) fn placeholder_frame(params: &DispatchParams, placeholder_id: Uuid) -
     )
 }
 
-/// Hydrate a frozen trigger using the same media/config/wire builders as
-/// direct dispatch. Call outside a transaction; its result is persisted once.
+/// Hydrate a frozen trigger outside a transaction; persist the result once.
+/// All producers share these media/config/wire builders.
 pub(crate) async fn prepare_task_from_snapshot(
     db: &PgPool,
     task_id: Uuid,
@@ -292,78 +120,6 @@ pub(crate) async fn prepare_task_from_snapshot(
     ))
 }
 
-/// 原子创建占位。返回 `true` 表示本次 INSERT 胜出（rows_affected == 1）；
-/// `false` 表示占位已存在（并发双触发的败者，或同一触发的重投）——调用方据此
-/// 放弃派发，避免 bot 重复跑同一任务（R5）。
-///
-/// `trigger_msg_id` is stored as `in_reply_to_msg_id` so the bot turn nests under
-/// the human (or prior-bot) trigger in the channel timeline.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "idempotent placeholder identity and causation fields map directly to the insert"
-)]
-async fn create_placeholder(
-    db: &PgPool,
-    task_id: Uuid,
-    placeholder_id: Uuid,
-    channel_id: Uuid,
-    bot_id: Uuid,
-    trigger_msg_id: Uuid,
-    depth: i32,
-    chain_id: Option<&str>,
-    context_bundle: Option<&Value>,
-    content_data: Option<&Value>,
-) -> Result<bool, String> {
-    let mut tx = db.begin().await.map_err(|error| error.to_string())?;
-    // The existing run ledger is also the tombstone after placeholder removal.
-    // A duplicate trigger cannot obtain a new execution identity after cleanup.
-    let run = sqlx::query!(
-        "INSERT INTO bot_runs
-            (bot_run_id, task_id, channel_id, trigger_msg_id, bot_id, placeholder_msg_id,
-             binding_type, status)
-         VALUES ($1, $1, $2, $3, $4, $5, 'acp', 'prepared')
-         ON CONFLICT (placeholder_msg_id) DO NOTHING",
-        task_id.to_string(),
-        channel_id.to_string(),
-        trigger_msg_id.to_string(),
-        bot_id.to_string(),
-        placeholder_id.to_string(),
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| error.to_string())?;
-    if run.rows_affected() == 0 {
-        return Ok(false);
-    }
-    // Bot stream placeholders use the same explicit text kind as completed
-    // replies. The baseline DB default is legacy `normal`, not `text`.
-    let result = sqlx::query!(
-        "INSERT INTO messages
-            (msg_id, task_id, channel_id, sender_type, sender_id, content, msg_type, is_partial, depth, chain_id,
-             context_bundle, in_reply_to_msg_id, content_data)
-         VALUES ($1, $9, $2, 'bot', $3, '', 'text', TRUE, $4, $5, $6, $7, $8)
-         ON CONFLICT (msg_id) DO NOTHING",
-        placeholder_id.to_string(),
-        channel_id.to_string(),
-        bot_id.to_string(),
-        depth,
-        chain_id,
-        context_bundle,
-        trigger_msg_id.to_string(),
-        content_data,
-        task_id.to_string(),
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    if result.rows_affected() == 0 {
-        return Ok(false);
-    }
-    tx.commit().await.map_err(|error| error.to_string())?;
-    Ok(true)
-}
-
 pub(crate) struct FailedPlaceholder {
     pub(crate) channel_id: Uuid,
 }
@@ -391,89 +147,6 @@ struct TaskContext {
     /// (docs/design/RESOURCE_CONTEXT.md). Threaded through to the Task frame so the
     /// agent can resolve the refs as itself. `None` when the message carried none.
     context_bundle: Option<Value>,
-}
-
-impl TaskContext {
-    fn fallback(msg_id: Uuid) -> Self {
-        Self {
-            trigger_message: json!({ "msg_id": msg_id }),
-            attachments: Vec::new(),
-            pinned: Vec::new(),
-            context_bundle: None,
-        }
-    }
-}
-
-async fn load_task_context(
-    db: &PgPool,
-    msg_id: Uuid,
-    bot_id: Uuid,
-    media_cache: &MediaCache,
-) -> Option<TaskContext> {
-    #[derive(Debug, sqlx::FromRow)]
-    struct TaskRow {
-        sender_id: Option<String>,
-        content: Option<String>,
-        created_at: Option<chrono::DateTime<chrono::Utc>>,
-        msg_type: Option<String>,
-        in_reply_to_msg_id: Option<String>,
-        file_ids: Option<Value>,
-        context_bundle: Option<Value>,
-        sender_name: Option<String>,
-    }
-
-    let row = sqlx::query_as!(
-        TaskRow,
-        "SELECT
-            m.sender_id,
-            m.content,
-            m.created_at,
-            m.msg_type,
-            m.in_reply_to_msg_id,
-            m.file_ids,
-            m.context_bundle,
-            COALESCE(NULLIF(u.display_name, ''), u.username, NULLIF(b.display_name, ''), b.username) AS sender_name
-         FROM messages m
-         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
-         LEFT JOIN bot_accounts b ON m.sender_type = 'bot' AND b.bot_id = m.sender_id
-         WHERE m.msg_id = $1",
-        msg_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await
-    .ok()??;
-
-    let file_ids = row
-        .file_ids
-        .and_then(|value| {
-            value.as_array().map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(ToString::to_string))
-                    .collect::<Vec<_>>()
-            })
-        })
-        .unwrap_or_default();
-    let attachments = load_attachments(db, &file_ids, bot_id, media_cache).await.unwrap_or_else(|error| {
-            tracing::warn!(%error, "attachment metadata load failed; sending bare file_ids on direct dispatch");
-            file_ids.iter().map(|file_id| json!({"file_id":file_id})).collect()
-    });
-    let timestamp = row.created_at.map(|dt| dt.to_rfc3339());
-
-    Some(TaskContext {
-        trigger_message: json!({
-            "msg_id": msg_id,
-            "user": row.sender_id.unwrap_or_default(),
-            "sender_name": row.sender_name,
-            "text": row.content.unwrap_or_default(),
-            "timestamp": timestamp,
-            "msg_type": row.msg_type.unwrap_or_else(|| "text".to_string()),
-            "in_reply_to_msg_id": row.in_reply_to_msg_id,
-        }),
-        attachments,
-        pinned: Vec::new(),
-        context_bundle: row.context_bundle,
-    })
 }
 
 /// Largest single image inlined (raw bytes) into a task frame as `image_b64` — same ceiling

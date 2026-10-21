@@ -4,6 +4,7 @@
 //! and grants are never released or automatically replayed after a disconnect.
 
 use cheers_bridge_protocol::TaskAcceptanceStatus;
+use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -117,7 +118,7 @@ pub async fn claim(
     };
     let mut tx = db.begin().await?;
     let message = sqlx::query!(
-        "SELECT channel_id, sender_id, sender_type, is_partial, is_deleted, channel_seq, chain_id
+        "SELECT channel_id, sender_id, sender_type, is_partial, is_deleted, channel_seq, chain_id,content_data
          FROM messages WHERE msg_id = $1 FOR UPDATE",
         placeholder_msg_id.to_string(),
     )
@@ -146,6 +147,18 @@ pub async fn claim(
                 && run.binding_type == "acp"
                 && matches!(run.status.as_str(), "prepared" | "accepted") =>
         {
+            let expected_claim = match message
+                .content_data
+                .as_ref()
+                .and_then(|data| data.get("task_claim_id"))
+            {
+                None => None,
+                Some(Value::String(id)) => match id.parse::<Uuid>() {
+                    Ok(id) => Some(id),
+                    Err(_) => return Ok(Decision::rejected("task claim identity is invalid")),
+                },
+                Some(_) => return Ok(Decision::rejected("task claim identity is invalid")),
+            };
             if !may_execute(&mut tx, bot_id, channel_id, message.chain_id.as_deref()).await? {
                 Decision::rejected("bot may no longer execute this task")
             } else {
@@ -174,6 +187,17 @@ pub async fn claim(
                         } else if dispatch_input.is_some() {
                             return Ok(Decision::rejected("dispatch input changed"));
                         }
+                        if !claim_is_executable(
+                            &mut tx,
+                            expected_claim,
+                            placeholder_msg_id,
+                            bot_id,
+                            channel_id,
+                        )
+                        .await?
+                        {
+                            return Ok(Decision::rejected("task claim is no longer executable"));
+                        }
                         let granted = sqlx::query!(
                             "UPDATE bot_runs
                          SET execution_id = $2, execution_connection_id = $3,
@@ -200,7 +224,19 @@ pub async fn claim(
                             && connection == connection_id.to_string()
                             && run.status == "accepted" =>
                     {
-                        Decision::granted()
+                        if claim_is_executable(
+                            &mut tx,
+                            expected_claim,
+                            placeholder_msg_id,
+                            bot_id,
+                            channel_id,
+                        )
+                        .await?
+                        {
+                            Decision::granted()
+                        } else {
+                            Decision::rejected("task claim is no longer executable")
+                        }
                     }
                     (Some(_), Some(_)) => Decision::owned(),
                     _ => Decision::rejected("task execution claim is inconsistent"),
@@ -211,4 +247,29 @@ pub async fn claim(
     };
     tx.commit().await?;
     Ok(decision)
+}
+
+/// Recheck the approval after any session/policy lock waits and before issuing
+/// either a first grant or its same-owner replay. This adds no execution owner.
+async fn claim_is_executable(
+    tx: &mut Transaction<'_, Postgres>,
+    expected_claim: Option<Uuid>,
+    placeholder_msg_id: Uuid,
+    bot_id: Uuid,
+    channel_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    match crate::domain::task_claims::lock_execution_claim(
+        tx,
+        expected_claim,
+        placeholder_msg_id,
+        bot_id,
+        channel_id,
+    )
+    .await
+    {
+        Ok(_) => Ok(true),
+        Err(crate::errors::AppError::Db(error)) => Err(error),
+        Err(crate::errors::AppError::Internal(detail)) => Err(sqlx::Error::Protocol(detail)),
+        Err(_) => Ok(false),
+    }
 }

@@ -318,7 +318,6 @@ pub async fn handle_done(
     db: &PgPool,
     bot_locator: &Arc<dyn BotLocator>,
     bot_id: Uuid,
-    provider_account_id: &str,
     frame: &Value,
 ) -> Result<TerminalOutcome, TerminalError> {
     let request = TerminalRequest::parse(frame)?;
@@ -326,11 +325,6 @@ pub async fn handle_done(
         return Ok(outcome);
     }
     let msg_id = request.msg_id;
-    let entry_session_id = registry
-        .entries
-        .get(&msg_id)
-        .and_then(|entry| entry.session_id);
-
     let content = if frame.get("type").and_then(Value::as_str) == Some("error") {
         frame
             .get("message")
@@ -448,6 +442,27 @@ pub async fn handle_done(
             "bot may no longer publish this result",
         ));
     }
+    let stored_id = |key: &str| {
+        message
+            .content_data
+            .as_ref()
+            .and_then(|data| data.get(key))
+            .map(|value| {
+                value
+                    .as_str()
+                    .and_then(|id| id.parse::<Uuid>().ok())
+                    .ok_or_else(|| {
+                        TerminalError::rejected(
+                            "TERMINAL_FORBIDDEN",
+                            "stored terminal session or claim identity is invalid",
+                        )
+                    })
+            })
+            .transpose()
+    };
+    let session_id = stored_id("session_id")?;
+    let task_claim_id = stored_id("task_claim_id")?;
+    let claim_update = task_results::complete(&mut tx, &request, bot_id, task_claim_id).await?;
     if let Some(data) = message.content_data {
         let finalized =
             crate::resource::messages::finalize_card_metadata(data, !content.trim().is_empty());
@@ -485,7 +500,23 @@ pub async fn handle_done(
     mentions::replace_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(TerminalError::database("stream.done: replace mentions"))?;
-    task_results::complete(&mut tx, &request).await?;
+    if let Some(session_id) = session_id {
+        sessions::finalize_session_without_active_turns_tx(&mut tx, session_id)
+            .await
+            .map_err(|error| match error {
+                crate::errors::AppError::Db(error) => {
+                    TerminalError::database("stream.done: finalize session")(error)
+                }
+                other => {
+                    tracing::error!(%other, "terminal session finalization failed");
+                    TerminalError {
+                        code: "INTERNAL_ERROR",
+                        detail: "terminal session finalization failed",
+                        retryable: true,
+                    }
+                }
+            })?;
+    }
     let child_count = if frame.get("type").and_then(Value::as_str) == Some("done") {
         chains::enqueue_terminal_children(
             &mut tx,
@@ -574,6 +605,22 @@ pub async fn handle_done(
         }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
+    if let Some(update) = claim_update {
+        fanout
+            .broadcast_channel(
+                update.channel_id,
+                WireFrame::channel(
+                    update.channel_id,
+                    "task_claim_updated",
+                    json!({
+                        "claim_id": update.claim_id,
+                        "status": update.status,
+                        "execution_msg_id": update.execution_msg_id,
+                    }),
+                ),
+            )
+            .await;
+    }
 
     if child_count != 0 {
         let (db, fanout, registry, locator) = (
@@ -590,15 +637,6 @@ pub async fn handle_done(
                 tracing::warn!(%msg_id, %error, "child dispatch intents retained for recovery");
             }
         });
-    }
-
-    // Finish session bookkeeping before acknowledging this newly committed result.
-    if let Some(sid) =
-        resolve_session_id(db, bot_id, provider_account_id, frame, entry_session_id).await
-    {
-        if let Err(e) = sessions::finalize_session(db, sid).await {
-            tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-        }
     }
 
     Ok(TerminalOutcome::Committed)
@@ -704,7 +742,7 @@ fn decide_explicit_or_entry(
     }
 }
 
-/// Resolve which session_id a done/update frame refers to, by the 4-source
+/// Resolve which session_id a delta frame refers to, by the 4-source
 /// precedence (explicit id > stream entry > provider_session_key > provider_session_id).
 /// On explicit-vs-entry mismatch, logs the warning and prefers the entry id.
 /// Returns None if nothing resolves.
