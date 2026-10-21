@@ -117,6 +117,40 @@ pub(crate) fn session_response(
     })
 }
 
+/// Every transaction-based login uses the same browser/native response contract.
+pub(crate) fn completed_login_response(
+    completed: auth_sessions::CompletedLogin,
+) -> Result<Response, AppError> {
+    let auth_sessions::CompletedLogin {
+        user,
+        session,
+        client,
+        trusted_device,
+    } = completed;
+    let refresh = session.refresh_token.clone();
+    let csrf = session.csrf_token.clone();
+    let mut body = session_response(&user, session, client)?;
+    if client != auth_sessions::ClientType::Web {
+        body.trusted_device = trusted_device.clone();
+    }
+    let mut response = if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(body).into_response()
+    };
+    if client == auth_sessions::ClientType::Web {
+        if let Some(trusted) = trusted_device {
+            response.headers_mut().append(
+                axum::http::header::SET_COOKIE,
+                auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
+                    .parse()
+                    .expect("valid cookie header"),
+            );
+        }
+    }
+    Ok(response)
+}
+
 /// POST /api/v1/auth/login
 pub async fn login(
     State(state): State<AppState>,
@@ -155,7 +189,7 @@ pub async fn login(
     if tf_status.enabled && !trusted {
         let transaction = auth_sessions::create_factor_transaction(
             &state.db,
-            &user.id,
+            &user,
             client,
             body.device_name.as_deref(),
             "password",
@@ -1388,9 +1422,14 @@ pub async fn verify_two_factor_login(
         .transaction_id
         .as_deref()
         .ok_or_else(|| AppError::Unauthorized("authentication transaction is required".into()))?;
-    let (user_id, client, device_name, primary_factor) =
+    let (user_id, primary_factor) =
         auth_sessions::factor_transaction_user(&state.db, transaction_id).await?;
     let remember_device = body.remember_device;
+    let mut factor = if body.method.as_deref() == Some("password") {
+        "password"
+    } else {
+        "totp_or_recovery"
+    };
     let master_key = two_factor::master_key(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
@@ -1403,8 +1442,7 @@ pub async fn verify_two_factor_login(
         )
         .fetch_optional(&state.db)
         .await?;
-        primary_factor.as_deref() != Some("password")
-            && primary_factor.is_some()
+        primary_factor != "password"
             && methods.password
             && match hash.flatten() {
                 Some(hash) => crate::infra::crypto::verify_password(body.code.clone(), hash)
@@ -1418,54 +1456,24 @@ pub async fn verify_two_factor_login(
     if body.method.as_deref() != Some("password") && !verified && methods.email {
         verified =
             two_factor::verify_email_code(&state.db, &state.config, &user_id, &body.code).await?;
+        if verified {
+            factor = "email";
+        }
     }
     if !verified {
         auth_sessions::record_factor_failure(&state.db, transaction_id).await?;
         return Err(AppError::Unauthorized("invalid 2FA code".into()));
     }
-    auth_sessions::consume_factor_transaction(&state.db, transaction_id).await?;
-    let user = auth::load_auth_user(&state.db, &user_id).await?;
-    let session = auth_sessions::finalize_login(
+    let completed = auth_sessions::complete_transaction_login(
         &state.db,
         &state.config,
-        &user,
-        client,
-        device_name.as_deref(),
+        transaction_id,
+        &user_id,
+        auth_sessions::LoginProof::StoredPrimary { factor },
+        remember_device,
     )
     .await?;
-    let session_id = session.session_id.clone();
-    let refresh = session.refresh_token.clone();
-    let csrf = session.csrf_token.clone();
-    let mut login_body = session_response(&user, session, client)?;
-    if remember_device {
-        let trusted = auth_sessions::issue_trusted_device(
-            &state.db,
-            &user.id,
-            &session_id,
-            device_name.as_deref(),
-        )
-        .await?;
-        if client != auth_sessions::ClientType::Web {
-            login_body.trusted_device = Some(trusted.clone());
-        }
-        let mut response = if client == auth_sessions::ClientType::Web {
-            response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-        } else {
-            Json(login_body).into_response()
-        };
-        response.headers_mut().append(
-            axum::http::header::SET_COOKIE,
-            auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
-                .parse()
-                .expect("valid cookie header"),
-        );
-        return Ok(response);
-    }
-    Ok(if client == auth_sessions::ClientType::Web {
-        response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(login_body).into_response()
-    })
+    completed_login_response(completed)
 }
 
 #[derive(Deserialize)]
@@ -1493,7 +1501,7 @@ pub async fn send_two_factor_email(
     }
     limiter.record_failure(&key);
 
-    let (user_id, _client, _device_name, _primary_factor) =
+    let (user_id, _) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
     if !two_factor::methods(&state.db, &user_id).await?.email {
         return Err(AppError::BadRequest(

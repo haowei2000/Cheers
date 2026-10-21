@@ -1189,7 +1189,7 @@ pub async fn handoff(
     if two_factor::status(&state.db, &user_id).await?.enabled && !trusted {
         let factor = auth_sessions::create_factor_transaction(
             &state.db,
-            &user_id,
+            &user,
             client,
             context["device_name"].as_str(),
             "oauth",
