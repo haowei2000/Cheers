@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT viewer.user_id AS \"user_id!\", ARRAY(\n                SELECT subject_id FROM unnest($3::text[]) refs(subject_id)\n                WHERE CASE\n                    WHEN subject_id = 'friends' THEN EXISTS(\n                        SELECT 1 FROM bot_accounts owner JOIN friendships f\n                          ON f.pair_key = CASE WHEN owner.created_by < viewer.user_id\n                              THEN owner.created_by || ':' || viewer.user_id\n                              ELSE viewer.user_id || ':' || owner.created_by END\n                        WHERE owner.bot_id = $1 AND owner.created_by <> viewer.user_id\n                          AND f.status = 'accepted')\n                    WHEN starts_with(subject_id, 'channel:') THEN EXISTS(\n                        SELECT 1 FROM channel_memberships cm\n                        WHERE cm.channel_id = substring(subject_id FROM 9)\n                          AND cm.member_id = viewer.user_id AND cm.member_type = 'user')\n                    WHEN starts_with(subject_id, 'workspace:') THEN EXISTS(\n                        SELECT 1 FROM workspace_memberships wm\n                        WHERE wm.workspace_id = substring(subject_id FROM 11)\n                          AND wm.user_id = viewer.user_id AND wm.status = 'active')\n                    ELSE FALSE\n                END) AS \"groups!\"\n             FROM unnest($2::text[]) viewer(user_id)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "groups!",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "aa88e17495927716650befebddfb2ac54eb12189afc0ca56236461e2aa380e03"
+}

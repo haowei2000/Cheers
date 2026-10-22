@@ -159,7 +159,9 @@ async fn interactive_http_rejects_forged_stale_requests_and_replays_accepted_rec
     let locator = InProcessBotLocator::new();
     let (control_tx, mut control_rx) = tokio::sync::mpsc::channel(8);
     let (data_tx, _data_rx) = tokio::sync::mpsc::channel(8);
-    let _connection = locator.bind_control(bot, Uuid::new_v4(), control_tx);
+    let control_connection = Uuid::new_v4();
+    let _connection = locator.bind_control(bot, control_connection, control_tx);
+    assert!(locator.set_task_acceptance(bot, control_connection, true));
     locator.bind_data(bot, Uuid::new_v4(), data_tx);
     let bot_locator: Arc<dyn BotLocator> = locator;
     let fanout: Arc<dyn Fanout> = InProcessFanout::new();
@@ -193,6 +195,17 @@ async fn interactive_http_rejects_forged_stale_requests_and_replays_accepted_rec
     assert_eq!(status, StatusCode::CREATED, "{retry}");
     assert_eq!(retry["msg_id"], receipt.msg_id);
     assert!(control_rx.try_recv().is_err());
+    let intents: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bot_runs WHERE trigger_msg_id=$1 AND dispatch_input IS NOT NULL",
+    )
+    .bind(&receipt.msg_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        intents, 1,
+        "an accepted UI invocation replays one admitted intent"
+    );
     // Current authorization still applies to a replay.
     sqlx::query(
         "UPDATE channel_memberships SET role='readonly' WHERE channel_id=$1 AND member_id=$2",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ResourceError } from "../hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import type { FsClient } from "./fsClient";
 import type { PatchOp } from "./patchOps";
 import {

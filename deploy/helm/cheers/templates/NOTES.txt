@@ -10,7 +10,7 @@ Components:
   rustfs    {{ include "cheers.rustfs.fullname" . }}     (S3, :{{ .Values.rustfs.apiPort }})
 {{- end }}
 {{- if .Values.redis.enabled }}
-  redis     {{ include "cheers.redis.fullname" . }}      (:6379, HA fan-out)
+  redis     {{ include "cheers.redis.fullname" . }}      (:6379, reserved; gateway runtime does not use it)
 {{- end }}
 
 Access the UI:

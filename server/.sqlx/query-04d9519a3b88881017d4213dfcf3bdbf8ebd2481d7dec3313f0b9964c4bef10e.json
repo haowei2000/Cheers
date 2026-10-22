@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.channel_id FROM channels c\n         WHERE c.workspace_id = ANY($1)\n            OR EXISTS (\n                SELECT 1 FROM channel_memberships cm\n                WHERE cm.channel_id = c.channel_id\n                  AND cm.member_id = $2 AND cm.member_type = 'user'\n            ) OR EXISTS (\n                SELECT 1 FROM channel_invites ci\n                WHERE ci.channel_id = c.channel_id\n                  AND (ci.user_id = $2 OR ci.invited_by = $2)\n            ) OR EXISTS (\n                SELECT 1 FROM approval_delegations ad\n                WHERE ad.channel_id = c.channel_id\n                  AND (ad.user_id = $2 OR ad.granted_by = $2)\n            ) OR EXISTS (\n                SELECT 1 FROM bot_event_access bea\n                WHERE bea.channel_id = c.channel_id\n                  AND bea.subject_kind = 'user' AND bea.subject_id = $2\n            ) ORDER BY hashtext(c.channel_id),c.channel_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "04d9519a3b88881017d4213dfcf3bdbf8ebd2481d7dec3313f0b9964c4bef10e"
+}

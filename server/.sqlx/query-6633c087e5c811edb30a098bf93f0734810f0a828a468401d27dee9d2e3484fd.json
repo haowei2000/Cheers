@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests SET status='cancelled',resolved_by=$3,resolution_note=$4,\n             resolved_at=NOW(),updated_at=NOW()\n         WHERE claim_id=$1 AND channel_id=$2 AND status IN ('pending','executing') RETURNING claim_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claim_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6633c087e5c811edb30a098bf93f0734810f0a828a468401d27dee9d2e3484fd"
+}

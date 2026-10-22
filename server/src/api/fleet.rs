@@ -6,10 +6,9 @@
 //! workspace. The retained workspace route uses the same policy checks for
 //! consumers that intentionally need one slice.
 //!
-//! SECURITY: unlike the in-channel live fanout (`allowed_seers`, which fails
-//! open by design), this aggregation surface fails CLOSED — any per-row policy
-//! error drops the row. A DB hiccup must not reveal every pending approval in
-//! the workspace to every member.
+//! SECURITY: policy errors drop affected rows, matching the in-channel live
+//! fanout's fail-closed policy reads. A DB hiccup must not reveal every pending
+//! approval in the workspace to every member.
 
 use axum::{
     extract::{Path, Query, State},
@@ -26,8 +25,8 @@ use crate::{
     api::{bots::is_admin, middleware::Claims},
     app_state::AppState,
     domain::{
-        acp_policy, approval,
-        bot_event_policy::{self, Capability},
+        approval,
+        bot_event_policy::{self, AccessBatch, Capability},
         fleet,
     },
     errors::AppError,
@@ -49,8 +48,8 @@ fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))
 }
 
-/// The caller's channel role for the event-policy matrix (default `member`).
-async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
+/// The caller's current channel role for the event-policy matrix.
+async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> Result<String, AppError> {
     sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
@@ -58,39 +57,39 @@ async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
         uid.to_string(),
     )
     .fetch_optional(&state.db)
-    .await
-    .ok()
-    .flatten()
-    .and_then(|r| Some(r.role.clone()))
-    .unwrap_or_else(|| "member".to_string())
+    .await?
+    .map(|r| r.role)
+    .ok_or_else(|| AppError::Forbidden("not a channel member".into()))
 }
 
 /// Resolve (may_see, may_answer) for one pending card — the same SEE gate and
 /// 3-way answer compose as `resolve_permission`. Fail-closed on errors.
 ///
-/// `rules`/`groups` are the bot's access rules and the caller's matched groups,
-/// batch-loaded ONCE per bot by the caller (see [`get_fleet`]/[`get_fleet_badge`]);
-/// both the SEE and RESPOND gates resolve in memory against them, so this does at
-/// most one DB round-trip per row (the `is_approver` delegation lookup, which is
-/// per-`op_kind` and can't be memoized here). Decision is identical to resolving
-/// each gate independently against the DB.
+/// One operation-local batch shares rule/group reads across cards and both gates.
+/// Platform admins bypass SEE only; answering still requires a real approver or
+/// an explicit RESPOND grant.
 async fn see_and_answer(
     state: &AppState,
     p: &crate::domain::fleet::FleetPending,
     uid: Uuid,
     role: &str,
-    rules: &[bot_event_policy::Rule],
-    groups: &[String],
+    is_platform_admin: bool,
+    access: &mut AccessBatch<'_>,
 ) -> (bool, bool) {
-    let may_see = acp_policy::allows_with_rules(
-        rules,
-        &p.channel_id.to_string(),
-        &uid.to_string(),
-        role,
-        groups,
-        "session/request_permission",
-        Capability::See,
-    );
+    let bot_id = p.bot_id.to_string();
+    let channel_id = p.channel_id.to_string();
+    let user_id = uid.to_string();
+    let may_see = access
+        .may_see(
+            &bot_id,
+            &channel_id,
+            &user_id,
+            role,
+            is_platform_admin,
+            bot_event_policy::EV_PERMISSION_REQUEST,
+        )
+        .await
+        .unwrap_or(false);
     if !may_see {
         return (false, false);
     }
@@ -103,53 +102,18 @@ async fn see_and_answer(
     let actionable = approval::is_approver(&state.db, p.bot_id, p.channel_id, uid, op_kind)
         .await
         .unwrap_or(false)
-        || acp_policy::allows_with_rules(
-            rules,
-            &p.channel_id.to_string(),
-            &uid.to_string(),
-            role,
-            groups,
-            "session/request_permission",
-            Capability::Respond,
-        );
+        || access
+            .allows(
+                &bot_id,
+                &channel_id,
+                &user_id,
+                role,
+                bot_event_policy::EV_PERMISSION_REQUEST,
+                Capability::Respond,
+            )
+            .await
+            .unwrap_or(false);
     (true, actionable)
-}
-
-/// Batch-load each distinct bot's access rules and the caller's matched groups
-/// ONCE (mirrors `api::approval::filter_traces_by_see`). Keyed by `bot_id` so the
-/// per-row SEE/RESPOND gates resolve in memory instead of re-loading the same
-/// bot's rules for every pending row (fixes the N+1 policy fanout).
-///
-/// A bot whose rule load FAILS is deliberately left out of the caches so the
-/// caller drops its rows — preserving this surface's fail-closed contract (the
-/// previous per-row `acp_policy::allows(...).unwrap_or(false)` did the same on a
-/// DB error). A tracked-but-missing bot therefore means "policy unavailable".
-async fn load_policy_caches(
-    state: &AppState,
-    pending: &[crate::domain::fleet::FleetPending],
-    uid: Uuid,
-) -> (
-    HashMap<Uuid, Vec<bot_event_policy::Rule>>,
-    HashMap<Uuid, Vec<String>>,
-) {
-    let uid_s = uid.to_string();
-    let mut rules_by_bot: HashMap<Uuid, Vec<bot_event_policy::Rule>> = HashMap::new();
-    let mut groups_by_bot: HashMap<Uuid, Vec<String>> = HashMap::new();
-    let mut tried: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
-    for p in pending {
-        if !tried.insert(p.bot_id) {
-            continue; // already attempted this bot
-        }
-        let bid = p.bot_id.to_string();
-        // Fail-closed: on a rule-load error, leave this bot out so its rows drop.
-        let Ok(rules) = bot_event_policy::load_rules(&state.db, &bid).await else {
-            continue;
-        };
-        let groups = bot_event_policy::matched_groups(&state.db, &bid, &uid_s, &rules).await;
-        rules_by_bot.insert(p.bot_id, rules);
-        groups_by_bot.insert(p.bot_id, groups);
-    }
-    (rules_by_bot, groups_by_bot)
 }
 
 // ── GET /fleet/badge ─────────────────────────────────────────────────────────
@@ -162,28 +126,22 @@ pub async fn get_fleet_badge(
 ) -> Result<Json<Value>, AppError> {
     let uid = user_id(&claims)?;
     let pending = fleet::find_pending_for_user_all(&state.db, uid).await?;
-    // Batch-load policy rules/groups once per bot, then resolve each row in memory.
-    let (rules_by_bot, groups_by_bot) = load_policy_caches(&state, &pending, uid).await;
+    let mut access = AccessBatch::new(&state.db);
+    let admin = is_admin(&claims);
     let mut roles: HashMap<Uuid, String> = HashMap::new();
     let mut count: i64 = 0;
     for p in pending {
         let role = match roles.get(&p.channel_id) {
             Some(r) => r.clone(),
             None => {
-                let r = channel_role(&state, p.channel_id, uid).await;
+                let Ok(r) = channel_role(&state, p.channel_id, uid).await else {
+                    continue;
+                };
                 roles.insert(p.channel_id, r.clone());
                 r
             }
         };
-        // Fail-closed: a bot absent from the cache had a policy-load error → skip.
-        let Some(rules) = rules_by_bot.get(&p.bot_id) else {
-            continue;
-        };
-        let groups = groups_by_bot
-            .get(&p.bot_id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
-        let (_, actionable) = see_and_answer(&state, &p, uid, &role, rules, groups).await;
+        let (_, actionable) = see_and_answer(&state, &p, uid, &role, admin, &mut access).await;
         if actionable {
             count += 1;
         }
@@ -377,8 +335,7 @@ async fn build_fleet(
         Some(workspace_id) => fleet::find_pending_for_user(&state.db, workspace_id, uid).await?,
         None => fleet::find_pending_for_user_all(&state.db, uid).await?,
     };
-    // Batch-load policy rules/groups once per bot, then resolve each row in memory.
-    let (rules_by_bot, groups_by_bot) = load_policy_caches(state, &pending, uid).await;
+    let mut access = AccessBatch::new(&state.db);
     // Channel roles are shared by both policy checks below; resolve each once.
     let mut roles: HashMap<Uuid, String> = HashMap::new();
     let mut approvals: Vec<Value> = Vec::with_capacity(pending.len());
@@ -387,21 +344,15 @@ async fn build_fleet(
         let role = match roles.get(&p.channel_id) {
             Some(r) => r.clone(),
             None => {
-                let r = channel_role(state, p.channel_id, uid).await;
+                let Ok(r) = channel_role(state, p.channel_id, uid).await else {
+                    continue;
+                };
                 roles.insert(p.channel_id, r.clone());
                 r
             }
         };
-        // Fail-closed: a bot absent from the cache had a policy-load error → drop.
-        let Some(rules) = rules_by_bot.get(&p.bot_id) else {
-            continue;
-        };
-        let groups = groups_by_bot
-            .get(&p.bot_id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
         // SEE gate — fail-closed: on error, drop the row (see module docs).
-        let (may_see, actionable) = see_and_answer(state, &p, uid, &role, rules, groups).await;
+        let (may_see, actionable) = see_and_answer(state, &p, uid, &role, admin, &mut access).await;
         if !may_see {
             continue;
         }

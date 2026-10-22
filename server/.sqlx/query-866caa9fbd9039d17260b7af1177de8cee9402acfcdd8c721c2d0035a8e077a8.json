@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO task_claim_evaluations(evaluation_id,channel_id,bot_id,source_seq_from,source_seq_to,status,reserved_at,dispatched_at)\n         VALUES($1,$2,$3,$4,$5,'dispatched',clock_timestamp(),clock_timestamp())\n         ON CONFLICT(channel_id,bot_id,source_seq_from,source_seq_to) DO UPDATE\n         SET status='dispatched',error=NULL,reserved_at=clock_timestamp(),dispatched_at=clock_timestamp(),completed_at=NULL\n         WHERE task_claim_evaluations.status='failed'\n         RETURNING evaluation_id,dispatched_at AS \"dispatched_at!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "evaluation_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "dispatched_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "866caa9fbd9039d17260b7af1177de8cee9402acfcdd8c721c2d0035a8e077a8"
+}

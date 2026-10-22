@@ -1,4 +1,13 @@
 import { apiJson } from "./client";
+import type { Message } from "@/types";
+
+export interface TaskClaimUpdate {
+  claim_id: string;
+  channel_id: string;
+  status: string;
+  execution_msg_id: string | null;
+  confirmation_message: { msg_id: string; content_data: Message["content_data"] } | null;
+}
 
 export type MonitoringMode = "off" | "text" | "text_and_transcript" | "all_activity";
 export interface BotMonitoring {
@@ -33,9 +42,9 @@ export async function listTaskClaims(channelId: string, status?: string) {
   return (await apiJson<{claims:TaskClaim[]}>(`/channels/${channelId}/task-claims${q}`)).claims;
 }
 export const resolveTaskClaim = (channelId:string, claimId:string, decision:"accept"|"reject") =>
-  apiJson(`/channels/${channelId}/task-claims/${claimId}/resolve`, { method:"POST", body:JSON.stringify({decision}) });
+  apiJson<TaskClaimUpdate>(`/channels/${channelId}/task-claims/${claimId}/resolve`, { method:"POST", body:JSON.stringify({decision}) });
 export const cancelTaskClaim = (channelId: string, claimId: string) =>
-  apiJson(`/channels/${channelId}/task-claims/${claimId}/cancel`, {
+  apiJson<TaskClaimUpdate>(`/channels/${channelId}/task-claims/${claimId}/cancel`, {
     method: "POST",
     body: JSON.stringify({}),
   });

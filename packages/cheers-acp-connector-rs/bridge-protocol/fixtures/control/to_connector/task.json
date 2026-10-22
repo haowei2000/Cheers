@@ -1,4 +1,5 @@
 {
+  "acceptance_required": true,
   "additional_dirs": [
     "/data"
   ],

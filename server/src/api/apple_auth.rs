@@ -438,7 +438,7 @@ async fn login_response(
     if two_factor::status(&state.db, user_id).await?.enabled && !trusted {
         let transaction = auth_sessions::create_factor_transaction(
             &state.db,
-            user_id,
+            &user,
             client,
             device_name,
             "oauth",

@@ -1,0 +1,9 @@
+{
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "execution_id": "11111111-2222-4333-8444-555555555555",
+  "placeholder_msg_id": "33333333-4444-4555-8666-777777777777",
+  "status": "granted",
+  "task_id": "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+  "type": "task_acceptance",
+  "v": 1
+}

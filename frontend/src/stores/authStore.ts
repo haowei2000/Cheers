@@ -31,10 +31,9 @@ interface RefreshResponse {
 
 const WEB_REFRESH_LOCK = "cheers-auth-refresh";
 const CONCURRENT_REFRESH_RETRY_MS = 100;
-let webRefreshInFlight: Promise<RefreshResponse | null> | null = null;
 
-async function requestWebRefresh(): Promise<RefreshResponse | null> {
-  const send = () => fetch(`${apiBase()}/auth/refresh`, {
+async function requestWebRefresh(url: string): Promise<RefreshResponse | null> {
+  const send = () => fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -52,84 +51,120 @@ async function requestWebRefresh(): Promise<RefreshResponse | null> {
   return response.json() as Promise<RefreshResponse>;
 }
 
-function restoreWebSession(): Promise<RefreshResponse | null> {
-  if (webRefreshInFlight) return webRefreshInFlight;
-
-  const refresh = async () => {
-    if (typeof navigator !== "undefined" && navigator.locks) {
-      return navigator.locks.request(WEB_REFRESH_LOCK, requestWebRefresh);
-    }
-    return requestWebRefresh();
-  };
-  webRefreshInFlight = refresh().finally(() => {
-    webRefreshInFlight = null;
-  });
-  return webRefreshInFlight;
+function restoreWebSession(url: string): Promise<RefreshResponse | null> {
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request(WEB_REFRESH_LOCK, () => requestWebRefresh(url));
+  }
+  return requestWebRefresh(url);
 }
 
-export const useAuthStore = create<AuthState>()((set) => ({
-  user: null,
-  token: null,
-  initialized: false,
-  sessionExpired: false,
-  setAuth: (user, token) =>
-    set({ user, token, sessionExpired: false }),
-  setToken: (token) =>
-    set({ token, sessionExpired: false }),
-  markSessionExpired: () => set({ sessionExpired: true }),
-  logout: () => {
-    clearClientSessionData();
-    queryClient.clear();
-    set({ user: null, token: null, sessionExpired: false });
-  },
-  restoreSession: async (): Promise<string | null> => {
-    try {
-      if (isTauri()) {
-        const serverBase = getServerBase();
-        if (!serverBase) return null;
-        const body = await invokeDesktop<{
-          access_token?: string;
-          user_id?: string;
-          username?: string;
-          display_name?: string | null;
-          role?: string;
-        } | null>("desktop_refresh_session", { serverBase }).catch(() => null);
-        if (body?.access_token && body.user_id) {
-          set({
-            user: {
+interface RestoreIdentity {
+  generation: number;
+  token: string | null;
+  userId: string | null;
+  serverBase: string | null;
+}
+
+interface PendingRestore {
+  identity: RestoreIdentity;
+  promise: Promise<string | null>;
+}
+
+function sameIdentity(first: RestoreIdentity, second: RestoreIdentity): boolean {
+  return first.generation === second.generation && first.token === second.token
+    && first.userId === second.userId && first.serverBase === second.serverBase;
+}
+
+export const useAuthStore = create<AuthState>()((set, get) => {
+  // Account/token changes supersede requests even when values later return to
+  // the same strings. Profile edits do not invalidate credential recovery.
+  let generation = 0;
+  let pendingRestore: PendingRestore | null = null;
+  const identity = (): RestoreIdentity => ({
+    generation,
+    token: get().token,
+    userId: get().user?.user_id ?? null,
+    serverBase: getServerBase(),
+  });
+  const setAuthenticatedUser = (user: User, token: string) => {
+    if (get().user?.user_id !== user.user_id) {
+      clearClientSessionData();
+      queryClient.clear();
+    }
+    set({ user, token, initialized: true, sessionExpired: false });
+  };
+
+  return {
+    user: null,
+    token: null,
+    initialized: false,
+    sessionExpired: false,
+    setAuth: (user, token) => {
+      if (get().user?.user_id !== user.user_id || get().token !== token) generation++;
+      setAuthenticatedUser(user, token);
+    },
+    setToken: (token) => {
+      generation++;
+      set({ token, initialized: true, sessionExpired: false });
+    },
+    markSessionExpired: () => set({ sessionExpired: true }),
+    logout: () => {
+      generation++;
+      clearClientSessionData();
+      queryClient.clear();
+      set({ user: null, token: null, initialized: true, sessionExpired: false });
+    },
+    restoreSession: (): Promise<string | null> => {
+      const started = identity();
+      if (pendingRestore && sameIdentity(pendingRestore.identity, started)) {
+        return pendingRestore.promise;
+      }
+      const refreshUrl = `${apiBase()}/auth/refresh`;
+      const isCurrent = () => sameIdentity(started, identity());
+      const restore = async (): Promise<string | null> => {
+        try {
+          let body: RefreshResponse | null;
+          if (isTauri()) {
+            if (!started.serverBase) return null;
+            body = await invokeDesktop<RefreshResponse | null>("desktop_refresh_session", {
+              serverBase: started.serverBase,
+            }).catch(() => null);
+          } else {
+            body = await restoreWebSession(refreshUrl);
+          }
+          if (!isCurrent() || !body?.access_token || !body.user_id) return null;
+          const currentUser = get().user;
+          // Profile data may have been edited while credentials were refreshing.
+          // Existing same-account fields stay current; auth owns the token/role.
+          setAuthenticatedUser(currentUser?.user_id === body.user_id
+            ? { ...currentUser, role: body.role }
+            : {
               user_id: body.user_id,
               username: body.username,
               display_name: body.display_name ?? null,
               role: body.role,
-            },
-            token: body.access_token,
-            sessionExpired: false,
-          });
+            }, body.access_token);
           return body.access_token;
+        } catch (error) {
+          if (!isCurrent()) return null;
+          throw error;
+        } finally {
+          // A successful restore initializes in setAuthenticatedUser. A stale
+          // completion must not initialize or otherwise modify a newer session.
+          if (isCurrent()) set({ initialized: true });
         }
-        return null;
-      }
-      const body = await restoreWebSession();
-      if (!body) return null;
-      if (body.access_token && body.user_id) {
-        set({
-          user: {
-            user_id: body.user_id,
-            username: body.username,
-            display_name: body.display_name ?? null,
-            role: body.role,
-          },
-          token: body.access_token,
-          sessionExpired: false,
-        });
-        return body.access_token;
-      }
-      return null;
-    } finally {
-      set({ initialized: true });
-    }
-  },
-}));
+      };
+      const pending: PendingRestore = {
+        identity: started,
+        promise: restore().finally(() => {
+          if (pendingRestore === pending) pendingRestore = null;
+        }),
+      };
+      pendingRestore = pending;
+      return pending.promise;
+    },
+  };
+});
 
 // Role lives in the JWT (the server authorizes on the token's `role` claim), so it's the
 // authoritative source — `user.role` may be missing on older persisted sessions. Decode

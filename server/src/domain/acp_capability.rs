@@ -273,6 +273,7 @@ fn frame_needs_capability(frame_type: &str) -> bool {
         "send"
             | "delta"
             | "done"
+            | "error"
             | "session_update"
             | "permission_request"
             | "elicitation_request"
@@ -284,7 +285,7 @@ fn frame_action(frame_type: &str) -> Option<&str> {
     match frame_type {
         "send" => Some("send"),
         "delta" => Some("stream"),
-        "done" => Some("stream"),
+        "done" | "error" => Some("stream"),
         "session_update" => Some("session_update"),
         "permission_request" => Some("permission_request"),
         // Elicitation is a user-response request and deliberately reuses the
@@ -968,7 +969,7 @@ pub fn to_public_json() -> Value {
 pub fn build_action_map() -> BTreeMap<&'static str, Vec<&'static str>> {
     BTreeMap::from([
         ("send", vec!["send"]),
-        ("stream", vec!["delta", "done"]),
+        ("stream", vec!["delta", "done", "error"]),
         ("session_update", vec!["session_update"]),
         (
             "permission_request",

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_runs SET dispatch_lease_id=NULL,dispatch_lease_until=NULL,next_offer_at=NOW()+INTERVAL '5 seconds'\n         WHERE bot_run_id=$1 AND dispatch_lease_id=$2 AND status IN ('pending','prepared')\n           AND execution_id IS NULL AND accepted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b4a0a57b462f623b5cd8a29fe5bf1ef10d2b7f717c3a39a5a16f578dd3c65f13"
+}

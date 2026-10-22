@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-bridge-protocol"
-version = "0.1.52"
+version = "0.1.55"
 dependencies = [
  "serde",
  "serde_json",
@@ -3734,6 +3734,7 @@ dependencies = [
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-tungstenite",
  "tower 0.4.13",
  "tower-http 0.5.2",
  "tracing",

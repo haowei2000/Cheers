@@ -98,9 +98,50 @@ struct Flow {
     status: String,
     user_id: Option<String>,
     session_id: Option<String>,
-    client: auth_sessions::ClientType,
     context: Value,
     failed_attempts: i16,
+}
+
+struct CredentialSnapshot {
+    user_id: String,
+    username: String,
+    password_hash: Option<String>,
+    display_name: Option<String>,
+    role: String,
+    token_version: i32,
+    is_suspended: bool,
+    is_deleted: bool,
+}
+
+impl CredentialSnapshot {
+    fn into_active_user(self) -> Option<auth_domain::AuthUser> {
+        if self.is_suspended || self.is_deleted {
+            return None;
+        }
+        Some(auth_domain::AuthUser {
+            id: self.user_id,
+            username: self.username,
+            display_name: self.display_name,
+            role: self.role,
+            token_version: self.token_version,
+        })
+    }
+}
+
+// Capture credential version before verification without turning account state
+// into a pre-proof oracle. Status is enforced only after the proof is checked.
+async fn credential_snapshot(
+    db: &sqlx::PgPool,
+    user_id: &str,
+) -> Result<Option<CredentialSnapshot>, AppError> {
+    Ok(sqlx::query_as!(
+        CredentialSnapshot,
+        "SELECT user_id, username, password_hash, display_name, role, token_version,
+                is_suspended, is_deleted FROM users WHERE user_id = $1",
+        user_id,
+    )
+    .fetch_optional(db)
+    .await?)
 }
 
 pub async fn start(
@@ -190,18 +231,28 @@ pub async fn password(
     Json(body): Json<PasswordRequest>,
 ) -> Result<Response, AppError> {
     let flow = load_flow(&state, &transaction_id, claims.as_ref().map(|v| &v.0)).await?;
-    let user_id = flow
-        .user_id
-        .as_deref()
-        .ok_or_else(|| invalid_factor("password"))?;
-    let hash = sqlx::query_scalar!(
-        "SELECT password_hash FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-        user_id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    let valid = match hash.flatten() {
-        Some(hash) => crypto::verify_password(body.password, hash)
+    let Some(user_id) = flow.user_id.as_deref() else {
+        fail_attempt(&state, &flow, "password").await?;
+        return Err(invalid_factor("password"));
+    };
+    if flow.kind == "login" && flow.status == "factor_required" {
+        auth_sessions::validate_stored_primary(
+            &state.db,
+            &flow.transaction_id,
+            user_id,
+            "password",
+        )
+        .await?;
+    }
+    // Bind the password hash and its credential version in one snapshot before
+    // bcrypt yields. A later reload must not turn an old proof into a new one.
+    let credential = credential_snapshot(&state.db, user_id).await?;
+    let Some(credential) = credential else {
+        fail_attempt(&state, &flow, "password").await?;
+        return Err(invalid_factor("password"));
+    };
+    let valid = match credential.password_hash.as_ref() {
+        Some(hash) => crypto::verify_password(body.password, hash.clone())
             .await
             .unwrap_or(false),
         None => false,
@@ -210,6 +261,10 @@ pub async fn password(
         fail_attempt(&state, &flow, "password").await?;
         return Err(invalid_factor("password"));
     }
+    let Some(user) = credential.into_active_user() else {
+        fail_attempt(&state, &flow, "password").await?;
+        return Err(invalid_factor("password"));
+    };
     // At `factor_required` the password is the *second* step, which only the
     // accounts that armed it may use — and never twice in one sign-in.
     if flow.status == "factor_required" {
@@ -222,7 +277,15 @@ pub async fn password(
     let presented = auth::presented_trusted_device(&headers, body.trusted_device.as_deref());
     let trusted =
         auth_sessions::trusted_device_is_valid(&state.db, user_id, presented.as_deref()).await?;
-    complete_primary(&state, flow, "password", trusted, body.remember_device).await
+    complete_primary(
+        &state,
+        flow,
+        &user,
+        "password",
+        trusted,
+        body.remember_device,
+    )
+    .await
 }
 
 pub async fn send_email(
@@ -233,6 +296,14 @@ pub async fn send_email(
     Path(transaction_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let flow = load_flow(&state, &transaction_id, claims.as_ref().map(|v| &v.0)).await?;
+    if flow.kind == "login" && flow.status == "factor_required" {
+        let user_id = flow
+            .user_id
+            .as_deref()
+            .ok_or_else(|| invalid_factor("email"))?;
+        auth_sessions::validate_stored_primary(&state.db, &flow.transaction_id, user_id, "email")
+            .await?;
+    }
     let limiter = crate::infra::ratelimit::login_2fa_email_limiter();
     let source_key = format!(
         "flow-source:{}",
@@ -292,21 +363,30 @@ pub async fn verify_email(
     // Completing the *second* step by email is only allowed when the account
     // armed email codes, and never when the same mailbox carried step one.
     let second_step = flow.status == "factor_required";
+    if flow.kind == "login" && second_step {
+        auth_sessions::validate_stored_primary(&state.db, &flow.transaction_id, user_id, "email")
+            .await?;
+    }
     if second_step && !two_factor::methods(&state.db, user_id).await?.email {
         fail_attempt(&state, &flow, "email").await?;
         return Err(invalid_factor("email code"));
     }
+    let credential = credential_snapshot(&state.db, user_id).await?;
     if !two_factor::verify_email_code(&state.db, &state.config, user_id, &body.code).await? {
         fail_attempt(&state, &flow, "email").await?;
         return Err(invalid_factor("email code"));
     }
+    let Some(user) = credential.and_then(CredentialSnapshot::into_active_user) else {
+        fail_attempt(&state, &flow, "email").await?;
+        return Err(invalid_factor("email code"));
+    };
     if second_step {
         return complete_verified(&state, flow, "email", body.remember_device).await;
     }
     let presented = auth::presented_trusted_device(&headers, body.trusted_device.as_deref());
     let trusted =
         auth_sessions::trusted_device_is_valid(&state.db, user_id, presented.as_deref()).await?;
-    complete_primary(&state, flow, "email", trusted, body.remember_device).await
+    complete_primary(&state, flow, &user, "email", trusted, body.remember_device).await
 }
 
 pub async fn verify_totp(
@@ -325,6 +405,10 @@ pub async fn verify_totp(
         .user_id
         .as_deref()
         .ok_or_else(|| invalid_factor("verification code"))?;
+    if flow.kind == "login" {
+        auth_sessions::validate_stored_primary(&state.db, &flow.transaction_id, user_id, "totp")
+            .await?;
+    }
     let key = two_factor::master_key(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
@@ -346,6 +430,10 @@ pub async fn passkey_options(
         .user_id
         .as_deref()
         .ok_or_else(|| invalid_factor("passkey"))?;
+    if flow.kind == "login" && flow.status == "factor_required" {
+        auth_sessions::validate_stored_primary(&state.db, &flow.transaction_id, user_id, "passkey")
+            .await?;
+    }
     let service = state.webauthn.as_deref().ok_or_else(|| {
         AppError::ServiceUnavailable("passkeys are not configured on this server".into())
     })?;
@@ -366,13 +454,19 @@ pub async fn verify_passkey(
     Json(body): Json<PasskeyRequest>,
 ) -> Result<Response, AppError> {
     let flow = load_flow(&state, &transaction_id, claims.as_ref().map(|v| &v.0)).await?;
-    let user_id = flow
-        .user_id
-        .as_deref()
-        .ok_or_else(|| invalid_factor("passkey"))?;
+    let Some(user_id) = flow.user_id.as_deref() else {
+        fail_attempt(&state, &flow, "passkey").await?;
+        return Err(invalid_factor("passkey"));
+    };
+    let second_step = flow.status == "factor_required";
+    if flow.kind == "login" && second_step {
+        auth_sessions::validate_stored_primary(&state.db, &flow.transaction_id, user_id, "passkey")
+            .await?;
+    }
     let service = state.webauthn.as_deref().ok_or_else(|| {
         AppError::ServiceUnavailable("passkeys are not configured on this server".into())
     })?;
+    let credential = credential_snapshot(&state.db, user_id).await?;
     if let Err(error) = webauthn::finish_authentication(
         &state.db,
         service,
@@ -385,7 +479,15 @@ pub async fn verify_passkey(
         fail_attempt(&state, &flow, "passkey").await?;
         return Err(error);
     }
-    complete_verified(&state, flow, "passkey", body.remember_device).await
+    let Some(user) = credential.and_then(CredentialSnapshot::into_active_user) else {
+        fail_attempt(&state, &flow, "passkey").await?;
+        return Err(invalid_factor("passkey"));
+    };
+    if second_step {
+        complete_verified(&state, flow, "passkey", body.remember_device).await
+    } else {
+        complete_primary(&state, flow, &user, "passkey", false, body.remember_device).await
+    }
 }
 
 async fn load_flow(
@@ -394,7 +496,7 @@ async fn load_flow(
     claims: Option<&Claims>,
 ) -> Result<Flow, AppError> {
     let row = sqlx::query!(
-        "SELECT transaction_id, kind, status, user_id, session_id, client_type,
+        "SELECT transaction_id, kind, status, user_id, session_id,
                 context_json, failed_attempts, expires_at
          FROM auth_transactions
          WHERE transaction_id = $1 AND kind IN ('login', 'step_up')
@@ -456,7 +558,6 @@ async fn load_flow(
         status: row.status.clone(),
         user_id,
         session_id,
-        client: auth_sessions::ClientType::parse(Some(row.client_type.clone().as_str()))?,
         context: row.context_json.clone(),
         failed_attempts,
     })
@@ -508,6 +609,7 @@ async fn available_methods(
 async fn complete_primary(
     state: &AppState,
     flow: Flow,
+    user: &auth_domain::AuthUser,
     factor: &str,
     trusted: bool,
     remember_device: bool,
@@ -520,8 +622,18 @@ async fn complete_primary(
         // A passkey assertion is already a possession factor; anything else has
         // to be followed by one of the factors this account armed.
         if factor != "passkey" && !trusted && two_factor::methods(&state.db, user_id).await?.any() {
-            return require_second_factor(state, &flow, factor).await;
+            return require_second_factor(state, &flow, user, factor).await;
         }
+        let completed = auth_sessions::complete_transaction_login(
+            &state.db,
+            &state.config,
+            &flow.transaction_id,
+            user_id,
+            auth_sessions::LoginProof::Primary { user, factor },
+            remember_device,
+        )
+        .await?;
+        return auth::completed_login_response(completed);
     }
     complete_verified(state, flow, factor, remember_device).await
 }
@@ -529,6 +641,7 @@ async fn complete_primary(
 async fn require_second_factor(
     state: &AppState,
     flow: &Flow,
+    user: &auth_domain::AuthUser,
     primary_factor: &str,
 ) -> Result<Response, AppError> {
     let user_id = flow
@@ -551,13 +664,8 @@ async fn require_second_factor(
                 .into(),
         ));
     }
-    sqlx::query!(
-        "UPDATE auth_transactions SET status = 'factor_required', updated_at = NOW()
-         WHERE transaction_id = $1 AND consumed_at IS NULL",
-        &flow.transaction_id,
-    )
-    .execute(&state.db)
-    .await?;
+    auth_sessions::require_second_factor(&state.db, &flow.transaction_id, user, primary_factor)
+        .await?;
     Ok(Json(json!({
         "transaction_id": flow.transaction_id,
         "status": "factor_required",
@@ -598,63 +706,16 @@ async fn complete_verified(
         .into_response());
     }
 
-    let consumed = sqlx::query!(
-        "UPDATE auth_transactions
-         SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()
-         WHERE transaction_id = $1 AND consumed_at IS NULL AND expires_at > NOW()",
-        &flow.transaction_id,
-    )
-    .execute(&state.db)
-    .await?;
-    if consumed.rows_affected() != 1 {
-        return Err(AppError::Unauthorized(
-            "authentication transaction is invalid or already used".into(),
-        ));
-    }
-    let user = auth_domain::load_auth_user(&state.db, user_id).await?;
-    let session = auth_sessions::finalize_login(
+    let completed = auth_sessions::complete_transaction_login(
         &state.db,
         &state.config,
-        &user,
-        flow.client,
-        flow.context["device_name"].as_str(),
+        &flow.transaction_id,
+        user_id,
+        auth_sessions::LoginProof::StoredPrimary { factor },
+        remember_device,
     )
     .await?;
-    let trusted = if remember_device {
-        Some(
-            auth_sessions::issue_trusted_device(
-                &state.db,
-                &user.id,
-                &session.session_id,
-                flow.context["device_name"].as_str(),
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
-    let refresh = session.refresh_token.clone();
-    let csrf = session.csrf_token.clone();
-    let mut outcome = auth::session_response(&user, session, flow.client)?;
-    if flow.client != auth_sessions::ClientType::Web {
-        outcome.trusted_device = trusted.clone();
-    }
-    let mut response = if flow.client == auth_sessions::ClientType::Web {
-        auth::response_with_session_cookies(outcome, Some(&refresh), Some(&csrf))
-    } else {
-        Json(outcome).into_response()
-    };
-    if flow.client == auth_sessions::ClientType::Web {
-        if let Some(trusted) = trusted {
-            response.headers_mut().append(
-                axum::http::header::SET_COOKIE,
-                auth::auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
-                    .parse()
-                    .expect("valid cookie header"),
-            );
-        }
-    }
-    Ok(response)
+    auth::completed_login_response(completed)
 }
 
 async fn fail_attempt(state: &AppState, flow: &Flow, factor: &str) -> Result<(), AppError> {

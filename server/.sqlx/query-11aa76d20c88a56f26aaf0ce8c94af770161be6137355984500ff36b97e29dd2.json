@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_runs SET status='prepared',task_frame=$3,updated_at=NOW()\n         WHERE bot_run_id=$1 AND dispatch_lease_id=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "11aa76d20c88a56f26aaf0ce8c94af770161be6137355984500ff36b97e29dd2"
+}

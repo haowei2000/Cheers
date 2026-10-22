@@ -56,6 +56,7 @@ enum SocketEvent {
     case messageStream(channelId: String, msgId: String, delta: String)
     case messageDone(channelId: String, MessageDto)
     case messageDeleted(channelId: String, msgId: String)
+    case taskClaimUpdated(TaskClaimUpdate)
     case botTrace(channelId: String, TraceEventDto)
     case memberUpdated(channelId: String, memberId: String?)
     case presence(channelId: String, PresencePayload)
@@ -256,6 +257,16 @@ final class ChatSocket: NSObject {
         failPendingResources(.notConnected)
     }
 
+    /// A rejected access token needs the app's refresh credential, not backoff
+    /// with the same token. Retain desired subscriptions for the refreshed socket.
+    private func pauseForAuthenticationRefresh(reason: String) {
+        intentionallyClosed = true
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        teardownSocket(code: .normalClosure)
+        onEvent?(.authFailed(reason))
+    }
+
     private func scheduleReconnect() {
         guard !intentionallyClosed else { return }
         guard reconnectTask == nil else { return }
@@ -292,7 +303,8 @@ final class ChatSocket: NSObject {
         task.send(.string(text)) { [weak self] error in
             if error != nil {
                 Task { @MainActor in
-                    self?.scheduleReconnect()
+                    guard let self, self.task === task else { return }
+                    self.scheduleReconnect()
                 }
             }
         }
@@ -302,6 +314,7 @@ final class ChatSocket: NSObject {
         while !Task.isCancelled && self.task === task {
             do {
                 let message = try await task.receive()
+                guard self.task === task, !Task.isCancelled else { return }
                 switch message {
                 case .string(let text):
                     handleFrame(text)
@@ -314,7 +327,10 @@ final class ChatSocket: NSObject {
                 }
             } catch {
                 if self.task === task && !Task.isCancelled {
-                    if task.closeCode.rawValue == 4403 {
+                    if task.closeCode.rawValue == 4401 {
+                        pauseForAuthenticationRefresh(reason: "session token expired or revoked")
+                        return
+                    } else if task.closeCode.rawValue == 4403 {
                         // "not a channel member": one stale subscription would
                         // otherwise be replayed after every reconnect, closing
                         // the socket in a loop. Drop the set — attached models
@@ -388,6 +404,15 @@ final class ChatSocket: NSObject {
         return payload.data.channelId
     }
 
+    static func taskClaimUpdate(from data: Data) -> TaskClaimUpdate? {
+        guard let head = try? JSONDecoder().decode(FrameHead.self, from: data),
+              head.type == "task_claim_updated",
+              let payload = try? JSONDecoder().decode(DataEnvelope<TaskClaimUpdate>.self, from: data),
+              head.channelId == payload.data.channelId
+        else { return nil }
+        return payload.data
+    }
+
     private func handleFrame(_ text: String) {
         guard let data = text.data(using: .utf8),
               let head = try? JSONDecoder().decode(FrameHead.self, from: data) else { return }
@@ -407,10 +432,8 @@ final class ChatSocket: NSObject {
                 }
             }
         case "auth_err":
-            isAuthed = false
-            intentionallyClosed = true
             Self.logger.error("Realtime authentication failed: \(head.reason ?? "unknown", privacy: .public)")
-            onEvent?(.authFailed(head.reason ?? "authentication failed"))
+            pauseForAuthenticationRefresh(reason: head.reason ?? "authentication failed")
         case "subscribed":
             if let channelId = head.channelId {
                 onEvent?(.subscribed(channelId: channelId))
@@ -440,6 +463,10 @@ final class ChatSocket: NSObject {
             if let channelId = head.channelId,
                let payload = try? JSONDecoder().decode(DataEnvelope<DeletedPayload>.self, from: data) {
                 onEvent?(.messageDeleted(channelId: channelId, msgId: payload.data.msgId))
+            }
+        case "task_claim_updated":
+            if let update = Self.taskClaimUpdate(from: data) {
+                onEvent?(.taskClaimUpdated(update))
             }
         case "bot_trace":
             if let channelId = head.channelId,

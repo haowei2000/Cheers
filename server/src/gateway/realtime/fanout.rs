@@ -57,6 +57,10 @@ pub trait Fanout: Send + Sync {
     /// work; the Redis path is not wired in main.rs today).
     fn kick_user(&self, _user_id: Uuid) {}
 
+    /// Close only this exact authenticated session's browser connections. Real
+    /// browser transports override this; event-only fanouts own no connections.
+    fn kick_session(&self, _user_id: Uuid, _session_id: &str) {}
+
     /// 频道当前在线用户列表（presence）。默认空；进程内实现覆盖。
     fn online_users(&self, _channel_id: Uuid) -> Vec<Uuid> {
         Vec::new()
@@ -90,7 +94,7 @@ pub struct InProcessFanout {
     closers: DashMap<Uuid, mpsc::Sender<CloseReason>>,
     /// conn_id → user_id。用于把频道订阅（按 conn 记录）映射回在线用户，
     /// 供 presence 广播使用。
-    conn_users: DashMap<Uuid, Uuid>,
+    conn_users: DashMap<Uuid, ConnIdentity>,
     /// conn_id → 工作台在看焦点。某连接当前正在查看哪个 bot 的工作区（可含路径），
     /// 随 presence 快照下发，供 UI 显示「X 也在看 src/…」。断线自动清除（镜像 conn_users）。
     conn_focus: DashMap<Uuid, FocusEntry>,
@@ -111,6 +115,12 @@ struct ConnSender {
     tx: mpsc::Sender<WireFrame>,
 }
 
+struct ConnIdentity {
+    user_id: Uuid,
+    session_id: String,
+    closing: bool,
+}
+
 impl InProcessFanout {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
@@ -126,16 +136,38 @@ impl InProcessFanout {
     pub fn register_user(
         &self,
         user_id: Uuid,
+        session_id: &str,
         conn_id: Uuid,
         tx: mpsc::Sender<WireFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     ) {
         self.closers.insert(conn_id, close_tx);
-        self.conn_users.insert(conn_id, user_id);
+        self.conn_users.insert(
+            conn_id,
+            ConnIdentity {
+                user_id,
+                session_id: session_id.to_owned(),
+                closing: false,
+            },
+        );
         self.users
             .entry(user_id)
             .or_default()
             .push(ConnSender { conn_id, tx });
+    }
+
+    /// A same-user re-auth may move this connection to another live session.
+    /// Rebind and kick share the identity entry guard: an earlier kick wins,
+    /// while a later kick of the old session cannot close the new binding.
+    pub fn rebind_session(&self, user_id: Uuid, conn_id: Uuid, session_id: &str) -> bool {
+        let Some(mut identity) = self.conn_users.get_mut(&conn_id) else {
+            return false;
+        };
+        if identity.user_id != user_id || identity.closing {
+            return false;
+        }
+        identity.session_id = session_id.to_owned();
+        true
     }
 
     /// 频道当前在线的去重用户列表（按 conn 订阅映射回 user_id）。
@@ -145,9 +177,9 @@ impl InProcessFanout {
         let mut out = Vec::new();
         if let Some(senders) = self.channels.get(&channel_id) {
             for s in senders.value() {
-                if let Some(uid) = self.conn_users.get(&s.conn_id) {
-                    if seen.insert(*uid) {
-                        out.push(*uid);
+                if let Some(identity) = self.conn_users.get(&s.conn_id) {
+                    if !identity.closing && seen.insert(identity.user_id) {
+                        out.push(identity.user_id);
                     }
                 }
             }
@@ -160,8 +192,21 @@ impl InProcessFanout {
     fn deliver(&self, senders: &[ConnSender], frame: &WireFrame) {
         let terminal = frame.is_terminal();
         for s in senders.iter() {
-            if let Err(mpsc::error::TrySendError::Full(_)) = s.tx.try_send(frame.clone()) {
-                if terminal {
+            let Some(identity) = self.conn_users.get(&s.conn_id) else {
+                continue;
+            };
+            if identity.closing {
+                continue;
+            }
+            // Do not upgrade the entry guard while the read guard is retained.
+            let full = matches!(
+                s.tx.try_send(frame.clone()),
+                Err(mpsc::error::TrySendError::Full(_))
+            );
+            drop(identity);
+            if full && terminal {
+                if let Some(mut identity) = self.conn_users.get_mut(&s.conn_id) {
+                    identity.closing = true;
                     if let Some(closer) = self.closers.get(&s.conn_id) {
                         let _ = closer.try_send(CloseReason::Backpressure);
                     }
@@ -173,10 +218,25 @@ impl InProcessFanout {
     /// 会话吊销：给该用户所有在线连接发关闭信号（写循环以 4401 收尾）。
     /// 见 `Fanout::kick_user`。
     pub fn kick_user(&self, user_id: Uuid) {
+        self.kick_matching(user_id, None);
+    }
+
+    pub fn kick_session(&self, user_id: Uuid, session_id: &str) {
+        self.kick_matching(user_id, Some(session_id));
+    }
+
+    fn kick_matching(&self, user_id: Uuid, session_id: Option<&str>) {
         if let Some(senders) = self.users.get(&user_id) {
             for s in senders.iter() {
-                if let Some(closer) = self.closers.get(&s.conn_id) {
-                    let _ = closer.try_send(CloseReason::Revoked);
+                if let Some(mut identity) = self.conn_users.get_mut(&s.conn_id) {
+                    if identity.user_id == user_id
+                        && session_id.is_none_or(|sid| identity.session_id == sid)
+                    {
+                        identity.closing = true;
+                        if let Some(closer) = self.closers.get(&s.conn_id) {
+                            let _ = closer.try_send(CloseReason::Revoked);
+                        }
+                    }
                 }
             }
         }
@@ -184,10 +244,9 @@ impl InProcessFanout {
 
     /// 浏览器订阅某频道后，注册 channel 级发送端。
     pub fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
-        self.channels
-            .entry(channel_id)
-            .or_default()
-            .push(ConnSender { conn_id, tx });
+        let mut senders = self.channels.entry(channel_id).or_default();
+        senders.retain(|sender| sender.conn_id != conn_id);
+        senders.push(ConnSender { conn_id, tx });
     }
 
     /// 浏览器退订某频道或断线时，移除对应发送端。
@@ -195,6 +254,8 @@ impl InProcessFanout {
         if let Some(mut senders) = self.channels.get_mut(&channel_id) {
             senders.retain(|s| s.conn_id != conn_id);
         }
+        self.conn_focus
+            .remove_if(&conn_id, |_, focus| focus.channel_id == channel_id);
     }
 
     /// 成员资格被撤销（管理员移除 / 自己退出）：把该用户的**所有**连接从该频道
@@ -205,15 +266,25 @@ impl InProcessFanout {
             senders.retain(|s| {
                 self.conn_users
                     .get(&s.conn_id)
-                    .map(|uid| *uid != user_id)
+                    .map(|identity| identity.user_id != user_id)
                     .unwrap_or(true)
             });
         }
+        self.conn_focus.retain(|conn_id, focus| {
+            focus.channel_id != channel_id
+                || self
+                    .conn_users
+                    .get(conn_id)
+                    .map(|identity| identity.user_id != user_id)
+                    .unwrap_or(true)
+        });
     }
 
     /// 频道被删除：丢弃整张订阅表（否则残留到各连接断线为止）。
     pub fn drop_channel(&self, channel_id: Uuid) {
         self.channels.remove(&channel_id);
+        self.conn_focus
+            .retain(|_, focus| focus.channel_id != channel_id);
     }
 
     /// 浏览器断线时，移除该连接的所有注册（含关闭信号端）。
@@ -244,17 +315,25 @@ impl InProcessFanout {
         self.conn_focus.remove(&conn_id);
     }
 
-    /// 频道内所有在看焦点：`(user_id, bot_id, path)`。经 conn_users 映射回 user_id。
+    /// 频道内已订阅连接的在看焦点：`(user_id, bot_id, path)`。经 conn_users 映射回 user_id。
     /// 不去重（同一用户多连接可重复；前端去重）。
     pub fn channel_focus(&self, channel_id: Uuid) -> Vec<(Uuid, Uuid, Option<String>)> {
+        let Some(subscribers) = self.channels.get(&channel_id) else {
+            return Vec::new();
+        };
+        let subscribed: std::collections::HashSet<Uuid> =
+            subscribers.iter().map(|sender| sender.conn_id).collect();
+        drop(subscribers);
         let mut out = Vec::new();
         for entry in self.conn_focus.iter() {
             let focus = entry.value();
-            if focus.channel_id != channel_id {
+            if focus.channel_id != channel_id || !subscribed.contains(entry.key()) {
                 continue;
             }
-            if let Some(uid) = self.conn_users.get(entry.key()) {
-                out.push((*uid, focus.bot_id, focus.path.clone()));
+            if let Some(identity) = self.conn_users.get(entry.key()) {
+                if !identity.closing {
+                    out.push((identity.user_id, focus.bot_id, focus.path.clone()));
+                }
             }
         }
         out
@@ -296,7 +375,7 @@ impl Fanout for InProcessFanout {
                 .filter(|s| {
                     self.conn_users
                         .get(&s.conn_id)
-                        .map(|u| allow.contains(&*u))
+                        .map(|identity| !identity.closing && allow.contains(&identity.user_id))
                         .unwrap_or(false)
                 })
                 .cloned()
@@ -313,6 +392,10 @@ impl Fanout for InProcessFanout {
 
     fn kick_user(&self, user_id: Uuid) {
         InProcessFanout::kick_user(self, user_id);
+    }
+
+    fn kick_session(&self, user_id: Uuid, session_id: &str) {
+        InProcessFanout::kick_session(self, user_id, session_id);
     }
 
     fn online_users(&self, channel_id: Uuid) -> Vec<Uuid> {
@@ -349,7 +432,7 @@ mod tests {
         let conn = Uuid::new_v4();
         let (tx, rx) = mpsc::channel::<WireFrame>(1);
         let (close_tx, close_rx) = mpsc::channel::<CloseReason>(1);
-        fanout.register_user(user, conn, tx, close_tx);
+        fanout.register_user(user, &Uuid::new_v4().to_string(), conn, tx, close_tx);
         (rx, close_rx)
     }
 
@@ -400,6 +483,64 @@ mod tests {
         assert!(close_rx3.try_recv().is_err(), "其他用户的连接不受影响");
     }
 
+    #[tokio::test]
+    async fn session_kick_matches_both_user_and_session_without_stopping_other_delivery() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let session = Uuid::new_v4().to_string();
+        let other_session = Uuid::new_v4().to_string();
+        let mut receivers = Vec::new();
+        for (owner, sid) in [(user, &session), (user, &other_session), (other, &session)] {
+            let conn = Uuid::new_v4();
+            let (tx, rx) = mpsc::channel(2);
+            let (close_tx, close_rx) = mpsc::channel(1);
+            fanout.register_user(owner, sid, conn, tx, close_tx);
+            receivers.push((rx, close_rx));
+        }
+        fanout.kick_session(user, &session);
+        assert_eq!(receivers[0].1.try_recv(), Ok(CloseReason::Revoked));
+        assert!(receivers[1].1.try_recv().is_err());
+        assert!(receivers[2].1.try_recv().is_err());
+        fanout.broadcast_user(user, frame("message")).await;
+        assert!(receivers[0].0.try_recv().is_err());
+        assert!(receivers[1].0.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn rebind_before_old_session_kick_preserves_the_new_binding() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let conn = Uuid::new_v4();
+        let old_session = Uuid::new_v4().to_string();
+        let new_session = Uuid::new_v4().to_string();
+        let (tx, mut rx) = mpsc::channel(2);
+        let (close_tx, mut close_rx) = mpsc::channel(1);
+        fanout.register_user(user, &old_session, conn, tx, close_tx);
+        assert!(!fanout.rebind_session(Uuid::new_v4(), conn, &new_session));
+        assert!(fanout.rebind_session(user, conn, &new_session));
+        fanout.kick_session(user, &old_session);
+        assert!(close_rx.try_recv().is_err());
+        fanout.broadcast_user(user, frame("message")).await;
+        assert!(rx.try_recv().is_ok());
+        fanout.kick_session(user, &new_session);
+        assert_eq!(close_rx.try_recv(), Ok(CloseReason::Revoked));
+    }
+
+    #[tokio::test]
+    async fn session_kick_before_rebind_cannot_be_undone_by_late_authentication() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let conn = Uuid::new_v4();
+        let old_session = Uuid::new_v4().to_string();
+        let (tx, _rx) = mpsc::channel(1);
+        let (close_tx, mut close_rx) = mpsc::channel(1);
+        fanout.register_user(user, &old_session, conn, tx, close_tx);
+        fanout.kick_session(user, &old_session);
+        assert!(!fanout.rebind_session(user, conn, &Uuid::new_v4().to_string()));
+        assert_eq!(close_rx.try_recv(), Ok(CloseReason::Revoked));
+    }
+
     /// 焦点生命周期：set_focus 后 channel_focus 映射回 user_id；断线自动清除。
     #[tokio::test]
     async fn focus_set_reported_and_cleared_on_deregister() {
@@ -410,7 +551,14 @@ mod tests {
         let bot = Uuid::new_v4();
         let (tx, _rx) = mpsc::channel::<WireFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
-        fanout.register_user(user, conn, tx, close_tx);
+        fanout.register_user(
+            user,
+            &Uuid::new_v4().to_string(),
+            conn,
+            tx.clone(),
+            close_tx,
+        );
+        fanout.subscribe_channel(channel, conn, tx);
 
         fanout.set_focus(conn, channel, bot, Some("src/lib.rs".into()));
         let focus = fanout.channel_focus(channel);
@@ -433,10 +581,60 @@ mod tests {
         let channel = Uuid::new_v4();
         let (tx, _rx) = mpsc::channel::<WireFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
-        fanout.register_user(user, conn, tx, close_tx);
+        fanout.register_user(
+            user,
+            &Uuid::new_v4().to_string(),
+            conn,
+            tx.clone(),
+            close_tx,
+        );
+        fanout.subscribe_channel(channel, conn, tx);
         fanout.set_focus(conn, channel, Uuid::new_v4(), None);
         assert_eq!(fanout.channel_focus(channel).len(), 1);
         fanout.clear_focus(conn);
+        assert!(fanout.channel_focus(channel).is_empty());
+    }
+
+    #[tokio::test]
+    async fn focus_requires_a_live_subscription_and_keeps_other_channels_independent() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let conn = Uuid::new_v4();
+        let channel = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
+        fanout.register_user(
+            user,
+            &Uuid::new_v4().to_string(),
+            conn,
+            tx.clone(),
+            close_tx,
+        );
+        fanout.set_focus(conn, channel, Uuid::new_v4(), None);
+        assert!(fanout.channel_focus(channel).is_empty());
+
+        fanout.subscribe_channel(channel, conn, tx.clone());
+        fanout.subscribe_channel(other, conn, tx.clone());
+        assert_eq!(fanout.channel_focus(channel).len(), 1);
+        fanout.subscribe_channel(channel, conn, tx.clone());
+        assert_eq!(fanout.channel_focus(channel).len(), 1);
+        fanout.unsubscribe_channel(other, conn);
+        assert_eq!(fanout.channel_focus(channel).len(), 1);
+        fanout.unsubscribe_channel(channel, conn);
+        assert!(fanout.channel_focus(channel).is_empty());
+
+        fanout.subscribe_channel(channel, conn, tx.clone());
+        assert!(fanout.channel_focus(channel).is_empty());
+        fanout.set_focus(conn, channel, Uuid::new_v4(), None);
+        fanout.unsubscribe_user_channel(channel, user);
+        assert!(fanout.channel_focus(channel).is_empty());
+        fanout.subscribe_channel(channel, conn, tx.clone());
+        assert!(fanout.channel_focus(channel).is_empty());
+        fanout.set_focus(conn, channel, Uuid::new_v4(), None);
+        fanout.drop_channel(channel);
+        assert!(fanout.channel_focus(channel).is_empty());
+        fanout.subscribe_channel(channel, conn, tx);
         assert!(fanout.channel_focus(channel).is_empty());
     }
 
@@ -448,7 +646,7 @@ mod tests {
         let conn = Uuid::new_v4();
         let (tx, _rx) = mpsc::channel::<WireFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
-        fanout.register_user(user, conn, tx, close_tx);
+        fanout.register_user(user, &Uuid::new_v4().to_string(), conn, tx, close_tx);
         assert!(fanout.closers.contains_key(&conn));
         fanout.deregister_user(user, conn);
         assert!(!fanout.closers.contains_key(&conn));

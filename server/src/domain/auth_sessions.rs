@@ -28,6 +28,7 @@ pub enum ClientType {
     Web,
     Ios,
     Macos,
+    Android,
 }
 
 impl ClientType {
@@ -36,8 +37,9 @@ impl ClientType {
             "web" => Ok(Self::Web),
             "ios" => Ok(Self::Ios),
             "macos" => Ok(Self::Macos),
+            "android" => Ok(Self::Android),
             _ => Err(AppError::BadRequest(
-                "client must be web, ios, or macos".into(),
+                "client must be web, ios, macos, or android".into(),
             )),
         }
     }
@@ -47,6 +49,7 @@ impl ClientType {
             Self::Web => "web",
             Self::Ios => "ios",
             Self::Macos => "macos",
+            Self::Android => "android",
         }
     }
 }
@@ -68,6 +71,31 @@ pub struct RotatedSession {
     pub expires_in: i64,
 }
 
+/// Exact committed session identities whose live browser connections must close.
+#[derive(Debug)]
+pub struct RevokedSessions {
+    pub user_id: Uuid,
+    pub session_ids: Vec<String>,
+}
+
+impl RevokedSessions {
+    fn new(user_id: &str, session_ids: Vec<String>) -> Result<Self, AppError> {
+        Ok(Self {
+            user_id: user_id
+                .parse()
+                .map_err(|_| AppError::Internal("invalid revoked session user id".into()))?,
+            session_ids,
+        })
+    }
+}
+
+pub enum RefreshOutcome {
+    Rotated(RotatedSession),
+    /// Reuse is an authenticated security outcome, committed before it is
+    /// returned. The adapter closes these sessions before returning its 401.
+    ReuseRevoked(RevokedSessions),
+}
+
 #[derive(Debug, Serialize)]
 pub struct SessionSummary {
     pub session_id: String,
@@ -81,6 +109,132 @@ pub struct SessionSummary {
 
 pub struct FactorTransaction {
     pub transaction_id: String,
+}
+
+pub enum LoginProof<'a> {
+    /// This user/version was captured before verifying the primary credential.
+    Primary {
+        user: &'a AuthUser,
+        factor: &'a str,
+    },
+    StoredPrimary {
+        factor: &'a str,
+    },
+}
+
+pub struct CompletedLogin {
+    pub user: AuthUser,
+    pub session: IssuedSession,
+    pub client: ClientType,
+    pub trusted_device: Option<String>,
+}
+
+struct LoginTransaction {
+    user_id: Option<String>,
+    session_id: Option<String>,
+    kind: String,
+    status: String,
+    client_type: String,
+    context_json: serde_json::Value,
+    failed_attempts: i16,
+    expires_at: DateTime<Utc>,
+    consumed_at: Option<DateTime<Utc>>,
+}
+
+fn invalid_login_transaction() -> AppError {
+    AppError::Unauthorized("authentication transaction is invalid; restart sign-in".into())
+}
+
+fn changed_authentication() -> AppError {
+    AppError::Unauthorized("authentication changed; sign in again".into())
+}
+
+async fn database_now(tx: &mut Transaction<'_, Postgres>) -> Result<DateTime<Utc>, AppError> {
+    Ok(sqlx::query_scalar!(r#"SELECT clock_timestamp() AS "now!""#)
+        .fetch_one(&mut **tx)
+        .await?)
+}
+
+async fn lock_auth_user(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: &str,
+) -> Result<AuthUser, AppError> {
+    let row = sqlx::query!(
+        "SELECT user_id, username, display_name, role, token_version, is_suspended
+         FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR SHARE",
+        user_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(changed_authentication)?;
+    if row.is_suspended {
+        return Err(changed_authentication());
+    }
+    Ok(AuthUser {
+        id: row.user_id,
+        username: row.username,
+        display_name: row.display_name,
+        role: row.role,
+        token_version: row.token_version,
+    })
+}
+
+async fn lock_login_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    transaction_id: &str,
+    expected_user_id: &str,
+) -> Result<(AuthUser, LoginTransaction), AppError> {
+    // Credential replacement takes the user lock before touching sessions. All
+    // proof transitions and issuance use this same user -> transaction order.
+    let user = lock_auth_user(tx, expected_user_id).await?;
+    let transaction = sqlx::query_as!(
+        LoginTransaction,
+        "SELECT user_id, session_id, kind, status, client_type, context_json,
+                failed_attempts, expires_at, consumed_at
+         FROM auth_transactions WHERE transaction_id = $1 FOR UPDATE",
+        transaction_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(invalid_login_transaction)?;
+    let now = database_now(tx).await?;
+    if transaction.user_id.as_deref() != Some(expected_user_id)
+        || transaction.session_id.is_some()
+        || transaction.kind != "login"
+        || transaction.consumed_at.is_some()
+        || transaction.failed_attempts >= MAX_FACTOR_ATTEMPTS
+        || transaction.expires_at <= now
+    {
+        return Err(invalid_login_transaction());
+    }
+    Ok((user, transaction))
+}
+
+fn stored_primary<'a>(
+    user: &AuthUser,
+    transaction: &'a LoginTransaction,
+    secondary_factor: Option<&str>,
+) -> Result<&'a str, AppError> {
+    if transaction.status != "factor_required" {
+        return Err(invalid_login_transaction());
+    }
+    let version = transaction.context_json["primary_token_version"]
+        .as_i64()
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or_else(changed_authentication)?;
+    let primary = transaction.context_json["primary_factor"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(changed_authentication)?;
+    if version != user.token_version {
+        return Err(changed_authentication());
+    }
+    if secondary_factor.is_some_and(|factor| factor == primary || factor.is_empty()) {
+        return Err(AppError::Unauthorized(
+            "the primary sign-in method cannot be reused as the second factor".into(),
+        ));
+    }
+    Ok(primary)
 }
 
 fn is_concurrent_web_refresh(client: &str, consumed_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
@@ -99,80 +253,168 @@ fn random_secret() -> Result<String, AppError> {
 
 pub async fn create_factor_transaction(
     db: &PgPool,
-    user_id: &str,
+    verified_user: &AuthUser,
     client: ClientType,
     device_name: Option<&str>,
     primary_factor: &str,
 ) -> Result<FactorTransaction, AppError> {
     let transaction_id = Uuid::new_v4().to_string();
-    let expires_at = Utc::now() + Duration::minutes(AUTH_TRANSACTION_TTL_MINUTES);
+    let mut tx = db.begin().await?;
+    let user = lock_auth_user(&mut tx, &verified_user.id).await?;
+    if user.token_version != verified_user.token_version || primary_factor.is_empty() {
+        return Err(changed_authentication());
+    }
+    let expires_at = database_now(&mut tx).await? + Duration::minutes(AUTH_TRANSACTION_TTL_MINUTES);
     sqlx::query!(
         "INSERT INTO auth_transactions
          (transaction_id, user_id, kind, status, client_type, context_json, expires_at)
          VALUES ($1, $2, 'login', 'factor_required', $3, $4, $5)",
         &transaction_id,
-        user_id,
+        &user.id,
         client.as_str(),
-        json!({ "device_name": device_name, "primary_factor": primary_factor }),
+        json!({
+            "device_name": device_name,
+            "primary_factor": primary_factor,
+            "primary_token_version": verified_user.token_version,
+        }),
         expires_at,
     )
-    .execute(db)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(FactorTransaction { transaction_id })
 }
 
 pub async fn factor_transaction_user(
     db: &PgPool,
     transaction_id: &str,
-) -> Result<(String, ClientType, Option<String>, Option<String>), AppError> {
+) -> Result<(String, String), AppError> {
     let mut tx = db.begin().await?;
-    let row = sqlx::query!(
-        "SELECT user_id, client_type, context_json, failed_attempts, expires_at
-         FROM auth_transactions
-         WHERE transaction_id = $1 AND kind = 'login'
-           AND status IN ('factor_required', 'verified') AND consumed_at IS NULL
-         FOR UPDATE",
+    // This first read is only a locator; the owned row is re-read under locks.
+    let user_id = sqlx::query_scalar!(
+        "SELECT user_id FROM auth_transactions WHERE transaction_id = $1 AND kind = 'login'",
         transaction_id,
     )
     .fetch_optional(&mut *tx)
     .await?
-    .ok_or_else(|| AppError::Unauthorized("invalid authentication transaction".into()))?;
-    let expires_at: DateTime<Utc> = row.expires_at.clone();
-    let failed_attempts: i16 = row.failed_attempts.clone();
-    if expires_at <= Utc::now() || failed_attempts >= MAX_FACTOR_ATTEMPTS {
-        sqlx::query!(
-            "UPDATE auth_transactions SET status = 'expired', updated_at = NOW()
-             WHERE transaction_id = $1",
-            transaction_id,
-        )
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        return Err(AppError::Unauthorized(
-            "authentication transaction expired".into(),
-        ));
-    }
-    let user_id: String = row
-        .user_id
-        .clone()
-        .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))?;
-    let client_raw: String = row.client_type.clone();
-    let context: serde_json::Value = row.context_json.clone();
-    let device_name = context
-        .get("device_name")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned);
-    let primary_factor = context
-        .get("primary_factor")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned);
+    .flatten()
+    .ok_or_else(invalid_login_transaction)?;
+    let (user, transaction) = lock_login_transaction(&mut tx, transaction_id, &user_id).await?;
+    let primary_factor = stored_primary(&user, &transaction, None)?.to_owned();
     tx.commit().await?;
-    Ok((
-        user_id,
-        ClientType::parse(Some(client_raw.as_str()))?,
-        device_name,
-        primary_factor,
-    ))
+    Ok((user_id, primary_factor))
+}
+
+/// Reject stale or repeated primary proof before consuming an OTP/assertion.
+pub async fn validate_stored_primary(
+    db: &PgPool,
+    transaction_id: &str,
+    expected_user_id: &str,
+    secondary_factor: &str,
+) -> Result<(), AppError> {
+    let mut tx = db.begin().await?;
+    let (user, transaction) =
+        lock_login_transaction(&mut tx, transaction_id, expected_user_id).await?;
+    stored_primary(&user, &transaction, Some(secondary_factor))?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn require_second_factor(
+    db: &PgPool,
+    transaction_id: &str,
+    verified_user: &AuthUser,
+    primary_factor: &str,
+) -> Result<(), AppError> {
+    let mut tx = db.begin().await?;
+    let (user, transaction) =
+        lock_login_transaction(&mut tx, transaction_id, &verified_user.id).await?;
+    if transaction.status != "method_required"
+        || user.token_version != verified_user.token_version
+        || primary_factor.is_empty()
+    {
+        return Err(changed_authentication());
+    }
+    let updated = sqlx::query!(
+        "UPDATE auth_transactions
+         SET status = 'factor_required', context_json = context_json || $2,
+             updated_at = clock_timestamp()
+         WHERE transaction_id = $1 AND status = 'method_required'
+           AND consumed_at IS NULL AND expires_at > clock_timestamp() AND failed_attempts < 5",
+        transaction_id,
+        json!({
+            "primary_factor": primary_factor,
+            "primary_token_version": verified_user.token_version,
+        }),
+    )
+    .execute(&mut *tx)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(invalid_login_transaction());
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn complete_transaction_login(
+    db: &PgPool,
+    config: &Config,
+    transaction_id: &str,
+    expected_user_id: &str,
+    proof: LoginProof<'_>,
+    remember_device: bool,
+) -> Result<CompletedLogin, AppError> {
+    let mut tx = db.begin().await?;
+    let (user, transaction) =
+        lock_login_transaction(&mut tx, transaction_id, expected_user_id).await?;
+    let proof_context = match proof {
+        LoginProof::Primary {
+            user: verified,
+            factor,
+        } => {
+            if transaction.status != "method_required"
+                || verified.id != user.id
+                || verified.token_version != user.token_version
+                || factor.is_empty()
+                || transaction
+                    .context_json
+                    .get("primary_token_version")
+                    .is_some()
+                || transaction.context_json.get("primary_factor").is_some()
+            {
+                return Err(changed_authentication());
+            }
+            json!({
+                "primary_factor": factor,
+                "primary_token_version": verified.token_version,
+            })
+        }
+        LoginProof::StoredPrimary { factor } => {
+            stored_primary(&user, &transaction, Some(factor))?;
+            json!({})
+        }
+    };
+    let client = ClientType::parse(Some(&transaction.client_type))?;
+    let device_name = transaction.context_json["device_name"].as_str();
+    let completed =
+        insert_completed_login(&mut tx, config, user, client, device_name, remember_device).await?;
+    let consumed = sqlx::query!(
+        "UPDATE auth_transactions
+         SET status = 'consumed', consumed_at = clock_timestamp(), updated_at = clock_timestamp(),
+             context_json = context_json || $2
+         WHERE transaction_id = $1 AND kind = 'login'
+           AND status IN ('method_required', 'factor_required')
+           AND consumed_at IS NULL AND expires_at > clock_timestamp() AND failed_attempts < 5",
+        transaction_id,
+        proof_context,
+    )
+    .execute(&mut *tx)
+    .await?;
+    if consumed.rows_affected() != 1 {
+        return Err(invalid_login_transaction());
+    }
+    tx.commit().await?;
+    Ok(completed)
 }
 
 pub async fn record_factor_failure(db: &PgPool, transaction_id: &str) -> Result<(), AppError> {
@@ -186,24 +428,6 @@ pub async fn record_factor_failure(db: &PgPool, transaction_id: &str) -> Result<
     )
     .execute(db)
     .await?;
-    Ok(())
-}
-
-pub async fn consume_factor_transaction(db: &PgPool, transaction_id: &str) -> Result<(), AppError> {
-    let result = sqlx::query!(
-        "UPDATE auth_transactions
-         SET status = 'consumed', consumed_at = NOW(), updated_at = NOW()
-         WHERE transaction_id = $1 AND status = 'factor_required'
-           AND consumed_at IS NULL AND expires_at > NOW() AND failed_attempts < 5",
-        transaction_id,
-    )
-    .execute(db)
-    .await?;
-    if result.rows_affected() != 1 {
-        return Err(AppError::Unauthorized(
-            "authentication transaction was already consumed".into(),
-        ));
-    }
     Ok(())
 }
 
@@ -233,6 +457,34 @@ pub async fn issue_trusted_device(
     session_id: &str,
     device_name: Option<&str>,
 ) -> Result<String, AppError> {
+    let mut tx = db.begin().await?;
+    let session = sqlx::query!(
+        "SELECT user_id, revoked_at, absolute_expires_at FROM auth_sessions
+         WHERE session_id = $1 FOR SHARE",
+        session_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("session is no longer active".into()))?;
+    let now = database_now(&mut tx).await?;
+    if session.user_id != user_id
+        || session.revoked_at.is_some()
+        || session.absolute_expires_at <= now
+    {
+        return Err(AppError::Unauthorized("session is no longer active".into()));
+    }
+    let credential = insert_trusted_device(&mut tx, user_id, session_id, device_name, now).await?;
+    tx.commit().await?;
+    Ok(credential)
+}
+
+async fn insert_trusted_device(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: &str,
+    session_id: &str,
+    device_name: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<String, AppError> {
     let credential = random_secret()?;
     sqlx::query!(
         "INSERT INTO trusted_devices
@@ -243,9 +495,9 @@ pub async fn issue_trusted_device(
         session_id,
         sha256_hex(&credential),
         device_name,
-        Utc::now() + Duration::days(TRUSTED_DEVICE_TTL_DAYS),
+        now + Duration::days(TRUSTED_DEVICE_TTL_DAYS),
     )
-    .execute(db)
+    .execute(&mut **tx)
     .await?;
     Ok(credential)
 }
@@ -257,15 +509,87 @@ pub async fn finalize_login(
     client: ClientType,
     device_name: Option<&str>,
 ) -> Result<IssuedSession, AppError> {
+    let mut tx = db.begin().await?;
+    let current_user = lock_auth_user(&mut tx, &user.id).await?;
+    if current_user.token_version != user.token_version {
+        return Err(changed_authentication());
+    }
+    let now = database_now(&mut tx).await?;
+    let session = insert_session(&mut tx, config, &current_user, client, device_name, now).await?;
+    tx.commit().await?;
+    Ok(session)
+}
+
+/// A verified primary that needs no challenge still issues all credentials in
+/// one transaction, including optional device trust.
+pub async fn complete_direct_login(
+    db: &PgPool,
+    config: &Config,
+    verified_user: &AuthUser,
+    client: ClientType,
+    device_name: Option<&str>,
+    remember_device: bool,
+) -> Result<CompletedLogin, AppError> {
+    let mut tx = db.begin().await?;
+    let user = lock_auth_user(&mut tx, &verified_user.id).await?;
+    if user.token_version != verified_user.token_version {
+        return Err(changed_authentication());
+    }
+    let completed =
+        insert_completed_login(&mut tx, config, user, client, device_name, remember_device).await?;
+    tx.commit().await?;
+    Ok(completed)
+}
+
+async fn insert_completed_login(
+    tx: &mut Transaction<'_, Postgres>,
+    config: &Config,
+    user: AuthUser,
+    client: ClientType,
+    device_name: Option<&str>,
+    remember_device: bool,
+) -> Result<CompletedLogin, AppError> {
+    let now = database_now(tx).await?;
+    let session = insert_session(tx, config, &user, client, device_name, now).await?;
+    let trusted_device = if remember_device {
+        Some(insert_trusted_device(tx, &user.id, &session.session_id, device_name, now).await?)
+    } else {
+        None
+    };
+    Ok(CompletedLogin {
+        user,
+        session,
+        client,
+        trusted_device,
+    })
+}
+
+async fn insert_session(
+    tx: &mut Transaction<'_, Postgres>,
+    config: &Config,
+    user: &AuthUser,
+    client: ClientType,
+    device_name: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<IssuedSession, AppError> {
     let session_id = Uuid::new_v4().to_string();
     let family_id = Uuid::new_v4().to_string();
     let refresh_token_id = Uuid::new_v4().to_string();
     let refresh_token = random_secret()?;
     let csrf_token = random_secret()?;
-    let now = Utc::now();
     let absolute_expires_at = now + Duration::days(SESSION_ABSOLUTE_TTL_DAYS);
     let refresh_expires_at = now + Duration::days(REFRESH_IDLE_TTL_DAYS);
-    let mut tx = db.begin().await?;
+    let user_uuid = user
+        .id
+        .parse()
+        .map_err(|_| AppError::Internal("invalid user id".into()))?;
+    let access_token = auth::create_access_token(
+        config,
+        user_uuid,
+        &user.role,
+        user.token_version as i64,
+        &session_id,
+    )?;
     sqlx::query!(
         "INSERT INTO auth_sessions
          (session_id, user_id, client_type, device_name, token_family_id,
@@ -279,30 +603,18 @@ pub async fn finalize_login(
         sha256_hex(&csrf_token),
         absolute_expires_at,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     insert_refresh_token(
-        &mut tx,
+        tx,
         &refresh_token_id,
         &session_id,
         &refresh_token,
         refresh_expires_at,
     )
     .await?;
-    tx.commit().await?;
-
-    let user_uuid = user
-        .id
-        .parse()
-        .map_err(|_| AppError::Internal("invalid user id".into()))?;
     Ok(IssuedSession {
-        access_token: auth::create_access_token(
-            config,
-            user_uuid,
-            &user.role,
-            user.token_version as i64,
-            &session_id,
-        )?,
+        access_token,
         session_id,
         refresh_token,
         csrf_token,
@@ -336,26 +648,38 @@ pub async fn rotate_refresh_token(
     config: &Config,
     raw_token: &str,
     csrf_token: Option<&str>,
-) -> Result<RotatedSession, AppError> {
+) -> Result<RefreshOutcome, AppError> {
     let mut tx = db.begin().await?;
+    let token_hash = sha256_hex(raw_token);
+    let session_id = sqlx::query_scalar!(
+        "SELECT session_id FROM auth_refresh_tokens WHERE token_hash = $1",
+        &token_hash,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("invalid refresh token".into()))?;
+    // Every credential revoker takes session -> refresh-token locks. The
+    // unlocked lookup above is only a locator; both authoritative rows follow.
+    let session = sqlx::query!(
+        "SELECT user_id, client_type, csrf_token_hash, absolute_expires_at, revoked_at
+         FROM auth_sessions WHERE session_id = $1 FOR UPDATE",
+        &session_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("invalid refresh token".into()))?;
     let row = sqlx::query!(
-        "SELECT rt.refresh_token_id, rt.session_id, rt.expires_at AS refresh_expires_at,
-                rt.consumed_at, rt.revoked_at AS token_revoked_at,
-                s.user_id, s.client_type, s.csrf_token_hash, s.absolute_expires_at,
-                s.revoked_at AS session_revoked_at
-         FROM auth_refresh_tokens rt
-         JOIN auth_sessions s ON s.session_id = rt.session_id
-         WHERE rt.token_hash = $1
-         FOR UPDATE OF rt, s",
-        sha256_hex(raw_token),
+        "SELECT refresh_token_id, expires_at, consumed_at, revoked_at
+         FROM auth_refresh_tokens WHERE token_hash = $1 AND session_id = $2 FOR UPDATE",
+        &token_hash,
+        &session_id,
     )
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::Unauthorized("invalid refresh token".into()))?;
 
-    let session_id: String = row.session_id.clone();
-    let user_id: String = row.user_id.clone();
-    let client: String = row.client_type.clone();
+    let user_id: String = session.user_id.clone();
+    let client: String = session.client_type.clone();
     let consumed_at: Option<DateTime<Utc>> = row.consumed_at.clone();
     let now = Utc::now();
     if consumed_at.is_some_and(|consumed_at| is_concurrent_web_refresh(&client, consumed_at, now)) {
@@ -364,6 +688,7 @@ pub async fn rotate_refresh_token(
         ));
     }
     if consumed_at.is_some() {
+        let revoked = RevokedSessions::new(&user_id, vec![session_id.clone()])?;
         revoke_session_in_tx(&mut tx, &session_id, "refresh_token_reuse").await?;
         sqlx::query!(
             "INSERT INTO auth_security_events
@@ -376,15 +701,13 @@ pub async fn rotate_refresh_token(
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
-        return Err(AppError::Unauthorized(
-            "refresh token reuse detected; session revoked".into(),
-        ));
+        return Ok(RefreshOutcome::ReuseRevoked(revoked));
     }
 
-    let refresh_expires_at: DateTime<Utc> = row.refresh_expires_at.clone();
-    let absolute_expires_at: DateTime<Utc> = row.absolute_expires_at.clone();
-    let token_revoked: Option<DateTime<Utc>> = row.token_revoked_at.clone();
-    let session_revoked: Option<DateTime<Utc>> = row.session_revoked_at.clone();
+    let refresh_expires_at: DateTime<Utc> = row.expires_at;
+    let absolute_expires_at: DateTime<Utc> = session.absolute_expires_at;
+    let token_revoked: Option<DateTime<Utc>> = row.revoked_at;
+    let session_revoked: Option<DateTime<Utc>> = session.revoked_at;
     if token_revoked.is_some()
         || session_revoked.is_some()
         || refresh_expires_at <= now
@@ -395,7 +718,7 @@ pub async fn rotate_refresh_token(
         ));
     }
 
-    let csrf_hash: Option<String> = row.csrf_token_hash.clone();
+    let csrf_hash: Option<String> = session.csrf_token_hash.clone();
     if client == "web" && csrf_hash.as_deref() != csrf_token.map(sha256_hex).as_deref() {
         return Err(AppError::Unauthorized("invalid CSRF token".into()));
     }
@@ -429,7 +752,7 @@ pub async fn rotate_refresh_token(
         .id
         .parse()
         .map_err(|_| AppError::Internal("invalid user id".into()))?;
-    Ok(RotatedSession {
+    Ok(RefreshOutcome::Rotated(RotatedSession {
         access_token: auth::create_access_token(
             config,
             user_uuid,
@@ -442,7 +765,7 @@ pub async fn rotate_refresh_token(
         refresh_token: new_token,
         csrf_token: csrf_token.map(str::to_owned),
         expires_in: ACCESS_TOKEN_TTL_SECONDS,
-    })
+    }))
 }
 
 async fn revoke_session_in_tx(
@@ -479,7 +802,7 @@ pub async fn revoke_session(
     db: &PgPool,
     user_id: &str,
     session_id: &str,
-) -> Result<bool, AppError> {
+) -> Result<Option<RevokedSessions>, AppError> {
     let mut tx = db.begin().await?;
     let owned = sqlx::query!(
         "SELECT 1 AS present FROM auth_sessions WHERE session_id = $1 AND user_id = $2 FOR UPDATE",
@@ -489,33 +812,50 @@ pub async fn revoke_session(
     .fetch_optional(&mut *tx)
     .await?
     .is_some();
-    if owned {
+    let revoked = if owned {
+        let revoked = RevokedSessions::new(user_id, vec![session_id.to_owned()])?;
         revoke_session_in_tx(&mut tx, session_id, "user_revoked").await?;
-    }
+        Some(revoked)
+    } else {
+        None
+    };
     tx.commit().await?;
-    Ok(owned)
+    Ok(revoked)
 }
 
 pub async fn revoke_all_sessions(db: &PgPool, user_id: &str) -> Result<(), AppError> {
     let mut tx = db.begin().await?;
+    revoke_all_sessions_tx(&mut tx, user_id, "logout_all").await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub(crate) async fn revoke_all_sessions_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: &str,
+    reason: &str,
+) -> Result<RevokedSessions, AppError> {
     let rows = sqlx::query!(
-        "SELECT session_id FROM auth_sessions WHERE user_id = $1 FOR UPDATE",
+        "SELECT session_id FROM auth_sessions WHERE user_id = $1
+         ORDER BY session_id FOR UPDATE",
         user_id,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
-    for row in rows {
-        let session_id: String = row.session_id.clone();
-        revoke_session_in_tx(&mut tx, &session_id, "logout_all").await?;
+    let revoked = RevokedSessions::new(
+        user_id,
+        rows.into_iter().map(|row| row.session_id).collect(),
+    )?;
+    for session_id in &revoked.session_ids {
+        revoke_session_in_tx(tx, session_id, reason).await?;
     }
     sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1",
         user_id,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-    tx.commit().await?;
-    Ok(())
+    Ok(revoked)
 }
 
 /// Security-sensitive identity, credential, and delegated-authority changes
@@ -652,34 +992,37 @@ pub async fn record_direct_step_up(
 
 /// Identity changes keep the session that authorized the operation but revoke
 /// every other session and every trusted-device credential for the account.
-pub async fn revoke_other_sessions_and_trusted_devices(
-    db: &PgPool,
+/// The caller commits this together with its identity mutation before applying
+/// the returned live-session revocations. Concurrent new logins are separate.
+pub(crate) async fn revoke_other_sessions_and_trusted_devices_tx(
+    tx: &mut Transaction<'_, Postgres>,
     user_id: &str,
     current_session_id: &str,
-) -> Result<(), AppError> {
-    let mut tx = db.begin().await?;
+) -> Result<RevokedSessions, AppError> {
     let rows = sqlx::query!(
         "SELECT session_id FROM auth_sessions
          WHERE user_id = $1 AND session_id <> $2 AND revoked_at IS NULL
-         FOR UPDATE",
+         ORDER BY session_id FOR UPDATE",
         user_id,
         current_session_id,
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
-    for row in rows {
-        let session_id: String = row.session_id.clone();
-        revoke_session_in_tx(&mut tx, &session_id, "identity_changed").await?;
+    let revoked = RevokedSessions::new(
+        user_id,
+        rows.into_iter().map(|row| row.session_id).collect(),
+    )?;
+    for session_id in &revoked.session_ids {
+        revoke_session_in_tx(tx, session_id, "identity_changed").await?;
     }
     sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW())
          WHERE user_id = $1",
         user_id,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-    tx.commit().await?;
-    Ok(())
+    Ok(revoked)
 }
 
 #[derive(Serialize)]
@@ -799,7 +1142,11 @@ mod tests {
     fn client_type_is_fail_closed() {
         assert_eq!(ClientType::parse(None).unwrap(), ClientType::Web);
         assert_eq!(ClientType::parse(Some("ios")).unwrap(), ClientType::Ios);
-        assert!(ClientType::parse(Some("android")).is_err());
+        assert_eq!(
+            ClientType::parse(Some("android")).unwrap(),
+            ClientType::Android
+        );
+        assert!(ClientType::parse(Some("unknown")).is_err());
     }
 
     #[test]

@@ -15,6 +15,9 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::task_results::{self, TerminalRequest};
+pub use super::task_results::{TerminalError, TerminalOutcome};
+
 use crate::{
     domain::{chains, channel_seq, mentions, sessions},
     gateway::{
@@ -22,7 +25,7 @@ use crate::{
         registry::BotLocator,
     },
     infra::db::models::{MessageMention, MESSAGE_SCHEMA_VERSION},
-    resource::{authorize_channel_write, Principal},
+    resource::Principal,
 };
 
 // ── StreamEntry ───────────────────────────────────────────────────────────────
@@ -86,6 +89,29 @@ impl StreamRegistry {
         self.seq_counters.insert(msg_id, AtomicU64::new(0));
     }
 
+    /// Recover the same offered turn without resetting a live stream's sequence
+    /// or replacing another task. The caller holds its message/run state locks.
+    pub fn register_if_absent(&self, entry: StreamEntry) -> Result<bool, &'static str> {
+        match self.entries.entry(entry.msg_id) {
+            dashmap::mapref::entry::Entry::Occupied(current) => {
+                let current = current.get();
+                if current.task_id == entry.task_id
+                    && current.bot_id == entry.bot_id
+                    && current.channel_id == entry.channel_id
+                {
+                    Ok(false)
+                } else {
+                    Err("another task owns this stream")
+                }
+            }
+            dashmap::mapref::entry::Entry::Vacant(slot) => {
+                self.seq_counters.insert(entry.msg_id, AtomicU64::new(0));
+                slot.insert(entry);
+                Ok(true)
+            }
+        }
+    }
+
     /// 获取并递增 seq（R2：Backend 盖戳，不透传 connector 自报的 seq）。
     fn next_seq(&self, msg_id: Uuid) -> u64 {
         self.seq_counters
@@ -96,15 +122,23 @@ impl StreamRegistry {
 
     /// R4 守卫：原子地认领 finalize（在 DashMap 分片写锁下 read-and-set，
     /// 无独立读写窗口）。done 帧借此挡住并发迟到的 delta / 第二个 done。
-    fn claim_finalize(&self, msg_id: Uuid) -> FinalizeClaim {
+    pub(crate) fn claim_finalize(
+        &self,
+        msg_id: Uuid,
+    ) -> Result<Option<FinalizeGuard<'_>>, &'static str> {
         match self.entries.get_mut(&msg_id) {
-            None => FinalizeClaim::NotRegistered,
+            None => Ok(None),
             Some(mut entry) => {
                 if entry.finalized {
-                    FinalizeClaim::AlreadyFinalized
+                    Err("already finalized")
                 } else {
                     entry.finalized = true;
-                    FinalizeClaim::Claimed
+                    Ok(Some(FinalizeGuard {
+                        registry: self,
+                        msg_id,
+                        task_id: entry.task_id,
+                        committed: false,
+                    }))
                 }
             }
         }
@@ -114,6 +148,15 @@ impl StreamRegistry {
     pub fn remove(&self, msg_id: Uuid) {
         self.entries.remove(&msg_id);
         self.seq_counters.remove(&msg_id);
+    }
+
+    pub(crate) fn remove_task(&self, msg_id: Uuid, task_id: Uuid) {
+        if let dashmap::mapref::entry::Entry::Occupied(entry) = self.entries.entry(msg_id) {
+            if entry.get().task_id == task_id {
+                self.seq_counters.remove(&msg_id);
+                entry.remove();
+            }
+        }
     }
 
     /// Peek the trigger message id for an active stream. Call **before**
@@ -152,15 +195,38 @@ impl StreamRegistry {
     }
 }
 
-/// `claim_finalize` 的认领结果（R4 守卫）。
-#[derive(Debug, PartialEq, Eq)]
-enum FinalizeClaim {
-    /// 本次成功把流标记为 finalize（此前未 finalize）。
-    Claimed,
-    /// 流已被先前的 done 帧 finalize——并发迟到的 done 应被拒绝。
-    AlreadyFinalized,
-    /// 流未注册——done 到达时占位理应仍在；按既有行为放行。
-    NotRegistered,
+/// A memory claim fences concurrent terminal/delta frames only while the DB
+/// transaction is pending. Failure or cancellation releases it; PostgreSQL's
+/// conditional partial-row update remains the durable completion authority.
+pub(crate) struct FinalizeGuard<'a> {
+    registry: &'a StreamRegistry,
+    msg_id: Uuid,
+    task_id: Uuid,
+    committed: bool,
+}
+
+impl FinalizeGuard<'_> {
+    /// Remove only the task this claim fenced. Holding the entry lock through
+    /// counter cleanup prevents a replacement task's sequence from being erased.
+    pub(crate) fn remove(mut self) {
+        self.registry.remove_task(self.msg_id, self.task_id);
+        self.committed = true;
+    }
+}
+
+impl Drop for FinalizeGuard<'_> {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        if let Some(mut entry) = self.registry.entries.get_mut(&self.msg_id) {
+            // Removal/replacement can happen while the transaction awaits IO.
+            // A failed old task must never reopen a newer task's claim.
+            if entry.task_id == self.task_id {
+                entry.finalized = false;
+            }
+        }
+    }
 }
 
 // ── 回流处理（R1-R4）─────────────────────────────────────────────────────────
@@ -243,52 +309,6 @@ pub async fn handle_delta(
     Ok(())
 }
 
-/// bot@bot 回复触发从数据 WS 读循环里 spawn 出去执行。触发的下一跳
-/// （acquire_scope_session + dispatch 的 S3 拉取 + base64）耗时可达数百 ms；若 inline
-/// await，会 head-of-line 阻塞该 connector 上多路复用的所有其他流。此时源消息已落库、
-/// 终态帧已广播、ack 已发出——链的排序不属于协议契约，故安全后台化。
-/// Returns the spawned task's handle. Production callers drop it (fire-and-forget —
-/// that IS the point: don't block the read loop). Tests can `.await` it to observe the
-/// otherwise-async trigger deterministically.
-#[allow(clippy::too_many_arguments)]
-fn spawn_trigger_bot_replies(
-    db: &PgPool,
-    fanout: &Arc<dyn Fanout>,
-    registry: &Arc<StreamRegistry>,
-    bot_locator: &Arc<dyn BotLocator>,
-    channel_id: Uuid,
-    msg_id: Uuid,
-    channel_seq: i64,
-    depth: i32,
-    author_bot_id: Uuid,
-    mentions: Vec<mentions::Mention>,
-    chain_id: Option<String>,
-) -> tokio::task::JoinHandle<()> {
-    let db = db.clone();
-    let fanout = fanout.clone();
-    let registry = registry.clone();
-    let bot_locator = bot_locator.clone();
-    tokio::spawn(async move {
-        if let Err(e) = chains::trigger_bot_replies(
-            &db,
-            &fanout,
-            &registry,
-            &bot_locator,
-            channel_id,
-            msg_id,
-            channel_seq,
-            depth,
-            author_bot_id,
-            &mentions,
-            chain_id.as_deref(),
-        )
-        .await
-        {
-            tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
-        }
-    })
-}
-
 /// 处理 bot 发来的 done 帧。
 ///
 /// 写后投递原则：先更新 PG，再 fan-out 终态帧。
@@ -298,57 +318,152 @@ pub async fn handle_done(
     db: &PgPool,
     bot_locator: &Arc<dyn BotLocator>,
     bot_id: Uuid,
-    provider_account_id: &str,
     frame: &Value,
-) -> Result<(), &'static str> {
-    let msg_id: Uuid = frame
-        .get("msg_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or("missing msg_id")?;
-    let entry_session_id = registry
-        .entries
-        .get(&msg_id)
-        .and_then(|entry| entry.session_id);
-    mark_session_alive(db, bot_id, provider_account_id, frame, entry_session_id).await;
-
-    let content = frame.get("content").and_then(|v| v.as_str()).unwrap_or("");
+) -> Result<TerminalOutcome, TerminalError> {
+    let request = TerminalRequest::parse(frame)?;
+    if let Some(outcome) = task_results::replay(db, bot_id, frame).await? {
+        return Ok(outcome);
+    }
+    let msg_id = request.msg_id;
+    let content = if frame.get("type").and_then(Value::as_str) == Some("error") {
+        frame
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("connector reported an error")
+    } else {
+        frame.get("content").and_then(Value::as_str).unwrap_or("")
+    };
     let done_file_ids = parse_file_ids(frame.get("file_ids"));
     let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
     let mention_ids = parse_mention_ids(frame.get("mention_ids"));
 
-    // R1: 所有权校验
-    let channel_id = verify_ownership(db, bot_id, msg_id).await?;
+    // Routing comes from the required grant and is checked against the locked
+    // message and run before any result is committed.
+    let execution = &request.execution;
+    let channel_id = execution.channel_id;
     let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
         .await
-        .map_err(mention_parse_error_to_static)?;
+        .map_err(|error| match error {
+            mentions::MentionParseError::Db(error) => {
+                TerminalError::database("validate terminal mentions")(error)
+            }
+            other => {
+                TerminalError::rejected("TERMINAL_FORBIDDEN", mention_parse_error_to_static(other))
+            }
+        })?;
+
+    // Readiness is an admission snapshot, as on human sends. Never retain a
+    // database transaction while consulting a locator. Once a ready target is
+    // committed below, a subsequent disconnect cannot lose its dispatch intent.
+    let mut ready_targets = Vec::new();
+    if frame.get("type").and_then(Value::as_str) == Some("done") {
+        for mention in &mentions {
+            if mention.member_type == mentions::MemberType::Bot
+                && mention.member_id != bot_id
+                && bot_locator.is_online(mention.member_id).await
+                && bot_locator
+                    .supports_task_acceptance(mention.member_id)
+                    .await
+            {
+                ready_targets.push(mention.member_id);
+            }
+        }
+    }
 
     // R4: 标记 finalize（先在内存里标记，防止并发 delta 继续写入）
-    if registry.claim_finalize(msg_id) == FinalizeClaim::AlreadyFinalized {
-        return Err("already finalized");
-    }
+    let finalize_guard = match registry.claim_finalize(msg_id) {
+        Ok(guard) => guard,
+        Err(_) => {
+            if let Some(outcome) = task_results::replay(db, bot_id, frame).await? {
+                return Ok(outcome);
+            }
+            return Err(TerminalError::busy());
+        }
+    };
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
     let mut tx = db
         .begin()
         .await
-        .map_err(crate::gateway::log_db_err("stream.done: begin tx"))?;
-    let channel_seq =
-        channel_seq::allocate(&mut tx, channel_id)
-            .await
-            .map_err(crate::gateway::log_db_err(
-                "stream.done: allocate channel_seq",
-            ))?;
-    let metadata = sqlx::query!(
-        "SELECT content_data FROM messages WHERE msg_id = $1 AND is_partial = TRUE FOR UPDATE",
+        .map_err(TerminalError::database("stream.done: begin tx"))?;
+    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+        .await
+        .map_err(TerminalError::database("stream.done: allocate channel_seq"))?;
+    let message = sqlx::query!(
+        "SELECT channel_id,sender_id,sender_type,is_partial,is_deleted,channel_seq,chain_id,content_data
+         FROM messages WHERE msg_id = $1 FOR UPDATE",
         msg_id.to_string(),
     )
     .fetch_optional(&mut *tx)
     .await
-    .map_err(crate::gateway::log_db_err(
-        "stream.done: lock card metadata",
+    .map_err(TerminalError::database(
+        "stream.done: lock message",
     ))?;
-    if let Some(data) = metadata.and_then(|row| row.content_data) {
+    let run = task_results::lock_run(&mut tx, &request).await?;
+    if let Some(outcome) = run.validate(bot_id, &request)? {
+        // Drop rolls back the provisional sequence allocation. A replay
+        // never repeats message writes, session changes or completion effects.
+        return Ok(outcome);
+    }
+    let message = message
+        .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "message no longer exists"))?;
+    if message.sender_id != bot_id.to_string()
+        || message.sender_type != "bot"
+        || message.channel_id != channel_id.to_string()
+    {
+        return Err(TerminalError::rejected(
+            "TERMINAL_FORBIDDEN",
+            "message does not belong to this bot and channel",
+        ));
+    }
+    if message.is_deleted {
+        return Err(TerminalError::rejected(
+            "TERMINAL_GONE",
+            "message was deleted",
+        ));
+    }
+    if !message.is_partial || message.channel_seq.is_some() {
+        return Err(TerminalError::rejected(
+            "TERMINAL_CONFLICT",
+            "message was finalized without this receipt",
+        ));
+    }
+    if !super::task_acceptance::may_execute(
+        &mut tx,
+        bot_id,
+        channel_id,
+        message.chain_id.as_deref(),
+    )
+    .await
+    .map_err(TerminalError::database("authorize terminal result"))?
+    {
+        return Err(TerminalError::rejected(
+            "TERMINAL_FORBIDDEN",
+            "bot may no longer publish this result",
+        ));
+    }
+    let stored_id = |key: &str| {
+        message
+            .content_data
+            .as_ref()
+            .and_then(|data| data.get(key))
+            .map(|value| {
+                value
+                    .as_str()
+                    .and_then(|id| id.parse::<Uuid>().ok())
+                    .ok_or_else(|| {
+                        TerminalError::rejected(
+                            "TERMINAL_FORBIDDEN",
+                            "stored terminal session or claim identity is invalid",
+                        )
+                    })
+            })
+            .transpose()
+    };
+    let session_id = stored_id("session_id")?;
+    let task_claim_id = stored_id("task_claim_id")?;
+    let claim_update = task_results::complete(&mut tx, &request, bot_id, task_claim_id).await?;
+    if let Some(data) = message.content_data {
         let finalized =
             crate::resource::messages::finalize_card_metadata(data, !content.trim().is_empty());
         sqlx::query!(
@@ -358,7 +473,7 @@ pub async fn handle_done(
         )
         .execute(&mut *tx)
         .await
-        .map_err(crate::gateway::log_db_err(
+        .map_err(TerminalError::database(
             "stream.done: publish card metadata",
         ))?;
     }
@@ -378,38 +493,85 @@ pub async fn handle_done(
     )
     .fetch_optional(&mut *tx)
     .await
-    .map_err(crate::gateway::log_db_err(
+    .map_err(TerminalError::database(
         "stream.done: finalize message update",
     ))?
-    .ok_or("message not found")?;
+    .ok_or_else(|| TerminalError::rejected("TERMINAL_GONE", "message no longer exists"))?;
     mentions::replace_batch(&mut tx, msg_id, &mentions)
         .await
-        .map_err(crate::gateway::log_db_err("stream.done: replace mentions"))?;
+        .map_err(TerminalError::database("stream.done: replace mentions"))?;
+    if let Some(session_id) = session_id {
+        sessions::finalize_session_without_active_turns_tx(&mut tx, session_id)
+            .await
+            .map_err(|error| match error {
+                crate::errors::AppError::Db(error) => {
+                    TerminalError::database("stream.done: finalize session")(error)
+                }
+                other => {
+                    tracing::error!(%other, "terminal session finalization failed");
+                    TerminalError {
+                        code: "INTERNAL_ERROR",
+                        detail: "terminal session finalization failed",
+                        retryable: true,
+                    }
+                }
+            })?;
+    }
+    let child_count = if frame.get("type").and_then(Value::as_str) == Some("done") {
+        chains::enqueue_terminal_children(
+            &mut tx,
+            channel_id,
+            msg_id,
+            channel_seq,
+            details.depth,
+            bot_id,
+            &mentions,
+            details.chain_id.as_deref(),
+            execution.task_id,
+            execution.execution_id,
+            &ready_targets,
+        )
+        .await
+        .map_err(|error| match error {
+            crate::errors::AppError::Db(error) => {
+                TerminalError::database("stream.done: enqueue child intents")(error)
+            }
+            other => {
+                tracing::error!(%other, "terminal child admission failed");
+                TerminalError {
+                    code: "INTERNAL_ERROR",
+                    detail: "terminal child admission failed",
+                    retryable: true,
+                }
+            }
+        })?
+    } else {
+        0
+    };
     tx.commit()
         .await
-        .map_err(crate::gateway::log_db_err("stream.done: commit tx"))?;
+        .map_err(TerminalError::database("stream.done: commit tx"))?;
+    if let Some(guard) = finalize_guard {
+        guard.remove();
+    }
 
     let channel_id = details
         .channel_id
         .clone()
         .parse()
-        .map_err(|_| "invalid channel_id")?;
+        .map_err(|_| TerminalError::rejected("INTERNAL_ERROR", "invalid channel_id"))?;
     let channel_seq = details
         .channel_seq
         .clone()
         .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))
-        .map_err(crate::gateway::log_db_err(
+        .map_err(TerminalError::database(
             "stream.done: read channel_seq column",
         ))?;
-    let depth = details.depth.clone();
     let file_ids: Vec<String> =
         serde_json::from_value(details.file_ids.clone().unwrap_or(serde_json::Value::Null))
             .unwrap_or_default();
     let msg_type = details.msg_type.clone();
     let reply_to_msg_id = details.reply_to_msg_id.clone();
-    // The chain this reply belongs to — propagated to any next hop so the whole
-    // bot@bot cascade shares one cancelable chain (§8).
-    let chain_id = details.chain_id.clone();
 
     // Resolve attachment metadata, including the status of retired historical
     // records, so the live frame can render unavailable attachments explicitly.
@@ -443,38 +605,28 @@ pub async fn handle_done(
         }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
-
-    // 清理注册表
-    registry.remove(msg_id);
-
-    // depth 上限 / 自 @ 过滤 / bot@bot INITIATE 门禁都在 trigger_bot_replies 内部处理。
-    // chain_id 从本条回复继承，下一跳共享同一条可取消链（§8 gate 也在内部）。
-    // spawn 出去，避免下一跳的 dispatch（S3 拉取 + base64）阻塞本 connector 的读循环。
-    spawn_trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        depth,
-        bot_id,
-        mentions,
-        chain_id,
-    );
-
-    // finalize_session 保持 inline：单条快速 UPDATE，且 spawn 会扩大与 acquire_scope_session
-    // 无条件 upsert 的 BUSY/IDLE 竞态窗口。
-    if let Some(sid) =
-        resolve_session_id(db, bot_id, provider_account_id, frame, entry_session_id).await
-    {
-        if let Err(e) = sessions::finalize_session(db, sid).await {
-            tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-        }
+    if let Some(update) = claim_update {
+        super::resource_effects::publish_claim_update(fanout.as_ref(), &update).await;
     }
 
-    Ok(())
+    if child_count != 0 {
+        let (db, fanout, registry, locator) = (
+            db.clone(),
+            fanout.clone(),
+            registry.clone(),
+            bot_locator.clone(),
+        );
+        tokio::spawn(async move {
+            if let Err(error) =
+                super::dispatch_intents::deliver_trigger(&db, &fanout, &registry, &locator, msg_id)
+                    .await
+            {
+                tracing::warn!(%msg_id, %error, "child dispatch intents retained for recovery");
+            }
+        });
+    }
+
+    Ok(TerminalOutcome::Committed)
 }
 
 /// 处理 bot 上报的 session_update 帧（provider_session_id / metadata）。
@@ -577,7 +729,7 @@ fn decide_explicit_or_entry(
     }
 }
 
-/// Resolve which session_id a done/update frame refers to, by the 4-source
+/// Resolve which session_id a delta frame refers to, by the 4-source
 /// precedence (explicit id > stream entry > provider_session_key > provider_session_id).
 /// On explicit-vs-entry mismatch, logs the warning and prefers the entry id.
 /// Returns None if nothing resolves.
@@ -612,10 +764,15 @@ async fn resolve_session_id(
     None
 }
 
-/// 处理 bot 主动发新消息（send 帧）。
-///
-/// 不同于 delta/done（续写占位），send 是建全新 Message。
-/// 权限检查：bot token 只映射身份；频道写权限由 membership role 决定。
+/// The durable write disposition controls postcommit notifications as well as
+/// publication; a replay still acknowledges the original message identity.
+#[derive(Debug)]
+pub struct SendOutcome {
+    pub msg_id: Uuid,
+    pub replayed: bool,
+}
+
+/// Normalize a proactive send into the shared bot-message creation command.
 pub async fn handle_send(
     registry: &Arc<StreamRegistry>,
     fanout: &Arc<dyn Fanout>,
@@ -623,171 +780,79 @@ pub async fn handle_send(
     bot_locator: &Arc<dyn BotLocator>,
     bot_id: Uuid,
     frame: &Value,
-) -> Result<Uuid, &'static str> {
-    let channel_id: Uuid = frame
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or("missing channel_id")?;
-
-    let principal = Principal::bot(bot_id);
-    authorize_channel_write(db, &principal, channel_id)
-        .await
-        .map_err(|(code, _)| {
-            if code == "INTERNAL_ERROR" {
-                "db error"
-            } else {
-                "bot is not allowed to write to the target channel"
-            }
-        })?;
-
-    let content = frame
-        .get("content")
-        .or_else(|| frame.get("text"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let msg_type = frame
-        .get("msg_type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("text");
-    let reply_to_msg_id = frame
-        .get("in_reply_to_msg_id")
-        .and_then(|v| v.as_str())
+) -> Result<SendOutcome, &'static str> {
+    // Transport aliases normalize before the shared command hashes or validates
+    // input. Capability envelopes and delivery nonces never enter a write key.
+    let mut params = json!({
+        "channel_id": frame.get("channel_id"),
+        "content": frame.get("content").or_else(|| frame.get("text")).and_then(Value::as_str).unwrap_or(""),
+        "msg_type": frame.get("msg_type").and_then(Value::as_str).unwrap_or("text"),
+    });
+    for key in ["file_ids", "mention_ids"] {
+        if let Some(value) = frame.get(key) {
+            params[key] = value.clone();
+        }
+    }
+    if let Some(reply) = frame.get("in_reply_to_msg_id") {
+        params["reply_to_msg_id"] = reply.clone();
+    }
+    if let Some(client_id) = frame
+        .get("client_msg_id")
+        .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string);
-    let file_ids = parse_file_ids(frame.get("file_ids"));
-    let mention_ids = parse_mention_ids(frame.get("mention_ids"));
-    let msg_id = Uuid::new_v4();
-    let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
-        .await
-        .map_err(mention_parse_error_to_static)?;
-
-    // 先落库
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(crate::gateway::log_db_err("stream.send: begin tx"))?;
-    let channel_seq =
-        channel_seq::allocate(&mut tx, channel_id)
-            .await
-            .map_err(crate::gateway::log_db_err(
-                "stream.send: allocate channel_seq",
-            ))?;
-    sqlx::query!(
-        "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, msg_type,
-             is_partial, file_ids, channel_seq, in_reply_to_msg_id)
-         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6, $7, $8)",
-        msg_id.to_string(),
-        channel_id.to_string(),
-        bot_id.to_string(),
-        content,
-        msg_type,
-        serde_json::json!(file_ids.clone()),
-        channel_seq,
-        reply_to_msg_id.as_deref(),
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(crate::gateway::log_db_err("stream.send: insert message"))?;
-    mentions::insert_batch(&mut tx, msg_id, &mentions)
-        .await
-        .map_err(crate::gateway::log_db_err("stream.send: insert mentions"))?;
-    tx.commit()
-        .await
-        .map_err(crate::gateway::log_db_err("stream.send: commit tx"))?;
-
-    // 再 fan-out
-    let wire = WireFrame::channel(
-        channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": msg_id,
-            "channel_id": channel_id,
-            "channel_seq": channel_seq,
-            "sender_type": "bot",
-            "sender_id": bot_id,
-            "content": content,
-            "msg_type": msg_type,
-            "is_partial": false,
-            "reply_to_msg_id": reply_to_msg_id,
-            "file_ids": file_ids,
-            "mentions": mention_dtos(&mentions),
-            "files": [],
-        }),
-    );
-    fanout.broadcast_channel(channel_id, wire).await;
-
-    // 主动 send 里的 @bot 也要能派活。视作 depth=0（与用户发消息触发对等），
-    // 后续 done 链再逐跳 +1 受 MAX_BOT_REPLY_DEPTH 约束。自 @ 过滤与 INITIATE
-    // 门禁在 trigger_bot_replies 内部统一处理。
-    // chain：主动 send 拿不到当前任务上下文，best-effort 继承发送 bot 进行中任务
-    // 的链（让多跳 post_message 级联共享同一条可取消链），无则新起一条（§8）。
-    let chain_id = chain_for_proactive_send(db, channel_id, bot_id, msg_id, &mentions).await;
-    // spawn：同 handle_done，避免下一跳 dispatch 阻塞 connector 读循环。
-    spawn_trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        0,
-        bot_id,
-        mentions,
-        chain_id,
-    );
-
-    Ok(msg_id)
-}
-
-/// Chain assignment for a bot's proactive send / post_message. There is no task
-/// context on this path (same gap as the depth reset), so we best-effort inherit
-/// the chain of the bot's in-flight task — keeping a multi-hop post_message
-/// cascade on ONE cancelable chain — and only root a fresh chain when the bot
-/// isn't already in one AND the message actually triggers a bot (no dead rows).
-async fn chain_for_proactive_send(
-    db: &PgPool,
-    channel_id: Uuid,
-    author_bot_id: Uuid,
-    msg_id: Uuid,
-    mentions: &[mentions::Mention],
-) -> Option<String> {
-    if mentions.is_empty() {
-        return None;
-    }
-    match crate::domain::task_chains::chain_of_active_bot_task(db, channel_id, author_bot_id).await
+        .filter(|id| !id.is_empty())
     {
-        Ok(Some(cid)) => Some(cid),
-        _ => crate::domain::task_chains::start_chain(db, channel_id, msg_id, msg_id)
-            .await
-            .ok()
-            .map(|c| c.to_string()),
+        params["idempotency_key"] = json!(format!("bridge.send:{client_id}"));
     }
+    let created =
+        crate::resource::messages::handle_create(db, &Principal::bot(bot_id), &params, bot_locator)
+            .await
+            .map_err(|(code, detail)| {
+                tracing::warn!(%bot_id, %code, %detail, "bot message command rejected");
+                match code.as_str() {
+                    "INTERNAL_ERROR" => "db error",
+                    "NOT_MEMBER" | "PERMISSION_DENIED" => {
+                        "bot is not allowed to write to the target channel"
+                    }
+                    "MEMBER_NOT_FOUND" => "invalid mention",
+                    "E_IDEMPOTENCY_KEY_REUSED" => {
+                        "client_msg_id was reused for a different message"
+                    }
+                    _ => "invalid message",
+                }
+            })?;
+    let msg_id = created
+        .get("msg_id")
+        .and_then(Value::as_str)
+        .and_then(|id| id.parse().ok())
+        .ok_or("invalid created message")?;
+    let _ = broadcast_created_message(registry, fanout, db, bot_locator, &created).await;
+    Ok(SendOutcome {
+        msg_id,
+        replayed: created
+            .get(crate::resource::idempotency::REPLAY_FLAG)
+            .and_then(Value::as_bool)
+            == Some(true),
+    })
 }
 
-/// `channel.messages.create`（bot 主动 post_message 走的 resource 路径）落库后的副作用：
-/// **live 广播** + **bot@bot 触发**。
-///
-/// `resource::dispatch` 只带 `db`，广播/触发所需的 fanout/registry/bot_locator 由
-/// transport-neutral `resource_effects` 层在 dispatch 成功后统一补做——
-/// 与 [`handle_send`] / [`handle_done`] 的行为对齐（同样的自 @ 过滤 / depth 上限 /
-/// INITIATE 门禁，都在 `trigger_bot_replies` 内部）。`created` 是 `handle_create`
-/// 返回的 `MessageDto` JSON；解析失败则静默跳过（消息已落库，不影响主流程）。
-/// Returns the bot@bot trigger's spawned task handle (or `None` when nothing is
-/// triggered). Production drops it (fire-and-forget); tests `.await` it to observe the
-/// trigger deterministically.
-pub async fn broadcast_and_trigger_created_message(
+/// Publish a committed bot message, then accelerate delivery of intents already
+/// admitted by its write transaction. Cancellation here cannot lose child work.
+/// A receipt replay never repeats publication or creates dispatch decisions.
+pub async fn broadcast_created_message(
     registry: &Arc<StreamRegistry>,
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
     bot_locator: &Arc<dyn BotLocator>,
-    author_bot_id: Uuid,
     created: &Value,
 ) -> Option<tokio::task::JoinHandle<()>> {
+    if created
+        .get(crate::resource::idempotency::REPLAY_FLAG)
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return None;
+    }
     let (Some(msg_id), Some(channel_id)) = (
         created
             .get("msg_id")
@@ -800,62 +865,26 @@ pub async fn broadcast_and_trigger_created_message(
     ) else {
         return None;
     };
-
-    // 1) live 广播：DTO 原样投递，前端与 handle_send 的 "message" 帧同形（多余字段无害）。
-    let wire = WireFrame::channel(channel_id, "message", created.clone());
-    fanout.broadcast_channel(channel_id, wire).await;
-
-    // 2) bot@bot 触发：从 DTO 的 mentions 还原 Vec<Mention>，depth=0（与用户发消息对等）。
-    let mentions = dto_mentions(created);
-    if mentions.is_empty() {
-        return None;
-    }
-    let channel_seq = created.get("channel_seq").and_then(Value::as_i64)?;
-    // Same proactive-send chain assignment as handle_send: inherit the author
-    // bot's in-flight chain (multi-hop post_message stays one cancelable chain),
-    // else root a new one (§8).
-    let chain_id = chain_for_proactive_send(db, channel_id, author_bot_id, msg_id, &mentions).await;
-    // spawn：同 handle_done / handle_send，避免下一跳 dispatch 阻塞 connector 读循环。
-    Some(spawn_trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        0,
-        author_bot_id,
-        mentions,
-        chain_id,
-    ))
-}
-
-/// 从 `MessageDto` JSON 的 `mentions` 数组还原 [`mentions::Mention`]（丢弃无法解析的项）。
-fn dto_mentions(created: &Value) -> Vec<mentions::Mention> {
-    created
-        .get("mentions")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| {
-                    let member_id = m
-                        .get("member_id")
-                        .and_then(Value::as_str)
-                        .and_then(|s| s.parse::<Uuid>().ok())?;
-                    let member_type = match m.get("member_type").and_then(Value::as_str) {
-                        Some("bot") => mentions::MemberType::Bot,
-                        Some("user") => mentions::MemberType::User,
-                        _ => return None,
-                    };
-                    Some(mentions::Mention {
-                        member_id,
-                        member_type,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    fanout
+        .broadcast_channel(
+            channel_id,
+            WireFrame::channel(channel_id, "message", created.clone()),
+        )
+        .await;
+    let (db, fanout, registry, locator) = (
+        db.clone(),
+        fanout.clone(),
+        registry.clone(),
+        bot_locator.clone(),
+    );
+    Some(tokio::spawn(async move {
+        if let Err(error) =
+            super::dispatch_intents::deliver_trigger(&db, &fanout, &registry, &locator, msg_id)
+                .await
+        {
+            tracing::warn!(%msg_id, %error, "bot message dispatch intents retained for recovery");
+        }
+    }))
 }
 
 fn mention_parse_error_to_static(error: mentions::MentionParseError) -> &'static str {
@@ -1086,18 +1115,63 @@ mod tests {
         let reg = StreamRegistry::new();
         let msg = Uuid::new_v4();
         reg.register(entry(msg));
-        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::Claimed);
-        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::AlreadyFinalized);
+        let _guard = reg.claim_finalize(msg).unwrap().unwrap();
+        assert!(matches!(reg.claim_finalize(msg), Err("already finalized")));
     }
 
     /// 未注册的流：finalize 认领返回 NotRegistered（handle_done 据此放行）。
     #[test]
     fn claim_finalize_unregistered_is_not_rejected() {
         let reg = StreamRegistry::new();
-        assert_eq!(
-            reg.claim_finalize(Uuid::new_v4()),
-            FinalizeClaim::NotRegistered
-        );
+        assert!(reg.claim_finalize(Uuid::new_v4()).unwrap().is_none());
+    }
+
+    #[test]
+    fn recovering_the_same_stream_preserves_sequence_and_finalize_claim() {
+        let registry = StreamRegistry::new();
+        let original = entry(Uuid::new_v4());
+        assert!(registry.register_if_absent(original.clone()).unwrap());
+        assert_eq!(registry.next_seq(original.msg_id), 0);
+        assert!(!registry.register_if_absent(original.clone()).unwrap());
+        assert_eq!(registry.next_seq(original.msg_id), 1);
+        let _claim = registry.claim_finalize(original.msg_id).unwrap();
+        assert!(!registry.register_if_absent(original.clone()).unwrap());
+        assert!(registry.claim_finalize(original.msg_id).is_err());
+        let mut another = original;
+        another.task_id = Uuid::new_v4();
+        assert!(registry.register_if_absent(another).is_err());
+    }
+
+    #[test]
+    fn abandoned_finalize_claim_can_be_retried() {
+        let reg = StreamRegistry::new();
+        let msg = Uuid::new_v4();
+        reg.register(entry(msg));
+        drop(reg.claim_finalize(msg).unwrap());
+        assert!(reg.claim_finalize(msg).unwrap().is_some());
+    }
+
+    #[test]
+    fn finished_finalize_claim_removes_its_registry_state() {
+        let reg = StreamRegistry::new();
+        let msg = Uuid::new_v4();
+        reg.register(entry(msg));
+        reg.claim_finalize(msg).unwrap().unwrap().remove();
+        assert!(!reg.contains(msg));
+        assert!(reg.claim_finalize(msg).unwrap().is_none());
+    }
+
+    #[test]
+    fn abandoned_old_claim_cannot_reopen_a_replacement_task() {
+        let reg = StreamRegistry::new();
+        let msg = Uuid::new_v4();
+        reg.register(entry(msg));
+        let old = reg.claim_finalize(msg).unwrap();
+        reg.remove(msg);
+        reg.register(entry(msg));
+        let _current = reg.claim_finalize(msg).unwrap();
+        drop(old);
+        assert!(matches!(reg.claim_finalize(msg), Err("already finalized")));
     }
 
     // ── active_channels：一个 bot 同时在多个频道工作时的在途频道集合 ──────────
@@ -1147,7 +1221,7 @@ mod tests {
             ..entry(msg)
         });
         assert_eq!(reg.active_channels(bot).len(), 1);
-        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::Claimed);
+        let _guard = reg.claim_finalize(msg).unwrap();
         assert!(reg.active_channels(bot).is_empty());
     }
 }

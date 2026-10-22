@@ -1,5 +1,6 @@
 import { ResourceCardProvider } from "./ResourceCardContext";
-import { makeFsClient } from "./workbench/fsClient";
+import { channelFileClient } from "./workbench/channelFileClient";
+import { clientSessionGeneration } from "@/lib/clientSession";
 import { AnnotationProvider } from "@/features/annotations/AnnotationProvider";
 import { PanelWorkspace } from "./workbench/PanelWorkspace";
 import { Button as UiButton } from "@/components/ui/button";
@@ -156,6 +157,11 @@ export function ChannelView({
     !!channel && channel.type !== "dm" && channel.is_member === false;
   const activeChannelRef = useRef<string | null>(channel?.channel_id ?? null);
   activeChannelRef.current = channel?.channel_id ?? null;
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const {
     mentionables,
     setMembers,
@@ -165,6 +171,8 @@ export function ChannelView({
     setVoiceTranscripts,
     loadVoiceTranscript,
   } = useChannelRoster({ channel, preview: isPreview, activeChannelRef });
+  const discussionThreadRef = useRef<Message[]>([]);
+  const discussionMessageUpdatedRef = useRef<((update: Partial<Message> & { msg_id: string }) => void) | null>(null);
   const permissionResolvedRef = useRef<() => void>(() => {});
   const onPermissionResolved = useCallback(
     () => permissionResolvedRef.current(),
@@ -197,6 +205,8 @@ export function ChannelView({
     activeChannelRef,
     patchChannel,
     onPermissionResolved,
+    additionalMessagesRef: discussionThreadRef,
+    additionalMessageUpdatedRef: discussionMessageUpdatedRef,
   });
   // Slash-commands advertised by the channel's bots (⑦ command palette). Flat
   // list across all bots; refreshed on channel open and on reconnect catch-up.
@@ -220,8 +230,6 @@ export function ChannelView({
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [discussionComposerRoot, setDiscussionComposerRoot] =
     useState<Message | null>(null);
-  /** Live+REST rows for the open topic — reply defaults look here, not only the chat window. */
-  const discussionThreadRef = useRef<Message[]>([]);
   const [creatingDiscussion, setCreatingDiscussion] = useState(false);
   const [openDiscussionRequest, setOpenDiscussionRequest] = useState<{
     id: string;
@@ -552,10 +560,11 @@ export function ChannelView({
   // windows as full-screen sheets, so there is no geometry to share there.
   const isMobile = useIsMobile();
   const layoutChannelId = channel?.channel_id ?? "";
-  const cardResources = useMemo(() => ({ principalId: user?.user_id, fs: makeFsClient(sendResourceReq, layoutChannelId) }), [sendResourceReq, layoutChannelId, user?.user_id]);
+  const cardResources = useMemo(() => ({ principalId: user?.user_id, fs: channelFileClient(sendResourceReq, layoutChannelId) }), [sendResourceReq, layoutChannelId, user?.user_id]);
   const cardFileClient = cardResources.fs;
   const channelLayout = useChannelLayout({
     channelId: layoutChannelId,
+    fileClient: cardFileClient,
     sendResourceReq,
     getLaneBounds,
     enabled: !isMobile && !!layoutChannelId && !isPreview,
@@ -1042,8 +1051,12 @@ export function ChannelView({
         return;
       }
       if (loc.kind === "resource") {
+        const sourceChannel = channel.channel_id;
+        const generation = clientSessionGeneration();
+        const current = () => mountedRef.current && activeChannelRef.current === sourceChannel && generation === clientSessionGeneration();
         try {
           const target=await resolveResource(uri);
+          if (!current()) return;
           if(target.channel_id!==channel.channel_id) {
             sessionStorage.setItem(`cheers:resource-focus:${target.channel_id}`,uri);
             await selectChannel(target.channel_id);
@@ -1051,7 +1064,7 @@ export function ChannelView({
           else if(target.kind==="inbox") {setFilesFocus(target.resource_id);setFilesOpen(true);}
           else if(target.kind==="msg") {void jumpToMessage(target.resource_id);}
           else {openBoard(target.kind);}
-        } catch(error){setRefError(String(error));}
+        } catch(error){if (current()) setRefError(String(error));}
         return;
       }
       if (loc.kind === "desk") {
@@ -1451,6 +1464,7 @@ export function ChannelView({
           seq: (previous?.seq ?? 0) + 1,
         }));
       },
+      onContentDataUpdated: handleContentDataUpdated,
       onSuggestionsLoaded: (msgId, questions) => {
         handleContentDataUpdated(msgId, {
           ...((messages.find((m) => m.msg_id === msgId)?.content_data as object) ?? {}),
@@ -1796,6 +1810,7 @@ export function ChannelView({
                     openDiscussionId={openDiscussionRequest?.id ?? null}
                     liveMessages={messages}
                     discussionThreadRef={discussionThreadRef}
+                    messageUpdatedRef={discussionMessageUpdatedRef}
                     footer={
                       !selectMode ? (
                         <>

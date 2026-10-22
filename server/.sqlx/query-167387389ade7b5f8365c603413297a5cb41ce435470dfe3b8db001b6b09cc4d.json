@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status FROM cheers_sessions\n         WHERE provider=$1 AND provider_account_id=$2 AND provider_session_key=$3 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "167387389ade7b5f8365c603413297a5cb41ce435470dfe3b8db001b6b09cc4d"
+}

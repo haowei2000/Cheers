@@ -14,6 +14,8 @@ gateway:
     repository: cheers/gateway
     tag: "" # defaults to .Chart.AppVersion
     pullPolicy: IfNotPresent
+  # Exactly one gateway is supported; enforced by values.schema.json. Recreate
+  # upgrades reconnect clients after the replacement starts.
   replicaCount: 1
   port: 8000
   # Non-secret env. Secret env (DB pw, S3 keys, admin pw, JWT) come from the Secret.
@@ -205,8 +207,8 @@ gotenberg:
       cpu: "1"
       memory: 1Gi
 
-# ── Redis (ONLY needed for multi-instance HA fan-out; single instance uses
-#    the in-process DashMap, so default off) ─────────────────────────────────
+# ── Redis (reserved for future multi-instance support). The current gateway
+#    always uses in-process fan-out/registry; enabling Redis does not enable HA. ─
 redis:
   enabled: false
   image: redis:7-alpine

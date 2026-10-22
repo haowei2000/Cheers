@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cheers_sessions\n         SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{session_config}',\n             COALESCE(metadata->'session_config', '{}'::jsonb) || $2::jsonb ||\n             jsonb_build_object(\n                 'revision', COALESCE((metadata #>> '{session_config,revision}')::bigint, 0) + 1,\n                 'config_options', COALESCE(metadata #> '{session_config,config_options}', '{}'::jsonb)\n                     || COALESCE($2::jsonb->'config_options', '{}'::jsonb))),\n             updated_at = NOW()\n         WHERE session_id = $1\n         RETURNING metadata->'session_config'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "?column?",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4e16bc2497c85231514bd3b117534cc970f746b97a4953cafc00e450bfa24451"
+}

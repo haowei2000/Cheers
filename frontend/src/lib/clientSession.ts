@@ -1,7 +1,12 @@
 const DRAFT_PREFIX = "cheers.draft.";
+let generation = 0;
+
+/** Async resource work captures this value and stops when authentication changes. */
+export function clientSessionGeneration(): number { return generation; }
 
 /** Removes sensitive tab-scoped data before another account can use this tab. */
 export function clearClientSessionData(): void {
+  generation++;
   try {
     for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
       const key = sessionStorage.key(index);

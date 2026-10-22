@@ -111,6 +111,7 @@ jobs:
           # releases/latest/download/latest.json, and a connector release must
           # not steal GitHub's "latest" pointer from the desktop feed.
           make_latest: false
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
           fail_on_unmatched_files: true
 
   # Signed update manifest for the connector's opt-in self-updater ([update]
@@ -156,6 +157,8 @@ jobs:
               for p in sorted(pathlib.Path("assets").iterdir())
           }
           manifest = {"version": os.environ["VERSION"], "assets": assets}
+          manifest["source_version"] = os.environ["VERSION"].split("-rc.", 1)[0]
+          manifest["source_commit"] = os.environ["GITHUB_SHA"]
           pathlib.Path("connector-manifest.json").write_text(
               json.dumps(manifest, indent=2, sort_keys=True) + "\n"
           )
@@ -174,6 +177,7 @@ jobs:
             connector-manifest.json
             connector-manifest.json.sig
           make_latest: false
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
           fail_on_unmatched_files: true
 
   # Sync the gateway's CHEERS_CONNECTOR_RELEASE_VERSION pin to this tag. The
@@ -190,6 +194,7 @@ jobs:
     needs: manifest
     if: |
       startsWith(github.ref, 'refs/tags/connector-v') &&
+      !contains(github.ref_name, '-rc.') &&
       vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: production

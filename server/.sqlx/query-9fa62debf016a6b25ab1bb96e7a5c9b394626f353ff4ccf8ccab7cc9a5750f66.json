@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT member_id FROM channel_memberships\n         WHERE channel_id=$1 AND member_id=$2 AND member_type='user' FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9fa62debf016a6b25ab1bb96e7a5c9b394626f353ff4ccf8ccab7cc9a5750f66"
+}

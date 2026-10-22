@@ -9,7 +9,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 
@@ -176,12 +176,36 @@ pub enum RuntimeEvent {
         /// Session whose replay stream is now fully drained.
         acp_session_id: String,
     },
+    /// A prompt response has arrived after its preceding notifications were
+    /// enqueued. Acknowledge only after the orchestration layer applies every
+    /// earlier event, before the prompt caller snapshots its terminal result.
+    UpdatesDrained {
+        /// Completion acknowledgment from the event consumer.
+        respond_to: oneshot::Sender<()>,
+    },
+}
+
+/// Waits for the consumer to apply the updates queued before a prompt response.
+///
+/// Both transports enqueue notifications before waking the matching response
+/// waiter. Use that same FIFO here; sending directly to the orchestration queue
+/// would overtake notifications still waiting in the adapter forwarder.
+pub(crate) async fn drain_updates(event_tx: &mpsc::Sender<RuntimeEvent>) -> anyhow::Result<()> {
+    let (respond_to, applied) = oneshot::channel();
+    event_tx
+        .send(RuntimeEvent::UpdatesDrained { respond_to })
+        .await
+        .map_err(|_| anyhow::anyhow!("ACP update consumer closed before prompt completion"))?;
+    applied.await.map_err(|_| {
+        anyhow::anyhow!("ACP update consumer dropped prompt completion acknowledgment")
+    })
 }
 
 #[async_trait]
 /// Cloneable, concurrency-safe issuer for long-running ACP prompt turns.
 pub trait PromptClient: Send + Sync {
-    /// Sends one prompt without holding the lifecycle adapter lock.
+    /// Sends one prompt without holding the lifecycle adapter lock. Before
+    /// returning its response or error, applies all preceding queued updates.
     async fn prompt(
         &self,
         session_id: &str,

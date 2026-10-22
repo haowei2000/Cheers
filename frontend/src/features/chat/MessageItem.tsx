@@ -72,6 +72,7 @@ export interface MessageActionHandlers {
   onRetry?: (m: Message) => void;
   onUseSuggestedQuestion?: (question: SuggestedQuestion) => void;
   onSuggestionsLoaded?: (msgId: string, questions: SuggestedQuestion[]) => void;
+  onContentDataUpdated?: (msgId: string, data: Message["content_data"]) => void;
 }
 
 interface Props {
@@ -979,6 +980,7 @@ function RegularMessageItem({
               message={message}
               channelId={channelId}
               currentUserId={currentUserId}
+              onContentDataUpdated={actions?.onContentDataUpdated}
             />
           )}
           {message._status && (
@@ -1054,6 +1056,7 @@ function RegularMessageItem({
             message={message}
             channelId={channelId}
             currentUserId={currentUserId}
+            onContentDataUpdated={actions?.onContentDataUpdated}
           />
         )}
         {message._status && (

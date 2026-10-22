@@ -1,6 +1,6 @@
 import { AnnotationPreviewProvider } from "@/features/annotations/previewSupport";
 import { ContextActionsProvider } from "@/components/ui/context-actions";
-import { ResourceError } from "@/features/chat/hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import { ThemeProvider } from "@/components/ui/theme";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { FolderTree } from "lucide-react";

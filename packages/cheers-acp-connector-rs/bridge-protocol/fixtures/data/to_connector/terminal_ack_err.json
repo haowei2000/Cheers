@@ -1,8 +1,9 @@
 {
-  "client_msg_id": "client-msg-2",
+  "client_msg_id": "22222222-3333-4444-8555-666666666666",
   "code": "TERMINAL_REJECTED",
   "error": "not the owner of msg",
   "ok": false,
+  "retryable": false,
   "type": "terminal_ack",
   "v": 1
 }

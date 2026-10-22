@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT task_id, bot_id, channel_id, status, binding_type,\n                execution_id, execution_connection_id, dispatch_input,task_frame\n         FROM bot_runs WHERE placeholder_msg_id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "task_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "binding_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "execution_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "execution_connection_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "dispatch_input",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "task_frame",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "02860108cfc136d45df2410bd264a57a9f395505318fcdeb716f8aa52f63bef2"
+}

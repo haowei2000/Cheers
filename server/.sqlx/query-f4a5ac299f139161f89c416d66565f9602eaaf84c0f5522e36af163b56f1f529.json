@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.workspace_id FROM workspaces w\n         WHERE EXISTS (\n             SELECT 1 FROM workspace_memberships wm\n             WHERE wm.workspace_id = w.workspace_id AND wm.user_id = $1\n         ) OR EXISTS (\n             SELECT 1 FROM channels c\n             JOIN channel_memberships cm ON cm.channel_id = c.channel_id\n             WHERE c.workspace_id = w.workspace_id\n               AND cm.member_id = $1 AND cm.member_type = 'user'\n         ) ORDER BY w.workspace_id FOR UPDATE OF w",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f4a5ac299f139161f89c416d66565f9602eaaf84c0f5522e36af163b56f1f529"
+}

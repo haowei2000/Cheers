@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status,source_seq_from,source_seq_to,dispatched_at FROM task_claim_evaluations\n         WHERE evaluation_id=$1 AND channel_id=$2 AND bot_id=$3 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "source_seq_from",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_seq_to",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "dispatched_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0b84e1ae53471c22ce8932c96ae602be9e6800670570dd92f10e2d36598c6588"
+}

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status,execution_id,accepted_at,dispatch_input,dispatch_lease_id,dispatch_lease_until,task_frame\n         FROM bot_runs WHERE bot_run_id=$1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "execution_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "accepted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "dispatch_input",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "dispatch_lease_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "dispatch_lease_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "task_frame",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "1c46a67ec5a157bd7f3459e36c873e6588e120d5d61c306d25b6984e604d57d0"
+}

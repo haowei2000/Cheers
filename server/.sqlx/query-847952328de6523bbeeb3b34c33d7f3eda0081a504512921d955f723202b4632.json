@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_runs SET status='cancelled',error_message=$3,dispatch_input=NULL,task_frame=NULL,\n         next_offer_at=NULL,dispatch_lease_id=NULL,dispatch_lease_until=NULL,updated_at=NOW()\n         WHERE bot_run_id=$1 AND dispatch_lease_id=$2 AND status IN ('pending','prepared')\n           AND execution_id IS NULL AND accepted_at IS NULL RETURNING channel_id,bot_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "847952328de6523bbeeb3b34c33d7f3eda0081a504512921d955f723202b4632"
+}

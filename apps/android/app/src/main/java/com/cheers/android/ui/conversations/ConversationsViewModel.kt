@@ -6,11 +6,14 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cheers.android.data.api.ChannelDto
+import com.cheers.android.data.api.CheersApi
 import com.cheers.android.data.api.MessageDto
 import com.cheers.android.data.api.WorkspaceDto
 import com.cheers.android.data.api.userMessage
+import com.cheers.android.data.auth.SessionRefreshResult
 import com.cheers.android.di.AppContainer
 import com.cheers.android.util.Format
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -59,7 +62,21 @@ private data class Preview(
 
 class ConversationsViewModel(private val container: AppContainer) : ViewModel() {
 
-    private val repo = container.chatRepository
+    private val initialSession = container.currentSessionOrNull()
+    private val identity = initialSession?.identity
+
+    private suspend fun isCurrent(): Boolean =
+        identity?.let { container.authRepository.isCurrent(it) } == true
+
+    private suspend fun scopedApi(): CheersApi {
+        val expected = identity ?: throw CancellationException("No active session")
+        return when (val result = container.authRepository.validSession(expected)) {
+            is SessionRefreshResult.Fresh -> container.apiFor(result.session)
+            SessionRefreshResult.Retryable -> throw IOException("Connection temporarily unavailable")
+            SessionRefreshResult.Ended, SessionRefreshResult.Stale ->
+                throw CancellationException("Session changed")
+        }
+    }
 
     private var workspaces: List<WorkspaceDto> = emptyList()
     private var personalId: String? = null
@@ -88,14 +105,16 @@ class ConversationsViewModel(private val container: AppContainer) : ViewModel() 
         publish()
         viewModelScope.launch {
             try {
-                channels = repo.listChannels(workspaceId)
+                val incoming = scopedApi().listChannels(workspaceId)
+                if (!isCurrent()) return@launch
+                channels = incoming
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Throwable) {
+                if (!isCurrent()) return@launch
                 // keep the previous list on failure
-            } finally {
-                channelsLoading = false
             }
+            channelsLoading = false
             publish()
             fetchPreviews(channels)
         }
@@ -103,28 +122,45 @@ class ConversationsViewModel(private val container: AppContainer) : ViewModel() 
 
     private suspend fun load() {
         try {
-            coroutineScope {
-                val personalDeferred = async { runCatching { repo.personalWorkspace() }.getOrNull() }
-                val teamsDeferred = async { repo.listWorkspaces() }
-                val dmsDeferred = async { repo.listDms() }
-                val personal = personalDeferred.await()
-                val teams = teamsDeferred.await()
-                dms = dmsDeferred.await()
-                personalId = personal?.workspaceId
-                workspaces = listOfNotNull(personal) + teams
+            val (personal, teams, incomingDms) = coroutineScope {
+                val personalDeferred = async {
+                    try {
+                        scopedApi().personalWorkspace()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Throwable) {
+                        null
+                    }
+                }
+                val teamsDeferred = async { scopedApi().listWorkspaces() }
+                val dmsDeferred = async { scopedApi().listDms() }
+                Triple(personalDeferred.await(), teamsDeferred.await(), dmsDeferred.await())
             }
+            if (!isCurrent()) return
+            dms = incomingDms
+            personalId = personal?.workspaceId
+            workspaces = listOfNotNull(personal) + teams
             if (selectedWorkspaceId == null) {
                 selectedWorkspaceId = workspaces.firstOrNull()?.workspaceId
             }
-            channels = selectedWorkspaceId
-                ?.let { runCatching { repo.listChannels(it) }.getOrDefault(emptyList()) }
-                ?: emptyList()
+            val incomingChannels = selectedWorkspaceId?.let {
+                try {
+                    scopedApi().listChannels(it)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    emptyList()
+                }
+            } ?: emptyList()
+            if (!isCurrent()) return
+            channels = incomingChannels
             loadedOnce = true
             publish()
             fetchPreviews(channels + dms)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
+            if (!isCurrent()) return
             if (!loadedOnce) {
                 _state.value = ConversationsUiState.Error(t.userMessage(container.json))
             }
@@ -135,11 +171,14 @@ class ConversationsViewModel(private val container: AppContainer) : ViewModel() 
     private fun fetchPreviews(targets: List<ChannelDto>) {
         for (ch in targets) {
             viewModelScope.launch {
-                val last = runCatching { repo.listMessages(ch.channelId, limit = 1) }
-                    .getOrNull()
-                    ?.messages
-                    ?.lastOrNull()
-                    ?: return@launch
+                val last = try {
+                    scopedApi().listMessages(ch.channelId, limit = 1).messages.lastOrNull()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    null
+                } ?: return@launch
+                if (!isCurrent()) return@launch
                 previews[ch.channelId] = last.toPreview()
                 publish()
             }
@@ -147,7 +186,7 @@ class ConversationsViewModel(private val container: AppContainer) : ViewModel() 
     }
 
     private fun MessageDto.toPreview(): Preview {
-        val ownId = container.currentSessionOrNull()?.userId
+        val ownId = initialSession?.userId
         val body = when {
             msgType == "permission" -> "Approval request"
             content.isBlank() && files.isNotEmpty() -> "Attachment"

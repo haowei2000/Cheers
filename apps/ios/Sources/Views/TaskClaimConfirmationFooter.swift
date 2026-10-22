@@ -4,46 +4,64 @@ import SwiftUI
 struct TaskClaimConfirmationFooter: View {
     @Environment(AppModel.self) private var app
     let message: MessageDto
-    let channelId: String
+    let onResolve: (String, String) async throws -> Void
     @State private var busy = false
-    @State private var resolved: Bool
+    @State private var errorText: String?
 
-    init(message: MessageDto, channelId: String) {
-        self.message = message
-        self.channelId = channelId
-        _resolved = State(initialValue: message.contentData?["resolved"]?.boolValue == true)
+    private var resolved: Bool { !TaskClaimProjection.isUnresolved(message) }
+    private var status: String? { message.contentData?["claim_status"]?.stringValue }
+    private var statusLabel: LocalizedStringKey {
+        switch status {
+        case "executing": "Claim executing"
+        case "completed": "Claim completed"
+        case "failed": message.contentData?["resolution_note"]?.stringValue == "expired" ? "Claim expired" : "Claim failed"
+        case "cancelled": "Claim cancelled"
+        case "rejected": "Claim rejected"
+        default: "Claim response recorded"
+        }
     }
 
     var body: some View {
-        if resolved {
-            Label("Claim response recorded", systemImage: "checkmark.circle.fill")
+        if message.isDeleted != true && resolved {
+            Label(statusLabel, systemImage: status == "failed" ? "exclamationmark.circle" : "checkmark.circle.fill")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Theme.textSecondary)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 7)
                 .background(.thinMaterial, in: Capsule())
         } else if actionable {
-            TaskClaimActionButtons(busy: busy, onDecision: resolve)
+            VStack(alignment: .leading, spacing: 4) {
+                TaskClaimActionButtons(busy: busy, onDecision: resolve)
+                if let errorText {
+                    Label(errorText, systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(Theme.danger)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+            }
         }
     }
 
     private var claimId: String? { message.contentData?["claim_id"]?.stringValue }
     private var actionable: Bool {
+        guard message.isDeleted != true else { return false }
         guard let requester = message.contentData?["requester_id"]?.stringValue else { return false }
         return requester == app.session?.userId && claimId != nil
     }
 
     private func resolve(_ decision: String) {
-        guard let api = app.api, let claimId, !busy else { return }
+        guard let claimId, !busy else { return }
         NativeFeedback.selection()
         busy = true
+        errorText = nil
         Task {
             defer { busy = false }
             do {
-                try await api.resolveTaskClaim(channelId: channelId, claimId: claimId, decision: decision)
-                resolved = true
+                try await onResolve(claimId, decision)
+            } catch is CancellationError {
+                return
             } catch {
-                // Message-level feedback stays compact; a retry remains available.
+                errorText = error.localizedDescription
             }
         }
     }

@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sender_id,sender_type,is_deleted,is_partial,is_secret,channel_seq FROM messages\n             WHERE msg_id=$1 AND channel_id=$2 FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_deleted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_partial",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_secret",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "channel_seq",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "229ffa51cbc53273d5fe787e01cbf9c2a5843b459b85704ae7fd2fa5444bbcb3"
+}

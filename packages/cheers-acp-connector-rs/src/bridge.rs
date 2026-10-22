@@ -228,6 +228,11 @@ mod tests {
             v: BRIDGE_PROTOCOL_VERSION,
             client_msg_id: "client-1".to_string(),
             msg_id: "placeholder-1".to_string(),
+            execution: Some(TaskExecution {
+                task_id: "task-1".into(),
+                execution_id: "execution-1".into(),
+                channel_id: "channel-1".into(),
+            }),
             file_ids: vec!["file-1".to_string()],
             mention_ids: vec!["user-1".to_string()],
             content: Some("final answer".to_string()),
@@ -241,6 +246,7 @@ mod tests {
         assert_eq!(value["v"], 1);
         assert_eq!(value["client_msg_id"], "client-1");
         assert_eq!(value["msg_id"], "placeholder-1");
+        assert_eq!(value["execution"]["execution_id"], "execution-1");
         assert_eq!(value["mention_ids"][0], "user-1");
     }
 
@@ -736,6 +742,7 @@ mod fixture_tests {
                     task_scope_id: None,
                     cwd: Some("/workspace".into()),
                     additional_dirs: vec![],
+                    session_config: None,
                     extra: Default::default(),
                 },
                 runtime: RuntimeDescriptor {
@@ -912,8 +919,13 @@ mod fixture_tests {
         assert_round_trips(
             &DataOutbound::Done {
                 v: BRIDGE_PROTOCOL_VERSION,
-                client_msg_id: "client-msg-2".into(),
+                client_msg_id: "22222222-3333-4444-8555-666666666666".into(),
                 msg_id: "33333333-4444-4555-8666-777777777777".into(),
+                execution: Some(TaskExecution {
+                    task_id: "99999999-aaaa-4bbb-8ccc-dddddddddddd".into(),
+                    execution_id: "11111111-2222-4333-8444-555555555555".into(),
+                    channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+                }),
                 file_ids: vec!["file-1".into()],
                 mention_ids: vec![],
                 content: Some("Hello, world!".into()),
@@ -927,8 +939,13 @@ mod fixture_tests {
         assert_round_trips(
             &DataOutbound::Error {
                 v: BRIDGE_PROTOCOL_VERSION,
-                client_msg_id: "client-msg-2".into(),
+                client_msg_id: "22222222-3333-4444-8555-666666666666".into(),
                 msg_id: "33333333-4444-4555-8666-777777777777".into(),
+                execution: Some(TaskExecution {
+                    task_id: "99999999-aaaa-4bbb-8ccc-dddddddddddd".into(),
+                    execution_id: "11111111-2222-4333-8444-555555555555".into(),
+                    channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+                }),
                 message: "prompt timed out".into(),
                 provider_session_key: Some(KEY.into()),
                 provider_session_id: None,

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
@@ -30,7 +31,7 @@ import com.cheers.android.ui.settings.SettingsScreen
 fun CheersApp(container: AppContainer) {
     val sessionState by container.sessionState.collectAsStateWithLifecycle()
     ProvideResponsivePresentationLevel {
-        when (sessionState) {
+        when (val state = sessionState) {
             SessionState.Loading -> {
                 Box(
                     modifier = Modifier
@@ -39,7 +40,9 @@ fun CheersApp(container: AppContainer) {
                 )
             }
             SessionState.LoggedOut -> LoginScreen(container)
-            is SessionState.LoggedIn -> MainNavHost(container)
+            is SessionState.LoggedIn -> key(state.session.identity) {
+                MainNavHost(container)
+            }
         }
     }
 }

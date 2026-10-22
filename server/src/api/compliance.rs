@@ -82,6 +82,53 @@ pub async fn delete_account(
 pub(crate) async fn delete_user_data(state: &AppState, user_id: &str) -> Result<(), AppError> {
     let mut tx = state.db.begin().await?;
 
+    // Workspace detach takes parent rows before channel guards. Keep that same
+    // order before any ownership transfer or authority cleanup, so a concurrent
+    // channel leave cannot count an owner that this transaction then removes.
+    let workspace_ids = sqlx::query_scalar!(
+        "SELECT w.workspace_id FROM workspaces w
+         WHERE EXISTS (
+             SELECT 1 FROM workspace_memberships wm
+             WHERE wm.workspace_id = w.workspace_id AND wm.user_id = $1
+         ) OR EXISTS (
+             SELECT 1 FROM channels c
+             JOIN channel_memberships cm ON cm.channel_id = c.channel_id
+             WHERE c.workspace_id = w.workspace_id
+               AND cm.member_id = $1 AND cm.member_type = 'user'
+         ) ORDER BY w.workspace_id FOR UPDATE OF w",
+        user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let channel_ids = sqlx::query_scalar!(
+        "SELECT c.channel_id FROM channels c
+         WHERE c.workspace_id = ANY($1)
+            OR EXISTS (
+                SELECT 1 FROM channel_memberships cm
+                WHERE cm.channel_id = c.channel_id
+                  AND cm.member_id = $2 AND cm.member_type = 'user'
+            ) OR EXISTS (
+                SELECT 1 FROM channel_invites ci
+                WHERE ci.channel_id = c.channel_id
+                  AND (ci.user_id = $2 OR ci.invited_by = $2)
+            ) OR EXISTS (
+                SELECT 1 FROM approval_delegations ad
+                WHERE ad.channel_id = c.channel_id
+                  AND (ad.user_id = $2 OR ad.granted_by = $2)
+            ) OR EXISTS (
+                SELECT 1 FROM bot_event_access bea
+                WHERE bea.channel_id = c.channel_id
+                  AND bea.subject_kind = 'user' AND bea.subject_id = $2
+            ) ORDER BY hashtext(c.channel_id),c.channel_id",
+        &workspace_ids,
+        user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for channel_id in &channel_ids {
+        crate::domain::channel_memberships::lock_channel(&mut tx, channel_id).await?;
+    }
+
     // Transfer each owned workspace to the oldest active admin/member. If there
     // is nobody to receive it, archive it instead of leaving an active orphan.
     let workspaces = sqlx::query!(
@@ -563,85 +610,5 @@ async fn ensure_channel_member(
         Ok(())
     } else {
         Err(AppError::Forbidden("not a channel member".into()))
-    }
-}
-
-/// Fail closed only for external bots this message will actually trigger. Human
-/// chat remains available when consent is declined.
-pub async fn ensure_message_consents(
-    state: &AppState,
-    user_id: &str,
-    channel_id: Uuid,
-    mention_ids: &[Uuid],
-    mention_names: &[String],
-    session_id: Option<Uuid>,
-) -> Result<(), AppError> {
-    let session_bot_id = if let Some(session_id) = session_id {
-        sqlx::query!(
-            "SELECT bot_id FROM cheers_sessions WHERE session_id = $1",
-            session_id.to_string(),
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .and_then(|row| Some(row.bot_id.clone()))
-    } else {
-        None
-    };
-    let routes_all_bots = mention_names.iter().any(|n| {
-        matches!(
-            n.trim_start_matches('@').to_ascii_lowercase().as_str(),
-            "all" | "bots"
-        )
-    }) || sqlx::query!(
-        "SELECT auto_assist FROM channels WHERE channel_id = $1",
-        channel_id.to_string(),
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .and_then(|r| Some(r.auto_assist.clone()))
-    .unwrap_or(false);
-    let rows = sqlx::query!(
-        "SELECT b.bot_id, COALESCE(b.display_name,b.username) AS bot_name, b.processor_name,
-                b.processor_privacy_url, b.processor_data_use, b.processor_policy_version
-         FROM channel_memberships m JOIN bot_accounts b ON b.bot_id = m.member_id
-         WHERE m.channel_id = $1 AND m.member_type = 'bot' AND b.external_processor = TRUE",
-        channel_id.to_string(),
-    )
-    .fetch_all(&state.db)
-    .await?;
-    let mut missing = Vec::new();
-    for row in rows {
-        let bot_id: String = row.bot_id.clone();
-        let targeted = routes_all_bots
-            || mention_ids.iter().any(|id| id.to_string() == bot_id)
-            || session_bot_id.as_deref() == Some(bot_id.as_str());
-        if !targeted {
-            continue;
-        }
-        let version: String = row.processor_policy_version.clone();
-        let consented = sqlx::query!(
-            "SELECT 1 AS present FROM ai_data_consents WHERE user_id=$1 AND channel_id=$2 AND bot_id=$3 AND policy_version=$4 AND revoked_at IS NULL",
-            user_id,
-            channel_id.to_string(),
-            &bot_id,
-            &version,
-        ).fetch_optional(&state.db).await?.is_some();
-        if !consented {
-            missing.push(json!({
-                "bot_id": bot_id,
-                "bot_name": row.bot_name.clone().unwrap_or_default(),
-                "provider_name": row.processor_name.clone(),
-                "privacy_url": row.processor_privacy_url.clone(),
-                "data_use": row.processor_data_use.clone(),
-                "policy_version": version
-            }));
-        }
-    }
-    if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(AppError::PreconditionRequired(
-            json!({"code":"ai_consent_required","disclosures":missing}).to_string(),
-        ))
     }
 }

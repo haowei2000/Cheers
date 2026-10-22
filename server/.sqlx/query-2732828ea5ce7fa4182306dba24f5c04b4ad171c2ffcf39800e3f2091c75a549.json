@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_runs SET status='failed',last_event_type='reclaimed',\n                 error_message='task placeholder reclaimed',dispatch_input=NULL,task_frame=NULL,\n                 next_offer_at=NULL,dispatch_lease_id=NULL,dispatch_lease_until=NULL,updated_at=NOW()\n             WHERE bot_run_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2732828ea5ce7fa4182306dba24f5c04b4ad171c2ffcf39800e3f2091c75a549"
+}

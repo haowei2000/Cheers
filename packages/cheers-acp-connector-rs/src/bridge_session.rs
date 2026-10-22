@@ -510,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_mismatched_control_and_data_bot() {
+    fn rejects_mismatched_control_and_data_identity() {
         let control = ControlHelloState {
             bot_id: "bot-control".to_string(),
             host_id: Some("host-control".to_string()),
@@ -524,7 +524,7 @@ mod tests {
             server_capabilities: None,
             mcp_url: Some("https://cheers.example/mcp".to_string()),
         };
-        let data = DataHelloState {
+        let mut data = DataHelloState {
             bot_id: "bot-data".to_string(),
             host_id: Some("host-data".to_string()),
             connection_id: None,
@@ -535,6 +535,12 @@ mod tests {
         };
 
         assert!(validate_hello_pair(&control, &data).is_err());
+        data.bot_id = control.bot_id.clone();
+        assert!(validate_hello_pair(&control, &data).is_err());
+        data.host_id = None;
+        assert!(validate_hello_pair(&control, &data).is_err());
+        data.host_id = control.host_id.clone();
+        assert!(validate_hello_pair(&control, &data).is_ok());
     }
 
     #[test]
