@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT binding_id FROM cheers_session_bindings\n         WHERE session_id=$1 AND bot_id=$2 AND scope_type='channel' AND scope_id=$3 FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "binding_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "dacd1efc074f1eaf16d6abbb369ea56539d3270ece0dc0d59861ab745def1cc4"
+}

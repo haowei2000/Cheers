@@ -1,8 +1,8 @@
 //! M1: connector daemon management. The GUI drives the EXISTING
 //! `cce-acp-connector` CLI (bundled as a Tauri sidecar) — start/stop/restart/
 //! logs are its subcommands, and instance state is read straight from the
-//! connector's own `daemon.json` metadata (same fields as its
-//! `daemon::DaemonMetadata`; the connector is not modified). The app also
+//! connector's machine-readable status API. The CLI owns daemon discovery and
+//! process identity checks; the desktop consumes those results. The app also
 //! plays supervisor: instances the user marks "start with app" are launched
 //! on boot and revived when their process dies (the macOS answer to the
 //! systemd-linger pitfall on Linux).
@@ -145,14 +145,43 @@ fn safe_name(name: &str) -> String {
     }
 }
 
-/// The connector validates liveness as pid-alive AND argv-match; for the GUI
-/// list, `kill -0` is enough (the CLI re-validates before acting).
-fn pid_alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+/// The CLI's versioned status projection. Metadata is also used for local-only
+/// roots/logs, but process identity is decided exclusively by the connector CLI.
+#[derive(Debug, Deserialize)]
+struct ValidatedDaemonStatus {
+    name: String,
+    running: bool,
+    metadata: Option<DaemonMetadata>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DaemonStatusReport {
+    schema_version: u32,
+    instances: Vec<ValidatedDaemonStatus>,
+}
+
+fn parse_status_report(stdout: &str) -> Result<Vec<ValidatedDaemonStatus>, String> {
+    let report: DaemonStatusReport = serde_json::from_str(stdout)
+        .map_err(|error| format!("invalid connector status report: {error}"))?;
+    if report.schema_version != 1 {
+        return Err(format!(
+            "unsupported connector status schema {}",
+            report.schema_version
+        ));
+    }
+    Ok(report.instances)
+}
+
+async fn validated_daemon_status(
+    app: &tauri::AppHandle,
+    name: &str,
+) -> Result<ValidatedDaemonStatus, String> {
+    let stdout = run_cli(app, &["--name", name, "status", "--json"]).await?;
+    let mut statuses = parse_status_report(&stdout)?;
+    if statuses.len() != 1 {
+        return Err("connector status did not return exactly one instance".into());
+    }
+    Ok(statuses.remove(0))
 }
 
 /// Find an instance's daemon.json by its logical `name` field.
@@ -180,57 +209,42 @@ pub(crate) fn stdout_log_path_for(name: &str) -> Option<PathBuf> {
     read_metadata_by_name(name).map(|m| m.stdout_log_path)
 }
 
-fn read_instances() -> Vec<ConnectorInstance> {
+async fn read_instances(app: &tauri::AppHandle) -> Result<Vec<ConnectorInstance>, String> {
+    // Failure (including an older CLI without JSON support) is an unavailable
+    // inventory, never evidence that all instances are dead.
+    let stdout = run_cli(app, &["list", "--json"]).await?;
+    let statuses = parse_status_report(&stdout)?;
     let settings = load_settings();
-    let Some(home) = connector_home() else {
-        return Vec::new();
-    };
-    let Ok(entries) = fs::read_dir(&home) else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let meta_path = entry.path().join("daemon.json");
-        let dir_name = entry.file_name().to_string_lossy().to_string();
-        let meta: Option<DaemonMetadata> = fs::read_to_string(&meta_path)
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok());
-        match meta {
+    for status in statuses {
+        let name = status.name;
+        match status.metadata {
             Some(m) => {
-                let running = pid_alive(m.pid);
                 out.push(ConnectorInstance {
-                    start_with_app: settings.start_with_app.contains(&m.name),
-                    name: m.name,
-                    running,
-                    pid: running.then_some(m.pid),
+                    start_with_app: settings.start_with_app.contains(&name),
+                    name,
+                    running: status.running,
+                    pid: status.running.then_some(m.pid),
                     started_at: Some(m.started_at),
                     config_path: Some(m.config_path.to_string_lossy().into_owned()),
                     stdout_log: Some(m.stdout_log_path.to_string_lossy().into_owned()),
                 });
             }
-            // A service dir without (readable) metadata still shows up, so a
-            // half-created instance isn't invisible in the GUI. Pair it with
-            // the desktop-owned onboarding config when present so users can
-            // fix a failed first launch instead of being stranded.
-            None if entry.path().is_dir() => {
+            None => {
                 let config_path = dirs::home_dir()
-                    .map(|h| {
-                        h.join(".cheers")
-                            .join(format!("cheers-daemon.{dir_name}.toml"))
-                    })
+                    .map(|h| h.join(".cheers").join(format!("cheers-daemon.{name}.toml")))
                     .filter(|p| p.exists())
                     .map(|p| p.to_string_lossy().into_owned());
                 out.push(ConnectorInstance {
-                    start_with_app: settings.start_with_app.contains(&dir_name),
-                    name: dir_name,
+                    start_with_app: settings.start_with_app.contains(&name),
+                    name,
                     running: false,
                     pid: None,
                     started_at: None,
                     config_path,
                     stdout_log: None,
-                })
+                });
             }
-            None => {}
         }
     }
     // `daemon.json` exists only after a successful daemon start. Onboarding writes
@@ -266,7 +280,7 @@ fn read_instances() -> Vec<ConnectorInstance> {
         }
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
-    out
+    Ok(out)
 }
 
 /// Run the sidecar CLI and return its stdout (stderr appended on failure).
@@ -388,11 +402,12 @@ fn classify_health(cpu_pct: f32, mem_bytes: u64, leader_state: Option<&str>) -> 
 /// can't be sampled. RED LINE: only DISPLAYS local metrics; no messages or
 /// permission decisions are introduced.
 #[tauri::command]
-pub fn connector_health(name: String) -> Option<ConnectorHealth> {
-    let m = read_metadata_by_name(&name)?;
-    if !pid_alive(m.pid) {
+pub async fn connector_health(app: tauri::AppHandle, name: String) -> Option<ConnectorHealth> {
+    let status = validated_daemon_status(&app, &name).await.ok()?;
+    if !status.running {
         return None;
     }
+    let m = status.metadata?;
     let (cpu_pct, mem_bytes, process_count, leader_state) =
         sample_group(m.pid, m.process_group_id)?;
     let status = classify_health(cpu_pct, mem_bytes, leader_state.as_deref());
@@ -409,8 +424,8 @@ pub fn connector_health(name: String) -> Option<ConnectorHealth> {
 }
 
 #[tauri::command]
-pub fn connector_list() -> Vec<ConnectorInstance> {
-    read_instances()
+pub async fn connector_list(app: tauri::AppHandle) -> Result<Vec<ConnectorInstance>, String> {
+    read_instances(&app).await
 }
 
 #[tauri::command]
@@ -1737,7 +1752,9 @@ pub async fn connector_add_allowed_roots(
     name: String,
     roots: Vec<String>,
 ) -> Result<(), String> {
-    let meta = read_metadata_by_name(&name).ok_or("connector not found")?;
+    let status = validated_daemon_status(&app, &name).await?;
+    let running = status.running;
+    let meta = status.metadata.ok_or("connector not found")?;
     let p = meta.config_path.clone();
     guard_config_path(&p)?;
     let text = fs::read_to_string(&p).map_err(|e| e.to_string())?;
@@ -1793,7 +1810,7 @@ pub async fn connector_add_allowed_roots(
     // Restart only a currently-running daemon so the new root takes effect; a
     // deliberately-stopped instance stays stopped (it picks the root up on its
     // next start).
-    if pid_alive(meta.pid) {
+    if running {
         ensure_workspace_dirs_at(&p);
         let cfg = p.to_string_lossy().into_owned();
         if run_cli(&app, &["--name", &name, "--config", &cfg, "restart"])
@@ -2222,24 +2239,31 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
                 managed.insert(name.clone());
             }
         }
-        for inst in read_instances() {
-            if !boot.contains(&inst.name) {
-                continue;
-            }
-            let Some(cfg) = inst.config_path.clone() else {
-                continue;
-            };
-            let _ = normalize_desktop_config_at(Path::new(&cfg));
-            let stale_after_app_update = inst.running
-                && inst.started_at.as_deref().is_some_and(|started_at| {
-                    bundle_modified_at.is_some_and(|modified_at| {
-                        connector_started_before_bundle(started_at, modified_at)
-                    })
-                });
-            if stale_after_app_update {
-                let _ = run_cli(&app, &["--name", &inst.name, "--config", &cfg, "restart"]).await;
-            } else if !inst.running {
-                let _ = run_cli(&app, &["--name", &inst.name, "--config", &cfg, "start"]).await;
+        let boot_instances = read_instances(&app).await;
+        if let Err(error) = &boot_instances {
+            eprintln!("connector inventory unavailable; startup supervision deferred: {error}");
+        }
+        if let Ok(instances) = boot_instances {
+            for inst in instances {
+                if !boot.contains(&inst.name) {
+                    continue;
+                }
+                let Some(cfg) = inst.config_path.clone() else {
+                    continue;
+                };
+                let _ = normalize_desktop_config_at(Path::new(&cfg));
+                let stale_after_app_update = inst.running
+                    && inst.started_at.as_deref().is_some_and(|started_at| {
+                        bundle_modified_at.is_some_and(|modified_at| {
+                            connector_started_before_bundle(started_at, modified_at)
+                        })
+                    });
+                if stale_after_app_update {
+                    let _ =
+                        run_cli(&app, &["--name", &inst.name, "--config", &cfg, "restart"]).await;
+                } else if !inst.running {
+                    let _ = run_cli(&app, &["--name", &inst.name, "--config", &cfg, "start"]).await;
+                }
             }
         }
         // Per-instance consecutive-revive count. A connector that crash-loops
@@ -2259,7 +2283,14 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
             if managed.is_empty() {
                 continue;
             }
-            for inst in read_instances() {
+            let instances = match read_instances(&app).await {
+                Ok(instances) => instances,
+                Err(error) => {
+                    eprintln!("connector inventory unavailable; supervision skipped: {error}");
+                    continue;
+                }
+            };
+            for inst in instances {
                 if !managed.contains(&inst.name) {
                     continue;
                 }
@@ -2326,6 +2357,30 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supervisor_inventory_requires_the_cli_identity_decision() {
+        let report = serde_json::json!({"schema_version":1, "instances":[{
+            "name":"stale", "running":false, "metadata":{
+                "name":"stale", "pid":std::process::id(), "config_path":"/tmp/config.toml",
+                "started_at":"2026-10-20T00:00:00Z", "stdout_log_path":"/tmp/out.log",
+                "stderr_log_path":"/tmp/err.log",
+            },
+        }]});
+        let statuses = parse_status_report(&report.to_string()).unwrap();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(
+            statuses[0].metadata.as_ref().unwrap().pid,
+            std::process::id()
+        );
+        assert!(
+            !statuses[0].running,
+            "a live PID cannot override the CLI identity check"
+        );
+        assert!(parse_status_report("cce-acp-connector name=stale status=running").is_err());
+        assert!(parse_status_report(r#"{"schema_version":2,"instances":[]}"#).is_err());
+        assert!(parse_status_report(r#"{"instances":[]}"#).is_err());
+    }
 
     #[test]
     fn multiple_hosts_for_one_bot_never_share_credentials_or_state() {

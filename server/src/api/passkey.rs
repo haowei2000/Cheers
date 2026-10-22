@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Path, State},
-    response::{IntoResponse, Response},
+    response::Response,
     Extension, Json,
 };
 use serde::Deserialize;
@@ -13,7 +13,7 @@ use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 use crate::{
     api::{auth, middleware::Claims},
     app_state::AppState,
-    domain::{auth as auth_domain, auth_sessions, two_factor, webauthn},
+    domain::{auth_sessions, two_factor, webauthn},
     errors::AppError,
 };
 
@@ -215,9 +215,9 @@ pub async fn factor_options(
     State(state): State<AppState>,
     Json(body): Json<FactorPasskeyOptionsRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let service = require_webauthn(&state)?;
-    let (user_id, _client, _device, _primary_factor) =
+    let (user_id, _) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
+    let service = require_webauthn(&state)?;
     let options =
         webauthn::start_authentication(&state.db, service, &user_id, &body.transaction_id).await?;
     let mut payload = serde_json::to_value(&options)
@@ -233,9 +233,9 @@ pub async fn factor_verify(
     State(state): State<AppState>,
     Json(body): Json<FactorPasskeyVerifyRequest>,
 ) -> Result<Response, AppError> {
-    let service = require_webauthn(&state)?;
-    let (user_id, client, device_name, _primary_factor) =
+    let (user_id, _) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
+    let service = require_webauthn(&state)?;
     if let Err(err) = webauthn::finish_authentication(
         &state.db,
         service,
@@ -248,50 +248,14 @@ pub async fn factor_verify(
         let _ = auth_sessions::record_factor_failure(&state.db, &body.transaction_id).await;
         return Err(err);
     }
-    auth_sessions::consume_factor_transaction(&state.db, &body.transaction_id).await?;
-    let user = auth_domain::load_auth_user(&state.db, &user_id).await?;
-    let session = auth_sessions::finalize_login(
+    let completed = auth_sessions::complete_transaction_login(
         &state.db,
         &state.config,
-        &user,
-        client,
-        device_name.as_deref(),
+        &body.transaction_id,
+        &user_id,
+        auth_sessions::LoginProof::StoredPrimary { factor: "passkey" },
+        body.remember_device,
     )
     .await?;
-    let session_id = session.session_id.clone();
-    let refresh = session.refresh_token.clone();
-    let csrf = session.csrf_token.clone();
-    let mut login_body = auth::session_response(&user, session, client)?;
-    if body.remember_device {
-        let trusted = auth_sessions::issue_trusted_device(
-            &state.db,
-            &user.id,
-            &session_id,
-            device_name.as_deref(),
-        )
-        .await?;
-        if client != auth_sessions::ClientType::Web {
-            login_body.trusted_device = Some(trusted.clone());
-        }
-        let mut response = if client == auth_sessions::ClientType::Web {
-            auth::response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-        } else {
-            Json(login_body).into_response()
-        };
-        response.headers_mut().append(
-            axum::http::header::SET_COOKIE,
-            format!(
-                "cheers_trusted_device={trusted}; Max-Age={}; Path=/; Secure; HttpOnly; SameSite=Lax",
-                30 * 24 * 60 * 60
-            )
-            .parse()
-            .expect("valid cookie header"),
-        );
-        return Ok(response);
-    }
-    Ok(if client == auth_sessions::ClientType::Web {
-        auth::response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(login_body).into_response()
-    })
+    auth::completed_login_response(completed)
 }

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.channel_id FROM channels c\n         WHERE c.workspace_id = $1 AND (\n             c.type <> 'dm' OR EXISTS (\n                 SELECT 1 FROM channel_invites ci\n                 WHERE ci.channel_id = c.channel_id AND ci.user_id = $2\n             )\n         ) ORDER BY hashtext(c.channel_id),c.channel_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f93a1476442da36e27f525dead4e4a698f0975e0a610f38ab637621ec33f993f"
+}

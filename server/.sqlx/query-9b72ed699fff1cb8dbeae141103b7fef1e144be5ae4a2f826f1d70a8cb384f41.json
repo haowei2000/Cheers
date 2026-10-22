@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages SET chain_id=$2 WHERE msg_id=$1 AND chain_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9b72ed699fff1cb8dbeae141103b7fef1e144be5ae4a2f826f1d70a8cb384f41"
+}

@@ -161,7 +161,7 @@ async fn visible(
         &claims.role,
         events,
     )
-    .await;
+    .await?;
     let indexes: std::collections::HashSet<usize> = allowed
         .iter()
         .filter_map(|e| e["id"].as_u64().map(|n| n as usize))

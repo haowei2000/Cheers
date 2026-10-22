@@ -31,9 +31,9 @@ use crate::acp_semantics::{
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
-    AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient, PromptResult,
-    RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult, SessionStartOptions,
-    SessionStartResult,
+    drain_updates, AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient,
+    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult,
+    SessionStartOptions, SessionStartResult,
 };
 
 type PendingMap = Arc<Mutex<BTreeMap<u64, oneshot::Sender<JsonRpcReply>>>>;
@@ -342,120 +342,11 @@ impl AcpAdapter {
     /// (per-session ordering is still enforced by `run_task`'s `session_lock`).
     pub(crate) fn requester(&self) -> AcpRequester {
         AcpRequester {
+            event_tx: self.event_tx.clone(),
             account_id: self.account_id.clone(),
             writer: self.writer.clone(),
             pending: self.pending.clone(),
             next_id: self.next_id.clone(),
-        }
-    }
-
-    /// Temporary stopgap: if a permission mode is configured, push it to the
-    /// agent via ACP `session/set_mode`. Best-effort — a rejected/unknown mode
-    /// is logged, not fatal. The full design stores this in platform bot config.
-    async fn apply_permission_mode(&mut self, session_id: &str) {
-        let Some(mode) = self.config.agent_native_permission_mode.clone() else {
-            tracing::info!(
-                account = %self.account_id,
-                session = %session_id,
-                "permission_mode not configured; skipping session/set_mode — agent keeps its \
-                 native approval policy (e.g. a danger-full-access codex self-approves and never \
-                 sends session/request_permission, so no approval card is produced)"
-            );
-            return;
-        };
-        if mode.trim().is_empty() {
-            tracing::info!(
-                account = %self.account_id,
-                session = %session_id,
-                "permission_mode is blank; skipping session/set_mode"
-            );
-            return;
-        }
-        match self
-            .request(
-                "session/set_mode",
-                json!({ "sessionId": session_id, "modeId": mode }),
-                self.request_timeout_ms(),
-            )
-            .await
-        {
-            Ok(_) => {
-                tracing::info!(account = %self.account_id, mode = %mode, "applied ACP session mode");
-            }
-            Err(err) => {
-                tracing::warn!(
-                    account = %self.account_id,
-                    mode = %mode,
-                    "session/set_mode failed (unknown modeId or agent rejected?): {err}"
-                );
-            }
-        }
-    }
-
-    /// Pushes the backend-desired ACP config options to the agent via
-    /// `session/set_config_option` (best-effort), the `set_config_option`
-    /// analogue of [`Self::apply_permission_mode`]. Values are opaque strings
-    /// (ACP-generic); the map was already clamped to `allowed_config_options`
-    /// at the `config_update` boundary.
-    async fn apply_config_options(&mut self, session_id: &str) {
-        let Some(map) = self
-            .config
-            .config_options
-            .as_ref()
-            .and_then(|v| v.as_object())
-            .cloned()
-        else {
-            return;
-        };
-        for (config_id, value) in map {
-            let Some(value) = value.as_str() else {
-                continue;
-            };
-            match self
-                .request(
-                    "session/set_config_option",
-                    json!({ "sessionId": session_id, "configId": config_id, "value": value }),
-                    self.request_timeout_ms(),
-                )
-                .await
-            {
-                Ok(_) => tracing::info!(
-                    account = %self.account_id,
-                    session = %session_id,
-                    config_id = %config_id,
-                    value = %value,
-                    "applied ACP config option"
-                ),
-                // "model" has a native ACP twin: agents that predate the
-                // config-options extension (e.g. older codex-acp) only accept
-                // `session/set_model` — retry there before giving up.
-                Err(err) if config_id == "model" => {
-                    match self
-                        .request(
-                            "session/set_model",
-                            json!({ "sessionId": session_id, "modelId": value }),
-                            self.request_timeout_ms(),
-                        )
-                        .await
-                    {
-                        Ok(_) => tracing::info!(
-                            account = %self.account_id,
-                            session = %session_id,
-                            value = %value,
-                            "applied model via native session/set_model fallback"
-                        ),
-                        Err(err2) => tracing::warn!(
-                            account = %self.account_id,
-                            "model rejected by both set_config_option ({err}) and set_model ({err2})"
-                        ),
-                    }
-                }
-                Err(err) => tracing::warn!(
-                    account = %self.account_id,
-                    config_id = %config_id,
-                    "session/set_config_option failed (unknown id/value or agent rejected?): {err}"
-                ),
-            }
         }
     }
 
@@ -482,6 +373,7 @@ impl AcpAdapter {
 /// `fail_all_pending` resolves every in-flight request with an error.
 #[derive(Clone)]
 pub(crate) struct AcpRequester {
+    event_tx: mpsc::Sender<RuntimeEvent>,
     account_id: String,
     writer: SharedWriter,
     pending: PendingMap,
@@ -549,7 +441,11 @@ impl AcpRequester {
                 }),
                 timeout_ms,
             )
-            .await?;
+            .await;
+        // The reader enqueues notifications before resolving a response. The
+        // orchestration consumer must apply those events before finalization.
+        drain_updates(&self.event_tx).await?;
+        let result = result?;
         Ok(PromptResult {
             stop_reason: result
                 .get("stopReason")
@@ -716,8 +612,6 @@ impl RuntimeAdapter for AcpAdapter {
             response = %result,
             "ACP session/new full response"
         );
-        self.apply_permission_mode(&session_id).await;
-        self.apply_config_options(&session_id).await;
         Ok(SessionStartResult {
             session_id,
             metadata: result,
@@ -743,8 +637,6 @@ impl RuntimeAdapter for AcpAdapter {
                 request_route,
             )
             .await?;
-        self.apply_permission_mode(session_id).await;
-        self.apply_config_options(session_id).await;
         Ok(SessionLoadResult { metadata: result })
     }
 

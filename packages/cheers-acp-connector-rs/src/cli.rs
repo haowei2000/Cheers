@@ -8,7 +8,8 @@ use clap::{Parser, Subcommand};
 use crate::bridge_runtime::run_connector;
 use crate::config::load_config;
 use crate::daemon::{
-    daemon_logs, daemon_status, restart_daemon, start_daemon, stop_daemon, StartDaemonOptions,
+    daemon_logs, daemon_status, list_daemons, restart_daemon, start_daemon, stop_daemon,
+    DaemonStatusReport, StartDaemonOptions,
 };
 
 #[derive(Debug, Parser)]
@@ -38,7 +39,16 @@ enum Command {
     Start,
     Stop,
     Restart,
-    Status,
+    Status {
+        /// Emit only the versioned JSON status report.
+        #[arg(long)]
+        json: bool,
+    },
+    List {
+        /// Emit only the versioned JSON status inventory.
+        #[arg(long)]
+        json: bool,
+    },
     Logs,
 }
 
@@ -96,8 +106,15 @@ pub async fn run() -> anyhow::Result<()> {
             println!("config: {}", metadata.config_path.display());
             Ok(())
         }
-        Command::Status => {
+        Command::Status { json } => {
             let status = daemon_status(&args.name, args.home.as_deref()).await?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&DaemonStatusReport::new(vec![status]))?
+                );
+                return Ok(());
+            }
             println!(
                 "cce-acp-connector name={} status={}",
                 status.name,
@@ -112,6 +129,24 @@ pub async fn run() -> anyhow::Result<()> {
                 print_update_notice(&metadata.config_path).await;
             } else {
                 println!("metadata: {}", status.paths.metadata_path.display());
+            }
+            Ok(())
+        }
+        Command::List { json } => {
+            let instances = list_daemons(args.home.as_deref()).await?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&DaemonStatusReport::new(instances))?
+                );
+            } else {
+                for status in instances {
+                    println!(
+                        "{}: {}",
+                        status.name,
+                        if status.running { "running" } else { "stopped" }
+                    );
+                }
             }
             Ok(())
         }
@@ -178,4 +213,24 @@ async fn resolve_restart_config(
         .ok_or_else(|| {
             anyhow!("restart requires --config <path> when no previous daemon metadata exists")
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn machine_readable_status_and_inventory_are_explicit_cli_options() {
+        let args =
+            Args::try_parse_from(["cce-acp-connector", "--name", "helper", "status", "--json"])
+                .unwrap();
+        assert!(matches!(args.command, Some(Command::Status { json: true })));
+        let args = Args::try_parse_from(["cce-acp-connector", "list", "--json"]).unwrap();
+        assert!(matches!(args.command, Some(Command::List { json: true })));
+        let args = Args::try_parse_from(["cce-acp-connector", "status"]).unwrap();
+        assert!(matches!(
+            args.command,
+            Some(Command::Status { json: false })
+        ));
+    }
 }

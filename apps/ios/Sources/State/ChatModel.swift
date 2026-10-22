@@ -140,6 +140,7 @@ final class ChatModel {
     /// (the gateway's `message`/`message_done` frames omit `sender_name`).
     @ObservationIgnored private var memberNames: [String: String] = [:]
     @ObservationIgnored private var taskClaimPoll: Task<Void, Never>?
+    @ObservationIgnored private var claimRevalidationTask: Task<Void, Never>?
     @ObservationIgnored private var memberRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var discussionRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var discussionQuery = ""
@@ -165,6 +166,7 @@ final class ChatModel {
         }
         app.socket.subscribe(channelId: channel.channelId)
         startTaskClaimPolling()
+        scheduleClaimRevalidation()
     }
 
     /// Keep a cached model's re-entry render bounded: a long scrollback session
@@ -184,6 +186,8 @@ final class ChatModel {
         listenerId = nil
         taskClaimPoll?.cancel()
         taskClaimPoll = nil
+        claimRevalidationTask?.cancel()
+        claimRevalidationTask = nil
         memberRefreshTask?.cancel()
         memberRefreshTask = nil
         discussionRefreshTask?.cancel()
@@ -242,6 +246,7 @@ final class ChatModel {
 
     func loadInitial() async {
         guard let api = app?.api else { return }
+        defer { scheduleClaimRevalidation() }
         if channel.isDiscuss {
             async let membersTask: Void = refreshMembers()
             await loadDiscussions()
@@ -273,7 +278,7 @@ final class ChatModel {
         // renders the persisted window immediately; the network refresh below
         // then lands on top. If it fails, the cached history stays readable.
         if messages.isEmpty, let cached = await app?.messageStore.load(channelId: channel.channelId) {
-            messages = sorted(cached.messages.map(withResolvedSender))
+            messages = sorted(cached.messages.map { withResolvedSender(preservingClaimProjection($0)) })
             hasMoreBefore = cached.hasMoreBefore
             highestSeq = messages.compactMap(\.channelSeq).max() ?? 0
             forceBottomTick += 1
@@ -286,7 +291,7 @@ final class ChatModel {
             async let membersTask: Void = refreshMembers()
             let response = try await api.listMessages(channelId: channel.channelId, limit: 50)
             await membersTask
-            let fresh = response.messages.map(withResolvedSender)
+            let fresh = response.messages.map { withResolvedSender(preservingClaimProjection($0)) }
             let freshOldestSeq = fresh.compactMap(\.channelSeq).min() ?? 0
             if messages.isEmpty {
                 messages = sorted(fresh)
@@ -416,7 +421,12 @@ final class ChatModel {
                 query: query.trimmingCharacters(in: .whitespacesAndNewlines),
                 limit: 30
             )
-            discussions = append ? discussions + response.discussions : response.discussions
+            let fresh = response.discussions.map { summary in
+                var merged = summary
+                merged.root = preservingClaimProjection(summary.root)
+                return merged
+            }
+            discussions = append ? discussions + fresh : fresh
             discussionNextCursor = response.meta.nextCursor
         } catch {
             report(error)
@@ -436,8 +446,8 @@ final class ChatModel {
                 rootMessageId: rootId
             )
             guard selectedDiscussionId == rootId else { return }
-            selectedDiscussionRoot = withResolvedSender(response.root)
-            discussionReplies = response.replies.map(withResolvedSender)
+            selectedDiscussionRoot = withResolvedSender(preservingClaimProjection(response.root))
+            discussionReplies = response.replies.map { withResolvedSender(preservingClaimProjection($0)) }
             discussionHasMoreBefore = response.meta.hasMoreBefore
         } catch {
             guard selectedDiscussionId == rootId else { return }
@@ -487,7 +497,7 @@ final class ChatModel {
             )
             let existing = Set(discussionReplies.map(\.msgId))
             discussionReplies = response.replies.filter { !existing.contains($0.msgId) }
-                .map(withResolvedSender) + discussionReplies
+                .map { withResolvedSender(preservingClaimProjection($0)) } + discussionReplies
             discussionHasMoreBefore = response.meta.hasMoreBefore
         } catch {
             report(error)
@@ -536,7 +546,7 @@ final class ChatModel {
             )
             let (older, newer) = try await (olderTask, newerTask)
             let window = older.messages + [target] + newer.messages
-            messages = sorted(window.map(withResolvedSender))
+            messages = sorted(window.map { withResolvedSender(preservingClaimProjection($0)) })
             hasMoreBefore = older.meta?.hasMore ?? false
             hasTrimmedNewer = newer.meta?.hasMore ?? false
             highestSeq = max(highestSeq, messages.compactMap(\.channelSeq).max() ?? 0)
@@ -555,7 +565,7 @@ final class ChatModel {
         defer { isLoading = false }
         do {
             let response = try await api.listMessages(channelId: channel.channelId, limit: 50)
-            messages = sorted(response.messages.map(withResolvedSender))
+            messages = sorted(response.messages.map { withResolvedSender(preservingClaimProjection($0)) })
             hasMoreBefore = response.meta?.hasMoreBefore ?? false
             hasTrimmedNewer = false
             highestSeq = messages.compactMap(\.channelSeq).max() ?? highestSeq
@@ -783,15 +793,107 @@ final class ChatModel {
         }
     }
 
+    /// Commands and events update existing message snapshots through one path.
+    /// They neither insert timeline rows nor alter scroll/read state.
+    func applyTaskClaimUpdate(_ update: TaskClaimUpdate) {
+        guard update.channelId == channel.channelId else { return }
+        patchClaimMessages { TaskClaimProjection.applying(update, to: $0) }
+        if update.status != "pending" {
+            pendingTaskClaims.removeAll { $0.claimId == update.claimId }
+        }
+    }
+
+    func resolveTaskClaim(claimId: String, decision: String) async throws {
+        guard let app, let api = app.api else { throw APIError.unauthorized }
+        let token = api.token
+        let result = try await api.resolveTaskClaim(
+            channelId: channel.channelId, claimId: claimId, decision: decision
+        )
+        guard app.api?.baseURL == api.baseURL, app.token == token else {
+            throw CancellationError()
+        }
+        applyTaskClaimUpdate(result)
+    }
+
+    private var knownClaimMessages: [MessageDto] {
+        messages + discussionReplies + [selectedDiscussionRoot].compactMap { $0 }
+            + discussions.map(\.root)
+    }
+
+    private func preservingClaimProjection(_ incoming: MessageDto) -> MessageDto {
+        guard incoming.msgType == "task_claim_confirmation" else { return incoming }
+        return knownClaimMessages.reduce(incoming) {
+            TaskClaimProjection.preservingNewerMetadata(in: $0, previous: $1)
+        }
+    }
+
+    private func patchClaimMessages(_ patch: (MessageDto) -> MessageDto) {
+        var changed = false
+        func project(_ message: MessageDto) -> MessageDto {
+            let projected = preservingClaimProjection(patch(message))
+            changed = changed || projected != message
+            return projected
+        }
+        messages = messages.map(project)
+        discussionReplies = discussionReplies.map(project)
+        selectedDiscussionRoot = selectedDiscussionRoot.map(project)
+        discussions = discussions.map { summary in
+            var projected = summary
+            projected.root = project(summary.root)
+            return projected
+        }
+        if changed { schedulePersist() }
+    }
+
+    /// since_seq catch-up cannot discover edits to old confirmation metadata.
+    /// Re-read only loaded, unfinished cards, with bounded existing history reads.
+    private func scheduleClaimRevalidation() {
+        claimRevalidationTask?.cancel()
+        guard let app, let api = app.api, let attachment = listenerId else { return }
+        var seen = Set<String>()
+        let candidates = knownClaimMessages.filter {
+            TaskClaimProjection.needsRevalidation($0) && seen.insert($0.msgId).inserted
+        }
+        guard !candidates.isEmpty else { return }
+        let channelId = channel.channelId
+        claimRevalidationTask = Task { [weak self] in
+            await withTaskGroup(of: MessageDto?.self) { group in
+                var iterator = candidates.makeIterator()
+                func enqueue(_ candidate: MessageDto) {
+                    group.addTask {
+                        guard !Task.isCancelled, let seq = candidate.channelSeq else { return nil }
+                        let response = try? await api.listMessages(
+                            channelId: channelId, sinceSeq: seq - 1, limit: 1
+                        )
+                        // Empty or different results are not evidence of deletion.
+                        return response?.messages.first {
+                            $0.msgId == candidate.msgId && $0.channelId == channelId
+                        }
+                    }
+                }
+                for _ in 0..<3 {
+                    if let candidate = iterator.next() { enqueue(candidate) }
+                }
+                while let snapshot = await group.next() {
+                    guard !Task.isCancelled, let self,
+                          self.listenerId == attachment,
+                          app.api?.baseURL == api.baseURL, app.token == api.token
+                    else { group.cancelAll(); return }
+                    if let snapshot {
+                        self.patchClaimMessages { TaskClaimProjection.applyingSnapshot(snapshot, to: $0) }
+                    }
+                    if let candidate = iterator.next() { enqueue(candidate) }
+                }
+            }
+        }
+    }
+
     func resolveTaskClaim(_ claim: TaskClaimDto, decision: String) async {
-        guard let api = app?.api, taskClaimBusyId == nil else { return }
+        guard app?.api != nil, taskClaimBusyId == nil else { return }
         taskClaimBusyId = claim.claimId
         defer { taskClaimBusyId = nil }
         do {
-            try await api.resolveTaskClaim(
-                channelId: channel.channelId, claimId: claim.claimId, decision: decision
-            )
-            pendingTaskClaims.removeAll { $0.claimId == claim.claimId }
+            try await resolveTaskClaim(claimId: claim.claimId, decision: decision)
         } catch {
             report(error)
             await refreshTaskClaims()
@@ -803,8 +905,9 @@ final class ChatModel {
         taskClaimBusyId = claim.claimId
         defer { taskClaimBusyId = nil }
         do {
-            try await api.cancelTaskClaim(channelId: channel.channelId, claimId: claim.claimId)
-            pendingTaskClaims.removeAll { $0.claimId == claim.claimId }
+            let result = try await api.cancelTaskClaim(channelId: channel.channelId, claimId: claim.claimId)
+            guard app?.api?.baseURL == api.baseURL, app?.token == api.token else { return }
+            applyTaskClaimUpdate(result)
         } catch {
             report(error)
             await refreshTaskClaims()
@@ -848,8 +951,12 @@ final class ChatModel {
             if channel.isDiscuss {
                 scheduleDiscussionRefresh()
             } else {
-                Task { await catchUp() }
+                Task {
+                    await catchUp()
+                    scheduleClaimRevalidation()
+                }
             }
+            if channel.isDiscuss { scheduleClaimRevalidation() }
         case .message(let channelId, let message) where channelId == channel.channelId:
             upsert(message)
             followBottomTick += 1
@@ -882,6 +989,8 @@ final class ChatModel {
                 Task { await store.delete(msgId: msgId) }
             }
             scheduleDiscussionRefresh()
+        case .taskClaimUpdated(let update) where update.channelId == channel.channelId:
+            applyTaskClaimUpdate(update)
         default:
             break
         }
@@ -902,7 +1011,7 @@ final class ChatModel {
             highestSeq = max(highestSeq, seq)
         }
         if let index = messages.firstIndex(where: { $0.msgId == message.msgId }) {
-            var merged = message
+            var merged = preservingClaimProjection(message)
             // message_done frames omit created_at — keep the placeholder's stamp.
             if merged.createdAt == nil {
                 merged.createdAt = messages[index].createdAt
@@ -915,7 +1024,7 @@ final class ChatModel {
             messages[index] = withResolvedSender(merged)
             messages = boundedActiveWindow(sorted(messages))
         } else {
-            var incoming = message
+            var incoming = preservingClaimProjection(message)
             if incoming.createdAt == nil {
                 incoming.createdAt = TimeFormat.iso.string(from: Date())
             }

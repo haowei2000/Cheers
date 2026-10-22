@@ -3,11 +3,12 @@
 //! Agents reach these through MCP tools (packages/cheers-mcp-server) which map
 //! 1:1 onto a resource verb. Verbs:
 //!   channel.task_claims.list     — list claims (status filter, pagination).
+//!   channel.task_claims.evaluate — decide a bot-scoped scheduler reservation.
 //!
 //! Status-changing actions (cancel / accept / reject) intentionally live on the
 //! REST path (POST /cancel, POST /resolve) where the full AppState — fanout,
-//! dispatcher, audit writer — is available; the resource path is read-only by
-//! design, so a bot never forges an approval. Monitoring settings verbs live on
+//! dispatcher, audit writer — is available. Evaluation may propose a claim,
+//! but a bot never forges a human approval. Monitoring settings verbs live on
 //! the REST `PUT/GET .../bots/:bot_id/monitoring` endpoints for the same reason.
 
 use serde_json::{json, Value};
@@ -53,161 +54,38 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
         .and_then(Value::as_f64)
         .unwrap_or(0.0)
         .clamp(0.0, 1.0);
-    let mut tx = db.begin().await.map_err(internal_err(
-        "TASK_CLAIM_DB",
-        "db error",
-        "claim evaluation begin",
-    ))?;
-    let eval = sqlx::query!(
-        "SELECT source_seq_to,status FROM task_claim_evaluations WHERE evaluation_id=$1 AND channel_id=$2 AND bot_id=$3 FOR UPDATE",
-        evaluation_id.to_string(),
-        channel_id.to_string(),
-        principal.principal_id.to_string(),
-    ).fetch_optional(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "claim evaluation lookup"))?
-        .ok_or_else(|| super::resource_error("NOT_FOUND", "task-claim evaluation not found"))?;
-    let status: String = eval.status.clone();
-    if status != "dispatched" {
+    let outcome = crate::domain::task_claims::complete_evaluation(
+        db,
+        crate::domain::task_claims::CompleteEvaluationParams {
+            bot_id: principal.principal_id,
+            evaluation_id,
+            channel_id: Some(channel_id),
+            decision: if decision == "claim" {
+                crate::domain::task_claims::EvaluationDecision::Claim { confidence }
+            } else {
+                crate::domain::task_claims::EvaluationDecision::Ignore
+            },
+        },
+    )
+    .await
+    .map_err(|error| match error {
+        crate::errors::AppError::NotFound => {
+            super::resource_error("NOT_FOUND", "task-claim evaluation not found")
+        }
+        crate::errors::AppError::BadRequest(message) => {
+            super::resource_error("INVALID_STATE", message)
+        }
+        crate::errors::AppError::Forbidden(message) => permission_denied(&message),
+        crate::errors::AppError::Conflict(message) => super::resource_error("CONFLICT", message),
+        other => internal_err("TASK_CLAIM_DB", "db error", "complete claim evaluation")(other),
+    })?;
+    if !outcome.newly_decided {
         return Err(super::resource_error(
             "CONFLICT",
             "task-claim evaluation has already been decided",
         ));
     }
-    if decision == "ignore" {
-        sqlx::query!(
-            "UPDATE task_claim_evaluations SET status='ignored',completed_at=NOW() WHERE evaluation_id=$1",
-            evaluation_id.to_string(),
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(internal_err(
-            "TASK_CLAIM_DB",
-            "db error",
-            "record ignored claim",
-        ))?;
-        tx.commit().await.map_err(internal_err(
-            "TASK_CLAIM_DB",
-            "db error",
-            "commit ignored claim",
-        ))?;
-        return Ok(
-            json!({"evaluation_id":evaluation_id,"channel_id":channel_id,"status":"ignored"}),
-        );
-    }
-    let threshold: f64 = sqlx::query_scalar!(
-        r#"SELECT confidence_threshold::float8 AS "value!" FROM channel_bot_monitoring WHERE channel_id=$1 AND bot_id=$2"#,
-        channel_id.to_string(),
-        principal.principal_id.to_string(),
-    ).fetch_one(&mut *tx).await
-        .map_err(internal_err("TASK_CLAIM_DB", "db error", "claim confidence threshold"))?;
-    if confidence < threshold {
-        sqlx::query!(
-            "UPDATE task_claim_evaluations SET status='ignored',error='below confidence threshold',completed_at=NOW() WHERE evaluation_id=$1",
-            evaluation_id.to_string(),
-        ).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "record low-confidence claim"))?;
-        tx.commit().await.map_err(internal_err(
-            "TASK_CLAIM_DB",
-            "db error",
-            "commit low-confidence claim",
-        ))?;
-        return Ok(
-            json!({"evaluation_id":evaluation_id,"channel_id":channel_id,"status":"ignored"}),
-        );
-    }
-    let source_seq: i64 = eval.source_seq_to.clone();
-    let source = sqlx::query!(
-        "SELECT msg_id,sender_id,content FROM messages WHERE channel_id=$1 AND channel_seq=$2 AND sender_type='user' LIMIT 1",
-        channel_id.to_string(),
-        source_seq,
-    ).fetch_optional(&mut *tx).await
-        .map_err(internal_err("TASK_CLAIM_DB", "db error", "claim source message"))?
-        .ok_or_else(|| super::resource_error("INVALID_STATE", "claim evaluation source is not a user message"))?;
-    let source_message_id: String = source.msg_id.clone();
-    let requester_id: String = source.sender_id.clone();
-    let summary: String = source.content.clone().trim().chars().take(1000).collect();
-    if summary.is_empty() {
-        return Err(super::resource_error(
-            "INVALID_STATE",
-            "claim source message is empty",
-        ));
-    }
-    let requester_name =
-        sqlx::query_scalar!("SELECT username FROM users WHERE user_id=$1", &requester_id,)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(internal_err(
-                "TASK_CLAIM_DB",
-                "db error",
-                "claim requester name",
-            ))?
-            .unwrap_or_else(|| "there".to_string());
-    let claim_id = Uuid::new_v4();
-    let confirmation_id = Uuid::new_v4();
-    let action = "Start the requested work and report the result in this channel.";
-    let impact = "medium";
-    sqlx::query!(
-        "UPDATE task_claim_evaluations SET status='completed',completed_at=NOW() WHERE evaluation_id=$1",
-        evaluation_id.to_string(),
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(internal_err(
-        "TASK_CLAIM_DB",
-        "db error",
-        "complete claim evaluation",
-    ))?;
-    sqlx::query!(
-        "INSERT INTO task_claim_requests(claim_id,evaluation_id,channel_id,bot_id,summary,proposed_action,confidence,impact,requester_id,source_message_id,confirmation_message_id) VALUES($1,$2,$3,$4,$5,$6,$7::float8,$8,$9,$10,$11)",
-        claim_id.to_string(),
-        evaluation_id.to_string(),
-        channel_id.to_string(),
-        principal.principal_id.to_string(),
-        &summary,
-        action,
-        confidence,
-        impact,
-        &requester_id,
-        &source_message_id,
-        confirmation_id.to_string(),
-    ).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "create task claim"))?;
-    let seq = crate::domain::channel_seq::allocate(&mut tx, channel_id)
-        .await
-        .map_err(internal_err(
-            "TASK_CLAIM_DB",
-            "db error",
-            "allocate confirmation sequence",
-        ))?;
-    let content = format!("@{requester_name} OpenCode 想认领这个任务：{summary}\n\n{action}");
-    let data = json!({"claim_id":claim_id,"requester_id":requester_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"resolved":false});
-    sqlx::query!(
-        "INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_partial,is_deleted,in_reply_to_msg_id,created_at,channel_seq,content_data) VALUES($1,$2,$3,'bot',$4,'task_claim_confirmation',FALSE,FALSE,$5,NOW(),$6,$7)",
-        confirmation_id.to_string(),
-        channel_id.to_string(),
-        principal.principal_id.to_string(),
-        &content,
-        &source_message_id,
-        seq,
-        &data,
-    ).execute(&mut *tx).await.map_err(internal_err("TASK_CLAIM_DB", "db error", "create confirmation message"))?;
-    sqlx::query!(
-        "INSERT INTO message_mentions(msg_id,member_id,member_type) VALUES($1,$2,'user')",
-        confirmation_id.to_string(),
-        &requester_id,
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(internal_err(
-        "TASK_CLAIM_DB",
-        "db error",
-        "mention claim requester",
-    ))?;
-    tx.commit().await.map_err(internal_err(
-        "TASK_CLAIM_DB",
-        "db error",
-        "commit task claim",
-    ))?;
-    Ok(
-        json!({"claim_id":claim_id,"evaluation_id":evaluation_id,"channel_id":channel_id,"bot_id":principal.principal_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"status":"pending","confirmation_message":{"msg_id":confirmation_id,"channel_id":channel_id,"channel_seq":seq,"sender_type":"bot","sender_id":principal.principal_id,"content":content,"msg_type":"task_claim_confirmation","is_partial":false,"reply_to_msg_id":source_message_id,"mentions":[{"member_id":requester_id,"member_type":"user"}],"content_data":data}}),
-    )
+    Ok(outcome.data)
 }
 
 /// `channel.task_claims.list` — list claims in a channel (read-only).

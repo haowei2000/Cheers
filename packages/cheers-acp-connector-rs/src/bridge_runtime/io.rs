@@ -18,17 +18,97 @@ pub(super) struct BridgeIoHandle {
     priority_data_tx: mpsc::Sender<DataOutbound>,
     stream_data_tx: mpsc::Sender<DataOutbound>,
     pending_send_acks: Arc<Mutex<HashMap<String, oneshot::Sender<DataInbound>>>>,
-    pending_terminal_acks: Arc<Mutex<HashMap<String, oneshot::Sender<DataInbound>>>>,
+    pending_terminal_acks: Arc<Mutex<HashMap<String, PendingTerminalAck>>>,
     pending_file_upload_acks: Arc<Mutex<HashMap<String, oneshot::Sender<DataInbound>>>>,
+    pending_task_acceptances: Arc<Mutex<HashMap<String, PendingTaskAcceptance>>>,
     ack_timeout: Duration,
     terminal_ack_timeout: Duration,
     send_ack_enabled: bool,
     terminal_ack_enabled: bool,
     file_upload_enabled: bool,
+    task_acceptance_enabled: bool,
+    terminal_replay_enabled: bool,
+    #[cfg(test)]
+    terminal_test_ack: bool,
     last_event_seq: Arc<AtomicU64>,
 }
 
+struct PendingTaskAcceptance {
+    identity: tasks::TaskIdentity,
+    reply: oneshot::Sender<ControlInbound>,
+}
+
+struct PendingTerminalAck {
+    msg_id: String,
+    reply: oneshot::Sender<DataInbound>,
+}
+
 impl BridgeIoHandle {
+    pub(super) fn task_acceptance_enabled(&self) -> bool {
+        self.task_acceptance_enabled
+    }
+
+    pub(super) fn terminal_replay_enabled(&self) -> bool {
+        self.terminal_replay_enabled && self.terminal_ack_enabled
+    }
+
+    pub(super) async fn request_task_acceptance(
+        &self,
+        identity: tasks::TaskIdentity,
+    ) -> anyhow::Result<ControlInbound> {
+        if !self.task_acceptance_enabled {
+            return Err(anyhow!("gateway does not support durable task acceptance"));
+        }
+        let key = identity.execution_id.clone();
+        let request = identity.request();
+        let (reply, receiver) = oneshot::channel();
+        self.pending_task_acceptances
+            .lock()
+            .await
+            .insert(key.clone(), PendingTaskAcceptance { identity, reply });
+        // Cap both queueing and waiting. A missing grant never permits ACP work.
+        let result = timeout(self.ack_timeout.min(Duration::from_secs(30)), async {
+            self.send_control(request).await?;
+            receiver.await.context("task acceptance waiter closed")
+        })
+        .await;
+        self.pending_task_acceptances.lock().await.remove(&key);
+        match result {
+            Ok(result) => result,
+            Err(_) => Err(anyhow!("task acceptance timeout execution_id={key}")),
+        }
+    }
+
+    pub(super) async fn resolve_task_acceptance(&self, frame: &ControlInbound) -> bool {
+        let ControlInbound::TaskAcceptance { execution_id, .. } = frame else {
+            return false;
+        };
+        let mut pending = self.pending_task_acceptances.lock().await;
+        if !pending
+            .get(execution_id)
+            .is_some_and(|entry| entry.identity.matches(frame))
+        {
+            return false;
+        }
+        pending
+            .remove(execution_id)
+            .is_some_and(|entry| entry.reply.send(frame.clone()).is_ok())
+    }
+
+    #[cfg(test)]
+    pub(super) fn enable_task_acceptance_for_test(&mut self, wait: Duration) {
+        self.task_acceptance_enabled = true;
+        self.terminal_replay_enabled = true;
+        self.ack_timeout = wait;
+    }
+
+    #[cfg(test)]
+    pub(super) fn real_terminal_ack_for_test(&mut self, wait: Duration) {
+        self.terminal_test_ack = false;
+        self.terminal_ack_timeout = wait;
+        self.terminal_replay_enabled = true;
+    }
+
     pub(super) async fn send_control(&self, frame: ControlOutbound) -> anyhow::Result<()> {
         self.control_tx
             .send(frame)
@@ -100,44 +180,54 @@ impl BridgeIoHandle {
             return Err(anyhow!("terminal data frame does not carry client_msg_id"));
         };
         if !self.terminal_ack_enabled {
+            return Err(anyhow!(
+                "gateway does not support committed terminal acknowledgements"
+            ));
+        }
+        #[cfg(test)]
+        if self.terminal_test_ack {
+            let msg_id = crate::terminal_outbox::terminal_ids(&frame)
+                .unwrap()
+                .1
+                .to_string();
             self.send_data(frame).await?;
             return Ok(DataInbound::TerminalAck {
                 v: BRIDGE_PROTOCOL_VERSION,
                 client_msg_id,
                 ok: true,
-                msg_id: None,
+                msg_id: Some(msg_id),
                 queued: None,
                 job_id: None,
                 error: None,
                 code: None,
+                retryable: None,
             });
         }
         let (tx, rx) = oneshot::channel();
+        self.pending_terminal_acks.lock().await.insert(
+            client_msg_id.clone(),
+            PendingTerminalAck {
+                msg_id: crate::terminal_outbox::terminal_ids(&frame)
+                    .unwrap()
+                    .1
+                    .to_string(),
+                reply: tx,
+            },
+        );
+        let result = timeout(self.terminal_ack_timeout, async {
+            self.send_data(frame).await?;
+            rx.await.context("terminal_ack waiter closed")
+        })
+        .await;
         self.pending_terminal_acks
             .lock()
             .await
-            .insert(client_msg_id.clone(), tx);
-        if let Err(err) = self.send_data(frame).await {
-            self.pending_terminal_acks
-                .lock()
-                .await
-                .remove(&client_msg_id);
-            return Err(err);
-        }
-        match timeout(self.terminal_ack_timeout, rx).await {
-            Ok(Ok(frame)) => Ok(frame),
-            Ok(Err(_)) => Err(anyhow!(
-                "terminal_ack waiter closed client_msg_id={client_msg_id}"
+            .remove(&client_msg_id);
+        match result {
+            Ok(result) => result,
+            Err(_) => Err(anyhow!(
+                "terminal_ack timeout client_msg_id={client_msg_id}"
             )),
-            Err(_) => {
-                self.pending_terminal_acks
-                    .lock()
-                    .await
-                    .remove(&client_msg_id);
-                Err(anyhow!(
-                    "terminal_ack timeout client_msg_id={client_msg_id}"
-                ))
-            }
         }
     }
 
@@ -203,13 +293,30 @@ impl BridgeIoHandle {
                 .remove(client_msg_id)
                 .map(|tx| tx.send(frame.clone()).is_ok())
                 .unwrap_or(false),
-            DataInbound::TerminalAck { client_msg_id, .. } => self
-                .pending_terminal_acks
-                .lock()
-                .await
-                .remove(client_msg_id)
-                .map(|tx| tx.send(frame.clone()).is_ok())
-                .unwrap_or(false),
+            DataInbound::TerminalAck {
+                v,
+                client_msg_id,
+                msg_id,
+                ok,
+                queued,
+                job_id,
+                ..
+            } => {
+                let mut pending = self.pending_terminal_acks.lock().await;
+                let matches = *v == BRIDGE_PROTOCOL_VERSION
+                    && pending.get(client_msg_id).is_some_and(|entry| {
+                        msg_id
+                            .as_ref()
+                            .map_or(!ok, |message| message == &entry.msg_id)
+                            && (!ok || (*queued != Some(true) && job_id.is_none()))
+                    });
+                if !matches {
+                    return false;
+                }
+                pending
+                    .remove(client_msg_id)
+                    .is_some_and(|entry| entry.reply.send(frame.clone()).is_ok())
+            }
             DataInbound::FileUploadAck { client_file_id, .. } => {
                 let key = client_file_id.as_deref().unwrap_or("");
                 self.pending_file_upload_acks
@@ -246,8 +353,8 @@ pub(super) struct TestIo {
 /// The real handle can only come from [`spawn_bridge_io`], which needs two live
 /// WebSockets, so a test of the runtime's orchestration would otherwise have to
 /// stand up a Bridge. Both ack modes are off, matching a Gateway that advertises
-/// neither: a send completes as soon as the frame is queued and returns a
-/// synthetic success, which is what a test driving turns wants.
+/// neither for ordinary sends. Terminal tests explicitly emulate a committed
+/// ACK on an enabled capability; disabling support still fails closed.
 #[cfg(test)]
 pub(super) fn test_io() -> TestIo {
     let (control_tx, control) = mpsc::channel(256);
@@ -261,11 +368,15 @@ pub(super) fn test_io() -> TestIo {
             pending_send_acks: Arc::new(Mutex::new(HashMap::new())),
             pending_terminal_acks: Arc::new(Mutex::new(HashMap::new())),
             pending_file_upload_acks: Arc::new(Mutex::new(HashMap::new())),
+            pending_task_acceptances: Arc::new(Mutex::new(HashMap::new())),
             ack_timeout: Duration::from_secs(5),
             terminal_ack_timeout: Duration::from_secs(5),
             send_ack_enabled: false,
-            terminal_ack_enabled: false,
+            terminal_ack_enabled: true,
             file_upload_enabled: false,
+            task_acceptance_enabled: false,
+            terminal_replay_enabled: false,
+            terminal_test_ack: true,
             last_event_seq: Arc::new(AtomicU64::new(0)),
         },
         control,
@@ -285,7 +396,7 @@ pub(super) fn spawn_bridge_io(
         control,
         data,
         account_id: _,
-        control_hello: _,
+        control_hello,
         data_hello,
         memberships: _,
     } = session.into_parts();
@@ -319,16 +430,37 @@ pub(super) fn spawn_bridge_io(
         pending_send_acks: Arc::new(Mutex::new(HashMap::new())),
         pending_terminal_acks: Arc::new(Mutex::new(HashMap::new())),
         pending_file_upload_acks: Arc::new(Mutex::new(HashMap::new())),
+        pending_task_acceptances: Arc::new(Mutex::new(HashMap::new())),
         ack_timeout,
         terminal_ack_timeout,
         send_ack_enabled: capability_enabled(&data_capabilities, |cap| cap.send_ack),
-        terminal_ack_enabled: capability_enabled(&data_capabilities, |cap| cap.terminal_ack),
+        terminal_ack_enabled: data_capabilities.as_ref().and_then(|cap| cap.terminal_ack)
+            == Some(true),
         file_upload_enabled: data_capabilities
             .as_ref()
             .and_then(|cap| cap.file_upload.as_ref())
             .is_some(),
+        task_acceptance_enabled: control_hello
+            .server_capabilities
+            .as_ref()
+            .and_then(|cap| cap.task_acceptance)
+            == Some(true),
+        terminal_replay_enabled: terminal_replay_supported(
+            &control_hello.server_capabilities,
+            &data_capabilities,
+        ),
+        #[cfg(test)]
+        terminal_test_ack: false,
         last_event_seq,
     }
+}
+
+fn terminal_replay_supported(
+    control: &Option<ServerCapabilities>,
+    data: &Option<ServerCapabilities>,
+) -> bool {
+    control.as_ref().and_then(|cap| cap.terminal_replay) == Some(true)
+        && data.as_ref().and_then(|cap| cap.terminal_replay) == Some(true)
 }
 
 pub(super) fn spawn_control_socket(
@@ -750,6 +882,96 @@ pub(super) async fn reconnect_data_stream(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn terminal_replay_requires_explicit_support_on_both_connections() {
+        let enabled: ServerCapabilities =
+            serde_json::from_value(json!({"terminal_replay": true})).unwrap();
+        let disabled: ServerCapabilities =
+            serde_json::from_value(json!({"terminal_replay": false})).unwrap();
+        let absent: ServerCapabilities = serde_json::from_value(json!({})).unwrap();
+        for control in [&None, &Some(disabled.clone()), &Some(absent.clone())] {
+            assert!(!terminal_replay_supported(control, &Some(enabled.clone())));
+        }
+        for data in [&None, &Some(disabled), &Some(absent)] {
+            assert!(!terminal_replay_supported(&Some(enabled.clone()), data));
+        }
+        assert!(terminal_replay_supported(
+            &Some(enabled.clone()),
+            &Some(enabled)
+        ));
+    }
+
+    fn terminal_fixture() -> DataOutbound {
+        serde_json::from_value(json!({"type":"done","v":1,"client_msg_id":"result","msg_id":"message","content":"durable"})).unwrap()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn terminal_timeout_includes_a_full_priority_queue_and_unsupported_ack_is_not_success() {
+        let mut taps = test_io();
+        taps.handle.terminal_ack_enabled = false;
+        assert!(taps
+            .handle
+            .send_data_expect_terminal_ack(terminal_fixture())
+            .await
+            .is_err());
+        assert!(taps.priority.try_recv().is_err());
+        taps.handle.terminal_ack_enabled = true;
+        taps.handle
+            .real_terminal_ack_for_test(Duration::from_secs(1));
+        for _ in 0..PRIORITY_DATA_QUEUE_CAPACITY {
+            taps.handle.send_data(DataOutbound::Unknown).await.unwrap();
+        }
+        let io = taps.handle.clone();
+        let pending =
+            tokio::spawn(async move { io.send_data_expect_terminal_ack(terminal_fixture()).await });
+        while taps.handle.pending_terminal_acks.lock().await.is_empty() {
+            tokio::task::yield_now().await;
+        }
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert!(pending.await.unwrap().is_err());
+        assert!(taps.handle.pending_terminal_acks.lock().await.is_empty());
+        assert_eq!(taps.priority.len(), PRIORITY_DATA_QUEUE_CAPACITY);
+    }
+
+    #[tokio::test]
+    async fn wrong_terminal_ack_does_not_consume_the_waiter_before_the_matching_ack() {
+        let mut taps = test_io();
+        taps.handle
+            .real_terminal_ack_for_test(Duration::from_secs(2));
+        let io = taps.handle.clone();
+        let pending =
+            tokio::spawn(async move { io.send_data_expect_terminal_ack(terminal_fixture()).await });
+        assert!(matches!(
+            taps.priority.recv().await.unwrap(),
+            DataOutbound::Done { .. }
+        ));
+        let good = json!({"type":"terminal_ack","v":1,"client_msg_id":"result","msg_id":"message","ok":true});
+        for patch in [
+            json!({"v":2,"ok":false,"retryable":false}),
+            json!({"msg_id":"another","ok":false,"retryable":false}),
+            json!({"queued":true}),
+        ] {
+            let mut value = good.clone();
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(patch.as_object().unwrap().clone());
+            assert!(
+                !taps
+                    .handle
+                    .resolve_data_ack(&serde_json::from_value(value).unwrap())
+                    .await
+            );
+            assert_eq!(taps.handle.pending_terminal_acks.lock().await.len(), 1);
+        }
+        assert!(
+            taps.handle
+                .resolve_data_ack(&serde_json::from_value(good).unwrap())
+                .await
+        );
+        assert!(terminal_ack_ok(&pending.await.unwrap().unwrap()));
+    }
+
     use super::*;
 
     fn delta(msg_id: &str, seq: u64, text: impl Into<String>) -> DataOutbound {

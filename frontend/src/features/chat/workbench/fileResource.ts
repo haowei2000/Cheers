@@ -49,6 +49,7 @@ export function createFileResourceStore(fs: FsClient) {
     return pending;
   };
   return {
+    active: () => [...entries.values()].some((value) => value.listeners.size > 0 || value.pending),
     snapshot: (path: string) => entry(path).snapshot,
     subscribe(path: string, notify: () => void) {
       const value = entry(path);

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id,bot_id,status,execution_msg_id,confirmation_message_id,resolved_by,resolution_note\n         FROM task_claim_requests WHERE claim_id=$1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "execution_msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "confirmation_message_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "resolved_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "resolution_note",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "d9194d97988b79dfdc889853349bb9f7eb739649f6b3ae026cc9727176f22f04"
+}

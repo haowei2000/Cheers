@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM bot_event_access\n         WHERE channel_id=$1 AND subject_kind='user' AND subject_id=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b7a605fbbdae4ed808b7a502f349ce7590016ddebbd72ffdf050001ce7afb352"
+}

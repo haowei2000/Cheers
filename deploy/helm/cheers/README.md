@@ -8,7 +8,7 @@ Deploys the **current** Cheers architecture (external-agent-first):
 | `frontend` | nginx serving the Vite build; proxies `/api` + `/ws` → gateway | 80 |
 | `postgres` | bundled Postgres 16 (single replica) | 5432 |
 | `rustfs` | S3-compatible object store; the gateway auto-creates the bucket | 9000 |
-| `redis` | **optional** — only for multi-instance HA fan-out (`redis.enabled`) | 6379 |
+| `redis` | reserved for future multi-instance support; disabled by default | 6379 |
 
 External ACP agents connect through the **connector** (`packages/cheers-acp-connector-rs`)
 and are **not** part of this chart — they run wherever the agent runs.
@@ -26,7 +26,8 @@ deploy/helm/cheers/
 ├── Chart.yaml
 ├── values.yaml          # defaults (+ DEV secret defaults)
 ├── values-dev.yaml      # local k8s overlay (NodePort, small PVCs, no redis)
-├── values-prod.yaml     # ingress+TLS, redis, resources, external secrets
+├── values-prod.yaml     # ingress+TLS, resources, external secrets
+├── values.schema.json   # supported gateway replica count
 └── templates/           # gateway / frontend / postgres / rustfs / redis / ingress / secret
 ```
 
@@ -115,6 +116,16 @@ helm upgrade --install cheers deploy/helm/cheers \
 Edit `values-prod.yaml` for your registry, ingress host/class, TLS secret, and
 storage classes. For real workloads consider a managed Postgres
 (`postgres.enabled=false` + point `secrets` / the `cheers.databaseUrl` helper at it).
+
+The gateway currently supports exactly **one replica**. Browser subscriptions,
+bot connections, streaming state, and pending connector RPCs are process-local.
+The chart validates `gateway.replicaCount=1` and uses `Recreate` so an upgrade
+stops the old gateway before starting its replacement. Clients reconnect after
+the replacement becomes ready; upgrades have a brief service interruption.
+
+Redis fan-out and registry implementations are parked for future multi-instance
+support and are not selected by gateway startup. Setting `redis.enabled=true`
+only provisions Redis and passes its URL; it does not enable gateway HA.
 
 ## Sign in with Apple and APNs
 

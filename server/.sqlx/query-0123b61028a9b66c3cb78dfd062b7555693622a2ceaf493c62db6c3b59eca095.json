@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.msg_id,m.sender_id,m.content,u.username FROM messages m\n         JOIN users u ON u.user_id=m.sender_id\n         WHERE m.channel_id=$1 AND m.channel_seq=$2 AND m.sender_type='user'\n           AND m.is_partial=FALSE AND m.is_deleted=FALSE AND m.is_secret=FALSE\n         FOR SHARE OF m,u",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0123b61028a9b66c3cb78dfd062b7555693622a2ceaf493c62db6c3b59eca095"
+}

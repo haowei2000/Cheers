@@ -388,7 +388,7 @@ pub async fn list_event_access(
     let rules = bot_event_policy::list_rules_json(&state.db, &bot_id).await?;
     // Same rules, typed, to compute the effective bot-wide baseline matrix.
     let rule_set = bot_event_policy::load_rules(&state.db, &bot_id).await?;
-    let owner_id = bot_event_policy::bot_owner_id(&state.db, &bot_id).await;
+    let owner_id = bot_event_policy::bot_owner_id(&state.db, &bot_id).await?;
     let groups = group_catalog(&state, &bot_id).await;
     Ok(Json(json!({
         "rules": rules,

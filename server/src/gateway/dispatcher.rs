@@ -1,25 +1,14 @@
-/// 任务派发器。
-///
-/// 职责：
-/// - 幂等检查（占位是否已存在）
-/// - 创建 is_partial=true 占位消息
-/// - 注册到 StreamRegistry
-/// - 通过 BotLocator 发 control WS task 帧
-use std::sync::Arc;
+//! Shared task-frame preparation for the recoverable dispatch-intent worker.
 
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{
-    registry::BotLocator,
-    stream::{StreamEntry, StreamRegistry},
-};
-use crate::domain::sessions;
-use crate::gateway::realtime::{fanout::Fanout, frame::WireFrame};
+use crate::gateway::realtime::frame::WireFrame;
 use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 
 /// 派发参数。
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct DispatchParams {
     pub trigger_msg_id: Uuid,
     pub trigger_seq: i64,
@@ -30,35 +19,22 @@ pub struct DispatchParams {
     pub session_id: Option<Uuid>,
     /// The bot@bot chain this hop belongs to (DECENTRALIZED_MESH §8). Stamped onto
     /// the placeholder so the whole cascade is cancelable as one unit and the
-    /// dispatch gate can block hops of a cancelled chain. `None` for un-tracked
-    /// dispatch (a targeted session, or a message that triggers no bot).
+    /// dispatch gate can block hops of a cancelled chain.
     pub chain_id: Option<String>,
     /// Gateway-assembled resource context for this dispatch (docs/design/RESOURCE_CONTEXT.md,
     /// F2 handoff). When `Some`, it OVERRIDES any bundle on the trigger message and
     /// becomes the target's task-frame `context_bundle` — this is how a bot@bot hop
-    /// hands the initiator's plan/decisions to the next agent. `None` on the human
-    /// path, so the trigger message's own (human-attached) bundle flows through.
+    /// hands the initiator's plan/decisions to the next agent. Human producers
+    /// finalize the selected context against the target before admission.
     pub context_bundle: Option<Value>,
-}
-
-/// 派发结果。
-pub enum DispatchResult {
-    /// 成功派发，返回占位 msg_id。
-    Dispatched { placeholder_msg_id: Uuid },
-    /// 幂等：该 (trigger_msg_id, bot_id) 已有占位且仍在处理，跳过。
-    AlreadyInProgress,
-    /// bot 不在线。
-    BotOffline,
-    /// 数据库错误。
-    DbError(String),
 }
 
 /// Per-trigger memo for the S3-backed context that every bot triggered by the SAME
 /// message would otherwise re-fetch independently: attachment bytes (an image can be
 /// up to 8 MB, GET + base64 per bot), audio transcripts, and the channel's pinned
 /// prompt blocks. Callers create one instance before their per-bot dispatch loop and
-/// pass `&cache` into each `dispatch`, so each object is fetched at most once per
-/// trigger. Per-bot inlining decisions (budget, audio capability) are unchanged — only
+/// pass `&cache` into task preparation, so repeated offers reuse reads within a
+/// recovery batch. Per-bot inlining decisions (budget, audio capability) are unchanged — only
 /// the byte fetch is shared. `None`/miss is memoized too (best-effort: don't re-hit S3).
 #[derive(Default)]
 pub struct MediaCache {
@@ -70,168 +46,17 @@ pub struct MediaCache {
 impl MediaCache {
     /// Cached [`load_pinned_context`] keyed by channel (pinned blocks are per-channel,
     /// bot-independent).
-    async fn pinned_context(&self, db: &PgPool, channel_id: Uuid) -> Vec<String> {
+    async fn pinned_context(
+        &self,
+        db: &PgPool,
+        channel_id: Uuid,
+    ) -> Result<Vec<String>, sqlx::Error> {
         if let Some(hit) = self.pinned.lock().await.get(&channel_id).cloned() {
-            return hit;
+            return Ok(hit);
         }
-        let blocks = load_pinned_context(db, channel_id).await;
+        let blocks = load_pinned_context(db, channel_id).await?;
         self.pinned.lock().await.insert(channel_id, blocks.clone());
-        blocks
-    }
-}
-
-pub async fn dispatch(
-    db: &PgPool,
-    fanout: &Arc<dyn Fanout>,
-    registry: &StreamRegistry,
-    bot_locator: &Arc<dyn BotLocator>,
-    params: DispatchParams,
-    media_cache: &MediaCache,
-) -> DispatchResult {
-    // ── 原子创建占位（先落库）────────────────────────────────────────────────
-    // 占位 id 由 (trigger_msg_id, bot_id) 确定性派生（I4）：同一输入永远同一 UUID。
-    // R5：不再用前置 SELECT 判幂等（与 INSERT 非原子，并发双触发会两边都通过，
-    // 导致 task 帧派发两次、bot 重复跑同一任务）。改由 `INSERT … ON CONFLICT
-    // DO NOTHING` 的 rows_affected 单点定胜负——只有真正插入占位的调用继续派发。
-    let placeholder_id = derive_placeholder_id(params.trigger_msg_id, params.bot_id);
-    let task_id = Uuid::new_v4();
-
-    // Nest the bot turn under its trigger so clients render it as a sub-message
-    // (not an independent top-level row). Persist session_id on content_data so
-    // a human Reply can reuse the same session/model without a separate lookup.
-    let content_data = params.session_id.map(|sid| json!({ "session_id": sid }));
-    match create_placeholder(
-        db,
-        placeholder_id,
-        params.channel_id,
-        params.bot_id,
-        params.trigger_msg_id,
-        params.depth,
-        params.chain_id.as_deref(),
-        params.context_bundle.as_ref(),
-        content_data.as_ref(),
-    )
-    .await
-    {
-        Ok(true) => {}                                         // 胜者：本次插入占位，继续派发
-        Ok(false) => return DispatchResult::AlreadyInProgress, // 占位已存在（败者 / 重投）
-        Err(e) => return DispatchResult::DbError(e),
-    }
-
-    // ── 注册 StreamEntry ─────────────────────────────────────────────────────
-    registry.register(StreamEntry {
-        msg_id: placeholder_id,
-        bot_id: params.bot_id,
-        channel_id: params.channel_id,
-        task_id,
-        trigger_msg_id: params.trigger_msg_id,
-        session_id: params.session_id,
-        finalized: false,
-        last_touched_ms: Default::default(),
-    });
-
-    // ── fan-out 占位气泡给浏览器（终态帧，先落库再投递）─────────────────────
-    let bubble = WireFrame::channel(
-        params.channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": placeholder_id,
-            "channel_id": params.channel_id,
-            "channel_seq": null,
-            "sender_id": params.bot_id,
-            "sender_type": "bot",
-            "content": "",
-            "msg_type": "text",
-            "is_partial": true,
-            "reply_to_msg_id": params.trigger_msg_id,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "content_data": content_data,
-            // F2 handoff card: the assembled bundle rides the placeholder so the
-            // chat shows "received a handoff" the moment the bot starts working.
-            "context_bundle": params.context_bundle,
-        }),
-    );
-    fanout.broadcast_channel(params.channel_id, bubble).await;
-    tracing::debug!(
-        bot_id = %params.bot_id,
-        channel_id = %params.channel_id,
-        placeholder_msg_id = %placeholder_id,
-        "placeholder created and empty bubble fanned out"
-    );
-
-    // ── 通过 control WS 派发 task 帧给 bot ───────────────────────────────────
-    let mut task_context = load_task_context(db, params.trigger_msg_id, params.bot_id, media_cache)
-        .await
-        .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
-    task_context.pinned = media_cache.pinned_context(db, params.channel_id).await;
-    // A gateway-assembled handoff bundle (bot@bot) overrides the trigger message's
-    // own bundle; otherwise the human-attached bundle read above flows through.
-    if params.context_bundle.is_some() {
-        task_context.context_bundle = params.context_bundle.clone();
-    }
-    // Per-session ACP root set (cwd + additionalDirectories) stored on the session
-    // row; absent → the connector falls back to its default_cwd.
-    let workspace = load_session_workspace(db, &params.provider_session_key).await;
-    let task_frame = build_task_frame(
-        task_id,
-        params.channel_id,
-        params.trigger_msg_id,
-        params.trigger_seq,
-        params.depth,
-        placeholder_id,
-        &params.provider_session_key,
-        params.session_id,
-        task_context,
-        workspace,
-    );
-
-    let delivered = bot_locator.dispatch_task(params.bot_id, task_frame).await;
-
-    if !delivered {
-        // The placeholder is an internal streaming affordance, not a chat event.
-        // Remove it rather than persisting "[bot offline]" as a bot message, then
-        // send one terminal transient frame so active clients can dismiss it and
-        // show an error toast. History remains free of failed pseudo-replies.
-        if let Ok(Some(failed)) = remove_placeholder(db, placeholder_id).await {
-            fanout
-                .broadcast_channel(
-                    failed.channel_id,
-                    bot_unavailable_frame(failed.channel_id, placeholder_id, params.bot_id),
-                )
-                .await;
-        }
-        registry.remove(placeholder_id);
-        if let Some(session_id) = params.session_id {
-            let _ = sessions::finalize_session(db, session_id).await;
-        }
-        return DispatchResult::BotOffline;
-    }
-
-    // The bot is now working on this turn. The matching "idle" signal is the
-    // turn's `message_done` (or the offline/failed done-frame above) — clients
-    // (Fleet view, chat) pair the two; no separate end frame is needed.
-    let processing = WireFrame::channel(
-        params.channel_id,
-        "bot_processing",
-        json!({ "bot_id": params.bot_id, "channel_id": params.channel_id }),
-    );
-    fanout
-        .broadcast_channel(params.channel_id, processing)
-        .await;
-
-    tracing::info!(
-        bot_id = %params.bot_id,
-        channel_id = %params.channel_id,
-        trigger_msg_id = %params.trigger_msg_id,
-        placeholder_msg_id = %placeholder_id,
-        task_id = %task_id,
-        "task dispatched to bot"
-    );
-    DispatchResult::Dispatched {
-        placeholder_msg_id: placeholder_id,
+        Ok(blocks)
     }
 }
 
@@ -239,7 +64,7 @@ pub async fn dispatch(
 
 /// R3：确定性派生占位 id。
 /// UUID v5（SHA-1 namespace + "trigger_id:bot_id"）保证幂等。
-fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
+pub(crate) fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
     use uuid::Uuid;
     // 用 UUID v5 的 DNS namespace 作为固定 namespace
     let namespace = Uuid::NAMESPACE_DNS;
@@ -247,53 +72,52 @@ fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
     Uuid::new_v5(&namespace, name.as_bytes())
 }
 
-/// 原子创建占位。返回 `true` 表示本次 INSERT 胜出（rows_affected == 1）；
-/// `false` 表示占位已存在（并发双触发的败者，或同一触发的重投）——调用方据此
-/// 放弃派发，避免 bot 重复跑同一任务（R5）。
-///
-/// `trigger_msg_id` is stored as `in_reply_to_msg_id` so the bot turn nests under
-/// the human (or prior-bot) trigger in the channel timeline.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "idempotent placeholder identity and causation fields map directly to the insert"
-)]
-async fn create_placeholder(
-    db: &PgPool,
-    placeholder_id: Uuid,
-    channel_id: Uuid,
-    bot_id: Uuid,
-    trigger_msg_id: Uuid,
-    depth: i32,
-    chain_id: Option<&str>,
-    context_bundle: Option<&Value>,
-    content_data: Option<&Value>,
-) -> Result<bool, String> {
-    // Bot stream placeholders use the same explicit text kind as completed
-    // replies. The baseline DB default is legacy `normal`, not `text`.
-    let result = sqlx::query!(
-        "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, msg_type, is_partial, depth, chain_id,
-             context_bundle, in_reply_to_msg_id, content_data)
-         VALUES ($1, $2, 'bot', $3, '', 'text', TRUE, $4, $5, $6, $7, $8)
-         ON CONFLICT (msg_id) DO NOTHING",
-        placeholder_id.to_string(),
-        channel_id.to_string(),
-        bot_id.to_string(),
-        depth,
-        chain_id,
-        context_bundle,
-        trigger_msg_id.to_string(),
-        content_data,
+pub(crate) fn placeholder_frame(params: &DispatchParams, placeholder_id: Uuid) -> WireFrame {
+    WireFrame::channel(
+        params.channel_id,
+        "message",
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION, "msg_id": placeholder_id,
+            "channel_id": params.channel_id, "channel_seq": null,
+            "sender_id": params.bot_id, "sender_type": "bot", "content": "",
+            "msg_type": "text", "is_partial": true,
+            "reply_to_msg_id": params.trigger_msg_id,
+            "file_ids": [], "mentions": [], "files": [],
+            "content_data": params.session_id.map(|sid| json!({"session_id":sid})),
+            "context_bundle": params.context_bundle,
+        }),
     )
-    .execute(db)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    Ok(result.rows_affected() == 1)
 }
 
-pub(crate) struct FailedPlaceholder {
-    pub(crate) channel_id: Uuid,
+/// Hydrate a frozen trigger outside a transaction; persist the result once.
+/// All producers share these media/config/wire builders.
+pub(crate) async fn prepare_task_from_snapshot(
+    db: &PgPool,
+    task_id: Uuid,
+    params: &DispatchParams,
+    trigger_message: Value,
+    file_ids: &[String],
+    media_cache: &MediaCache,
+) -> Result<Value, crate::errors::AppError> {
+    let workspace = load_session_settings(db, &params.provider_session_key).await?;
+    let context = TaskContext {
+        trigger_message,
+        attachments: load_attachments(db, file_ids, params.bot_id, media_cache).await?,
+        pinned: media_cache.pinned_context(db, params.channel_id).await?,
+        context_bundle: params.context_bundle.clone(),
+    };
+    Ok(build_task_frame(
+        task_id,
+        params.channel_id,
+        params.trigger_msg_id,
+        params.trigger_seq,
+        params.depth,
+        derive_placeholder_id(params.trigger_msg_id, params.bot_id),
+        &params.provider_session_key,
+        params.session_id,
+        context,
+        workspace,
+    ))
 }
 
 /// A terminal transient frame: the placeholder has been deleted and the client
@@ -319,86 +143,6 @@ struct TaskContext {
     /// (docs/design/RESOURCE_CONTEXT.md). Threaded through to the Task frame so the
     /// agent can resolve the refs as itself. `None` when the message carried none.
     context_bundle: Option<Value>,
-}
-
-impl TaskContext {
-    fn fallback(msg_id: Uuid) -> Self {
-        Self {
-            trigger_message: json!({ "msg_id": msg_id }),
-            attachments: Vec::new(),
-            pinned: Vec::new(),
-            context_bundle: None,
-        }
-    }
-}
-
-async fn load_task_context(
-    db: &PgPool,
-    msg_id: Uuid,
-    bot_id: Uuid,
-    media_cache: &MediaCache,
-) -> Option<TaskContext> {
-    #[derive(Debug, sqlx::FromRow)]
-    struct TaskRow {
-        sender_id: Option<String>,
-        content: Option<String>,
-        created_at: Option<chrono::DateTime<chrono::Utc>>,
-        msg_type: Option<String>,
-        in_reply_to_msg_id: Option<String>,
-        file_ids: Option<Value>,
-        context_bundle: Option<Value>,
-        sender_name: Option<String>,
-    }
-
-    let row = sqlx::query_as!(
-        TaskRow,
-        "SELECT
-            m.sender_id,
-            m.content,
-            m.created_at,
-            m.msg_type,
-            m.in_reply_to_msg_id,
-            m.file_ids,
-            m.context_bundle,
-            COALESCE(NULLIF(u.display_name, ''), u.username, NULLIF(b.display_name, ''), b.username) AS sender_name
-         FROM messages m
-         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
-         LEFT JOIN bot_accounts b ON m.sender_type = 'bot' AND b.bot_id = m.sender_id
-         WHERE m.msg_id = $1",
-        msg_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await
-    .ok()??;
-
-    let file_ids = row
-        .file_ids
-        .and_then(|value| {
-            value.as_array().map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(ToString::to_string))
-                    .collect::<Vec<_>>()
-            })
-        })
-        .unwrap_or_default();
-    let attachments = load_attachments(db, &file_ids, bot_id, media_cache).await;
-    let timestamp = row.created_at.map(|dt| dt.to_rfc3339());
-
-    Some(TaskContext {
-        trigger_message: json!({
-            "msg_id": msg_id,
-            "user": row.sender_id.unwrap_or_default(),
-            "sender_name": row.sender_name,
-            "text": row.content.unwrap_or_default(),
-            "timestamp": timestamp,
-            "msg_type": row.msg_type.unwrap_or_else(|| "text".to_string()),
-            "in_reply_to_msg_id": row.in_reply_to_msg_id,
-        }),
-        attachments,
-        pinned: Vec::new(),
-        context_bundle: row.context_bundle,
-    })
 }
 
 /// Largest single image inlined (raw bytes) into a task frame as `image_b64` — same ceiling
@@ -440,9 +184,9 @@ async fn load_attachments(
     file_ids: &[String],
     bot_id: Uuid,
     media_cache: &MediaCache,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, crate::errors::AppError> {
     if file_ids.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     // Whether this bot's agent accepts native ACP audio blocks (persisted from
     // the connector's ready frame). NULL/missing = false: don't spend frame
@@ -453,9 +197,7 @@ async fn load_attachments(
         bot_id.to_string(),
     )
     .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
+    .await?
     .flatten()
     .unwrap_or(false);
     let rows = sqlx::query_as!(
@@ -468,11 +210,7 @@ async fn load_attachments(
         file_ids,
     )
     .fetch_all(db)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::warn!(err = %e, "attachment metadata load failed; sending bare file_ids");
-        Vec::new()
-    });
+    .await?;
 
     let mut inline_budget = MAX_INLINE_TOTAL_BYTES;
     let mut out = Vec::with_capacity(file_ids.len());
@@ -531,7 +269,7 @@ async fn load_attachments(
         }
         out.push(attachment);
     }
-    out
+    Ok(out)
 }
 
 /// Whether an image attachment's bytes qualify for inlining: readable object (`uploaded`,
@@ -611,17 +349,18 @@ async fn fetch_media_b64(row: &AttachmentRow, cache: &MediaCache) -> Option<Stri
 /// Read the channel's pinned convention files (paths listed in `.workbench.json`)
 /// and format each into a prompt block. These are injected into the agent prompt on
 /// EVERY request (the semantic layer) — a controlled push, not auto-memory.
-pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
+pub async fn load_pinned_context(
+    db: &PgPool,
+    channel_id: Uuid,
+) -> Result<Vec<String>, sqlx::Error> {
     let cfg = sqlx::query_scalar!(
         "SELECT content FROM context_files WHERE channel_id = $1 AND path = '.workbench.json'",
         channel_id.to_string(),
     )
     .fetch_optional(db)
-    .await
-    .ok()
-    .flatten();
+    .await?;
     let Some(cfg) = cfg else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let paths: Vec<String> = serde_json::from_str::<Value>(&cfg)
         .ok()
@@ -635,88 +374,73 @@ pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
         .unwrap_or_default();
     let mut out = Vec::new();
     for path in paths {
-        if let Ok(Some(content)) = sqlx::query_scalar!(
+        if let Some(content) = sqlx::query_scalar!(
             "SELECT content FROM context_files WHERE channel_id = $1 AND path = $2",
             channel_id.to_string(),
             &path,
         )
         .fetch_optional(db)
-        .await
+        .await?
         {
             if !content.trim().is_empty() {
                 out.push(format!("[Pinned: {path}]\n{content}"));
             }
         }
     }
-    out
+    Ok(out)
 }
 
-pub(crate) async fn remove_placeholder(
+/// Workspace roots plus the gateway's persisted session-specific desired config.
+/// Missing snapshots are omitted rather than interpreted as a reset by connectors.
+type SessionSettings = (
+    Option<String>,
+    Vec<String>,
+    Option<cheers_bridge_protocol::SessionConfigOverrides>,
+);
+
+async fn load_session_settings(
     db: &PgPool,
-    placeholder_id: Uuid,
-) -> Result<Option<FailedPlaceholder>, sqlx::Error> {
-    let Some(channel_id) = sqlx::query!(
-        "SELECT channel_id
-         FROM messages
-         WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
-        placeholder_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await?
-    .and_then(|row| Some(row.channel_id.clone()))
-    .and_then(|raw| raw.parse::<Uuid>().ok()) else {
-        return Ok(None);
-    };
-
-    let result = sqlx::query!(
-        "DELETE FROM messages
-         WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
-        placeholder_id.to_string(),
-    )
-    .execute(db)
-    .await?;
-
-    if result.rows_affected() == 0 {
-        return Ok(None);
-    }
-
-    Ok(Some(FailedPlaceholder { channel_id }))
-}
-
-/// A session's ACP root set: `(cwd, additional_dirs)` — the effective root set is
-/// `[cwd, ...additional_dirs]`. `None` cwd ⇒ the connector uses its `default_cwd`.
-type SessionWorkspace = (Option<String>, Vec<String>);
-
-/// Read a session's stored `metadata.workspace` (the per-session ACP `cwd` +
-/// `additionalDirectories`). Missing row / key ⇒ `(None, [])`, so the connector
-/// falls back to its default_cwd. Best-effort: any DB error degrades to the default.
-async fn load_session_workspace(db: &PgPool, provider_session_key: &str) -> SessionWorkspace {
-    let ws = sqlx::query!(
-        "SELECT metadata->'workspace' AS ws FROM cheers_sessions
-         WHERE provider_session_key = $1 LIMIT 1",
+    provider_session_key: &str,
+) -> Result<SessionSettings, crate::errors::AppError> {
+    let metadata = sqlx::query_scalar!(
+        "SELECT metadata FROM cheers_sessions WHERE provider_session_key = $1 LIMIT 1",
         provider_session_key,
     )
     .fetch_optional(db)
-    .await
-    .ok()
+    .await?
     .flatten()
-    .and_then(|r| r.ws.clone());
-    match ws {
-        Some(ws) => {
-            let cwd = ws.get("cwd").and_then(Value::as_str).map(str::to_string);
-            let additional_dirs = ws
-                .get("additional_dirs")
-                .and_then(Value::as_array)
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            (cwd, additional_dirs)
-        }
-        None => (None, Vec::new()),
-    }
+    .unwrap_or_else(|| json!({}));
+    session_settings_from_metadata(&metadata)
+}
+
+fn session_settings_from_metadata(
+    metadata: &Value,
+) -> Result<SessionSettings, crate::errors::AppError> {
+    let workspace = metadata.get("workspace");
+    let cwd = workspace
+        .and_then(|ws| ws.get("cwd"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let additional_dirs = workspace
+        .and_then(|ws| ws.get("additional_dirs"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let session_config = metadata
+        .get("session_config")
+        .map(|value| {
+            serde_json::from_value::<cheers_bridge_protocol::SessionConfigOverrides>(value.clone())
+        })
+        .transpose()
+        .map_err(|error| {
+            crate::errors::AppError::Internal(format!("invalid session config snapshot: {error}"))
+        })?;
+    Ok((cwd, additional_dirs, session_config))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -730,7 +454,7 @@ fn build_task_frame(
     provider_session_key: &str,
     session_id: Option<Uuid>,
     task_context: TaskContext,
-    workspace: SessionWorkspace,
+    workspace: SessionSettings,
 ) -> Value {
     let trigger = if depth > 0 {
         "bot_message"
@@ -738,7 +462,7 @@ fn build_task_frame(
         "user_message"
     };
 
-    let (cwd, additional_dirs) = workspace;
+    let (cwd, additional_dirs, session_config) = workspace;
     use cheers_bridge_protocol as proto;
     // wire-compat: msg_id duplicates trigger_msg_id, and the nested session ref
     // repeats session identifiers — deployed connectors read both shapes.
@@ -752,6 +476,7 @@ fn build_task_frame(
         depth: Some(depth),
         trigger: Some(trigger.to_string()),
         placeholder_msg_id: placeholder_msg_id.to_string(),
+        acceptance_required: true,
         provider_session_key: provider_session_key.to_string(),
         session_id: session_id.map(|id| id.to_string()),
         session_policy: Some(proto::SessionPolicy {
@@ -790,6 +515,7 @@ fn build_task_frame(
         // pure session/new argument, immutable for the session's lifetime).
         cwd,
         additional_dirs,
+        session_config,
         binding_config: None,
         session: Some(proto::RuntimeSessionRef {
             id: session_id.map(|id| id.to_string()),
@@ -839,9 +565,49 @@ mod tests {
                 pinned: vec!["Always answer in English.".to_string()],
                 context_bundle: None,
             },
-            (Some("/workspace".to_string()), vec!["/data".to_string()]),
+            (Some("/workspace".to_string()), vec!["/data".to_string()], None),
         );
         assert_matches_fixture(&frame, "control/to_connector/task.json", &["enqueued_at"]);
+    }
+
+    #[test]
+    fn task_settings_snapshot_preserves_persisted_overrides_and_workspace() {
+        let (cwd, roots, desired) = session_settings_from_metadata(&json!({
+            "workspace": {"cwd":"/repo", "additional_dirs":["/shared"]},
+            "session_config": {"revision":7, "permission_mode":"read-only",
+                "config_options":{"model":"session-model", "reasoning_effort":"high"}},
+        }))
+        .unwrap();
+        assert_eq!(cwd.as_deref(), Some("/repo"));
+        assert_eq!(roots, ["/shared"]);
+        let desired = desired.unwrap();
+        assert_eq!(desired.revision, 7);
+        assert_eq!(desired.permission_mode.as_deref(), Some("read-only"));
+        assert_eq!(desired.config_options["model"], "session-model");
+        assert_eq!(desired.config_options["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn legacy_session_overrides_without_a_revision_are_replayed() {
+        let (_, _, desired) = session_settings_from_metadata(&json!({
+            "session_config": {"config_options":{"model":"saved-before-upgrade"}},
+        }))
+        .unwrap();
+        let desired = desired.unwrap();
+        assert_eq!(desired.revision, 0);
+        assert_eq!(desired.config_options["model"], "saved-before-upgrade");
+        assert!(session_settings_from_metadata(&json!({}))
+            .unwrap()
+            .2
+            .is_none());
+    }
+
+    #[test]
+    fn malformed_session_config_does_not_degrade_to_bot_defaults() {
+        assert!(session_settings_from_metadata(&json!({
+            "session_config": {"config_options":{"model":42}},
+        }))
+        .is_err());
     }
 
     /// I4：同一 (trigger, bot) 必派生同一占位 id（重投收敛同一占位）。

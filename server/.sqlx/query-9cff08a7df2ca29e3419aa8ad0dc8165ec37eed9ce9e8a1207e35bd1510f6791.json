@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_runs SET terminal_client_msg_id=$2,terminal_fingerprint=$3,\n         terminal_committed_at=NOW(),status=$4,last_event_type=$5,updated_at=NOW()\n         WHERE placeholder_msg_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9cff08a7df2ca29e3419aa8ad0dc8165ec37eed9ce9e8a1207e35bd1510f6791"
+}

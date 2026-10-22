@@ -165,6 +165,30 @@ pub async fn detach_member(
         }
     }
 
+    // Channel owner changes and invite acceptance use the same guard. Retain
+    // workspace-before-channel order, and take every guard before reading any
+    // channel authority or deleting child rows. The workspace lock also keeps
+    // new channel creation from extending this set while removal is pending.
+    let guarded_channels = sqlx::query_scalar!(
+        "SELECT c.channel_id FROM channels c
+         WHERE c.workspace_id = $1 AND (
+             c.type <> 'dm' OR EXISTS (
+                 SELECT 1 FROM channel_invites ci
+                 WHERE ci.channel_id = c.channel_id AND ci.user_id = $2
+             )
+         ) ORDER BY hashtext(c.channel_id),c.channel_id",
+        workspace_id,
+        user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(AppError::Db)?;
+    for channel_id in &guarded_channels {
+        super::channel_memberships::lock_channel(&mut tx, channel_id)
+            .await
+            .map_err(AppError::Db)?;
+    }
+
     let last_owned = sqlx::query!(
         "SELECT c.channel_id, c.name
          FROM channels c

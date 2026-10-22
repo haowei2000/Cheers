@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_transactions\n         SET status = 'consumed', consumed_at = clock_timestamp(), updated_at = clock_timestamp(),\n             context_json = context_json || $2\n         WHERE transaction_id = $1 AND kind = 'login'\n           AND status IN ('method_required', 'factor_required')\n           AND consumed_at IS NULL AND expires_at > clock_timestamp() AND failed_attempts < 5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b94c5574afdbdad37821ed1b38c5ee7c24cc6674f161461aba789841587829e"
+}

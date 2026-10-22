@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_runs\n                         SET execution_id = $2, execution_connection_id = $3,\n                             accepted_at = NOW(), status = 'accepted',\n                             last_event_type = 'task_accept', updated_at = NOW(),\n                             dispatch_input=NULL,task_frame=NULL,next_offer_at=NULL,\n                             dispatch_lease_id=NULL,dispatch_lease_until=NULL\n                         WHERE placeholder_msg_id = $1 AND execution_id IS NULL\n                           AND execution_connection_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "05e8abf7ae6ecf029dfcfc6d4864e0e85199d128e04631aca9f6be7e76836c66"
+}

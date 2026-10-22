@@ -43,7 +43,8 @@ use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
     ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
     ElicitationResolution, PermissionOption, PermissionResolution, RuntimeSessionAckSession,
-    RuntimeSessionControlSession, ServerCapabilities, BRIDGE_PROTOCOL_VERSION,
+    RuntimeSessionControlSession, ServerCapabilities, SessionConfigOverrides, TaskAcceptanceStatus,
+    TaskExecution, BRIDGE_PROTOCOL_VERSION,
 };
 use crate::bridge_session::{
     connect_control_stream, connect_data_stream, BridgeReady, BridgeSession, BridgeSessionConfig,
@@ -59,6 +60,7 @@ use crate::runtime_adapter::{
 };
 use crate::self_update::SelfUpdater;
 use crate::state::SessionStateStore;
+use crate::terminal_outbox::{Scope as TerminalScope, TerminalOutbox};
 
 pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
     // Self-update rollback rail first: if a freshly-swapped binary keeps failing
@@ -210,6 +212,16 @@ impl AccountRuntime {
         };
         let security = bridge.data_hello().acp_security.clone();
         let host_id = bridge.control_hello().host_id.clone();
+        let outbox = TerminalOutbox::new(
+            self.state.lock().await.path(),
+            TerminalScope::new(
+                self.account_id.clone(),
+                &self.config.control_url,
+                &self.config.data_url,
+                bridge.control_hello().bot_id.clone(),
+                host_id.clone(),
+            )?,
+        )?;
         // Extract channel_id → channel_name map from membership snapshot
         // before it's consumed by spawn_bridge_io.
         let channel_names: std::collections::HashMap<String, String> = bridge
@@ -243,6 +255,7 @@ impl AccountRuntime {
         let shared = Arc::new(SharedRuntimeState::new(
             channel_names,
             self.config.policy.prompt.max_concurrent,
+            &self.config.agent,
         ));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
@@ -255,6 +268,7 @@ impl AccountRuntime {
             state: self.state,
             adapter,
             io,
+            outbox,
             shared,
             runtime_tx: runtime_tx.clone(),
         });
@@ -267,6 +281,7 @@ impl AccountRuntime {
                     .await?;
             }
         }
+        let _outbox_worker = AbortOnDrop(context.start_terminal_outbox().abort_handle());
         let result = context.run_loop(&mut runtime_rx).await;
         let _ = adapter_for_stop.lock().await.stop().await;
         result
@@ -586,6 +601,7 @@ struct RuntimeContext {
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
+    outbox: Arc<TerminalOutbox>,
     shared: Arc<SharedRuntimeState>,
     /// Sender into the main event loop — used to enqueue fence events (EnableStreaming)
     /// that must be ordered after history-replay notifications already in the queue.
@@ -593,6 +609,111 @@ struct RuntimeContext {
 }
 
 impl RuntimeContext {
+    /// The only producer path for ordinary task terminal frames. Publishing the
+    /// immutable result precedes its first send; retrying delivery never runs ACP.
+    async fn send_terminal(&self, frame: DataOutbound) -> anyhow::Result<DataInbound> {
+        let execution_owned = matches!(
+            &frame,
+            DataOutbound::Done {
+                execution: Some(_),
+                ..
+            } | DataOutbound::Error {
+                execution: Some(_),
+                ..
+            }
+        );
+        if !execution_owned {
+            // Private/test/manual turns have no durable execution receipt. They
+            // still require a real ACK capability; there is no legacy success.
+            return self.io.send_data_expect_terminal_ack(frame).await;
+        }
+        let client_id =
+            terminal_ack_client_msg_id(&frame).context("terminal correlation missing")?;
+        let _delivery = self
+            .outbox
+            .claim(client_id)
+            .context("terminal delivery already active or permanently rejected")?;
+        let record = self.outbox.persist(frame).await?;
+        let result = Self::deliver_terminal_record(&self.io, &self.outbox, &record).await;
+        self.outbox.wake.notify_one();
+        result
+    }
+
+    async fn deliver_terminal_record(
+        io: &BridgeIoHandle,
+        outbox: &TerminalOutbox,
+        record: &crate::terminal_outbox::Record,
+    ) -> anyhow::Result<DataInbound> {
+        let ack = io
+            .send_data_expect_terminal_ack(record.frame.clone())
+            .await?;
+        if !record.matches_ack(&ack) {
+            return Err(anyhow!(
+                "terminal acknowledgement identity/version mismatch"
+            ));
+        }
+        if outbox.acknowledge(record, &ack).await? {
+            return Ok(ack);
+        }
+        if matches!(
+            &ack,
+            DataInbound::TerminalAck {
+                ok: false,
+                retryable: Some(false),
+                ..
+            }
+        ) {
+            outbox.reject_until_restart(record);
+        }
+        if terminal_ack_ok(&ack) {
+            return Err(anyhow!(
+                "terminal ACK did not confirm this committed result"
+            ));
+        }
+        Ok(ack)
+    }
+
+    fn start_terminal_outbox(&self) -> tokio::task::JoinHandle<()> {
+        let (io, outbox) = (self.io.clone(), self.outbox.clone());
+        tokio::spawn(async move {
+            loop {
+                let mut attempted = false;
+                if io.terminal_replay_enabled() {
+                    match outbox.pending().await {
+                        Ok(records) => {
+                            attempted = !records.is_empty();
+                            use futures_util::StreamExt;
+                            futures_util::stream::iter(records).for_each_concurrent(4, |record| {
+                                let (io, outbox) = (io.clone(), outbox.clone());
+                                async move {
+                                    let Some(_delivery) = outbox.claim(record.client_msg_id()) else { return; };
+                                    match Self::deliver_terminal_record(&io, &outbox, &record).await {
+                                        Ok(ack) if terminal_ack_ok(&ack) => {}
+                                        Ok(ack) => tracing::warn!(client_msg_id = record.client_msg_id(), error = ?terminal_ack_error(&ack), "terminal result retained after rejection"),
+                                        Err(error) => tracing::warn!(client_msg_id = record.client_msg_id(), %error, "terminal result retained for retry"),
+                                    }
+                                }
+                            }).await;
+                        }
+                        Err(error) => {
+                            tracing::error!(%error, "could not load pending terminal results")
+                        }
+                    }
+                }
+                // After a delivery pass, notifications cannot defeat retry
+                // backoff. Empty queues can still wake promptly for late appends.
+                if attempted {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                    _ = outbox.wake.notified() => {}
+                }
+            }
+        })
+    }
+
     async fn run_loop(
         self: Arc<Self>,
         rx: &mut mpsc::Receiver<RuntimeInput>,
@@ -624,6 +745,34 @@ impl RuntimeContext {
     }
 
     async fn handle_control(self: Arc<Self>, frame: ControlInbound) -> anyhow::Result<()> {
+        let reservation = if let ControlInbound::Task {
+            acceptance_required,
+            ..
+        } = &frame
+        {
+            if !*acceptance_required
+                || !self.io.task_acceptance_enabled()
+                || !self.io.terminal_replay_enabled()
+            {
+                tracing::error!(account = %self.account_id, "refusing task without negotiated durable acceptance");
+                return Ok(());
+            }
+            match self
+                .shared
+                .task_reservations
+                .lock()
+                .expect("task reservations poisoned")
+                .reserve(&frame)
+            {
+                Ok(reservation) => reservation,
+                Err(error) => {
+                    tracing::error!(account = %self.account_id, %error, "refusing conflicting task frame");
+                    return Ok(());
+                }
+            }
+        } else {
+            None
+        };
         match frame {
             ControlInbound::Task {
                 task_id,
@@ -638,10 +787,19 @@ impl RuntimeContext {
                 cwd,
                 additional_dirs,
                 context_bundle,
+                session_config,
                 ..
             } => {
+                let Some(identity) = reservation else {
+                    return Ok(());
+                };
                 let task = TaskCommand {
                     task_id,
+                    execution: Some(TaskExecution {
+                        task_id: identity.task_id.clone(),
+                        execution_id: identity.execution_id.clone(),
+                        channel_id: identity.channel_id.clone(),
+                    }),
                     channel_id,
                     msg_id: placeholder_msg_id,
                     provider_session_key,
@@ -653,13 +811,37 @@ impl RuntimeContext {
                     cwd,
                     additional_dirs,
                     context_bundle,
+                    session_config,
                 };
                 let runtime = self.clone();
+                let reservation =
+                    tasks::TaskReservationGuard::new(self.shared.clone(), identity.clone());
                 tokio::spawn(async move {
-                    if let Err(err) = runtime.run_task(task, None).await {
-                        tracing::error!("task failed: {err}");
+                    let _reservation = reservation;
+                    match runtime.io.request_task_acceptance(identity).await {
+                        Ok(ControlInbound::TaskAcceptance {
+                            status: TaskAcceptanceStatus::Granted,
+                            ..
+                        }) => {
+                            if let Err(err) = runtime.run_task(task, None).await {
+                                tracing::error!("task failed: {err}");
+                            }
+                        }
+                        Ok(ControlInbound::TaskAcceptance { status, error, .. }) => {
+                            // Never finalize another execution owner's placeholder.
+                            tracing::warn!(task_id = %task.task_id, ?status, ?error, "task execution was not granted");
+                        }
+                        Err(error) => {
+                            tracing::error!(task_id = %task.task_id, %error, "task acceptance failed; agent execution will not start");
+                        }
+                        Ok(_) => {
+                            unreachable!("task acceptance waiter only accepts matching responses")
+                        }
                     }
                 });
+            }
+            reply @ ControlInbound::TaskAcceptance { .. } => {
+                self.io.resolve_task_acceptance(&reply).await;
             }
             ControlInbound::ClaimEvaluation {
                 evaluation_id,
@@ -683,6 +865,7 @@ impl RuntimeContext {
                 );
                 let task = TaskCommand {
                     task_id: evaluation_id.clone(),
+                    execution: None,
                     channel_id,
                     msg_id: evaluation_id.clone(),
                     provider_session_key,
@@ -696,6 +879,7 @@ impl RuntimeContext {
                     cwd: None,
                     additional_dirs: Vec::new(),
                     context_bundle: None,
+                    session_config: None,
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -726,6 +910,7 @@ impl RuntimeContext {
             } => {
                 let task = TaskCommand {
                     task_id: request_id.clone(),
+                    execution: None,
                     channel_id,
                     msg_id: request_id.clone(),
                     provider_session_key,
@@ -739,6 +924,7 @@ impl RuntimeContext {
                     cwd: None,
                     additional_dirs: Vec::new(),
                     context_bundle: None,
+                    session_config: None,
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -782,26 +968,61 @@ impl RuntimeContext {
                 provider_session_key,
                 config_id,
                 value,
+                session_config,
                 ..
             } => {
-                self.handle_config_option_set(
-                    request_id,
-                    session_id,
-                    provider_session_key,
-                    config_id,
-                    value,
+                self.remember_session_config(
+                    provider_session_key.as_deref(),
+                    session_config.as_ref(),
                 )
-                .await?;
+                .await;
+                let runtime = self.clone();
+                // Session ordering may wait for an active prompt. Keep the input
+                // loop free to deliver that prompt's permission/elicitation replies.
+                tokio::spawn(async move {
+                    if let Err(error) = runtime
+                        .handle_config_option_set(
+                            request_id,
+                            session_id,
+                            provider_session_key,
+                            config_id,
+                            value,
+                            session_config,
+                        )
+                        .await
+                    {
+                        tracing::warn!(%error, "session config change failed");
+                    }
+                });
             }
             ControlInbound::ModeSet {
                 request_id,
                 session_id,
                 provider_session_key,
                 mode,
+                session_config,
                 ..
             } => {
-                self.handle_mode_set(request_id, session_id, provider_session_key, mode)
-                    .await?;
+                self.remember_session_config(
+                    provider_session_key.as_deref(),
+                    session_config.as_ref(),
+                )
+                .await;
+                let runtime = self.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = runtime
+                        .handle_mode_set(
+                            request_id,
+                            session_id,
+                            provider_session_key,
+                            mode,
+                            session_config,
+                        )
+                        .await
+                    {
+                        tracing::warn!(%error, "session mode change failed");
+                    }
+                });
             }
             ControlInbound::PermissionResolution { resolution, .. } => {
                 self.handle_permission_resolution(resolution).await?;
@@ -1845,6 +2066,11 @@ impl RuntimeContext {
                     run.lock().await.streaming_started = true;
                 }
             }
+            RuntimeEvent::UpdatesDrained { respond_to } => {
+                // This branch runs after all preceding adapter events have been
+                // applied, so the prompt may now read its complete output.
+                let _ = respond_to.send(());
+            }
         }
         Ok(())
     }
@@ -1870,19 +2096,18 @@ impl RuntimeContext {
                     .await;
                 return Ok(());
             }
-            let _ = self
-                .io
-                .send_data_expect_terminal_ack(DataOutbound::Error {
-                    v: BRIDGE_PROTOCOL_VERSION,
-                    client_msg_id: Uuid::new_v4().to_string(),
-                    msg_id: task.msg_id.clone(),
-                    message: "local daemon policy does not allow prompts".to_string(),
-                    provider_session_key: Some(task.provider_session_key.clone()),
-                    provider_session_id: None,
-                    session_id: task.session_id.clone(),
-                    acp_capability: None,
-                })
-                .await;
+            self.send_terminal(DataOutbound::Error {
+                v: BRIDGE_PROTOCOL_VERSION,
+                client_msg_id: Uuid::new_v4().to_string(),
+                execution: task.execution.clone(),
+                msg_id: task.msg_id.clone(),
+                message: "local daemon policy does not allow prompts".to_string(),
+                provider_session_key: Some(task.provider_session_key.clone()),
+                provider_session_id: None,
+                session_id: task.session_id.clone(),
+                acp_capability: None,
+            })
+            .await?;
             return Ok(());
         }
         let session_lock = self.session_lock(&task.provider_session_key).await;
@@ -1927,19 +2152,18 @@ impl RuntimeContext {
                             .await;
                     }
                 } else {
-                    let _ = self
-                        .io
-                        .send_data_expect_terminal_ack(DataOutbound::Error {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            client_msg_id: Uuid::new_v4().to_string(),
-                            msg_id: task.msg_id.clone(),
-                            message,
-                            provider_session_key: Some(task.provider_session_key.clone()),
-                            provider_session_id: None,
-                            session_id: task.session_id.clone(),
-                            acp_capability: None,
-                        })
-                        .await;
+                    self.send_terminal(DataOutbound::Error {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        client_msg_id: Uuid::new_v4().to_string(),
+                        execution: task.execution.clone(),
+                        msg_id: task.msg_id.clone(),
+                        message,
+                        provider_session_key: Some(task.provider_session_key.clone()),
+                        provider_session_id: None,
+                        session_id: task.session_id.clone(),
+                        acp_capability: None,
+                    })
+                    .await?;
                 }
                 return Ok(());
             }
@@ -2017,22 +2241,40 @@ impl RuntimeContext {
                     ))
                     .await;
             } else {
-                let _ = self
-                    .io
-                    .send_data_expect_terminal_ack(DataOutbound::Error {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        client_msg_id: Uuid::new_v4().to_string(),
-                        msg_id: task.msg_id.clone(),
-                        message: message.into(),
-                        provider_session_key: Some(task.provider_session_key.clone()),
-                        provider_session_id: None,
-                        session_id: task.session_id.clone(),
-                        acp_capability: None,
-                    })
-                    .await;
+                self.send_terminal(DataOutbound::Error {
+                    v: BRIDGE_PROTOCOL_VERSION,
+                    client_msg_id: Uuid::new_v4().to_string(),
+                    execution: task.execution.clone(),
+                    msg_id: task.msg_id.clone(),
+                    message: message.into(),
+                    provider_session_key: Some(task.provider_session_key.clone()),
+                    provider_session_id: None,
+                    session_id: task.session_id.clone(),
+                    acp_capability: None,
+                })
+                .await?;
             }
             return Ok(());
         }
+        let result = self
+            .clone()
+            .run_registered_task(&task, evaluation_id, &acp_session_id, run)
+            .await;
+        let mut shared = self.shared.runs.lock().await;
+        shared.by_msg.remove(&task.msg_id);
+        shared.by_acp_session.remove(&acp_session_id);
+        shared.by_provider_key.remove(&task.provider_session_key);
+        shared.cwd_by_msg.remove(&task.msg_id);
+        result
+    }
+
+    async fn run_registered_task(
+        self: Arc<Self>,
+        task: &TaskCommand,
+        evaluation_id: Option<String>,
+        acp_session_id: &str,
+        run: Arc<Mutex<ActiveRun>>,
+    ) -> anyhow::Result<()> {
         self.trace(
             &run,
             "prompt_started",
@@ -2100,24 +2342,19 @@ impl RuntimeContext {
                     ))
                     .await?;
             } else {
-                self.io
-                    .send_data_expect_terminal_ack(DataOutbound::Error {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        client_msg_id: Uuid::new_v4().to_string(),
-                        msg_id: task.msg_id.clone(),
-                        message,
-                        provider_session_key: Some(task.provider_session_key.clone()),
-                        provider_session_id: Some(acp_session_id.clone()),
-                        session_id: task.session_id.clone(),
-                        acp_capability: None,
-                    })
-                    .await?;
+                self.send_terminal(DataOutbound::Error {
+                    v: BRIDGE_PROTOCOL_VERSION,
+                    client_msg_id: Uuid::new_v4().to_string(),
+                    execution: task.execution.clone(),
+                    msg_id: task.msg_id.clone(),
+                    message,
+                    provider_session_key: Some(task.provider_session_key.clone()),
+                    provider_session_id: Some(acp_session_id.to_string()),
+                    session_id: task.session_id.clone(),
+                    acp_capability: None,
+                })
+                .await?;
             }
-            let mut shared = self.shared.runs.lock().await;
-            shared.by_msg.remove(&task.msg_id);
-            shared.by_acp_session.remove(&acp_session_id);
-            shared.by_provider_key.remove(&task.provider_session_key);
-            shared.cwd_by_msg.remove(&task.msg_id);
             return Ok(());
         }
         // Inject the fence through the adapter event channel (the same FIFO that
@@ -2127,7 +2364,7 @@ impl RuntimeContext {
         self.adapter
             .lock()
             .await
-            .inject_fence(acp_session_id.clone())
+            .inject_fence(acp_session_id.to_string())
             .await;
         // Lock the adapter only long enough to clone a transport handle, then
         // await the prompt WITHOUT the lock. The prompt can block for minutes
@@ -2146,18 +2383,64 @@ impl RuntimeContext {
         {
             Ok(result) => Ok(result),
             Err(err) => match self.recover_agent_auth(&task, &err).await {
-                Ok(()) => {
+                Ok(()) if evaluation_id.is_some() => {
                     let requester = self.adapter.lock().await.prompt_client();
                     requester
                         .prompt(&acp_session_id, prompt, self.config.agent.prompt_timeout_ms)
                         .await
                 }
-                Err(_) => Err(err),
+                // A standard task may already have executed external tools before
+                // reporting an auth error. Recovery prepares the next task; it
+                // cannot safely authorize a second prompt for this execution.
+                Ok(()) | Err(_) => Err(err),
             },
         };
 
         match prompt_result {
             Ok(result) => {
+                let final_text = {
+                    let mut guard = run.lock().await;
+                    // Move the accumulated text out (turn is over; the run is about
+                    // to be dropped from the shared maps below) so the whole streamed
+                    // response isn't deep-cloned just to hand it to the Done frame.
+                    std::mem::take(&mut guard.text)
+                };
+                if let Some(evaluation_id) = evaluation_id.as_ref() {
+                    self.io
+                        .send_data(silent_result(
+                            &task,
+                            evaluation_id.clone(),
+                            Some(final_text),
+                            None,
+                        ))
+                        .await?;
+                } else {
+                    let terminal_ack = self
+                        .send_terminal(DataOutbound::Done {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            client_msg_id: Uuid::new_v4().to_string(),
+                            execution: task.execution.clone(),
+                            msg_id: task.msg_id.clone(),
+                            file_ids: Vec::new(),
+                            mention_ids: Vec::new(),
+                            content: Some(final_text),
+                            provider_session_key: Some(task.provider_session_key.clone()),
+                            provider_session_id: Some(acp_session_id.to_string()),
+                            session_id: task.session_id.clone(),
+                            acp_capability: None,
+                        })
+                        .await?;
+                    if !terminal_ack_ok(&terminal_ack) {
+                        self.trace(
+                            &run,
+                            "terminal_ack_failed",
+                            "error",
+                            "Agent Bridge rejected done frame",
+                            terminal_ack_error(&terminal_ack).as_deref(),
+                        )
+                        .await?;
+                    }
+                }
                 // Commit only after ACP acknowledges the prompt. If it times out
                 // or the daemon crashes, the next turn safely resends context.
                 if let Err(error) = self
@@ -2183,79 +2466,28 @@ impl RuntimeContext {
                     result.stop_reason.as_deref(),
                 )
                 .await?;
-                let final_text = {
-                    let mut guard = run.lock().await;
-                    // Move the accumulated text out (turn is over; the run is about
-                    // to be dropped from the shared maps below) so the whole streamed
-                    // response isn't deep-cloned just to hand it to the Done frame.
-                    std::mem::take(&mut guard.text)
-                };
-                if let Some(evaluation_id) = evaluation_id.as_ref() {
-                    self.io
-                        .send_data(silent_result(
-                            &task,
-                            evaluation_id.clone(),
-                            Some(final_text),
-                            None,
-                        ))
-                        .await?;
-                } else {
-                    let terminal_ack = self
-                        .io
-                        .send_data_expect_terminal_ack(DataOutbound::Done {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            client_msg_id: Uuid::new_v4().to_string(),
-                            msg_id: task.msg_id.clone(),
-                            file_ids: Vec::new(),
-                            mention_ids: Vec::new(),
-                            content: Some(final_text),
-                            provider_session_key: Some(task.provider_session_key.clone()),
-                            provider_session_id: Some(acp_session_id.clone()),
-                            session_id: task.session_id.clone(),
-                            acp_capability: None,
-                        })
-                        .await?;
-                    if !terminal_ack_ok(&terminal_ack) {
-                        self.trace(
-                            &run,
-                            "terminal_ack_failed",
-                            "error",
-                            "Agent Bridge rejected done frame",
-                            terminal_ack_error(&terminal_ack).as_deref(),
-                        )
-                        .await?;
-                    }
-                }
             }
             Err(err) => {
                 let message = err.to_string();
-                self.trace(
-                    &run,
-                    "prompt_failed",
-                    "error",
-                    "ACP prompt failed",
-                    Some(&message),
-                )
-                .await?;
                 if let Some(evaluation_id) = evaluation_id.as_ref() {
                     self.io
                         .send_data(silent_result(
                             &task,
                             evaluation_id.clone(),
                             None,
-                            Some(message),
+                            Some(message.clone()),
                         ))
                         .await?;
                 } else {
                     let terminal_ack = self
-                        .io
-                        .send_data_expect_terminal_ack(DataOutbound::Error {
+                        .send_terminal(DataOutbound::Error {
                             v: BRIDGE_PROTOCOL_VERSION,
                             client_msg_id: Uuid::new_v4().to_string(),
+                            execution: task.execution.clone(),
                             msg_id: task.msg_id.clone(),
-                            message,
+                            message: message.clone(),
                             provider_session_key: Some(task.provider_session_key.clone()),
-                            provider_session_id: Some(acp_session_id.clone()),
+                            provider_session_id: Some(acp_session_id.to_string()),
                             session_id: task.session_id.clone(),
                             acp_capability: None,
                         })
@@ -2271,14 +2503,17 @@ impl RuntimeContext {
                         .await?;
                     }
                 }
+                self.trace(
+                    &run,
+                    "prompt_failed",
+                    "error",
+                    "ACP prompt failed",
+                    Some(&message),
+                )
+                .await?;
             }
         }
 
-        let mut shared = self.shared.runs.lock().await;
-        shared.by_msg.remove(&task.msg_id);
-        shared.by_acp_session.remove(&acp_session_id);
-        shared.by_provider_key.remove(&task.provider_session_key);
-        shared.cwd_by_msg.remove(&task.msg_id);
         Ok(())
     }
 
@@ -2287,6 +2522,13 @@ impl RuntimeContext {
         task: &TaskCommand,
         options: SessionStartOptions,
     ) -> anyhow::Result<String> {
+        if let Some(desired) = &task.session_config {
+            self.shared
+                .session_configs
+                .lock()
+                .await
+                .remember(&task.provider_session_key, desired.clone());
+        }
         let existing = self
             .state
             .lock()
@@ -2300,6 +2542,8 @@ impl RuntimeContext {
                     adapter.load_session(&session_id, options.clone()).await
                 };
                 if let Ok(loaded) = load_result {
+                    self.reconcile_session_config(&task.provider_session_key, &session_id)
+                        .await?;
                     self.report_session_snapshot(&loaded.metadata).await;
                     // Re-stamp the mapping so its TTL measures idleness rather
                     // than age: a channel in daily use writes nothing here
@@ -2374,6 +2618,8 @@ impl RuntimeContext {
                 &task.provider_session_key,
                 &new_session.session_id,
             )
+            .await?;
+        self.reconcile_session_config(&task.provider_session_key, &new_session.session_id)
             .await?;
         // A proactive claim evaluation has no gateway CheersSession to update.
         // Reporting its ACP-only key made the gateway try to resolve a
@@ -2478,6 +2724,7 @@ impl RuntimeContext {
                         .task_scope_id
                         .clone()
                         .unwrap_or_else(|| request_id.clone()),
+                    execution: None,
                     channel_id: session.primary_scope_id.clone().unwrap_or_default(),
                     msg_id: session.id.clone(),
                     provider_session_key: session.provider_session_key.clone(),
@@ -2489,6 +2736,7 @@ impl RuntimeContext {
                     cwd: session.cwd.clone(),
                     additional_dirs: session.additional_dirs.clone(),
                     context_bundle: None,
+                    session_config: session.session_config.clone(),
                 };
                 let options = self.session_start_options(&task).await;
                 self.ensure_acp_session(&task, options).await.map(|id| {
@@ -3017,7 +3265,11 @@ impl TurnSlots {
 }
 
 struct SharedRuntimeState {
+    /// Local duplicate suppression; the gateway grants durable execution ownership.
+    task_reservations: std::sync::Mutex<tasks::TaskReservations>,
     remote: Arc<remote_execution::RemoteRegistry>,
+    /// Bot defaults and monotonic per-session desired-state snapshots.
+    session_configs: Mutex<config::DesiredSessionConfigs>,
     /// Multi-index active-run registry; one lock preserves atomic insert/remove.
     runs: Mutex<RunRegistry>,
     /// Human interaction waiters are independent of streaming and workspace work.
@@ -3076,8 +3328,14 @@ struct InteractionRegistry {
 
 impl SharedRuntimeState {
     /// Creates independent lock domains with the initial membership snapshot.
-    fn new(channel_names: HashMap<String, String>, max_concurrent: usize) -> Self {
+    fn new(
+        channel_names: HashMap<String, String>,
+        max_concurrent: usize,
+        agent: &crate::config::StdioAgentConfig,
+    ) -> Self {
         Self {
+            task_reservations: std::sync::Mutex::new(tasks::TaskReservations::default()),
+            session_configs: Mutex::new(config::DesiredSessionConfigs::new(agent)),
             remote: Arc::new(remote_execution::RemoteRegistry::default()),
             runs: Mutex::new(RunRegistry::default()),
             interactions: Mutex::new(InteractionRegistry::default()),
@@ -3309,6 +3567,8 @@ fn merge_object_fields(dst: &mut Value, src: &Value) {
 #[derive(Debug, Clone)]
 struct TaskCommand {
     task_id: String,
+    /// The original durable grant is retained across result delivery attempts.
+    execution: Option<TaskExecution>,
     channel_id: String,
     msg_id: String,
     provider_session_key: String,
@@ -3335,6 +3595,8 @@ struct TaskCommand {
     /// via its Cheers resource tools — NOT inlined like `pinned`. `None` when the
     /// message carried no bundle.
     context_bundle: Option<Value>,
+    /// Authoritative gateway snapshot, absent only for old peers/private turns.
+    session_config: Option<SessionConfigOverrides>,
 }
 
 fn silent_result(
@@ -3428,6 +3690,7 @@ mod io;
 mod permission;
 mod prompt;
 mod signing;
+mod tasks;
 
 use frames::*;
 use io::*;
@@ -3439,6 +3702,8 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
     use tokio::sync::watch;
+
+    mod prompt_drain;
 
     use crate::bridge::PermissionOption;
     use crate::runtime_adapter::{
@@ -3474,6 +3739,7 @@ mod tests {
         /// agent 进程没了：真实实现里连接中断会丢弃所有 pending reply oneshot，
         /// 于是每个在途 prompt 各自拿到这个错误。
         Crash,
+        AuthError,
     }
 
     struct GatedPromptClient {
@@ -3519,6 +3785,7 @@ mod tests {
                 PromptOutcome::Crash => Err(anyhow!(
                     "ACP runtime actor dropped reply (method=session/prompt)"
                 )),
+                PromptOutcome::AuthError => Err(anyhow!("authentication required")),
             }
         }
     }
@@ -3526,8 +3793,12 @@ mod tests {
     /// 只实现 run_task 真正触达的方法；其余留 unimplemented!，一旦被调用就是
     /// 测试覆盖面变了，应当显式面对而不是静默返回默认值。
     struct FakeAdapter {
-        prompt_client: Arc<GatedPromptClient>,
+        prompt_client: Arc<dyn PromptClient>,
         sessions: AtomicU64,
+        load_sessions: bool,
+        native_model_only: bool,
+        auth_enabled: bool,
+        config_calls: Arc<Mutex<Vec<String>>>,
     }
 
     #[async_trait::async_trait]
@@ -3543,16 +3814,25 @@ mod tests {
         }
         async fn authenticate(
             &mut self,
-            _method_id: &str,
+            method_id: &str,
             _request_route: Option<RequestRoute>,
         ) -> anyhow::Result<()> {
-            unimplemented!("fixture agent needs no authentication")
+            assert!(self.auth_enabled, "fixture agent needs no authentication");
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("authenticate:{method_id}"));
+            Ok(())
         }
         async fn new_session(
             &mut self,
             _options: SessionStartOptions,
         ) -> anyhow::Result<SessionStartResult> {
             let n = self.sessions.fetch_add(1, Ordering::SeqCst);
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("new:acp-session-{n}"));
             Ok(SessionStartResult {
                 session_id: format!("acp-session-{n}"),
                 metadata: json!({}),
@@ -3560,10 +3840,20 @@ mod tests {
         }
         async fn load_session(
             &mut self,
-            _session_id: &str,
+            session_id: &str,
             _options: SessionStartOptions,
         ) -> anyhow::Result<SessionLoadResult> {
-            unimplemented!("fixture agent does not advertise loadSession")
+            assert!(
+                self.load_sessions,
+                "fixture agent does not advertise loadSession"
+            );
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("load:{session_id}"));
+            Ok(SessionLoadResult {
+                metadata: json!({}),
+            })
         }
         async fn cancel(&mut self, _session_id: &str) -> anyhow::Result<()> {
             Ok(())
@@ -3571,16 +3861,28 @@ mod tests {
         async fn set_config_option(
             &mut self,
             _session_id: &str,
-            _config_id: &str,
-            _value: &str,
+            config_id: &str,
+            value: &str,
         ) -> anyhow::Result<Value> {
-            unimplemented!("fixture exposes no config options")
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("option:{config_id}={value}"));
+            if self.native_model_only && config_id == "model" {
+                return Err(anyhow!("method not found"));
+            }
+            Ok(json!({}))
         }
-        async fn set_mode(&mut self, _session_id: &str, _mode: &str) -> anyhow::Result<()> {
-            unimplemented!("fixture exposes no modes")
+        async fn set_mode(&mut self, _session_id: &str, mode: &str) -> anyhow::Result<()> {
+            self.config_calls.lock().await.push(format!("mode:{mode}"));
+            Ok(())
         }
-        async fn set_model(&mut self, _session_id: &str, _model_id: &str) -> anyhow::Result<()> {
-            unimplemented!("fixture exposes no models")
+        async fn set_model(&mut self, _session_id: &str, model_id: &str) -> anyhow::Result<()> {
+            self.config_calls
+                .lock()
+                .await
+                .push(format!("native-model:{model_id}"));
+            Ok(())
         }
         async fn apply_settings(
             &mut self,
@@ -3598,7 +3900,7 @@ mod tests {
             // loadSession off keeps every turn on the new_session path, so the
             // fixture needs no session persistence.
             AgentCapabilities {
-                load_session: false,
+                load_session: self.load_sessions,
                 prompt_image: false,
                 prompt_audio: false,
                 mcp_http: true,
@@ -3606,7 +3908,11 @@ mod tests {
             }
         }
         fn initialize_response(&self) -> Option<Value> {
-            None
+            self.auth_enabled.then(|| {
+                json!({
+                    "authMethods":[{"id":"fixture-auth", "name":"Fixture login"}]
+                })
+            })
         }
         async fn inject_fence(&self, _acp_session_id: String) {}
     }
@@ -3726,6 +4032,10 @@ max_concurrent = {max_concurrent}
         let adapter: Box<dyn RuntimeAdapter> = Box::new(FakeAdapter {
             prompt_client: prompt_client.clone(),
             sessions: AtomicU64::new(0),
+            load_sessions: false,
+            native_model_only: false,
+            auth_enabled: false,
+            config_calls: Arc::new(Mutex::new(Vec::new())),
         });
         let config = fixture_config(dir, max_concurrent).await;
         let TestIo {
@@ -3740,6 +4050,7 @@ max_concurrent = {max_concurrent}
         let shared = Arc::new(SharedRuntimeState::new(
             HashMap::new(),
             config.policy.prompt.max_concurrent,
+            &config.agent,
         ));
         let context = Arc::new(RuntimeContext {
             account_id: "test".to_string(),
@@ -3751,6 +4062,18 @@ max_concurrent = {max_concurrent}
             state: Arc::new(Mutex::new(SessionStateStore::new(dir.join("state.json")))),
             adapter: Arc::new(Mutex::new(adapter)),
             io: handle,
+            outbox: TerminalOutbox::new(
+                &dir.join("state.json"),
+                TerminalScope::new(
+                    "test".into(),
+                    "wss://example.invalid/control",
+                    "wss://example.invalid/data",
+                    "bot-test".into(),
+                    None,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
             shared,
             runtime_tx,
         });
@@ -3772,6 +4095,7 @@ max_concurrent = {max_concurrent}
     fn fixture_task(channel: &str) -> TaskCommand {
         TaskCommand {
             task_id: format!("task-{channel}"),
+            execution: None,
             channel_id: channel.to_string(),
             msg_id: format!("msg-{channel}"),
             provider_session_key: format!("cheers:channel:{channel}:bot:fixture"),
@@ -3783,7 +4107,611 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         }
+    }
+
+    fn standard_task_frame(required: bool) -> ControlInbound {
+        serde_json::from_value(json!({
+            "type":"task", "task_id":"task-standard", "channel_id":"standard",
+            "trigger_msg_id":"origin-standard", "placeholder_msg_id":"msg-standard",
+            "provider_session_key":"provider-standard", "acceptance_required":required,
+            "trigger":"user_message", "trigger_message":{"text":"execute once"},
+        }))
+        .unwrap()
+    }
+
+    fn acceptance_reply(request: ControlOutbound, status: TaskAcceptanceStatus) -> ControlInbound {
+        let ControlOutbound::TaskAccept {
+            v,
+            task_id,
+            placeholder_msg_id,
+            channel_id,
+            execution_id,
+        } = request
+        else {
+            panic!("expected task_accept request")
+        };
+        ControlInbound::TaskAcceptance {
+            v,
+            task_id,
+            placeholder_msg_id,
+            channel_id,
+            execution_id,
+            status,
+            error: None,
+        }
+    }
+
+    fn owned_terminal(client: &str, content: &str) -> DataOutbound {
+        serde_json::from_value(json!({"type":"done","v":1,"client_msg_id":client,"msg_id":"message",
+            "content":content,"execution":{"task_id":"task","execution_id":"original-execution","channel_id":"channel"}})).unwrap()
+    }
+
+    #[tokio::test]
+    async fn terminal_timeout_retains_exact_output_cleans_run_and_replays_without_acp() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, started, release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        Arc::get_mut(&mut runtime)
+            .unwrap()
+            .io
+            .real_terminal_ack_for_test(Duration::from_millis(80));
+        let mut task = fixture_task("durable");
+        task.execution = Some(TaskExecution {
+            task_id: task.task_id.clone(),
+            execution_id: "original-execution".into(),
+            channel_id: task.channel_id.clone(),
+        });
+        let turn = tokio::spawn(runtime.clone().run_task(task, None));
+        let first = started.acquire().await.unwrap();
+        first.forget();
+        runtime
+            .shared
+            .runs
+            .lock()
+            .await
+            .by_msg
+            .get("msg-durable")
+            .unwrap()
+            .lock()
+            .await
+            .text = "finished exact output".into();
+        release.send(Some(PromptOutcome::Finish)).unwrap();
+        let sent = loop {
+            let frame = taps.priority.recv().await.unwrap();
+            if matches!(frame, DataOutbound::Done { .. }) {
+                break frame;
+            }
+        };
+        assert!(turn.await.unwrap().is_err());
+        let runs = runtime.shared.runs.lock().await;
+        assert!(
+            runs.by_msg.is_empty()
+                && runs.by_acp_session.is_empty()
+                && runs.by_provider_key.is_empty()
+                && runs.cwd_by_msg.is_empty()
+        );
+        drop(runs);
+        let pending = runtime.outbox.pending().await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&pending[0].frame).unwrap(),
+            serde_json::to_value(&sent).unwrap()
+        );
+        if let DataOutbound::Done {
+            content, execution, ..
+        } = &sent
+        {
+            assert_eq!(content.as_deref(), Some("finished exact output"));
+            assert_eq!(
+                execution.as_ref().unwrap().execution_id,
+                "original-execution"
+            );
+        }
+        let (mut restarted, restarted_prompt, _release, mut replay_taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        Arc::get_mut(&mut restarted)
+            .unwrap()
+            .io
+            .enable_task_acceptance_for_test(Duration::from_secs(2));
+        let worker = restarted.start_terminal_outbox();
+        let replay = timeout(Duration::from_secs(2), replay_taps.priority.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(replay).unwrap(),
+            serde_json::to_value(sent).unwrap()
+        );
+        timeout(Duration::from_secs(2), async {
+            while !restarted.outbox.pending().await.unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(restarted_prompt.available_permits(), 0);
+        assert!(restarted.shared.runs.lock().await.by_msg.is_empty());
+        worker.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn continuous_new_worker_catches_late_append_from_an_older_outbox_instance() {
+        let dir = tempfile::tempdir().unwrap();
+        let (old, _, _release, _old_taps) = fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        let (mut new, prompt, _release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        Arc::get_mut(&mut new)
+            .unwrap()
+            .io
+            .enable_task_acceptance_for_test(Duration::from_secs(2));
+        let worker = new.start_terminal_outbox();
+        while new.outbox.scans.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+        let exact = owned_terminal("late-result", "old task finished after new worker startup");
+        old.outbox.persist(exact.clone()).await.unwrap();
+        tokio::time::advance(Duration::from_secs(6)).await;
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let sent = loop {
+            if let Ok(frame) = taps.priority.try_recv() {
+                break frame;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "periodic scan must catch another instance's late append"
+            );
+            tokio::task::yield_now().await;
+        };
+        assert_eq!(
+            serde_json::to_value(sent).unwrap(),
+            serde_json::to_value(exact).unwrap()
+        );
+        assert_eq!(prompt.available_permits(), 0);
+        worker.abort();
+    }
+
+    #[tokio::test]
+    async fn append_failure_sends_nothing_and_closed_writer_cannot_erase_durable_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, _prompt, _release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        let blocked = dir.path().join("file");
+        tokio::fs::write(&blocked, "file").await.unwrap();
+        let scope = TerminalScope::new(
+            "test".into(),
+            "wss://example.invalid/control",
+            "wss://example.invalid/data",
+            "bot-test".into(),
+            None,
+        )
+        .unwrap();
+        let broken = TerminalOutbox::new(&blocked.join("state.json"), scope).unwrap();
+        let previous = std::mem::replace(&mut Arc::get_mut(&mut runtime).unwrap().outbox, broken);
+        assert!(runtime
+            .send_terminal(owned_terminal("failed-append", "result"))
+            .await
+            .is_err());
+        assert!(taps.priority.try_recv().is_err());
+        Arc::get_mut(&mut runtime).unwrap().outbox = previous;
+        taps.priority.close();
+        assert!(runtime
+            .send_terminal(owned_terminal("closed-writer", "already persisted"))
+            .await
+            .is_err());
+        assert_eq!(runtime.outbox.pending().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn standard_task_waits_for_matching_grant_and_executes_duplicate_frames_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, started, release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        Arc::get_mut(&mut runtime)
+            .unwrap()
+            .io
+            .enable_task_acceptance_for_test(Duration::from_secs(5));
+        let frame = standard_task_frame(true);
+        runtime.clone().handle_control(frame.clone()).await.unwrap();
+        let request = taps._control.recv().await.unwrap();
+        assert_eq!(started.available_permits(), 0);
+        assert!(runtime.shared.runs.lock().await.by_msg.is_empty());
+        runtime.clone().handle_control(frame.clone()).await.unwrap();
+        assert!(taps._control.try_recv().is_err());
+
+        let reply = acceptance_reply(request, TaskAcceptanceStatus::Granted);
+        let original_execution = match &reply {
+            ControlInbound::TaskAcceptance { execution_id, .. } => execution_id.clone(),
+            _ => unreachable!(),
+        };
+        let mut wrong = reply.clone();
+        if let ControlInbound::TaskAcceptance {
+            placeholder_msg_id, ..
+        } = &mut wrong
+        {
+            *placeholder_msg_id = "another-placeholder".into();
+        }
+        runtime.clone().handle_control(wrong).await.unwrap();
+        assert_eq!(started.available_permits(), 0);
+        runtime.clone().handle_control(reply.clone()).await.unwrap();
+        let first = timeout(Duration::from_secs(2), started.acquire())
+            .await
+            .unwrap()
+            .unwrap();
+        first.forget();
+        runtime.clone().handle_control(reply).await.unwrap();
+        runtime.clone().handle_control(frame.clone()).await.unwrap();
+        assert_eq!(started.available_permits(), 0);
+        assert!(taps._control.try_recv().is_err());
+        release.send(Some(PromptOutcome::Finish)).unwrap();
+        timeout(Duration::from_secs(2), async {
+            while !runtime.shared.runs.lock().await.by_msg.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        runtime.clone().handle_control(frame).await.unwrap();
+        let repeated = acceptance_reply(
+            taps._control.recv().await.unwrap(),
+            TaskAcceptanceStatus::Owned,
+        );
+        if let ControlInbound::TaskAcceptance { execution_id, .. } = &repeated {
+            assert_ne!(
+                execution_id, &original_execution,
+                "completed reservations must be released, never reused"
+            );
+        }
+        runtime.clone().handle_control(repeated).await.unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(started.available_permits(), 0);
+        assert!(taps._control.try_recv().is_err());
+        assert_eq!(
+            taps.drain_priority()
+                .iter()
+                .filter(|frame| matches!(frame, DataOutbound::Done { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn ungranted_task_never_calls_acp_or_finalizes_another_execution() {
+        for status in [TaskAcceptanceStatus::Owned, TaskAcceptanceStatus::Rejected] {
+            let dir = tempfile::tempdir().unwrap();
+            let (mut runtime, started, _release, mut taps) =
+                fixture_runtime(dir.path(), PromptGate::All, 4).await;
+            Arc::get_mut(&mut runtime)
+                .unwrap()
+                .io
+                .enable_task_acceptance_for_test(Duration::from_secs(5));
+            let frame = standard_task_frame(true);
+            runtime.clone().handle_control(frame.clone()).await.unwrap();
+            let reply = acceptance_reply(taps._control.recv().await.unwrap(), status);
+            runtime.clone().handle_control(reply.clone()).await.unwrap();
+            runtime.clone().handle_control(frame).await.unwrap();
+            // Rejected dispositions never hand off into run_task, even if a
+            // delayed second response incorrectly says granted.
+            let mut late = reply;
+            if let ControlInbound::TaskAcceptance { status, .. } = &mut late {
+                *status = TaskAcceptanceStatus::Granted;
+            }
+            runtime.clone().handle_control(late).await.unwrap();
+            tokio::task::yield_now().await;
+            assert_eq!(started.available_permits(), 0);
+            assert!(runtime.shared.runs.lock().await.by_msg.is_empty());
+            assert!(taps.drain_priority().is_empty());
+            assert!(taps._control.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acceptance_timeout_and_late_grant_cannot_start_or_retry_a_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, started, _release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        Arc::get_mut(&mut runtime)
+            .unwrap()
+            .io
+            .enable_task_acceptance_for_test(Duration::from_secs(5));
+        let frame = standard_task_frame(true);
+        runtime.clone().handle_control(frame.clone()).await.unwrap();
+        let late = acceptance_reply(
+            taps._control.recv().await.unwrap(),
+            TaskAcceptanceStatus::Granted,
+        );
+        tokio::time::advance(Duration::from_secs(6)).await;
+        tokio::task::yield_now().await;
+        runtime.clone().handle_control(late).await.unwrap();
+        runtime.clone().handle_control(frame).await.unwrap();
+        let denied = acceptance_reply(
+            taps._control.recv().await.unwrap(),
+            TaskAcceptanceStatus::Owned,
+        );
+        runtime.clone().handle_control(denied).await.unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(started.available_permits(), 0);
+        assert!(runtime.shared.runs.lock().await.by_msg.is_empty());
+        assert!(taps.drain_priority().is_empty());
+        assert!(taps._control.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn standard_tasks_require_both_explicit_task_flag_and_gateway_capability() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, started, _release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        runtime
+            .clone()
+            .handle_control(standard_task_frame(true))
+            .await
+            .unwrap();
+        assert!(taps._control.try_recv().is_err());
+        Arc::get_mut(&mut runtime)
+            .unwrap()
+            .io
+            .enable_task_acceptance_for_test(Duration::from_secs(5));
+        runtime
+            .clone()
+            .handle_control(standard_task_frame(false))
+            .await
+            .unwrap();
+        assert!(taps._control.try_recv().is_err());
+        assert_eq!(started.available_permits(), 0);
+        assert!(taps.drain_priority().is_empty());
+    }
+
+    async fn config_runtime(
+        dir: &Path,
+    ) -> (
+        Arc<RuntimeContext>,
+        Arc<Mutex<Vec<String>>>,
+        watch::Sender<Option<PromptOutcome>>,
+        RuntimeTaps,
+    ) {
+        let (mut runtime, _, release, taps) = fixture_runtime(dir, PromptGate::First, 4).await;
+        let context = Arc::get_mut(&mut runtime).unwrap();
+        context.config.agent.agent_native_permission_mode = Some("bot-mode".into());
+        context.config.agent.config_options =
+            Some(json!({"model":"bot-model", "reasoning_effort":"low"}));
+        context.config.policy.config.allowed_config_options =
+            vec!["model".into(), "reasoning_effort".into()];
+        context.config.policy.permission.allowed_modes =
+            vec!["bot-mode".into(), "session-mode".into()];
+        *context.shared.session_configs.lock().await =
+            config::DesiredSessionConfigs::new(&context.config.agent);
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let requester = context.adapter.lock().await.prompt_client();
+        *context.adapter.lock().await = Box::new(FakeAdapter {
+            prompt_client: requester,
+            sessions: AtomicU64::new(0),
+            load_sessions: true,
+            native_model_only: true,
+            auth_enabled: false,
+            config_calls: calls.clone(),
+        });
+        (runtime, calls, release, taps)
+    }
+
+    fn session_override(revision: u64, model: &str) -> SessionConfigOverrides {
+        SessionConfigOverrides {
+            revision,
+            permission_mode: Some("session-mode".into()),
+            config_options: BTreeMap::from([("model".into(), model.into())]),
+        }
+    }
+
+    #[tokio::test]
+    async fn successful_auth_recovery_does_not_repeat_standard_task_prompt() {
+        for evaluation in [None, Some("private-evaluation".to_string())] {
+            let dir = tempfile::tempdir().unwrap();
+            let (runtime, started, release, mut taps) =
+                fixture_runtime(dir.path(), PromptGate::First, 4).await;
+            let requester = runtime.adapter.lock().await.prompt_client();
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            *runtime.adapter.lock().await = Box::new(FakeAdapter {
+                prompt_client: requester,
+                sessions: AtomicU64::new(0),
+                load_sessions: false,
+                native_model_only: false,
+                auth_enabled: true,
+                config_calls: calls.clone(),
+            });
+            let standard = evaluation.is_none();
+            let turn = tokio::spawn(runtime.clone().run_task(fixture_task("auth"), evaluation));
+            let first = timeout(Duration::from_secs(2), started.acquire())
+                .await
+                .unwrap()
+                .unwrap();
+            first.forget();
+            release.send(Some(PromptOutcome::AuthError)).unwrap();
+            let request_id = timeout(Duration::from_secs(2), async {
+                loop {
+                    match taps.priority.recv().await.unwrap() {
+                        DataOutbound::AuthRequired { request_id, .. } => break request_id,
+                        DataOutbound::Error { message, .. } => {
+                            panic!("auth fixture failed before card: {message}")
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            runtime
+                .handle_auth_acknowledged(request_id, "retry".into(), Some("fixture-auth".into()))
+                .await
+                .unwrap();
+            timeout(Duration::from_secs(2), turn)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert!(calls
+                .lock()
+                .await
+                .contains(&"authenticate:fixture-auth".to_string()));
+            assert_eq!(
+                started.available_permits(),
+                if standard { 0 } else { 1 },
+                "standard execution cannot re-prompt after auth; private evaluation retains retry",
+            );
+            if standard {
+                assert_eq!(
+                    error_msg_ids(&taps.drain_priority()),
+                    vec!["msg-auth".to_string()]
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn desired_session_config_survives_new_load_and_connector_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, calls, _release, _taps) = config_runtime(dir.path()).await;
+        let mut task = fixture_task("configured-channel");
+        // This snapshot also covers a setting changed while the connector was offline.
+        task.session_config = Some(session_override(3, "session-model"));
+        let options = runtime.session_start_options(&task).await;
+        let id = runtime.ensure_acp_session(&task, options).await.unwrap();
+        let applied = vec![
+            "mode:session-mode",
+            "option:model=session-model",
+            "native-model:session-model",
+            "option:reasoning_effort=low",
+        ];
+        assert_eq!(&calls.lock().await[1..], &applied);
+        calls.lock().await.clear();
+        let options = runtime.session_start_options(&task).await;
+        assert_eq!(
+            runtime.ensure_acp_session(&task, options).await.unwrap(),
+            id
+        );
+        assert_eq!(calls.lock().await[0], format!("load:{id}"));
+        assert_eq!(&calls.lock().await[1..], &applied);
+
+        // Re-create all in-memory orchestration state, retaining only the real
+        // session-state file and the gateway's authoritative task snapshot.
+        let (restarted, calls, _release2, _taps2) = config_runtime(dir.path()).await;
+        restarted.state.lock().await.load().await.unwrap();
+        let options = restarted.session_start_options(&task).await;
+        assert_eq!(
+            restarted.ensure_acp_session(&task, options).await.unwrap(),
+            id
+        );
+        assert_eq!(calls.lock().await[0], format!("load:{id}"));
+        assert_eq!(&calls.lock().await[1..], &applied);
+    }
+
+    #[tokio::test]
+    async fn immediate_session_config_before_creation_beats_older_queued_task_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, calls, _release, mut taps) = config_runtime(dir.path()).await;
+        let mut task = fixture_task("configured-channel");
+        runtime
+            .handle_config_option_set(
+                "change".into(),
+                None,
+                Some(task.provider_session_key.clone()),
+                "model".into(),
+                "latest-model".into(),
+                Some(session_override(5, "latest-model")),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            taps._control.recv().await,
+            Some(ControlOutbound::ConfigOptionStatus { ok: true, .. })
+        ));
+        assert!(
+            calls.lock().await.is_empty(),
+            "pre-creation desired state needs no ACP request"
+        );
+        task.session_config = Some(session_override(4, "stale-model"));
+        let options = runtime.session_start_options(&task).await;
+        runtime.ensure_acp_session(&task, options).await.unwrap();
+        assert!(calls
+            .lock()
+            .await
+            .contains(&"native-model:latest-model".to_string()));
+        assert!(!calls
+            .lock()
+            .await
+            .iter()
+            .any(|call| call.contains("stale-model")));
+    }
+
+    #[tokio::test]
+    async fn session_snapshot_cannot_escape_local_policy() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, calls, _release, _taps) = config_runtime(dir.path()).await;
+        let mut task = fixture_task("configured-channel");
+        let mut desired = session_override(1, "allowed-model");
+        desired.permission_mode = Some("unrestricted-mode".into());
+        desired
+            .config_options
+            .insert("sandbox".into(), "unrestricted".into());
+        task.session_config = Some(desired);
+        let options = runtime.session_start_options(&task).await;
+        runtime.ensure_acp_session(&task, options).await.unwrap();
+        let calls = calls.lock().await;
+        assert!(calls.contains(&"mode:bot-mode".to_string()));
+        assert!(calls.contains(&"native-model:allowed-model".to_string()));
+        assert!(!calls.iter().any(|call| call.contains("unrestricted")));
+    }
+
+    #[tokio::test]
+    async fn config_change_waiting_for_a_prompt_does_not_block_bridge_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, calls, release, mut taps) = config_runtime(dir.path()).await;
+        let task = fixture_task("configured-channel");
+        let key = task.provider_session_key.clone();
+        let turn = tokio::spawn(runtime.clone().run_task(task, None));
+        // The run registry is inserted immediately before the fixture prompt parks.
+        while runtime
+            .shared
+            .runs
+            .lock()
+            .await
+            .by_provider_key
+            .get(&key)
+            .is_none()
+        {
+            tokio::task::yield_now().await;
+        }
+        timeout(
+            Duration::from_secs(1),
+            runtime.clone().handle_control(ControlInbound::ModeSet {
+                v: BRIDGE_PROTOCOL_VERSION,
+                request_id: "change".into(),
+                session_id: None,
+                provider_session_key: Some(key),
+                mode: "session-mode".into(),
+                session_config: Some(session_override(2, "new-model")),
+                updated_at: None,
+            }),
+        )
+        .await
+        .expect("input must remain available for permission replies")
+        .unwrap();
+        release.send(Some(PromptOutcome::Finish)).unwrap();
+        turn.await.unwrap().unwrap();
+        let ack = timeout(Duration::from_secs(1), taps._control.recv())
+            .await
+            .unwrap();
+        assert!(matches!(
+            ack,
+            Some(ControlOutbound::ConfigOptionStatus { ok: true, .. })
+        ));
+        assert_eq!(
+            calls.lock().await.last().unwrap(),
+            "option:reasoning_effort=low"
+        );
+        assert!(calls
+            .lock()
+            .await
+            .contains(&"native-model:new-model".to_string()));
     }
 
     /// 验收矩阵 #4：并发度打满时，排队的回合要让频道看见"排队中"，而不是静默等待。
@@ -4067,6 +4995,7 @@ max_concurrent = {max_concurrent}
     fn prompt_builder_uses_trigger_text_and_attachment_summary() {
         let task = TaskCommand {
             task_id: "task-1".to_string(),
+            execution: None,
             channel_id: "channel-1".to_string(),
             msg_id: "msg-1".to_string(),
             provider_session_key: "provider".to_string(),
@@ -4089,6 +5018,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         };
         let prompt = build_prompt(
             &task,
@@ -4161,6 +5091,7 @@ max_concurrent = {max_concurrent}
     fn image_task() -> TaskCommand {
         TaskCommand {
             task_id: "task-1".to_string(),
+            execution: None,
             channel_id: "channel-1".to_string(),
             msg_id: "msg-1".to_string(),
             provider_session_key: "provider".to_string(),
@@ -4172,6 +5103,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         }
     }
 
@@ -4474,6 +5406,7 @@ max_concurrent = {max_concurrent}
 
         let done = DataOutbound::Done {
             v: BRIDGE_PROTOCOL_VERSION,
+            execution: None,
             client_msg_id: "terminal-1".to_string(),
             msg_id: "msg-1".to_string(),
             file_ids: Vec::new(),
@@ -4501,6 +5434,7 @@ max_concurrent = {max_concurrent}
     fn prompt_includes_channel_id_and_name() {
         let task = TaskCommand {
             task_id: "task-1".to_string(),
+            execution: None,
             channel_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
             msg_id: "msg-1".to_string(),
             provider_session_key: "default:testbot".to_string(),
@@ -4512,6 +5446,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         };
         let prompt = build_prompt(
             &task,
@@ -4542,6 +5477,7 @@ max_concurrent = {max_concurrent}
     fn prompt_without_channel_name_still_includes_channel_id() {
         let task = TaskCommand {
             task_id: "task-1".to_string(),
+            execution: None,
             channel_id: "chan-1".to_string(),
             msg_id: "msg-1".to_string(),
             provider_session_key: "default:testbot".to_string(),
@@ -4553,6 +5489,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         };
         let prompt = build_prompt(
             &task,
@@ -4579,6 +5516,7 @@ max_concurrent = {max_concurrent}
     fn identity_task(trigger: Option<&str>, trigger_message: Option<Value>) -> TaskCommand {
         TaskCommand {
             task_id: "t".to_string(),
+            execution: None,
             channel_id: "c".to_string(),
             msg_id: "m".to_string(),
             provider_session_key: "p".to_string(),
@@ -4590,6 +5528,7 @@ max_concurrent = {max_concurrent}
             cwd: None,
             additional_dirs: Vec::new(),
             context_bundle: None,
+            session_config: None,
         }
     }
 

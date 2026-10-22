@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_evaluations SET status='failed',error='bot went offline',completed_at=NOW()\n         WHERE evaluation_id=$1 AND status='dispatched' AND dispatched_at=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cbe574aff0ee3d1ea02bfa864999a14fe9321b53ef4eacaaf0f708dadb2f7b66"
+}

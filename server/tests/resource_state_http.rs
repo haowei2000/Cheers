@@ -18,6 +18,8 @@ async fn post(c: &Client, b: &str, t: &str, p: &str, v: Value) -> (StatusCode, V
 }
 #[sqlx::test]
 async fn stable_uri_history_and_private_draft_cas(db: PgPool) {
+    let resource_locator: std::sync::Arc<dyn server::gateway::registry::BotLocator> =
+        server::gateway::registry::InProcessBotLocator::new();
     let password = Uuid::new_v4().to_string();
     let (_g, base) = gateway::TestGateway::start(&db, "resource-admin", &password).await;
     let client = Client::new();
@@ -149,7 +151,7 @@ async fn stable_uri_history_and_private_draft_cas(db: PgPool) {
     .is_err());
     // Channel-scoped bridge calls cannot use the global name to escape their scope.
     let frame = json!({"req_id":"bound","resource":uri,"params":{"channel_id":Uuid::new_v4()}});
-    let denied = server::resource::dispatch(&db, principal, &frame).await;
+    let denied = server::resource::dispatch(&db, principal, &frame, &resource_locator).await;
     assert_eq!(denied["ok"], false);
     sqlx::query("DELETE FROM context_files WHERE file_id=$1")
         .bind(first["resource_id"].as_str().unwrap())

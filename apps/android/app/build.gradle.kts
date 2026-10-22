@@ -79,4 +79,8 @@ dependencies {
 
     // Images
     implementation(libs.coil.compose)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

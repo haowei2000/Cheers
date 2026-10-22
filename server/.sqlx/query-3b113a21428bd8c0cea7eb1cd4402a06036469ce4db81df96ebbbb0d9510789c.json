@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH monitoring AS MATERIALIZED (\n          SELECT m.channel_id,m.bot_id FROM channel_bot_monitoring m\n          WHERE EXISTS (\n            SELECT 1 FROM task_claim_evaluations e\n            WHERE e.channel_id=m.channel_id AND e.bot_id=m.bot_id\n              AND e.status='dispatched' AND e.dispatched_at<clock_timestamp()-INTERVAL '10 minutes'\n          )\n          ORDER BY m.channel_id,m.bot_id LIMIT 20 FOR UPDATE OF m SKIP LOCKED\n        ), stale AS MATERIALIZED (\n          SELECT e.evaluation_id,e.channel_id,e.bot_id,e.source_seq_from,e.source_seq_to\n          FROM task_claim_evaluations e JOIN monitoring m\n            ON e.channel_id=m.channel_id AND e.bot_id=m.bot_id\n          WHERE e.status='dispatched' AND e.dispatched_at<clock_timestamp()-INTERVAL '10 minutes'\n          ORDER BY e.evaluation_id LIMIT 100 FOR UPDATE OF e SKIP LOCKED\n        ), rewound AS (\n          UPDATE channel_bot_monitoring m\n          SET last_evaluated_seq=s.source_seq_from-1,next_eligible_at=NOW(),updated_at=NOW()\n          FROM stale s WHERE m.channel_id=s.channel_id AND m.bot_id=s.bot_id\n            AND m.last_evaluated_seq=s.source_seq_to\n        )\n        UPDATE task_claim_evaluations e\n        SET status='failed',error='evaluation lease expired',completed_at=NOW()\n        FROM stale s WHERE e.evaluation_id=s.evaluation_id AND e.status='dispatched'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3b113a21428bd8c0cea7eb1cd4402a06036469ce4db81df96ebbbb0d9510789c"
+}

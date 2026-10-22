@@ -49,17 +49,23 @@ pub struct RemoteExecutionRequest {
     /// terminal.start/input/resize/status/cancel or file.open.
     pub action: String,
     /// Explicit shell command; absent starts an interactive shell.
-    #[serde(default)] pub command: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
     /// Approved registered opener for file.open.
-    #[serde(default)] pub opener: Option<String>,
+    #[serde(default)]
+    pub opener: Option<String>,
     /// Input bytes encoded as UTF-8; only for terminal.input.
-    #[serde(default)] pub input: Option<String>,
+    #[serde(default)]
+    pub input: Option<String>,
     /// Output cursor in bytes.
-    #[serde(default)] pub offset: u64,
+    #[serde(default)]
+    pub offset: u64,
     /// PTY columns.
-    #[serde(default)] pub cols: Option<u16>,
+    #[serde(default)]
+    pub cols: Option<u16>,
     /// PTY rows.
-    #[serde(default)] pub rows: Option<u16>,
+    #[serde(default)]
+    pub rows: Option<u16>,
 }
 
 /// Vendor-neutral, display-only fields decoded from optional Agent metadata.
@@ -278,6 +284,12 @@ pub struct ServerCapabilities {
     pub runtime_session_control: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<bool>,
+    /// Standard tasks require a committed gateway execution grant before ACP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_acceptance: Option<bool>,
+    /// Durable terminal receipts permit result delivery without executing again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_replay: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -398,8 +410,23 @@ pub struct RuntimeSessionControlSession {
     /// The session's ACP `additionalDirectories`, re-validated against `allowed_roots`.
     #[serde(default)]
     pub additional_dirs: Vec<String>,
+    /// Persisted session overrides, replayed when the runtime session is created/loaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_config: Option<SessionConfigOverrides>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
+}
+
+/// Gateway-owned desired overrides for one Cheers session. The revision orders
+/// task snapshots and immediate updates so a queued task cannot restore stale values.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionConfigOverrides {
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub config_options: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -500,9 +527,38 @@ pub struct BridgeErrorFrame {
     pub retryable: Option<bool>,
 }
 
+/// A grant commits execution ownership; `owned` never authorizes another run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskAcceptanceStatus {
+    Granted,
+    Owned,
+    Rejected,
+}
+
+/// Immutable execution owner carried across result delivery connections.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskExecution {
+    pub task_id: String,
+    pub execution_id: String,
+    pub channel_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ControlInbound {
+    #[serde(rename = "task_acceptance")]
+    TaskAcceptance {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        task_id: String,
+        placeholder_msg_id: String,
+        channel_id: String,
+        execution_id: String,
+        status: TaskAcceptanceStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     #[serde(rename = "hello")]
     Hello {
         #[serde(default = "default_bridge_protocol_version")]
@@ -563,6 +619,8 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         trigger: Option<String>,
         placeholder_msg_id: String,
+        #[serde(default)]
+        acceptance_required: bool,
         provider_session_key: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session_id: Option<String>,
@@ -595,6 +653,8 @@ pub enum ControlInbound {
         /// out-of-policy entries are dropped.
         #[serde(default)]
         additional_dirs: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         binding_config: Option<Value>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -666,6 +726,8 @@ pub enum ControlInbound {
         config_id: String,
         value: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         updated_at: Option<String>,
     },
     // Session-targeted mode change (ACP session/set_mode). Distinct from the
@@ -682,6 +744,8 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_session_key: Option<String>,
         mode: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         updated_at: Option<String>,
     },
@@ -732,6 +796,15 @@ pub enum ControlInbound {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ControlOutbound {
+    #[serde(rename = "task_accept")]
+    TaskAccept {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        task_id: String,
+        placeholder_msg_id: String,
+        channel_id: String,
+        execution_id: String,
+    },
     #[serde(rename = "auth")]
     Auth {
         #[serde(default = "default_bridge_protocol_version")]
@@ -891,6 +964,8 @@ pub enum DataInbound {
         error: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retryable: Option<bool>,
     },
     #[serde(rename = "file_upload_ack")]
     FileUploadAck {
@@ -1052,6 +1127,8 @@ pub enum DataOutbound {
         v: u32,
         client_msg_id: String,
         msg_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution: Option<TaskExecution>,
         #[serde(default)]
         file_ids: Vec<String>,
         #[serde(default)]
@@ -1073,6 +1150,8 @@ pub enum DataOutbound {
         v: u32,
         client_msg_id: String,
         msg_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution: Option<TaskExecution>,
         message: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_session_key: Option<String>,

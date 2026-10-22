@@ -12,7 +12,7 @@ gateway:
     repository: gateway
     tag: "" # defaults to Chart.appVersion; pin a real tag in CI
     pullPolicy: IfNotPresent
-  replicaCount: 2
+  replicaCount: 1 # realtime and connector sessions are currently process-local
   corsAllowedOrigins: "https://cheers.example.com"
   mcpPublicUrl: "https://cheers.example.com/mcp"
   resources:
@@ -54,11 +54,10 @@ rustfs:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
 
-# Multi-instance gateway → Redis-backed fan-out/registry.
+# Reserved for future multi-instance support; the current gateway does not wire
+# Redis-backed fan-out/registry, so provisioning Redis does not enable HA.
 redis:
-  enabled: true
-  resources:
-    requests: { cpu: 25m, memory: 64Mi }
+  enabled: false
 
 # Provide real secrets out-of-band (sealed-secrets / external-secrets / kubectl),
 # then reference them — do NOT ship prod creds in values.

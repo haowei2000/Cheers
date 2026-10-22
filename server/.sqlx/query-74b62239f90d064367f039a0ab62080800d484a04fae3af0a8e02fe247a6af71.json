@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cm.member_id, cm.role AS crole, u.role AS prole,\n           (SELECT COALESCE(jsonb_agg(jsonb_build_object(\n                'channel_id', channel_id, 'subject_kind', subject_kind,\n                'subject_id', subject_id, 'event_class', event_class,\n                'capability', capability, 'allow', decision = 'allow')), '[]'::jsonb)\n            FROM bot_event_access\n            WHERE bot_id = $1 AND channel_id IN ('', $2)\n              AND capability = 'see' AND event_class = $4\n              AND (expires_at IS NULL OR expires_at > clock_timestamp())) AS \"rules!\"\n         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id\n         WHERE cm.channel_id = $2 AND cm.member_type = 'user' AND cm.member_id = ANY($3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "crole",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "prole",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "rules!",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "74b62239f90d064367f039a0ab62080800d484a04fae3af0a8e02fe247a6af71"
+}

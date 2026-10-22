@@ -8,6 +8,7 @@
 //! reachable exclusively through a trusted proxy) does it use the proxy-set
 //! `X-Real-IP` / `X-Forwarded-For` — see [`client_key`].
 
+use std::collections::HashSet;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,7 @@ use dashmap::DashMap;
 struct Window {
     count: u32,
     reset_at: Instant,
+    admitted_events: HashSet<String>,
 }
 
 pub struct FixedWindowLimiter {
@@ -65,10 +67,12 @@ impl FixedWindowLimiter {
         let mut e = self.hits.entry(key.to_string()).or_insert_with(|| Window {
             count: 0,
             reset_at: now + self.window,
+            admitted_events: HashSet::new(),
         });
         if now >= e.reset_at {
             e.count = 0;
             e.reset_at = now + self.window;
+            e.admitted_events.clear();
         }
         e.count = e.count.saturating_add(1);
     }
@@ -85,6 +89,19 @@ impl FixedWindowLimiter {
     /// so it is safe as a generic per-key event budget (e.g. per-channel bot
     /// dispatch fan-out) where concurrent callers race on the same key.
     pub fn try_hit(&self, key: &str) -> bool {
+        self.try_hit_inner(key, None)
+    }
+
+    /// Admit a deterministic event once per current window. A rolled-back
+    /// transaction conservatively keeps its attempt slot, but retrying that
+    /// same event never charges again or becomes denied by a later full budget.
+    /// This shares the legacy counter and remains process-local/best-effort;
+    /// only admitted event IDs are retained, bounded by the window's maximum.
+    pub fn try_hit_once(&self, key: &str, event_id: &str) -> bool {
+        self.try_hit_inner(key, Some(event_id))
+    }
+
+    fn try_hit_inner(&self, key: &str, event_id: Option<&str>) -> bool {
         let now = Instant::now();
         // Bound memory under a spoofed-key flood: evict only already-expired windows
         // (never live ones), so a flood of throwaway keys can't reset the counters of
@@ -100,15 +117,23 @@ impl FixedWindowLimiter {
         let mut e = self.hits.entry(key.to_string()).or_insert_with(|| Window {
             count: 0,
             reset_at: now + self.window,
+            admitted_events: HashSet::new(),
         });
         if now >= e.reset_at {
             e.count = 0;
             e.reset_at = now + self.window;
+            e.admitted_events.clear();
+        }
+        if event_id.is_some_and(|id| e.admitted_events.contains(id)) {
+            return true;
         }
         if e.count >= self.max {
             return false;
         }
         e.count = e.count.saturating_add(1);
+        if let Some(id) = event_id {
+            e.admitted_events.insert(id.to_string());
+        }
         true
     }
 }
@@ -191,7 +216,7 @@ pub fn bot_status_limiter() -> &'static MinIntervalLimiter {
 /// Process-global bot@bot dispatch budget, keyed by `channel_id`: at most 30
 /// bot triggers per 60-second window per channel. Every bot@bot fan-out path
 /// (reply chains, proactive `send`, `post_message`, and group `@all`/`@bots`
-/// expansion) funnels through `trigger_bot_replies`, so this one budget bounds
+/// expansion) shares transactional child admission, so this one budget bounds
 /// both runaway callback loops — the proactive-send paths reset the per-message
 /// depth counter to 0, so the depth cap alone can't stop a ping-pong — and the
 /// wide fan-out a single `@all` in a bot-heavy channel would otherwise unleash.
@@ -493,5 +518,56 @@ mod tests {
         assert!(!lim.try_hit("chan-a"), "4th hit exceeds the budget");
         // A different channel has its own independent budget.
         assert!(lim.try_hit("chan-b"), "a distinct key is not affected");
+    }
+
+    #[test]
+    fn deterministic_retry_shares_legacy_budget_without_a_second_charge() {
+        let lim = FixedWindowLimiter::new(3, Duration::from_secs(60));
+        assert!(lim.try_hit_once("channel", "child-a"));
+        assert!(lim.try_hit("channel"));
+        assert!(lim.try_hit_once("channel", "child-a"));
+        assert!(lim.try_hit_once("channel", "child-b"));
+        assert!(!lim.try_hit("channel"));
+        assert!(
+            lim.try_hit_once("channel", "child-a"),
+            "a rolled-back child can retry even after other admissions fill the window"
+        );
+        for id in 0..1000 {
+            assert!(!lim.try_hit_once("channel", &format!("denied-{id}")));
+        }
+        let window = lim.hits.get("channel").unwrap();
+        assert_eq!(window.count, 3);
+        assert_eq!(
+            window.admitted_events.len(),
+            2,
+            "denied IDs are never memoized"
+        );
+    }
+
+    #[test]
+    fn deterministic_admissions_are_forgotten_on_reset_and_every_expiry_path() {
+        let lim = FixedWindowLimiter::new(3, Duration::from_secs(60));
+        assert!(lim.try_hit_once("channel", "old"));
+        lim.reset("channel");
+        assert!(lim.try_hit_once("channel", "old"));
+        assert_eq!(lim.hits.get("channel").unwrap().count, 1);
+
+        lim.hits.get_mut("channel").unwrap().reset_at = Instant::now() - Duration::from_secs(1);
+        assert!(lim.try_hit("channel"));
+        assert!(lim.hits.get("channel").unwrap().admitted_events.is_empty());
+        assert!(lim.try_hit_once("channel", "old"));
+        assert_eq!(lim.hits.get("channel").unwrap().count, 2);
+
+        lim.hits.get_mut("channel").unwrap().reset_at = Instant::now() - Duration::from_secs(1);
+        lim.record_failure("channel");
+        assert!(lim.hits.get("channel").unwrap().admitted_events.is_empty());
+        assert!(lim.try_hit_once("channel", "old"));
+        assert_eq!(lim.hits.get("channel").unwrap().count, 2);
+
+        lim.hits.get_mut("channel").unwrap().reset_at = Instant::now() - Duration::from_secs(1);
+        assert!(lim.try_hit_once("channel", "new"));
+        let window = lim.hits.get("channel").unwrap();
+        assert_eq!(window.count, 1);
+        assert_eq!(window.admitted_events, HashSet::from(["new".to_string()]));
     }
 }

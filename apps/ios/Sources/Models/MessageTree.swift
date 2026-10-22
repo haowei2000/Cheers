@@ -107,7 +107,9 @@ enum MessageTree {
                     if merged.senderName == nil {
                         merged.senderName = previous.senderName
                     }
-                    byId[message.msgId] = merged
+                    byId[message.msgId] = TaskClaimProjection.preservingNewerMetadata(
+                        in: merged, previous: previous
+                    )
                 }
                 return
             }

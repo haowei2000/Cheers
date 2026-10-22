@@ -48,10 +48,20 @@ import { ErrorState } from "@/components/ui/error-state";
 import { MetricCard } from "@/components/ui/metric-card";
 import { SettingsCard, SettingsCardSection } from "@/components/ui/settings-card";
 import { BotTracePanel } from "@/features/chat/BotTracePanel";
+import { TaskClaimConfirmationFooter } from "@/features/chat/TaskClaimConfirmationCard";
 import type { TraceEvent } from "@/types";
 
 const levels: PresentationLevel[] = ["max", "medium", "minimal"];
 const controlSizes: ControlSize[] = ["comfortable", "regular", "compact"];
+
+function ClaimFooterPreview({ status, busy = false, error }: { status: string; busy?: boolean; error?: string }) {
+  const [current, setCurrent] = useState(status);
+  return <TaskClaimConfirmationFooter
+    data={{ claim_status: current === "expired" ? "failed" : current, resolved: current !== "pending", resolution_note: current === "expired" ? "expired" : null }}
+    actionable busy={busy} error={error}
+    onResolve={(decision) => setCurrent(decision === "accept" ? "executing" : "rejected")}
+  />;
+}
 
 const adaptivePreviewItems = [
   { id: "plan", label: "Plan", icon: ClipboardList },
@@ -236,6 +246,18 @@ export function ItemGallery() {
             { v: 1, kind: "resource_ref", uri: "cheers:plan" },
           ]} />
         </LocatorOpenContext.Provider>
+      </section>
+
+      <section id="task-claim-preview" aria-labelledby="task-claim-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="task-claim-register" className="font-display text-comfortable font-semibold tracking-display">Task claim confirmation</h2>
+        <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {["pending", "executing", "rejected", "cancelled", "expired", "failed", "completed", "busy", "error"].map((status) =>
+            <div key={status} className="min-w-0">
+              <p className="text-section-label">{status}</p>
+              <ClaimFooterPreview status={status === "busy" || status === "error" ? "pending" : status} busy={status === "busy"} error={status === "error" ? "Could not resolve task claim. Try again." : undefined} />
+            </div>,
+          )}
+        </div>
       </section>
 
       <section aria-labelledby="trace-disclosure-register" className="mb-4 border-y border-zinc-700 py-3">

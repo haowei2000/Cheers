@@ -60,12 +60,29 @@ pub struct DaemonMetadata {
     pub stderr_log_path: PathBuf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DaemonStatus {
     pub name: String,
     pub running: bool,
     pub metadata: Option<DaemonMetadata>,
+    #[serde(skip)]
     pub paths: DaemonPaths,
+}
+
+/// Versioned machine-readable status for desktop supervision and other clients.
+#[derive(Debug, Serialize)]
+pub struct DaemonStatusReport {
+    pub schema_version: u32,
+    pub instances: Vec<DaemonStatus>,
+}
+
+impl DaemonStatusReport {
+    pub fn new(instances: Vec<DaemonStatus>) -> Self {
+        Self {
+            schema_version: 1,
+            instances,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +122,31 @@ pub async fn daemon_status(name: &str, home_dir: Option<&Path>) -> anyhow::Resul
         metadata,
         paths,
     })
+}
+
+/// Discover daemon service directories and validate their process identities with
+/// the same implementation used by start/stop/restart. Errors are not converted
+/// into stopped instances: supervisors must never act on an unavailable inventory.
+pub async fn list_daemons(home_dir: Option<&Path>) -> anyhow::Result<Vec<DaemonStatus>> {
+    let home = resolve_daemon_paths("default", home_dir)?.home_dir;
+    let entries = match fs::read_dir(&home) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(error).with_context(|| format!("read connector home {}", home.display()))
+        }
+    };
+    let mut statuses = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        statuses.push(daemon_status(&name, home_dir).await?);
+    }
+    statuses.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(statuses)
 }
 
 pub async fn start_daemon(options: StartDaemonOptions) -> anyhow::Result<DaemonMetadata> {
@@ -561,6 +603,57 @@ mod tests {
         assert_eq!(metadata.schema_version, DAEMON_METADATA_VERSION);
         assert!(metadata.runtime_kind.is_none());
         assert!(metadata.process_group_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn status_inventory_rejects_a_live_pid_with_another_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = resolve_daemon_paths("stale", Some(dir.path())).unwrap();
+        let metadata = DaemonMetadata {
+            schema_version: 1,
+            runtime_kind: Some(DAEMON_RUNTIME_KIND.into()),
+            name: "stale".into(),
+            pid: std::process::id(),
+            process_group_id: None,
+            executable_path: Some(PathBuf::from("/nonexistent/cce-acp-connector")),
+            config_path: dir.path().join("config.toml"),
+            started_at: Utc::now().to_rfc3339(),
+            cwd: dir.path().into(),
+            argv: vec![
+                "/nonexistent/cce-acp-connector".into(),
+                "run".into(),
+                "--config".into(),
+                "config.toml".into(),
+                "--name".into(),
+                "stale".into(),
+            ],
+            stdout_log_path: paths.stdout_log_path.clone(),
+            stderr_log_path: paths.stderr_log_path.clone(),
+        };
+        write_metadata(&paths, &metadata).await.unwrap();
+        assert!(
+            pid_is_running(metadata.pid),
+            "the test's own PID must be alive"
+        );
+        let instances = list_daemons(Some(dir.path())).await.unwrap();
+        assert_eq!(instances.len(), 1);
+        assert!(
+            !instances[0].running,
+            "an unrelated live process is not a daemon"
+        );
+        let json = serde_json::to_value(DaemonStatusReport::new(instances)).unwrap();
+        assert_eq!(json["schema_version"], 1);
+        assert_eq!(json["instances"][0]["running"], false);
+        assert!(json["instances"][0].get("paths").is_none());
+    }
+
+    #[tokio::test]
+    async fn status_inventory_propagates_unreadable_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = resolve_daemon_paths("broken", Some(dir.path())).unwrap();
+        fs::create_dir_all(&paths.service_dir).unwrap();
+        fs::write(&paths.metadata_path, "not JSON").unwrap();
+        assert!(list_daemons(Some(dir.path())).await.is_err());
     }
 
     #[test]
