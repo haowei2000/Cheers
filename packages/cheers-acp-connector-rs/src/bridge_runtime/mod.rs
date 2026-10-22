@@ -2066,6 +2066,11 @@ impl RuntimeContext {
                     run.lock().await.streaming_started = true;
                 }
             }
+            RuntimeEvent::UpdatesDrained { respond_to } => {
+                // This branch runs after all preceding adapter events have been
+                // applied, so the prompt may now read its complete output.
+                let _ = respond_to.send(());
+            }
         }
         Ok(())
     }
@@ -3697,6 +3702,8 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
     use tokio::sync::watch;
+
+    mod prompt_drain;
 
     use crate::bridge::PermissionOption;
     use crate::runtime_adapter::{

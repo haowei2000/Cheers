@@ -31,9 +31,9 @@ use crate::acp_semantics::{
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
-    AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient, PromptResult,
-    RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult, SessionStartOptions,
-    SessionStartResult,
+    drain_updates, AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient,
+    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult,
+    SessionStartOptions, SessionStartResult,
 };
 
 type PendingMap = Arc<Mutex<BTreeMap<u64, oneshot::Sender<JsonRpcReply>>>>;
@@ -342,6 +342,7 @@ impl AcpAdapter {
     /// (per-session ordering is still enforced by `run_task`'s `session_lock`).
     pub(crate) fn requester(&self) -> AcpRequester {
         AcpRequester {
+            event_tx: self.event_tx.clone(),
             account_id: self.account_id.clone(),
             writer: self.writer.clone(),
             pending: self.pending.clone(),
@@ -372,6 +373,7 @@ impl AcpAdapter {
 /// `fail_all_pending` resolves every in-flight request with an error.
 #[derive(Clone)]
 pub(crate) struct AcpRequester {
+    event_tx: mpsc::Sender<RuntimeEvent>,
     account_id: String,
     writer: SharedWriter,
     pending: PendingMap,
@@ -439,7 +441,11 @@ impl AcpRequester {
                 }),
                 timeout_ms,
             )
-            .await?;
+            .await;
+        // The reader enqueues notifications before resolving a response. The
+        // orchestration consumer must apply those events before finalization.
+        drain_updates(&self.event_tx).await?;
+        let result = result?;
         Ok(PromptResult {
             stop_reason: result
                 .get("stopReason")

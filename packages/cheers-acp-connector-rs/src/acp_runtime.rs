@@ -43,9 +43,9 @@ use crate::acp_semantics::{apply_settings_to_config, default_client_capabilities
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
-    AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient, PromptResult,
-    RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult, SessionStartOptions,
-    SessionStartResult,
+    drain_updates, AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient,
+    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult,
+    SessionStartOptions, SessionStartResult,
 };
 
 type RequestRoutes = std::sync::Arc<Mutex<HashMap<String, RequestRoute>>>;
@@ -140,6 +140,7 @@ impl RuntimeAcpAdapter {
     pub fn requester(&self) -> RuntimeRequester {
         RuntimeRequester {
             cmd_tx: self.cmd_tx.clone(),
+            event_tx: self.event_tx.clone(),
         }
     }
 
@@ -922,6 +923,7 @@ async fn request_via(
 #[derive(Clone)]
 pub struct RuntimeRequester {
     cmd_tx: Option<mpsc::Sender<Command>>,
+    event_tx: mpsc::Sender<RuntimeEvent>,
 }
 
 impl RuntimeRequester {
@@ -942,7 +944,12 @@ impl RuntimeRequester {
             timeout_ms,
             None,
         )
-        .await?;
+        .await;
+        // The SDK awaits each notification hook before dispatching the following
+        // response, but that hook only enqueues an event. Wait for the runtime
+        // consumer as well, including error/cancelled responses and empty turns.
+        drain_updates(&self.event_tx).await?;
+        let result = result?;
         Ok(PromptResult {
             stop_reason: result
                 .get("stopReason")
