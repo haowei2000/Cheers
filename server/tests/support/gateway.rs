@@ -37,6 +37,13 @@ impl TestGateway {
         std::fs::read_to_string(self.directory.join("gateway.log")).unwrap()
     }
 
+    /// Only this fixture's private log; browser tests use local-dev email
+    /// delivery after requesting their own registration code through the UI.
+    #[allow(dead_code)]
+    pub fn log_path(&self) -> PathBuf {
+        self.directory.join("gateway.log")
+    }
+
     /// Seed a real hashed email code without depending on an SMTP service.
     #[allow(dead_code)]
     pub fn email_code_hash(&self, email: &str, purpose: &str, code: &str) -> String {
@@ -76,12 +83,30 @@ impl TestGateway {
 
     #[allow(dead_code)]
     pub async fn start(db: &PgPool, login: &str, password: &str) -> (Self, String) {
-        Self::start_configured(db, login, password, false).await
+        Self::start_configured(db, login, password, false, None).await
     }
 
     #[allow(dead_code)]
     pub async fn start_with_webauthn(db: &PgPool, login: &str, password: &str) -> (Self, String) {
-        Self::start_configured(db, login, password, true).await
+        Self::start_configured(db, login, password, true, None).await
+    }
+
+    /// An opt-in browser fixture runs the normal public registration flow with
+    /// no mail provider or inherited production integration credentials.
+    #[allow(dead_code)]
+    pub async fn start_browser_e2e(
+        db: &PgPool,
+        login: &str,
+        password: &str,
+        frontend_origin: &str,
+    ) -> (Self, String) {
+        let origin = url::Url::parse(frontend_origin).expect("valid browser fixture origin");
+        assert_eq!(origin.scheme(), "http");
+        assert_eq!(origin.host_str(), Some("127.0.0.1"));
+        assert_eq!(origin.path(), "/");
+        assert!(origin.username().is_empty() && origin.password().is_none());
+        assert!(origin.query().is_none() && origin.fragment().is_none());
+        Self::start_configured(db, login, password, false, Some(frontend_origin)).await
     }
 
     async fn start_configured(
@@ -89,6 +114,7 @@ impl TestGateway {
         login: &str,
         password: &str,
         webauthn: bool,
+        browser_origin: Option<&str>,
     ) -> (Self, String) {
         static PROCESS_SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
         let process_permit = PROCESS_SLOTS
@@ -99,6 +125,11 @@ impl TestGateway {
             .expect("gateway process semaphore remains open");
         let directory = std::env::temp_dir().join(format!("cheers-http-test-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
         let mut gateway = Self {
             process: None,
             directory,
@@ -138,6 +169,27 @@ impl TestGateway {
         let base = format!("http://127.0.0.1:{port}");
         let log = std::fs::File::create(gateway.directory.join("gateway.log")).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+        if let Some(origin) = browser_origin {
+            // Do not accidentally send real emails or configure OAuth, push,
+            // object storage, or external agents from the developer's shell.
+            command.env_clear();
+            if let Some(path) = std::env::var_os("PATH") {
+                command.env("PATH", path);
+            }
+            let home = gateway.directory.join("home");
+            std::fs::create_dir(&home).unwrap();
+            command
+                .env("HOME", home)
+                .env("OPEN_REGISTRATION", "true")
+                .env("CORS_ALLOWED_ORIGINS", origin)
+                .env("MCP_PUBLIC_URL", format!("{origin}/mcp"))
+                .env(
+                    "CHEERS_CONNECTOR_PUBLIC_BASE",
+                    origin.replacen("http:", "ws:", 1),
+                )
+                .env("RUST_LOG", "server=info,cheers::email=info,sqlx=warn")
+                .env("NO_COLOR", "1");
+        }
         command
             .current_dir(&gateway.directory)
             .env("DATABASE_URL", db.connect_options().to_url_lossy().as_str())

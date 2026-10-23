@@ -54,6 +54,13 @@ class PlanTests(unittest.TestCase):
                 self.assertEqual(self.selected("ci", [path]), {"gateway", "plugin"})
                 self.assertEqual(self.selected("cd", [path]), {"gateway"})
 
+    def test_desktop_onboarding_fixture_selects_producer_and_consumers(self):
+        path = "fixtures/desktop-onboarding/gateway-codex.json"
+        self.assertEqual(
+            self.selected("ci", [path]), {"gateway", "plugin", "desktop"}
+        )
+        self.assertEqual(self.selected("cd", [path]), set())
+
     def test_canvas_runtime_selects_frontend_builds(self):
         path = "packages/cheers-canvas-runtime/src/index.ts"
         for workflow in ("ci", "cd"):

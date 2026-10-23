@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help lint fix test test-integration docs-pages design-system-check dev-gateway dev-frontend dev-ports dev-deps dev-deps-down dev-infra-up dev-infra-down dev-worktree-env dev-worktree-export dev-worktree-db dev-worktree-gateway dev-worktree-frontend
+.PHONY: help lint fix test test-integration test-e2e docs-pages design-system-check dev-gateway dev-frontend dev-ports dev-deps dev-deps-down dev-infra-up dev-infra-down dev-worktree-env dev-worktree-export dev-worktree-db dev-worktree-gateway dev-worktree-frontend
 
 # Mirrors the CI clippy step exactly: same feature set, same deny-warnings gate.
 # Without `--features integration` the integration suites aren't linted at all,
@@ -23,6 +23,11 @@ test: ## 运行 Rust 单元测试
 # Postgres that can CREATE DATABASE; #[sqlx::test] builds and drops one per test.
 test-integration: ## 运行 Gateway Postgres 集成测试
 	cd server && cargo test --features integration
+
+# The fixture launches the current gateway, Playwright, and Vite against a fresh
+# sqlx database. Requires frontend dependencies and a Playwright browser.
+test-e2e: ## 运行普通用户注册与 Personal 建频道浏览器 E2E
+	cd server && cargo test --locked --features integration --test browser_e2e -- --include-ignored --nocapture
 
 docs-pages: ## 生成架构状态页面
 	node scripts/generate-architecture-status-page.mjs

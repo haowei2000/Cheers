@@ -9,7 +9,7 @@ const accessibilityWarnings = Object.fromEntries(
 );
 
 export default tseslint.config(
-  { ignores: ["dist/**", "coverage/**"] },
+  { ignores: ["dist/**", "coverage/**", "test-results/**", "playwright-report/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -35,7 +35,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["vite.config.ts", "eslint.config.js"],
+    files: ["vite.config.ts", "playwright.config.ts", "e2e/**/*.ts", "eslint.config.js"],
     languageOptions: { globals: globals.node },
   },
   {

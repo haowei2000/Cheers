@@ -525,21 +525,6 @@ pub async fn create_channel(
     if body.name.trim().is_empty() {
         return Err(AppError::BadRequest("name is required".into()));
     }
-    let workspace_role: Option<String> = sqlx::query_scalar!(
-        "SELECT role FROM workspace_memberships
-         WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'",
-        &body.workspace_id,
-        &claims.sub,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    let platform_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
-    if !can_create_channel(workspace_role.as_deref(), platform_admin) {
-        return Err(AppError::Forbidden("workspace member required".into()));
-    }
-    let activate_creator_membership = workspace_role.is_none() && platform_admin;
-    let creator_is_workspace_admin =
-        matches!(workspace_role.as_deref(), Some("owner" | "admin")) || platform_admin;
     let channel_id = Uuid::new_v4().to_string();
     let channel_type = body.channel_type.unwrap_or_else(|| "public".into());
     if !matches!(channel_type.as_str(), "public" | "private") {
@@ -571,6 +556,33 @@ pub async fn create_channel(
             "conversation mode must be chat or discuss".into(),
         ));
     }
+    let mut tx = state.db.begin().await?;
+    // Personal ownership is authoritative even for an old cached workspace ID
+    // whose membership was never provisioned. Lock the actual workspace and
+    // repair only its owner's membership atomically with channel creation.
+    // Other workspaces still require an existing active membership or the
+    // established platform-administrator exception.
+    crate::domain::workspaces::ensure_personal_owner_membership_tx(
+        &mut tx,
+        &body.workspace_id,
+        &claims.sub,
+    )
+    .await?;
+    let workspace_role: Option<String> = sqlx::query_scalar!(
+        "SELECT role FROM workspace_memberships
+         WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'",
+        &body.workspace_id,
+        &claims.sub,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let platform_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
+    if !can_create_channel(workspace_role.as_deref(), platform_admin) {
+        return Err(AppError::Forbidden("workspace member required".into()));
+    }
+    let activate_creator_membership = workspace_role.is_none() && platform_admin;
+    let creator_is_workspace_admin =
+        matches!(workspace_role.as_deref(), Some("owner" | "admin")) || platform_admin;
     // Validate initial bots before writing the channel so a bad/unauthorized bot
     // cannot leave behind a partially-created channel. A newly-created channel
     // cannot already carry a channel-scoped session_create grant, so the only
@@ -583,7 +595,7 @@ pub async fn create_channel(
             "SELECT created_by, is_disabled FROM bot_accounts WHERE bot_id = $1",
             bot_id,
         )
-        .fetch_optional(&state.db)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or(AppError::NotFound)?;
         if bot.is_disabled.clone() {
@@ -601,7 +613,6 @@ pub async fn create_channel(
         }
         initial_bots.push((bot_id.clone(), owner_id));
     }
-    let mut tx = state.db.begin().await?;
     let row = sqlx::query!(
         "INSERT INTO channels
             (channel_id, workspace_id, name, type, kind, conversation_mode, purpose,

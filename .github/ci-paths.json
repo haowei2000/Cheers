@@ -21,6 +21,7 @@
           "design-system/a2ui-catalog.json",
           "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
           "fixtures/locator/**",
+          "fixtures/desktop-onboarding/**",
           "fixtures/workbench/**",
           "packages/cheers-acp-connector-rs/bridge-protocol/**",
           "packages/cheers-interactive-core/**",
@@ -40,15 +41,18 @@
           "website/**"
         ],
         "plugin": [
+          "apps/macos/src-tauri/src/host_config.rs",
           "packages/cheers-acp-connector-rs/**",
           "packages/cheers-mcp-server/**",
           "packages/cheers-interactive-core/**",
           "design-system/a2ui-catalog.json",
           "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
-          "fixtures/locator/**"
+          "fixtures/locator/**",
+          "fixtures/desktop-onboarding/**"
         ],
         "desktop": [
-          "apps/macos/**"
+          "apps/macos/**",
+          "fixtures/desktop-onboarding/**"
         ],
         "ios": [
           "apps/ios/**",

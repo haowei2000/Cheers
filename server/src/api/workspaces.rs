@@ -141,7 +141,8 @@ pub async fn list_workspaces(
 }
 
 /// GET /api/v1/workspaces/personal — the caller's personal workspace (get-or-create). It's
-/// the user's private space + DM anchor; not membership-listed, so it has its own endpoint.
+/// the user's private space + DM anchor; excluded from the team workspace list,
+/// so it has its own endpoint.
 pub async fn get_personal_workspace(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,

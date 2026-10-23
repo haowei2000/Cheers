@@ -1120,7 +1120,8 @@ fn enable_desktop_auto_update_if_unspecified(config_toml: &str) -> Result<String
 }
 
 fn normalize_desktop_connector_config(config_toml: &str) -> Result<String, String> {
-    let config_toml = normalize_adapter_launcher(config_toml)?;
+    let config_toml = crate::host_config::repair_desktop_host_credential(config_toml)?;
+    let config_toml = normalize_adapter_launcher(&config_toml)?;
     enable_desktop_auto_update_if_unspecified(&config_toml)
 }
 
@@ -1153,8 +1154,8 @@ fn normalize_desktop_config_at(config_path: &Path) -> Result<(), String> {
 
 /// Write a gateway-generated connector config + its token to `~/.cheers/`, the
 /// way `install.sh` does — the "configure via form" path. The gateway's
-/// `POST /hosts/redeem` returns a ready `config_toml` (which references a
-/// `token_file`), the plaintext `token`, and that relative `token_file` path;
+/// `POST /hosts/redeem` returns a ready `config_toml` (which references
+/// `host_credential_file`), the plaintext credential, and its relative file path;
 /// this lands both on disk so the instance can start with NO hand-editing.
 /// The adapter command is resolved to an absolute path (GUI PATH is minimal).
 /// Returns the config path for `connector_start`.
@@ -1170,110 +1171,28 @@ pub fn connector_write_onboarded(
     // Resolve the adapter to an absolute path BEFORE writing (and error early
     // if it isn't installed, so we don't leave a crash-looping config behind).
     let config_toml = normalize_desktop_connector_config(&config_toml)?;
-    let config_toml = onboard_workspace(&config_toml, &account_id, workspace_path.as_deref())?;
-    let (config_toml, token_file) = match instance_name.as_deref() {
-        Some(name) => onboard_instance(&config_toml, &account_id, name)?,
-        None => (config_toml, token_file),
-    };
-
     let base = dirs::home_dir()
         .map(|h| h.join(".cheers"))
         .ok_or("no home directory")?;
-    fs::create_dir_all(&base).map_err(|e| e.to_string())?;
-
-    // The instance (or legacy account) label forms the config filename.
-    // Keep token_file ("secrets/<id>.token")
-    // relative and confine it under ~/.cheers/ (no absolute, no `..`).
-    let safe_id = safe_name(instance_name.as_deref().unwrap_or(&account_id));
-    let tf = PathBuf::from(&token_file);
-    if tf.is_absolute()
-        || tf
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err("invalid token_file path".into());
-    }
-    let token_path = base.join(&tf);
-    if let Some(parent) = token_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    fs::write(&token_path, token.trim().as_bytes()).map_err(|e| e.to_string())?;
-    // Tokens are secrets: 0600, like install.sh.
-    let _ = fs::set_permissions(
-        &token_path,
-        std::os::unix::fs::PermissionsExt::from_mode(0o600),
-    );
-
-    let config_path = base.join(format!("cheers-daemon.{safe_id}.toml"));
-    fs::write(&config_path, config_toml.as_bytes()).map_err(|e| e.to_string())?;
+    let instance_name = instance_name.as_deref().map(safe_name);
+    let config_path = crate::host_config::write_onboarded_host_config(
+        &base,
+        &account_id,
+        &config_toml,
+        &token,
+        &token_file,
+        instance_name.as_deref(),
+        workspace_path.as_deref().map(Path::new),
+    )?;
 
     // Zero-prep: the connector validates that every policy.workspace root exists
     // at startup (resolve_existing_dirs), and the gateway's default config points
     // at ~/.cheers/workspace/<bot>, which nothing else creates — so onboarding
     // from the desktop would fail on a fresh machine. We're on the same box and
     // own ~/.cheers, so create the referenced workspace dirs now.
-    ensure_workspace_dirs(&config_toml);
+    ensure_workspace_dirs_at(&config_path);
 
     Ok(config_path.to_string_lossy().into_owned())
-}
-
-/// Each Host owns its own credential and session state, even for the same Bot.
-fn onboard_instance(
-    config: &str,
-    account_id: &str,
-    name: &str,
-) -> Result<(String, String), String> {
-    let name = safe_name(name);
-    let token_file = format!("secrets/{name}.token");
-    let mut doc: toml_edit::DocumentMut = config
-        .parse()
-        .map_err(|error: toml_edit::TomlError| error.to_string())?;
-    if doc
-        .get("accounts")
-        .and_then(|accounts| accounts.get(account_id))
-        .is_none()
-    {
-        return Err("Bot account is missing from the host configuration".into());
-    }
-    doc["daemon"]["name"] = toml_edit::value(name.as_str());
-    doc["daemon"]["state_path"] = toml_edit::value(format!("state-{name}.json"));
-    doc["daemon"]["log_dir"] = toml_edit::value(format!("logs-{name}"));
-    doc["accounts"][account_id]["bridge"]["token_file"] = toml_edit::value(token_file.as_str());
-    Ok((doc.to_string(), token_file))
-}
-
-/// Scope a new host to the directory explicitly selected in the native picker.
-/// Validate before saving credentials; never broaden access to the home directory.
-fn onboard_workspace(
-    config: &str,
-    account_id: &str,
-    selected: Option<&str>,
-) -> Result<String, String> {
-    let Some(selected) = selected.filter(|path| !path.is_empty()) else {
-        return Ok(config.to_string());
-    };
-    let path = Path::new(selected);
-    if !path.is_absolute() || !path.is_dir() {
-        return Err("Choose an existing project folder".into());
-    }
-    let path =
-        fs::canonicalize(path).map_err(|error| format!("Cannot access project folder: {error}"))?;
-    let mut doc: toml_edit::DocumentMut = config
-        .parse()
-        .map_err(|error: toml_edit::TomlError| error.to_string())?;
-    if doc
-        .get("accounts")
-        .and_then(|accounts| accounts.get(account_id))
-        .is_none()
-    {
-        return Err("Bot account is missing from the host configuration".into());
-    }
-    let mut roots = toml_edit::Array::new();
-    roots.push(path.to_string_lossy().as_ref());
-    doc["accounts"][account_id]["policy"]["workspace"]["allowed_roots"] = toml_edit::value(roots);
-    doc["accounts"][account_id]["policy"]["workspace"]["default_cwd"] =
-        toml_edit::value(path.to_string_lossy().as_ref());
-    Ok(doc.to_string())
 }
 
 /// Create the workspace directories a freshly-onboarded config references so a
@@ -1385,6 +1304,7 @@ pub async fn connector_restart(
     // onboard / after a crash), and create the workspace dirs first.
     let out = match config_path_for(&name) {
         Some(cfg) => {
+            normalize_desktop_config_at(&cfg)?;
             ensure_workspace_dirs_at(&cfg);
             let cfg = cfg.to_string_lossy().into_owned();
             run_cli(&app, &["--name", &name, "--config", &cfg, "restart"]).await?
@@ -2251,7 +2171,13 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
                 let Some(cfg) = inst.config_path.clone() else {
                     continue;
                 };
-                let _ = normalize_desktop_config_at(Path::new(&cfg));
+                if let Err(error) = normalize_desktop_config_at(Path::new(&cfg)) {
+                    eprintln!(
+                        "connector config normalization failed for {}: {error}",
+                        inst.name
+                    );
+                    continue;
+                }
                 let stale_after_app_update = inst.running
                     && inst.started_at.as_deref().is_some_and(|started_at| {
                         bundle_modified_at.is_some_and(|modified_at| {
@@ -2324,6 +2250,13 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
                 // died before writing metadata can still come back.
                 let cfg = inst.config_path.clone();
                 if let Some(c) = &cfg {
+                    if let Err(error) = normalize_desktop_config_at(Path::new(c)) {
+                        eprintln!(
+                            "connector config normalization failed for {}: {error}",
+                            inst.name
+                        );
+                        continue;
+                    }
                     ensure_workspace_dirs_at(Path::new(c));
                 }
                 let revived = match cfg.as_deref() {
@@ -2384,9 +2317,13 @@ mod tests {
 
     #[test]
     fn multiple_hosts_for_one_bot_never_share_credentials_or_state() {
-        let config = "[daemon]\nname = \"helper\"\n[accounts.helper.bridge]\ntoken_file = \"secrets/helper.token\"\n";
-        let (first, first_token) = onboard_instance(config, "helper", "helper-host-one").unwrap();
-        let (second, second_token) = onboard_instance(config, "helper", "helper-host-two").unwrap();
+        use crate::host_config::scope_host_instance;
+
+        let config = "[daemon]\nname = \"helper\"\n[accounts.helper.bridge]\nhost_credential_file = \"secrets/helper.token\"\n";
+        let (first, first_token) =
+            scope_host_instance(config, "helper", "helper-host-one").unwrap();
+        let (second, second_token) =
+            scope_host_instance(config, "helper", "helper-host-two").unwrap();
         let first: toml::Value = first.parse().unwrap();
         let second: toml::Value = second.parse().unwrap();
         assert_ne!(first_token, second_token);
@@ -2395,18 +2332,23 @@ mod tests {
             second["daemon"]["state_path"]
         );
         assert_eq!(
-            first["accounts"]["helper"]["bridge"]["token_file"].as_str(),
+            first["accounts"]["helper"]["bridge"]["host_credential_file"].as_str(),
             Some(first_token.as_str())
         );
-        assert!(onboard_instance(config, "missing", "host").is_err());
+        assert!(first["accounts"]["helper"]["bridge"]
+            .get("token_file")
+            .is_none());
+        assert!(scope_host_instance(config, "missing", "host").is_err());
     }
 
     #[test]
     fn onboarding_scopes_only_the_selected_existing_project() {
+        use crate::host_config::scope_workspace;
+
         let root = std::env::temp_dir().join(format!("cheers-onboard-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let config = "[accounts.helper.policy.workspace]\nallowed_roots = [\"/old\"]\ndefault_cwd = \"/old\"\n[accounts.helper.policy.permission]\nauto_allow = false\n";
-        let result = onboard_workspace(config, "helper", root.to_str()).unwrap();
+        let result = scope_workspace(config, "helper", Some(&root)).unwrap();
         let parsed: toml::Value = result.parse().unwrap();
         let canonical = fs::canonicalize(&root).unwrap();
         assert_eq!(
@@ -2424,9 +2366,9 @@ mod tests {
             parsed["accounts"]["helper"]["policy"]["permission"]["auto_allow"].as_bool(),
             Some(false)
         );
-        assert!(onboard_workspace(config, "helper", Some("relative/path")).is_err());
-        assert!(onboard_workspace(config, "missing", root.to_str()).is_err());
-        assert_eq!(onboard_workspace(config, "helper", None).unwrap(), config);
+        assert!(scope_workspace(config, "helper", Some(Path::new("relative/path"))).is_err());
+        assert!(scope_workspace(config, "missing", Some(&root)).is_err());
+        assert_eq!(scope_workspace(config, "helper", None).unwrap(), config);
         fs::remove_dir(root).unwrap();
     }
 
