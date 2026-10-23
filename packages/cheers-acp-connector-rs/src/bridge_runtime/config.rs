@@ -268,7 +268,13 @@ impl RuntimeContext {
                 .with_context(|| format!("could not apply desired session mode {mode:?}"))?;
         }
         for (id, value) in desired.config_options {
-            apply_config_option(adapter.as_mut(), acp_session_id, &id, &value).await?;
+            if let Some(response) =
+                apply_config_option(adapter.as_mut(), acp_session_id, &id, &value).await?
+            {
+                // ACP returns the complete current catalogue in the response;
+                // an additional session/update notification is not required.
+                self.report_session_snapshot(&response).await;
+            }
         }
         Ok(())
     }
@@ -425,13 +431,19 @@ async fn apply_config_option(
     session_id: &str,
     id: &str,
     value: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<Value>> {
     match adapter.set_config_option(session_id, id, value).await {
-        Ok(_) => Ok(()),
+        Ok(response) => Ok(Some(response)),
         Err(error) if id == "model" => {
-            adapter.set_model(session_id, value).await.with_context(|| {
-                format!("model rejected by set_config_option ({error}) and set_model")
-            })
+            // The legacy native-model method has no configuration catalogue in
+            // its response. Do not invent one or erase the last advertisement.
+            adapter
+                .set_model(session_id, value)
+                .await
+                .with_context(|| {
+                    format!("model rejected by set_config_option ({error}) and set_model")
+                })
+                .map(|()| None)
         }
         Err(error) => {
             Err(error).with_context(|| format!("could not apply desired session config {id:?}"))
