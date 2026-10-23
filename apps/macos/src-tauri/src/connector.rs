@@ -1120,7 +1120,8 @@ fn enable_desktop_auto_update_if_unspecified(config_toml: &str) -> Result<String
 }
 
 fn normalize_desktop_connector_config(config_toml: &str) -> Result<String, String> {
-    let config_toml = normalize_adapter_launcher(config_toml)?;
+    let config_toml = crate::host_config::repair_desktop_host_credential(config_toml)?;
+    let config_toml = normalize_adapter_launcher(&config_toml)?;
     enable_desktop_auto_update_if_unspecified(&config_toml)
 }
 
@@ -1153,8 +1154,8 @@ fn normalize_desktop_config_at(config_path: &Path) -> Result<(), String> {
 
 /// Write a gateway-generated connector config + its token to `~/.cheers/`, the
 /// way `install.sh` does — the "configure via form" path. The gateway's
-/// `POST /hosts/redeem` returns a ready `config_toml` (which references a
-/// `token_file`), the plaintext `token`, and that relative `token_file` path;
+/// `POST /hosts/redeem` returns a ready `config_toml` (which references
+/// `host_credential_file`), the plaintext credential, and its relative file path;
 /// this lands both on disk so the instance can start with NO hand-editing.
 /// The adapter command is resolved to an absolute path (GUI PATH is minimal).
 /// Returns the config path for `connector_start`.
@@ -1224,22 +1225,7 @@ fn onboard_instance(
     name: &str,
 ) -> Result<(String, String), String> {
     let name = safe_name(name);
-    let token_file = format!("secrets/{name}.token");
-    let mut doc: toml_edit::DocumentMut = config
-        .parse()
-        .map_err(|error: toml_edit::TomlError| error.to_string())?;
-    if doc
-        .get("accounts")
-        .and_then(|accounts| accounts.get(account_id))
-        .is_none()
-    {
-        return Err("Bot account is missing from the host configuration".into());
-    }
-    doc["daemon"]["name"] = toml_edit::value(name.as_str());
-    doc["daemon"]["state_path"] = toml_edit::value(format!("state-{name}.json"));
-    doc["daemon"]["log_dir"] = toml_edit::value(format!("logs-{name}"));
-    doc["accounts"][account_id]["bridge"]["token_file"] = toml_edit::value(token_file.as_str());
-    Ok((doc.to_string(), token_file))
+    crate::host_config::scope_host_instance(config, account_id, &name)
 }
 
 /// Scope a new host to the directory explicitly selected in the native picker.
@@ -1385,6 +1371,7 @@ pub async fn connector_restart(
     // onboard / after a crash), and create the workspace dirs first.
     let out = match config_path_for(&name) {
         Some(cfg) => {
+            normalize_desktop_config_at(&cfg)?;
             ensure_workspace_dirs_at(&cfg);
             let cfg = cfg.to_string_lossy().into_owned();
             run_cli(&app, &["--name", &name, "--config", &cfg, "restart"]).await?
@@ -2251,7 +2238,13 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
                 let Some(cfg) = inst.config_path.clone() else {
                     continue;
                 };
-                let _ = normalize_desktop_config_at(Path::new(&cfg));
+                if let Err(error) = normalize_desktop_config_at(Path::new(&cfg)) {
+                    eprintln!(
+                        "connector config normalization failed for {}: {error}",
+                        inst.name
+                    );
+                    continue;
+                }
                 let stale_after_app_update = inst.running
                     && inst.started_at.as_deref().is_some_and(|started_at| {
                         bundle_modified_at.is_some_and(|modified_at| {
@@ -2324,6 +2317,13 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
                 // died before writing metadata can still come back.
                 let cfg = inst.config_path.clone();
                 if let Some(c) = &cfg {
+                    if let Err(error) = normalize_desktop_config_at(Path::new(c)) {
+                        eprintln!(
+                            "connector config normalization failed for {}: {error}",
+                            inst.name
+                        );
+                        continue;
+                    }
                     ensure_workspace_dirs_at(Path::new(c));
                 }
                 let revived = match cfg.as_deref() {
@@ -2384,7 +2384,7 @@ mod tests {
 
     #[test]
     fn multiple_hosts_for_one_bot_never_share_credentials_or_state() {
-        let config = "[daemon]\nname = \"helper\"\n[accounts.helper.bridge]\ntoken_file = \"secrets/helper.token\"\n";
+        let config = "[daemon]\nname = \"helper\"\n[accounts.helper.bridge]\nhost_credential_file = \"secrets/helper.token\"\n";
         let (first, first_token) = onboard_instance(config, "helper", "helper-host-one").unwrap();
         let (second, second_token) = onboard_instance(config, "helper", "helper-host-two").unwrap();
         let first: toml::Value = first.parse().unwrap();
@@ -2395,9 +2395,12 @@ mod tests {
             second["daemon"]["state_path"]
         );
         assert_eq!(
-            first["accounts"]["helper"]["bridge"]["token_file"].as_str(),
+            first["accounts"]["helper"]["bridge"]["host_credential_file"].as_str(),
             Some(first_token.as_str())
         );
+        assert!(first["accounts"]["helper"]["bridge"]
+            .get("token_file")
+            .is_none());
         assert!(onboard_instance(config, "missing", "host").is_err());
     }
 

@@ -40,6 +40,7 @@
           "website/**"
         ],
         "plugin": [
+          "apps/macos/src-tauri/src/host_config.rs",
           "packages/cheers-acp-connector-rs/**",
           "packages/cheers-mcp-server/**",
           "packages/cheers-interactive-core/**",

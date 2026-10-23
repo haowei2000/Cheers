@@ -18,6 +18,8 @@ mod bridge_session;
 mod cli;
 mod config;
 mod daemon;
+#[cfg(test)]
+mod desktop_config_tests;
 mod extensions;
 mod mcp_token;
 mod runtime_adapter;
