@@ -981,7 +981,7 @@ function MessageComposerImpl({
         {/* design-system-native: composer-editor */}
         <textarea title="Press Enter to send, Shift plus Enter for a new line, at to mention, or slash for commands."
           ref={textareaRef}
-          aria-label="Message"
+          aria-label={sessionTargetName ? `Message selected session for @${sessionTargetName}; mentions ignored` : "Message"}
           rows={1}
           value={text}
           onInput={handleInput}
@@ -997,14 +997,14 @@ function MessageComposerImpl({
             disabled
               ? "Select a channel to start chatting"
               : sessionTargetName
-                ? `Message ${channelName ? `#${channelName}` : "..."} — sends to @${sessionTargetName}; @mentions ignored`
-                : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
+                ? "Message this session…"
+                : channelName ? `Message #${channelName}` : "Message…"
           }
           // text-comfortable (16px) below md stops iOS Safari's auto-zoom on focus.
           className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 font-reading text-comfortable leading-reading text-content-primary outline-none placeholder:font-ui placeholder-zinc-400 md:text-regular"
         />
 
-        <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1 px-2 pb-2">
           <IconButton
             onClick={() => (dictating ? stopDictation() : void startDictation())}
             disabled={disabled || !channelId || uploading || sending || transcribingDictation}
@@ -1091,7 +1091,7 @@ function MessageComposerImpl({
           )}
 
           {toolbar && (
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-1 overflow-x-auto no-scrollbar">
+            <div className="order-last flex min-w-0 flex-1 basis-full flex-wrap items-center justify-end gap-2 md:order-none md:basis-auto">
               {toolbar}
             </div>
           )}
@@ -1102,7 +1102,7 @@ function MessageComposerImpl({
               onClick={() => void stopStreaming()}
               disabled={stopping}
               controlSize="regular"
-              className="bg-control text-danger-400 hover:bg-red-950/40 hover:text-danger-300 disabled:opacity-50"
+              className="ml-auto shrink-0 bg-control text-danger-400 hover:bg-red-950/40 hover:text-danger-300 disabled:opacity-50"
               label={stopTitle}
               title={stopTitle}
             >
@@ -1115,6 +1115,7 @@ function MessageComposerImpl({
               controlSize="regular"
               label="Send message"
               className={cn(
+                "ml-auto shrink-0",
                 canSend
                   ? "bg-content-strong text-content-on-light hover:opacity-90 active:scale-[0.98] cursor-pointer shadow-sm"
                   : "bg-control text-content-primary opacity-50 cursor-not-allowed"

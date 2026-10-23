@@ -1,38 +1,26 @@
 import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { cn } from "@/lib/cn";
-import { Button } from "./button";
+import { ControlTrigger } from "./control-trigger";
 
-type ComposerToolbarButtonProps = ComponentPropsWithoutRef<typeof Button>;
+type ComposerToolbarButtonProps = ComponentPropsWithoutRef<typeof ControlTrigger>;
 
 /**
- * Composer selectors use the shared regular icon+text slot. Their visible
- * labels must be short; the full current value belongs in the accessible name
- * and tooltip instead of being truncated inside the control.
- *
- * Resting unboxed control: transparent background and ring at rest, revealing
- * outline on hover and active/selected styling when open or chosen.
+ * Semantic composer selectors share the regular 96px slot. Current values
+ * truncate inside it; full values remain in the accessible name and tooltip.
  */
 export const ComposerToolbarButton = forwardRef<
   HTMLButtonElement,
   ComposerToolbarButtonProps
->(({ className, variant = "plain", selected, children, ...props }, ref) => (
-  <Button
+>(({ className, selected, children, ...props }, ref) => (
+  <ControlTrigger
     ref={ref}
-    variant={variant}
     controlSize="regular"
-    content="iconText"
     selected={selected}
-    className={cn(
-      "shrink-0 transition-all duration-150 ring-1 ring-inset",
-      selected
-        ? "bg-selected text-content-strong font-semibold ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active shadow-sm"
-        : "bg-transparent ring-transparent text-content-primary hover:bg-control/40 hover:ring-zinc-300/80 dark:hover:ring-zinc-700/80 hover:text-content-strong active:bg-control-active",
-      className,
-    )}
+    className={cn("shrink-0", className)}
     {...props}
   >
     {children}
-  </Button>
+  </ControlTrigger>
 ));
 
 ComposerToolbarButton.displayName = "ComposerToolbarButton";

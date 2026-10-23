@@ -2,14 +2,15 @@ import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Field, SectionHead } from "@/components/ui/field";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import {
-  getBotPermissions,
   setBotPosture,
   setBotConfigOption,
-  type BotPermissions,
 } from "@/api/bots";
+import { useBotPermissions } from "./botPermissionsCache";
+import { AgentOptionsFeedback } from "./AgentOptionsFeedback";
+import { bustAllBotControls } from "@/features/chat/sessionControlsCache";
 
 // Display helper: show UUID-like ids in a short 8-char form (full id in the tooltip);
 // human-readable config ids (e.g. "model") are shown as-is.
@@ -21,23 +22,20 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * so it can live inline in the bot detail pane. Extracted from the old BotPermissionsDialog.
  */
 export function BotPostureSection({ botId }: { botId: string }) {
-  const [perms, setPerms] = useState<BotPermissions | null>(null);
+  const { data: perms, loading, error, refresh } = useBotPermissions(botId);
   const [busy, setBusy] = useState(false);
   const [manualConfigId, setManualConfigId] = useState("");
   const [manualConfigValue, setManualConfigValue] = useState("");
 
-  const load = useCallback(async () => {
-    setPerms(await getBotPermissions(botId));
-  }, [botId]);
-
-  useEffect(() => {
-    load().catch((e) => notify.error(messageOf(e)));
-  }, [load]);
+  const reload = () => {
+    bustAllBotControls(botId);
+    refresh();
+  };
 
   const changePosture = (mode: string) => {
     setBusy(true);
     setBotPosture(botId, mode)
-      .then(load)
+      .then(reload)
       .catch((e) => notify.error(messageOf(e)))
       .finally(() => setBusy(false));
   };
@@ -45,7 +43,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
   const changeConfigOption = (configId: string, value: string) => {
     setBusy(true);
     setBotConfigOption(botId, configId, value)
-      .then(load)
+      .then(reload)
       .catch((e) => notify.error(messageOf(e)))
       .finally(() => setBusy(false));
   };
@@ -59,19 +57,19 @@ export function BotPostureSection({ botId }: { botId: string }) {
       .then(() => {
         setManualConfigId("");
         setManualConfigValue("");
-        return load();
+        reload();
       })
       .catch((e) => notify.error(messageOf(e)))
       .finally(() => setBusy(false));
   };
 
-  if (!perms) return <p className="text-compact text-content-muted px-1 py-2">Loading…</p>;
+  if (error || !perms) return <AgentOptionsFeedback loading={loading || !error} error={error} onRetry={refresh} />;
 
   const posture = perms.posture;
   const configOptions = perms.config_options;
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-5" aria-busy={loading}>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <SectionHead
           className="mb-0"
@@ -89,7 +87,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
             tip="Mode controls when the agent stops to ask you before acting."
           >
             {posture.allowed_modes.length > 0 ? (
-              <UiSelect value={posture.permission_mode ?? ""} disabled={busy} onChange={(e) => changePosture(e.target.value)} controlSize="regular">
+              <UiSelect aria-label="Agent mode" value={posture.permission_mode ?? ""} disabled={busy || loading} onChange={(e) => changePosture(e.target.value)} controlSize="regular">
                 {posture.permission_mode == null && <option value="">(unset)</option>}
                 {posture.allowed_modes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
               </UiSelect>
@@ -104,13 +102,18 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 {opt.name}
                 {configOptions.desired[opt.id] != null && <span className="text-minimal normal-case tracking-normal text-accent-400">Override</span>}
               </span>}>
-              <UiSelect value={current} disabled={busy} onChange={(e) => changeConfigOption(opt.id, e.target.value)} controlSize="regular">
+              <UiSelect aria-label={opt.name} value={current} disabled={busy || loading} onChange={(e) => changeConfigOption(opt.id, e.target.value)} controlSize="regular">
+                {current && !opt.options.some((value) => value.value === current) && <option value={current}>{current}</option>}
                 {opt.options.map((value) => <option key={value.value} value={value.value}>{value.name}</option>)}
               </UiSelect>
             </Field>
           );
         })}
       </div>
+
+      {(!configOptions || configOptions.advertised.length === 0) && (
+        <AgentOptionsFeedback loading={loading} onRetry={refresh} />
+      )}
 
       {(!configOptions || configOptions.advertised.length === 0) && (
         <details className="rounded-sm bg-control/40 px-3 py-2">
@@ -124,8 +127,8 @@ export function BotPostureSection({ botId }: { botId: string }) {
               </div>
             )}
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-              <UiInput value={manualConfigId} disabled={busy} onChange={(e) => setManualConfigId(e.target.value)} placeholder="Config ID" controlSize="regular" />
-              <UiInput value={manualConfigValue} disabled={busy} onChange={(e) => setManualConfigValue(e.target.value)} placeholder="Value" controlSize="regular" />
+              <UiInput aria-label="Config ID" value={manualConfigId} disabled={busy} onChange={(e) => setManualConfigId(e.target.value)} placeholder="Config ID" controlSize="regular" />
+              <UiInput aria-label="Config value" value={manualConfigValue} disabled={busy} onChange={(e) => setManualConfigValue(e.target.value)} placeholder="Value" controlSize="regular" />
               <UiButton action="update" variant="secondary" type="button" disabled={busy || !manualConfigId.trim() || !manualConfigValue.trim()} onClick={submitManualConfig} controlSize="regular">Set</UiButton>
             </div>
           </div>
