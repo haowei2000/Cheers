@@ -339,14 +339,8 @@ async fn advertised_config_options(state: &AppState, bot_id: Uuid) -> Vec<Value>
             .cloned()
     })
     .unwrap_or_else(|| json!({}));
-    let options = snapshot
-        .get("configOptions")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let options = connector_config::overlay_model_state(&snapshot, options);
     let agent_type = bot_agent_type(state, bot_id).await;
-    connector_config::dedup_mode_config_options(&agent_type, options)
+    connector_config::advertised_config_options(&agent_type, &snapshot).unwrap_or_default()
 }
 
 /// Merge one desired-state patch atomically. A monotonic revision lets the
