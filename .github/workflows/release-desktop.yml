@@ -121,6 +121,14 @@ jobs:
           spctl --assess --type execute --verbose "$APP"
           xcrun stapler validate "$APP"
 
+      - name: Smoke-test bundled Connector onboarding
+        env:
+          CHEERS_CONNECTOR_SMOKE_BINARY: ${{ github.workspace }}/apps/macos/src-tauri/target/release/bundle/macos/Cheers.app/Contents/MacOS/cce-acp-connector
+        run: >-
+          cargo test --release --locked
+          --manifest-path packages/cheers-acp-connector-rs/Cargo.toml
+          --test desktop_onboarding_smoke -- --nocapture
+
       - name: Package assets
         run: |
           BUNDLE=apps/macos/src-tauri/target/release/bundle

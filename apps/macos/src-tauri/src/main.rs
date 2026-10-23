@@ -14,6 +14,7 @@ mod changes;
 mod connector;
 mod deeplink;
 mod desktop_auth;
+mod host_config;
 mod plugins;
 mod quicksend;
 mod tray;
