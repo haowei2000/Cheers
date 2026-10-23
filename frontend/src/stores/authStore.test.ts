@@ -3,7 +3,7 @@ import { useAuthStore } from "./authStore";
 import { apiBase, getServerBase, isTauri } from "@/lib/serverConfig";
 import { invokeDesktop } from "@/lib/desktop";
 import { clientSessionGeneration } from "@/lib/clientSession";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, queryKeys } from "@/lib/queryClient";
 
 vi.mock("@/lib/serverConfig", () => ({
   apiBase: vi.fn(), getServerBase: vi.fn(), isTauri: vi.fn(),
@@ -215,6 +215,8 @@ describe("restoreSession", () => {
   it("clears client data on account changes while preserving same-account profile edits", () => {
     useAuthStore.getState().setAuth(originalUser, "old-token");
     queryClient.setQueryData(["private-user-data"], "cached account data");
+    queryClient.setQueryData(queryKeys.botPermissions("private-bot"), "owner defaults");
+    queryClient.setQueryData(queryKeys.botSessionControls("channel", "private-bot"), "caller grants");
     const generation = clientSessionGeneration();
     useAuthStore.getState().setAuth({ ...originalUser, display_name: "Edited" }, "old-token");
     expect(clientSessionGeneration()).toBe(generation);
@@ -223,6 +225,8 @@ describe("restoreSession", () => {
     useAuthStore.getState().setAuth(nextUser, "new-token");
     expect(clientSessionGeneration()).toBeGreaterThan(generation);
     expect(queryClient.getQueryData(["private-user-data"])).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.botPermissions("private-bot"))).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.botSessionControls("channel", "private-bot"))).toBeUndefined();
   });
 
 });

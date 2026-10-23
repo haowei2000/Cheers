@@ -418,11 +418,13 @@ chip passes `selected` to the shared Button or ControlTrigger primitive.
 controls row) use `<ComposerToolbarButton>`. Both consume the same regular
 36px height and 96px width slot; the label is a flexible single line that
 truncates inside the slot, so content length never changes the button size.
-Use a leading semantic icon and a trailing `ChevronDown` that rotates 180°
-while open. Three states: resting (soft zinc),
-open/targeted (shared selected surface and marker),
-mobile touch target via the regular ControlSize mapping. Focus comes from the
-shared Button primitive. The composer card itself
+Use the current bot/model value and a trailing `ChevronDown` that rotates 180°
+while open. Closed selectors are quiet; open selectors use the shared selected
+surface and marker. A pinned target keeps a visible “Direct · mentions off”
+status beside it. Full names and workspace paths remain in accessible names
+and tooltips. The group wraps at narrow widths; the primary send action remains
+visible. Semantic selection and focus come from the shared `ControlTrigger`
+primitive, with mobile touch targets from the regular ControlSize mapping. The composer card itself
 is the canonical borderless field with the shared 10px Web radius and
 `bg-zinc-800/80` plus
 `focus-within:ring-2 focus-within:ring-indigo-500/50` — no resting border.

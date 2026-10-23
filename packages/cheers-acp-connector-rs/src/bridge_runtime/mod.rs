@@ -2542,9 +2542,11 @@ impl RuntimeContext {
                     adapter.load_session(&session_id, options.clone()).await
                 };
                 if let Ok(loaded) = load_result {
+                    // Report the initial load snapshot before setters publish
+                    // their newer authoritative configuration responses.
+                    self.report_session_snapshot(&loaded.metadata).await;
                     self.reconcile_session_config(&task.provider_session_key, &session_id)
                         .await?;
-                    self.report_session_snapshot(&loaded.metadata).await;
                     // Re-stamp the mapping so its TTL measures idleness rather
                     // than age: a channel in daily use writes nothing here
                     // otherwise, and would lose a perfectly live session to the
@@ -2632,8 +2634,8 @@ impl RuntimeContext {
         Ok(new_session.session_id)
     }
 
-    /// Mirror the agent's INITIAL advertisement (the `session/new`/`session/load`
-    /// response's configOptions / modes / models / availableCommands) to the
+    /// Mirror a complete agent advertisement (the `session/new`, `session/load`
+    /// or `session/set_config_option` response) to the
     /// gateway as a `config_options` control frame. Best-effort: the snapshot is
     /// a UI surface, never worth failing the session over.
     async fn report_session_snapshot(&self, metadata: &Value) {
@@ -3703,6 +3705,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use tokio::sync::watch;
 
+    mod config_discovery;
     mod prompt_drain;
 
     use crate::bridge::PermissionOption;
