@@ -5,7 +5,7 @@
 use uuid::Uuid;
 
 use crate::errors::AppError;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 /// Database-side result of removing a workspace member. Realtime subscription
 /// revocation and notification fanout stay in the API layer, after commit.
@@ -17,48 +17,86 @@ pub struct DetachedWorkspaceMember {
 /// The user's personal workspace, creating it on first use (lazy provision — there is no
 /// signup hook, and this also covers users that predate the personal-workspace concept).
 /// Idempotent + race-safe via the `uq_workspaces_personal_owner` partial unique index.
+/// The owner also needs an active membership for ordinary channels in this
+/// workspace; repair older personal workspaces in the same transaction.
 pub async fn get_or_create_personal_workspace(
     db: &PgPool,
     user_id: Uuid,
 ) -> Result<Uuid, AppError> {
     let uid = user_id.to_string();
+    let mut tx = db.begin().await?;
 
-    if let Some(existing) = sqlx::query_scalar!(
+    let workspace_id = if let Some(existing) = sqlx::query_scalar!(
         "SELECT workspace_id FROM workspaces WHERE owner_user_id = $1 AND kind = 'personal' LIMIT 1",
         &uid,
     )
-    .fetch_optional(db)
-    .await
-    .map_err(AppError::Db)?
+    .fetch_optional(&mut *tx)
+    .await?
     {
-        return parse_ws(existing);
-    }
-
-    // Create; on a concurrent winner, DO NOTHING returns no row → re-select the winner.
-    let inserted = sqlx::query_scalar!(
-        "INSERT INTO workspaces (workspace_id, name, kind, owner_user_id)
+        existing
+    } else {
+        // A concurrent winner is visible to the next READ COMMITTED statement.
+        let inserted = sqlx::query_scalar!(
+            "INSERT INTO workspaces (workspace_id, name, kind, owner_user_id)
          VALUES ($1, 'Personal', 'personal', $2)
          ON CONFLICT (owner_user_id) WHERE kind = 'personal' DO NOTHING
          RETURNING workspace_id",
-        Uuid::new_v4().to_string(),
-        &uid,
-    )
-    .fetch_optional(db)
-    .await
-    .map_err(AppError::Db)?;
-
-    if let Some(id) = inserted {
-        return parse_ws(id);
+            Uuid::new_v4().to_string(),
+            &uid,
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        match inserted {
+            Some(id) => id,
+            None => sqlx::query_scalar!(
+                "SELECT workspace_id FROM workspaces WHERE owner_user_id = $1 AND kind = 'personal' LIMIT 1",
+                &uid,
+            )
+            .fetch_one(&mut *tx)
+            .await?,
+        }
+    };
+    let id = parse_ws(workspace_id.clone())?;
+    if !ensure_personal_owner_membership_tx(&mut tx, &workspace_id, &uid).await? {
+        return Err(AppError::Internal(
+            "personal workspace ownership changed".into(),
+        ));
     }
+    tx.commit().await?;
+    Ok(id)
+}
 
-    let existing = sqlx::query_scalar!(
-        "SELECT workspace_id FROM workspaces WHERE owner_user_id = $1 AND kind = 'personal' LIMIT 1",
-        &uid,
+/// Materialize only the actual personal-workspace owner's membership. The
+/// workspace lock matches membership removal/role changes and remains held by
+/// callers that create a channel before committing. DM peers gain no workspace
+/// membership through this helper.
+pub(crate) async fn ensure_personal_owner_membership_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: &str,
+    user_id: &str,
+) -> Result<bool, AppError> {
+    let workspace = sqlx::query!(
+        "SELECT kind, owner_user_id FROM workspaces WHERE workspace_id = $1 FOR UPDATE",
+        workspace_id,
     )
-    .fetch_one(db)
-    .await
-    .map_err(AppError::Db)?;
-    parse_ws(existing)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    if workspace.kind != "personal" || workspace.owner_user_id.as_deref() != Some(user_id) {
+        return Ok(false);
+    }
+    sqlx::query!(
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
+         VALUES ($1, $2, 'owner', 'active')
+         ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = 'owner', status = 'active'
+         WHERE workspace_memberships.role IS DISTINCT FROM 'owner'
+            OR workspace_memberships.status IS DISTINCT FROM 'active'",
+        workspace_id,
+        user_id,
+    )
+    .execute(&mut **tx)
+    .await?;
+    Ok(true)
 }
 
 /// Decline a still-pending workspace invitation and consume any channel
