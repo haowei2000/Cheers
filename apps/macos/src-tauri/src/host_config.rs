@@ -1,5 +1,11 @@
-//! Pure TOML transformations for desktop host credential isolation.
+//! Desktop host configuration preparation and isolated credential persistence.
 
+use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    path::{Component, Path, PathBuf},
+};
 use toml_edit::{value, DocumentMut, Item, Table};
 
 fn is_normalized_name(name: &str) -> bool {
@@ -60,6 +66,130 @@ pub(crate) fn scope_host_instance(
     daemon.insert("state_path", value(format!("state-{normalized_name}.json")));
     daemon.insert("log_dir", value(format!("logs-{normalized_name}")));
     Ok((doc.to_string(), credential_file))
+}
+
+/// Scope a host to the project explicitly selected by the local user. Validate
+/// the directory before writing credentials; never create or broaden this root.
+pub(crate) fn scope_workspace(
+    config: &str,
+    account_id: &str,
+    selected: Option<&Path>,
+) -> Result<String, String> {
+    let Some(selected) = selected.filter(|path| !path.as_os_str().is_empty()) else {
+        return Ok(config.to_owned());
+    };
+    if !selected.is_absolute() || !selected.is_dir() {
+        return Err("Choose an existing project folder".into());
+    }
+    let selected = selected
+        .canonicalize()
+        .map_err(|error| format!("Cannot access project folder: {error}"))?;
+    let mut doc: DocumentMut = config
+        .parse()
+        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    let account = doc
+        .get_mut("accounts")
+        .and_then(Item::as_table_like_mut)
+        .and_then(|accounts| accounts.get_mut(account_id))
+        .and_then(Item::as_table_like_mut)
+        .ok_or("Bot account is missing from the host configuration")?;
+    if account.get("policy").is_none() {
+        account.insert("policy", Item::Table(Table::new()));
+    }
+    let policy = account
+        .get_mut("policy")
+        .and_then(Item::as_table_like_mut)
+        .ok_or("Host configuration policy must be a table")?;
+    if policy.get("workspace").is_none() {
+        policy.insert("workspace", Item::Table(Table::new()));
+    }
+    let workspace = policy
+        .get_mut("workspace")
+        .and_then(Item::as_table_like_mut)
+        .ok_or("Host configuration workspace must be a table")?;
+    let mut roots = toml_edit::Array::new();
+    roots.push(selected.to_string_lossy().as_ref());
+    workspace.insert("allowed_roots", value(roots));
+    workspace.insert("default_cwd", value(selected.to_string_lossy().as_ref()));
+    Ok(doc.to_string())
+}
+
+/// Persist the same prepared configuration and credential used by desktop IPC.
+/// `base` is explicit so callers/tests can isolate all writes without replacing
+/// HOME or consulting any existing connector instance. Launcher normalization is
+/// performed by the caller before entering this function.
+pub(crate) fn write_onboarded_host_config(
+    base: &Path,
+    account_id: &str,
+    config: &str,
+    credential: &str,
+    credential_file: &str,
+    instance_name: Option<&str>,
+    selected_workspace: Option<&Path>,
+) -> Result<PathBuf, String> {
+    if !base.is_absolute() {
+        return Err("Host configuration directory must be absolute".into());
+    }
+    let name = instance_name.unwrap_or(account_id);
+    if !is_normalized_name(name) {
+        return Err("Desktop host instance name must already be normalized".into());
+    }
+    let config = scope_workspace(config, account_id, selected_workspace)?;
+    let (config, credential_file) = match instance_name {
+        Some(name) => scope_host_instance(&config, account_id, name)?,
+        None => (config, credential_file.to_owned()),
+    };
+    let relative_credential = Path::new(&credential_file);
+    if relative_credential.as_os_str().is_empty()
+        || relative_credential.is_absolute()
+        || relative_credential
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+    {
+        return Err("invalid token_file path".into());
+    }
+    let doc: DocumentMut = config
+        .parse()
+        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    let bridge = doc
+        .get("accounts")
+        .and_then(Item::as_table_like)
+        .and_then(|accounts| accounts.get(account_id))
+        .and_then(Item::as_table_like)
+        .and_then(|account| account.get("bridge"))
+        .and_then(Item::as_table_like)
+        .ok_or("Bot account bridge is missing from the host configuration")?;
+    if bridge.get("host_credential_env").is_some()
+        || bridge.get("host_credential_file").and_then(Item::as_str)
+            != Some(credential_file.as_str())
+    {
+        return Err("Host credential file must match the configuration's file source".into());
+    }
+    if credential.trim().is_empty() {
+        return Err("Host credential must not be empty".into());
+    }
+
+    fs::create_dir_all(base).map_err(|error| error.to_string())?;
+    let credential_path = base.join(relative_credential);
+    if let Some(parent) = credential_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let mut credential_output = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&credential_path)
+        .map_err(|error| error.to_string())?;
+    credential_output
+        .set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|error| error.to_string())?;
+    credential_output
+        .write_all(credential.trim().as_bytes())
+        .map_err(|error| error.to_string())?;
+    let config_path = base.join(format!("cheers-daemon.{name}.toml"));
+    fs::write(&config_path, config).map_err(|error| error.to_string())?;
+    Ok(config_path)
 }
 
 /// Repair only the exact dual-field configuration emitted by desktop 0.1.42's

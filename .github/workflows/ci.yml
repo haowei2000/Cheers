@@ -169,6 +169,75 @@ jobs:
       - name: Clippy (non-blocking)
         run: cargo clippy --all-targets --features integration || true
 
+  browser-e2e:
+    name: Browser E2E (Personal channels)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: changes
+    if: needs.changes.outputs.gateway == 'true' || needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cheers
+          POSTGRES_PASSWORD: cheers
+          POSTGRES_DB: cheers_browser_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cheers"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://cheers:cheers@localhost:5432/cheers_browser_e2e
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --dir frontend exec playwright install --with-deps chromium
+
+      - name: Type-check browser tests
+        run: pnpm --dir frontend run typecheck:e2e
+
+      - name: Register, log in, and create Personal channels in a real browser
+        run: cargo test --manifest-path server/Cargo.toml --locked --features integration --test browser_e2e -- --include-ignored --nocapture
+
+      - name: Upload browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: personal-channel-e2e-failure
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
   mcp-conformance:
     name: MCP 2026-07-28 Conformance
     runs-on: ubuntu-latest
@@ -329,7 +398,8 @@ jobs:
   desktop-check:
     name: Desktop Check
     # macos-14: the Tauri crate needs Apple frameworks; no `tauri build` in CI
-    # (slow, and unsigned artifacts aren't shippable anyway) — fmt + check only.
+    # (slow, and unsigned artifacts aren't shippable anyway). Unit tests cover
+    # the shell's local logic without launching an installed app or agent.
     runs-on: macos-14
     timeout-minutes: 15
     needs: changes
@@ -364,6 +434,9 @@ jobs:
 
       - name: Check desktop shell
         run: cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
+
+      - name: Test desktop shell
+        run: cargo test --manifest-path apps/macos/src-tauri/Cargo.toml --locked
 
   # ─────────────────────────────────────────────
   # iOS (Swift): project-file sanity + a real compile.

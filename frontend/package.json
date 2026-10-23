@@ -15,7 +15,9 @@
     "design-system:test": "node --test ../scripts/lib/design-system-audit.test.mjs ../scripts/lib/website-design-audit.test.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@babel/standalone": "^8.0.7",
@@ -59,6 +61,7 @@
   "devDependencies": {
     "@babel/core": "^8.0.7",
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.2.0",
     "@types/qrcode": "^1.5.6",
