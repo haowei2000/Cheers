@@ -22,7 +22,8 @@ import { FloatingLayer } from "./floating-layer";
 export function usePopoverDismiss(
   open: boolean,
   onClose: () => void,
-  rootRef: RefObject<HTMLElement | null>
+  rootRef: RefObject<HTMLElement | null>,
+  returnFocusRef?: RefObject<HTMLElement | null>,
 ) {
   useEffect(() => {
     if (!open) return;
@@ -34,6 +35,7 @@ export function usePopoverDismiss(
       if (e.key !== "Escape") return;
       e.preventDefault();
       onClose();
+      returnFocusRef?.current?.focus({ preventScroll: true });
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -41,7 +43,7 @@ export function usePopoverDismiss(
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose, rootRef]);
+  }, [open, onClose, rootRef, returnFocusRef]);
 }
 
 /**

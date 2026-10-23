@@ -6,6 +6,9 @@ export const queryKeys = {
   externalIdentities: ["account", "external-identities"] as const,
   authSessions: ["account", "sessions"] as const,
   aiConsents: ["account", "ai-consents"] as const,
+  botPermissions: (botId: string) => ["bots", botId, "permissions"] as const,
+  botControls: (botId: string) => ["bots", botId, "session-controls"] as const,
+  botSessionControls: (channelId: string, botId: string) => ["bots", botId, "session-controls", channelId] as const,
 };
 
 export const queryClient = new QueryClient({
