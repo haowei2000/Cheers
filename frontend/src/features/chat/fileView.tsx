@@ -8,6 +8,7 @@ import { transcribeFile } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { downloadFile, formatBytes, isAudioFile } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
+import { loadImageObjectUrl } from "./imageObjectUrl";
 import { useContextSurface } from "@/components/ui/context-actions";
 import { useContextPickStore } from "./context/contextPick";
 
@@ -23,31 +24,39 @@ const FilePreviewModal = lazy(() =>
 // Re-exported for callers that historically imported these from fileView.
 export { downloadFile, formatBytes } from "./fileUtils";
 
-// Inline image thumbnail. An <img src> can't carry the Bearer, so fetch the blob with auth
-// then render an object URL (revoked on unmount). Clicking the tile opens the full preview.
+// Inline image thumbnail. Loads only once the tile nears the viewport, so opening a
+// channel full of images doesn't queue every download ahead of the visible ones; the
+// bytes come from the shared session cache the full preview also reads.
 function ImagePreview({ file }: { file: FileInfo }) {
   const [src, setSrc] = useState<string | null>(null);
+  const [near, setNear] = useState(() => typeof IntersectionObserver === "undefined");
+  const placeholderRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    let url: string | null = null;
+    const el = placeholderRef.current;
+    if (near || !el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setNear(true);
+      },
+      { rootMargin: "400px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+  useEffect(() => {
+    if (!near) return;
     let alive = true;
-    apiFetch(`/files/${file.file_id}/download`)
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("dl"))))
-      .then((b) => {
-        if (alive) {
-          url = URL.createObjectURL(b);
-          setSrc(url);
-        }
-      })
+    loadImageObjectUrl(file.file_id)
+      .then((url) => alive && setSrc(url))
       .catch(() => {});
     return () => {
       alive = false;
-      if (url) URL.revokeObjectURL(url);
     };
-  }, [file.file_id]);
+  }, [file.file_id, near]);
 
   if (!src) {
     return (
-      <div className="h-32 w-32 rounded-sm bg-zinc-800/60 flex items-center justify-center text-minimal text-content-muted">
+      <div ref={placeholderRef} className="h-32 w-32 rounded-sm bg-zinc-800/60 flex items-center justify-center text-minimal text-content-muted">
         Loading image…
       </div>
     );

@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { Bot } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import { createBot } from "@/api/bots";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -53,7 +53,7 @@ export function CreateBotDialog({
 
   return (
     <Dialog
-      title={<span className="flex items-center gap-2"><Bot className="h-5 w-5 text-accent-400" />Create bot</span>}
+      title={<span className="flex items-center gap-2"><BotIcon contentSize="large" className="text-accent-400" />Create bot</span>}
       onClose={onClose}
       maxWidth="max-w-lg"
     >

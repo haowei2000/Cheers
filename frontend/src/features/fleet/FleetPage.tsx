@@ -1,15 +1,13 @@
 import { HelpLabel } from "@/components/ui/help-text";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
-  Bot as BotIcon,
   CircleGauge,
   History,
   Laptop,
-  Radar,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
@@ -20,6 +18,7 @@ import { SurfaceSpinner } from "@/components/ui/spinner";
 import { ActionButton } from "@/components/ui/action-button";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { BotIcon, FleetIcon } from "@/components/ui/editorial-icons";
 import { ItemList, NavigationItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
@@ -43,7 +42,7 @@ import { FleetOverview } from "./FleetOverview";
 const POLL_MS = 30_000;
 type Section = "overview" | "bots" | "hosts" | "audit";
 
-const sections: Array<{ id: Section; label: string; icon: typeof Radar }> = [
+const sections: Array<{ id: Section; label: string; icon: ComponentType<{ className?: string }> }> = [
   { id: "overview", label: "Overview", icon: CircleGauge },
   { id: "bots", label: "Bots", icon: BotIcon },
   { id: "hosts", label: "Hosts", icon: Laptop },
@@ -160,7 +159,7 @@ export default function FleetPage() {
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </UiButton>
-        <Radar className="h-4 w-4 text-accent-400" aria-hidden="true" />
+        <FleetIcon className="text-accent-400" />
         <div>
           <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>Personal bot cockpit</>}>Fleet</HelpLabel></h1>
 

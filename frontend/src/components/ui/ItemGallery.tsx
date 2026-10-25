@@ -123,6 +123,8 @@ const iconLabels: Record<EditorialIconName, string> = {
   dispatch: "Dispatch / notice",
   archive: "Archive",
   agentMark: "Agent mark",
+  bot: "Bot",
+  fleet: "Fleet",
   session: "Session",
   taskDocket: "Task docket",
   diffProof: "Diff proof",

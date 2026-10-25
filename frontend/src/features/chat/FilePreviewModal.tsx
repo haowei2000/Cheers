@@ -10,6 +10,7 @@ import type { FileInfo } from "@/types";
 import { downloadFile, extOf, formatBytes, previewKind } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
 import { PdfViewer } from "./PdfViewer";
+import { loadImageObjectUrl } from "./imageObjectUrl";
 
 const TEXT_CLIP = 256 * 1024; // cap what we highlight/render to keep the UI snappy
 
@@ -55,20 +56,13 @@ function ImageBody({ file }: { file: FileInfo }) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    let url: string | null = null;
     let alive = true;
-    apiFetch(`/files/${file.file_id}/preview`)
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("dl"))))
-      .then((b) => {
-        if (alive) {
-          url = URL.createObjectURL(b);
-          setSrc(url);
-        }
-      })
+    // Usually already resolved: the inline thumbnail loaded the same bytes.
+    loadImageObjectUrl(file.file_id)
+      .then((url) => alive && setSrc(url))
       .catch(() => alive && setFailed(true));
     return () => {
       alive = false;
-      if (url) URL.revokeObjectURL(url);
     };
   }, [file.file_id]);
   if (failed) return <Centered tone="error">Failed to load image</Centered>;

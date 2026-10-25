@@ -174,6 +174,13 @@ function basename(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() || path;
 }
 
+/** Everything before the last segment (`""` for a top-level entry). */
+function dirname(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const i = trimmed.lastIndexOf("/");
+  return i > 0 ? trimmed.slice(0, i) : "";
+}
+
 function joinAbs(root: string, rel: string): string {
   const base = root.replace(/\/+$/, "");
   const r = rel.replace(/^\/+/, "");
@@ -1602,75 +1609,63 @@ export function RemoteWorkspaceDialog({
               )}
 
               {leftView === "changes" && git ? (
-                <>
-                  <div className="flex h-9 shrink-0 items-center gap-1 px-2 border-b border-control/80 font-utility text-compact text-content-muted">
-                    <span className="flex-1 font-medium text-content-secondary truncate">Changes</span>
-                    <UiButton action="diffWorking" content="icon" variant="plain"
-                    onClick={() => openDiff("", false)}
-                    selected={diff?.kind === "file" && diff.path === "" && !diff.staged}
-                    title="Diff the whole working tree (unstaged)"
-                    controlSize="compact"
-                    className="flex items-center gap-1 rounded-sm text-content-primary hover:text-content-strong"
-                  >
-                    <GitCompare className="w-3.5 h-3.5" />
-                  </UiButton>
-                  <UiButton action="diffStaged" content="icon" variant="plain"
-                    onClick={() => openDiff("", true)}
-                    selected={diff?.kind === "file" && diff.path === "" && diff.staged}
-                    title="Diff everything staged (git diff --staged)"
-                    controlSize="compact"
-                    className="flex items-center gap-1 rounded-sm text-content-primary hover:text-content-strong"
-                  >
-                    <GitCompare className="w-3.5 h-3.5" />                  </UiButton>
-                  {diffBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-                </div>
                 <div className="flex-1 overflow-auto p-1">
                   {(() => {
                     // Split by porcelain XY: index char (staged) vs worktree char
                     // (unstaged/untracked). A file can appear in both groups.
                     const staged = git.entries.filter((e) => isStagedCode(e.xy));
                     const unstaged = git.entries.filter((e) => isUnstagedCode(e.xy));
+                    // One line per file, file name first: a truncated full path
+                    // cut off exactly the part that identifies the file.
                     const renderRow = (e: GitStatusEntry, isStaged: boolean) => {
                       const mk = gitMark(e.xy);
                       const active =
                         diff?.kind === "file" && diff.path === e.path && diff.staged === isStaged;
+                      const dir = dirname(e.path);
                       return (
                         <UiButton controlWidth="fill" variant="plain" role="option"
                           key={(isStaged ? "s:" : "u:") + e.path}
                           onClick={() => openDiff(e.path, isStaged)}
                           title={e.path}
-                          controlSize="compact" className={`flex items-center gap-2 text-left hover:bg-control ${
- active ? "bg-control text-content-primary font-medium": "text-content-primary"
+                          controlSize="compact" className={`flex items-center gap-2 text-left hover:bg-control text-content-primary ${
+ active ? "bg-control font-medium": ""
  }`}
                         >
-                          <span
-                            className={`w-3 shrink-0 text-center font-code text-minimal ${mk?.cls ?? "text-content-muted"}`}
-                          >
+                          <span className="min-w-0 flex-1 truncate font-utility text-compact">
+                            {basename(e.path)}
+                            {dir && <span className="ml-2 font-normal text-minimal text-content-muted">{dir}</span>}
+                          </span>
+                          <span className={`w-3 shrink-0 text-center font-code text-minimal ${mk?.cls ?? "text-content-muted"}`}>
                             {mk?.m ?? "•"}
                           </span>
-                          <span className="truncate flex-1 font-utility text-compact">{e.path}</span>
                         </UiButton>
                       );
                     };
-                    const label = (text: string, n: number) => (
-                      <div className="px-2 pt-2 pb-1 font-utility text-minimal uppercase tracking-label text-content-muted">
-                        {text} <span className="tabular-nums text-content-muted">{n}</span>
-                      </div>
+                    // Group label owns its whole-group diff, so the two diff
+                    // actions are told apart by where they sit, not by tooltip.
+                    const group = (text: string, items: GitStatusEntry[], isStaged: boolean) => (
+                      <>
+                        <div className="flex h-7 items-center gap-1 pl-2 font-utility text-minimal uppercase tracking-label text-content-muted">
+                          <span className="flex-1 truncate">
+                            {text} <span className="tabular-nums">{items.length}</span>
+                          </span>
+                          <UiButton action={isStaged ? "diffStaged" : "diffWorking"} content="icon" variant="plain"
+                            onClick={() => openDiff("", isStaged)}
+                            selected={diff?.kind === "file" && diff.path === "" && diff.staged === isStaged}
+                            title={isStaged ? "Diff everything staged (git diff --staged)" : "Diff the whole working tree (unstaged)"}
+                            controlSize="compact"
+                            className="rounded-sm text-content-primary hover:text-content-strong"
+                          >
+                            <GitCompare className="w-3.5 h-3.5" />
+                          </UiButton>
+                        </div>
+                        {items.map((e) => renderRow(e, isStaged))}
+                      </>
                     );
                     return (
                       <>
-                        {staged.length > 0 && (
-                          <>
-                            {label("Staged", staged.length)}
-                            {staged.map((e) => renderRow(e, true))}
-                          </>
-                        )}
-                        {unstaged.length > 0 && (
-                          <>
-                            {label("Unstaged / Untracked", unstaged.length)}
-                            {unstaged.map((e) => renderRow(e, false))}
-                          </>
-                        )}
+                        {staged.length > 0 && group("Staged", staged, true)}
+                        {unstaged.length > 0 && group("Unstaged", unstaged, false)}
                         {git.entries.length === 0 && (
                           <div className="px-2 py-3 font-utility text-compact text-content-muted">
                             Working tree clean
@@ -1680,42 +1675,25 @@ export function RemoteWorkspaceDialog({
                     );
                   })()}
                 </div>
-              </>
             ) : leftView === "history" && git ? (
-              <>
-                <div className="flex h-9 shrink-0 items-center gap-1 px-2 border-b border-control/80 font-utility text-compact text-content-muted">
-                  <span className="flex items-center gap-1 flex-1 font-medium text-content-secondary truncate">
-                    <History className="w-3.5 h-3.5" /> Commits
-                  </span>
-                  {logBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-                </div>
                 <div className="flex-1 overflow-auto p-1">
+                  {/* One line per commit, like the Files and Changes rows; hash
+                      and author stay in the tooltip and the opened diff header. */}
                   {log?.map((c) => {
                     const active = diff?.kind === "commit" && diff.hash === c.hash;
                     return (
                       <UiButton controlWidth="fill" variant="plain" role="option"
                         key={c.hash}
                         onClick={() => openCommit(c)}
-                        title={c.subject}
-                        controlSize="compact" className={`flex flex-col gap-1 text-left border-b border-panel hover:bg-control ${
- active ? "bg-control": ""
+                        title={`${c.hash.slice(0, 7)} · ${c.author} · ${c.date}\n${c.subject}`}
+                        controlSize="compact" className={`flex items-center gap-2 text-left hover:bg-control text-content-primary ${
+ active ? "bg-control font-medium": ""
  }`}
                       >
-                        <div className="flex items-center gap-2 font-utility text-compact">
-                          <GitCommit className="w-3.5 h-3.5 text-content-muted shrink-0" />
-                          <span className="font-code text-minimal text-warning-400 shrink-0">
-                            {c.hash.slice(0, 7)}
-                          </span>
-                          <span
-                            className={`truncate flex-1 ${active ? "text-content-primary font-medium" : "text-content-secondary"}`}
-                          >
-                            {c.subject}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 pl-4 font-utility text-minimal text-content-muted">
-                          <span className="truncate">{c.author}</span>
-                          <span className="shrink-0">· {relDate(c.date)}</span>
-                        </div>
+                        <span className="min-w-0 flex-1 truncate font-utility text-compact">{c.subject}</span>
+                        <span className="shrink-0 font-utility text-minimal tabular-nums text-content-muted">
+                          {relDate(c.date)}
+                        </span>
                       </UiButton>
                     );
                   })}
@@ -1735,7 +1713,6 @@ export function RemoteWorkspaceDialog({
                     </UiButton>
                   )}
                 </div>
-              </>
             ) : (
               <>
                 <div className="flex h-9 shrink-0 items-center gap-1 px-2 border-b border-control/80 font-utility text-compact text-content-muted">
