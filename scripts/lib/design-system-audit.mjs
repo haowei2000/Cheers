@@ -84,6 +84,45 @@ function staticExpressionText(expression, sourceFile, ts, declarations, seen = n
   return "";
 }
 
+const SELECTION_CONDITION = /\b(?:is)?(?:selected|active|current|checked)\b/i;
+const LOCAL_SELECTION_TOKEN = /^(?:bg-(?:zinc-[0-9]+|control(?:-[a-z]+)?|indigo-[0-9]+\/[0-9]+|selected)(?:\/[0-9]+)?|ring-(?:indigo-[0-9]+|selected-indicator)(?:\/[0-9]+)?|border-(?:l-)?(?:content-strong|indigo-[0-9]+|selected-indicator)|font-(?:medium|semibold|bold)|text-content-strong|text-accent-[0-9]+)$/;
+
+/** Collect selected-state utilities that a className assembles under a selection condition. */
+function localSelectionTokens(expression, sourceFile, ts) {
+  const found = [];
+  const literalTokens = (node) => {
+    if (!node) return [];
+    if (ts.isParenthesizedExpression(node)) return literalTokens(node.expression);
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return classTokens(node.text);
+    if (ts.isTemplateExpression(node)) return classTokens([node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(" "));
+    return [];
+  };
+  const visit = (node) => {
+    if (ts.isConditionalExpression(node) && SELECTION_CONDITION.test(node.condition.getText(sourceFile))) {
+      const negated = /^!/.test(node.condition.getText(sourceFile).trim());
+      found.push(...literalTokens(negated ? node.whenFalse : node.whenTrue));
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      SELECTION_CONDITION.test(node.left.getText(sourceFile)) &&
+      !/^!/.test(node.left.getText(sourceFile).trim())
+    ) {
+      found.push(...literalTokens(node.right));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(expression);
+  return found.filter((token) => LOCAL_SELECTION_TOKEN.test(token));
+}
+
+function classExpression(node, sourceFile, ts) {
+  const attr = node.attributes?.properties.find(
+    (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "className"
+  );
+  return attr?.initializer && ts.isJsxExpression(attr.initializer) ? attr.initializer.expression : undefined;
+}
+
 function classText(node, sourceFile, ts, declarations) {
   const attr = node.attributes?.properties.find(
     (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "className"
@@ -160,6 +199,8 @@ export function auditSources(files, ts, policy) {
       nonStandardDisabledOpacity: 0,
       nonPrimaryButtonNeutralText: 0,
       nonStandardNeutralForegroundLiteral: 0,
+      localSelectionStyling: 0,
+      sharedTabStyleOverride: 0,
     },
     findings: [],
     invalidReasons: [],
@@ -245,6 +286,27 @@ export function auditSources(files, ts, policy) {
             if (token === "border" && !exempt) {
               result.violations.restingBorder += 1;
               result.findings.push({ file, line, rule: "restingBorder", token });
+            }
+          }
+          const selectionExpression = !primitive && !exempt ? classExpression(node, sourceFile, ts) : undefined;
+          const selectionTokens = selectionExpression ? localSelectionTokens(selectionExpression, sourceFile, ts) : [];
+          if (selectionTokens.length) {
+            result.violations.localSelectionStyling += selectionTokens.length;
+            result.findings.push({ file, line, rule: "localSelectionStyling", token: selectionTokens.join(" ") });
+          }
+          const tabRole = node.attributes?.properties.find(
+            (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "role"
+          );
+          const isSharedTab = SHARED_CONTROLS.has(tag) && tabRole?.initializer && ts.isStringLiteral(tabRole.initializer) && tabRole.initializer.text === "tab";
+          if (!primitive && isSharedTab) {
+            // Unprefixed utilities only: focus-visible:/hover: variants are not overrides.
+            const unprefixed = classes.replace(/["'`{}(),?]/g, " ").split(/\s+/).filter((token) => token && !token.includes(":"));
+            const tabOverrideTokens = unprefixed.filter((token) =>
+              /^(?:rounded(?:-[a-z0-9]+)?|text-content-[a-z]+|font-(?:code|utility|reading|display|medium|semibold|bold)|border(?:-[a-z]+)*(?:-[0-9]+)?|bg-[a-z]+(?:-[a-z0-9]+)*(?:\/[0-9]+)?|ring-[0-9]|shadow-none)$/.test(token)
+            );
+            if (tabOverrideTokens.length) {
+              result.violations.sharedTabStyleOverride += tabOverrideTokens.length;
+              result.findings.push({ file, line, rule: "sharedTabStyleOverride", token: tabOverrideTokens.join(" ") });
             }
           }
           const disabledOpacityTokens = classes.match(/\bdisabled:opacity-(?!50\b)[0-9]+\b/g) ?? [];
