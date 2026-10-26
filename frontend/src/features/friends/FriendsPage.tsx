@@ -1,4 +1,5 @@
 import { Tip } from "@/components/ui/tip";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SectionNav } from "@/components/ui/section-nav";
 import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -179,7 +180,11 @@ function FriendsTab() {
 
   if (loading) return <SurfaceSpinner />;
   if (!friends.length)
-    return <Empty>No friends yet. Use the Add tab to find people.</Empty>;
+    return (
+      <Empty action={<Button action="add" content="iconText" variant="secondary" onClick={() => navigate("/friends/add")}><UserPlus /></Button>}>
+        No friends yet
+      </Empty>
+    );
 
   return (
     <>
@@ -689,10 +694,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Empty({ children }: { children: ReactNode }) {
-  return (
-    <div className="text-regular text-content-muted py-10 text-center">
-      {children}
-    </div>
-  );
+function Empty({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return <EmptyState title={children} action={action} />;
 }

@@ -1,5 +1,7 @@
 import { BotIcon } from "@/components/ui/editorial-icons";
 
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EntityItem, ItemSection } from "@/components/ui/item";
@@ -62,9 +64,11 @@ export function BotRow({ bot, onSelect }: { bot: FleetBot; onSelect: () => void 
 export function FleetBots({
   bots,
   onOpenBot,
+  onCreateBot,
 }: {
   bots: FleetBot[];
   onOpenBot: (botId: string) => void;
+  onCreateBot: () => void;
 }) {
   return (
     <ItemSection
@@ -76,7 +80,12 @@ export function FleetBots({
       {bots.length ? (
         bots.map((bot) => <BotRow key={bot.bot_id} bot={bot} onSelect={() => onOpenBot(bot.bot_id)} />)
       ) : (
-        <EmptyState icon={BotIcon} title="No bots yet" hint="Create a bot, then connect it on the device that will run it." />
+        <EmptyState
+          icon={BotIcon}
+          title="No bots yet"
+          hint="Create a bot, then connect it on the device that will run it."
+          action={<Button action="create" content="iconText" variant="secondary" onClick={onCreateBot}><Plus /></Button>}
+        />
       )}
     </ItemSection>
   );

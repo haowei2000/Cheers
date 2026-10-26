@@ -213,11 +213,12 @@ export default function FleetPage() {
             onOpenAllBots={() => navigate("/fleet/bots")}
             onOpenActivity={() => navigate("/activity")}
             onOpenHosts={() => navigate("/fleet/hosts")}
-          />
+            onCreateBot={() => setCreateBotOpen(true)}
+            />
         ) : section === "bots" ? (
-          <FleetBots bots={bots} onOpenBot={openBot} />
+          <FleetBots bots={bots} onOpenBot={openBot} onCreateBot={() => setCreateBotOpen(true)} />
         ) : section === "hosts" ? (
-          <FleetHosts items={hosts} refresh={async () => { await refresh(true); }} />
+          <FleetHosts items={hosts} refresh={async () => { await refresh(true); }} onAddHost={() => openHost()} />
         ) : (
           <FleetAudit events={audit} bots={bots} />
         )}
