@@ -28,7 +28,9 @@ export { downloadFile, formatBytes } from "./fileUtils";
 // Inline image thumbnail. Loads only once the tile nears view in its scroll
 // container, so opening a channel full of images doesn't queue every download ahead
 // of the visible ones; the bytes come from the shared cache the full preview reads.
-function ImagePreview({ file }: { file: FileInfo }) {
+// Only the loaded image is a button (it opens the preview); the failed state holds
+// its own Retry, so no button is ever nested in another.
+function ImagePreview({ file, onOpen }: { file: FileInfo; onOpen: () => void }) {
   const placeholderRef = useRef<HTMLDivElement | null>(null);
   const [activated, setActivated] = useState(false);
   const near = useNearViewport(placeholderRef, { rootMargin: "400px 0px", enabled: !activated });
@@ -52,11 +54,18 @@ function ImagePreview({ file }: { file: FileInfo }) {
     );
   }
   return (
-    <img
-      src={src}
-      alt={file.original_filename || "image"}
-      className="max-h-48 max-w-[240px] rounded-sm object-cover hover:opacity-90 transition-opacity"
-    />
+    <UiButton variant="plain" role="option"
+      type="button"
+      onClick={onOpen}
+      title={file.original_filename || file.file_id}
+      className="block h-auto rounded-sm transition-opacity hover:opacity-90"
+    >
+      <img
+        src={src}
+        alt={file.original_filename || "image"}
+        className="max-h-48 max-w-[240px] rounded-sm object-cover"
+      />
+    </UiButton>
   );
 }
 
@@ -239,14 +248,7 @@ export function FileTile({ file, channelId }: { file: FileInfo; channelId?: stri
       {isAudioFile(file) ? (
         <AudioTile file={file} />
       ) : isImage ? (
-        <UiButton variant="plain" role="option"
-          type="button"
-          onClick={() => setOpen(true)}
-          title={file.original_filename || file.file_id}
-          className="block rounded-sm transition-opacity hover:opacity-90"
-        >
-          <ImagePreview file={file} />
-        </UiButton>
+        <ImagePreview file={file} onOpen={() => setOpen(true)} />
       ) : (
         <UiButton content="iconText" variant="plain" role="option"
           type="button"
