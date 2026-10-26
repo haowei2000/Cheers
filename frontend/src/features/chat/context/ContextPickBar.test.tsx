@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ContextPickBar, ContextPickerButton } from "./ContextPickBar";
-import { useContextPickStore } from "./contextPick";
+import { ContextPickBar, ContextPickerButton, withoutReplyTarget } from "./ContextPickBar";
+import { messageContextItem, useContextPickStore, type ContextItem } from "./contextPick";
 
 const CHANNEL_ID = "channel-1";
 
@@ -38,5 +38,22 @@ describe("composer context controls", () => {
 
     expect(markup).toContain("Plan");
     expect(markup).not.toContain("Add context");
+  });
+
+  it("does not suggest the replied-to message under the reply banner", () => {
+    const markup = renderToStaticMarkup(
+      <ContextPickBar channelId={CHANNEL_ID} replyTo={{ msg_id: "m-11", channel_seq: 11 }} />,
+    );
+
+    expect(markup).toBe("");
+  });
+
+  it("does not list the replied-to pick again as a chip", () => {
+    const replyTo = { msg_id: "m-11", channel_seq: 11 };
+    const plan: ContextItem = { id: "plan", verb: "channel.plan.read", params: {}, label: "Plan", kind: "plan" };
+    const picks = [messageContextItem(replyTo)!, plan];
+
+    expect(withoutReplyTarget(picks, replyTo)).toEqual([plan]);
+    expect(withoutReplyTarget(picks, null)).toEqual(picks);
   });
 });

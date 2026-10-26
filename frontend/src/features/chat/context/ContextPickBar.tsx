@@ -25,6 +25,7 @@ import { MenuOption } from "@/components/ui/menu-option";
 import { OverflowText } from "@/components/ui/overflow-text";
 import {
   contextItemLocator,
+  messageContextItem,
   useContextPickStore,
   usePendingContext,
   useContextSuggestions,
@@ -185,6 +186,13 @@ export function AttachContextButton({
   );
 }
 
+/** Picks to list as chips: everything except the reply target, which the reply
+ *  banner already shows. It stays attached and is sent with the reply. */
+export function withoutReplyTarget(items: ContextItem[], replyTo?: ReplyTargetLike | null): ContextItem[] {
+  const replyItemId = replyTo ? messageContextItem(replyTo)?.id : undefined;
+  return replyItemId ? items.filter((item) => item.id !== replyItemId) : items;
+}
+
 export function ContextPickBar({
   channelId,
   replyTo,
@@ -199,8 +207,10 @@ export function ContextPickBar({
   /** Jump to a pending item's source (Workbench file / workspace file). */
   onJumpToSource?: (item: ContextItem) => void;
 }) {
-  const items = usePendingContext(channelId);
-  const suggestions = useContextSuggestions(channelId, { replyTo, draftText, files });
+  // The reply banner already shows the replied-to message, so it is never
+  // offered as a suggestion and its pick is not listed again as a chip.
+  const items = withoutReplyTarget(usePendingContext(channelId), replyTo);
+  const suggestions = useContextSuggestions(channelId, { draftText, files });
   const add = useContextPickStore((s) => s.add);
   const remove = useContextPickStore((s) => s.remove);
   const removePick = (id: string) => {
