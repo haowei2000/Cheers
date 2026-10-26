@@ -76,12 +76,19 @@ function LoadingIndicator() {
   );
 }
 
-function IconTextContent({ action, children, label, loading, size }: {
+/** Variants without a resting surface. Nothing outlines their slot, so a label
+ *  centred in the space left over drifts away from its icon and the pair reads
+ *  as two controls ("✕      Revoke"). */
+const TRANSPARENT_VARIANTS = new Set<Variant>(["plain", "ghost", "danger"]);
+
+function IconTextContent({ action, children, label, loading, size, grouped }: {
   action?: ActionKey;
   children: ReactNode;
   label?: ReactNode;
   loading?: boolean;
   size: ControlSize;
+  /** Keep the label beside the icon instead of centring it in the label slot. */
+  grouped: boolean;
 }) {
   const parts = Children.toArray(children);
   const leading = parts.shift();
@@ -112,7 +119,10 @@ function IconTextContent({ action, children, label, loading, size }: {
       </span>
       <span
         data-button-slot="label"
-        className="inline-flex min-w-0 flex-1 items-center justify-center self-stretch px-3"
+        className={cn(
+          "inline-flex min-w-0 flex-1 items-center self-stretch",
+          grouped ? "justify-start pl-1 pr-3" : "justify-center px-3",
+        )}
       >
         {action ? actionLabel(action) : label ?? parts}
       </span>
@@ -186,7 +196,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       {...props}
     >
       {content === "iconText" ? (
-        <IconTextContent action={action} label={label} loading={loading} size={resolvedSize}>{children}</IconTextContent>
+        <IconTextContent
+          action={action}
+          label={label}
+          loading={loading}
+          size={resolvedSize}
+          grouped={controlWidth !== "fill" && TRANSPARENT_VARIANTS.has(variant)}
+        >
+          {children}
+        </IconTextContent>
       ) : content === "icon" ? (
         loading ? <LoadingIndicator /> : children
       ) : (
