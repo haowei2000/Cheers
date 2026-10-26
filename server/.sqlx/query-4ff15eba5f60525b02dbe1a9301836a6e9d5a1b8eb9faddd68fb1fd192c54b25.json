@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH visible AS (\n           SELECT bot_id FROM bot_accounts\n           WHERE ($1 OR created_by = $2) AND ($4::text IS NULL OR bot_id = $4)\n         )\n         SELECT source AS \"source?\", event_id AS \"event_id?\", event_type AS \"event_type?\",\n                bot_id AS \"bot_id?\", host_id AS \"host_id?\", actor_id AS \"actor_id?\",\n                detail AS \"detail?\", created_at AS \"created_at?\"\n         FROM (\n           (SELECT 'management'::text AS source, a.id AS event_id, a.event_type,\n                   a.bot_id, a.host_id, a.actor_id, a.detail, a.created_at\n            FROM bot_management_audit a\n            WHERE ($1 OR a.actor_id = $2 OR EXISTS (\n                    SELECT 1 AS present FROM bot_accounts b\n                    WHERE b.bot_id = a.bot_id AND b.created_by = $2))\n              AND ($3::timestamptz IS NULL OR a.created_at < $3)\n              AND ($4::text IS NULL OR a.bot_id = $4)\n              AND ($5::text IS NULL OR a.host_id = $5)\n              AND ($6::text IS NULL OR a.event_type = $6)\n            ORDER BY a.created_at DESC, a.id DESC\n            LIMIT $7)\n           UNION ALL\n           (SELECT 'connection', e.event_id, e.event_type, e.bot_id, NULL, NULL,\n                   e.detail, e.created_at\n            FROM visible v CROSS JOIN LATERAL (\n              SELECT e.id::text AS event_id, 'connection.' || e.event AS event_type,\n                     e.bot_id, jsonb_build_object('stream', e.stream, 'reason', e.reason,\n                     'connection_id', e.connection_id) AS detail, e.created_at\n              FROM bot_connection_events e\n              WHERE e.bot_id = v.bot_id AND $5::text IS NULL\n                AND ($3::timestamptz IS NULL OR e.created_at < $3)\n                AND ($6::text IS NULL OR 'connection.' || e.event = $6)\n              ORDER BY e.created_at DESC, e.id::text DESC\n              LIMIT $7) e)\n           UNION ALL\n           (SELECT 'acp', l.event_id, l.event_type, l.bot_id, NULL, NULL,\n                   l.detail, l.created_at\n            FROM visible v CROSS JOIN LATERAL (\n              SELECT l.id::text AS event_id, l.name AS event_type, l.bot_id,\n                     jsonb_build_object('home', l.home, 'channel_id', l.channel_id,\n                     'session_id', l.session_id, 'payload', l.payload) AS detail,\n                     l.created_at\n              FROM acp_event_log l\n              WHERE l.bot_id = v.bot_id AND $5::text IS NULL\n                AND ($3::timestamptz IS NULL OR l.created_at < $3)\n                AND ($6::text IS NULL OR l.name = $6)\n              ORDER BY l.created_at DESC, l.id::text DESC\n              LIMIT $7) l)\n           UNION ALL\n           (SELECT 'approval', a.event_id, a.event_type, a.bot_id, NULL, a.actor_id,\n                   a.detail, a.created_at\n            FROM visible v CROSS JOIN LATERAL (\n              SELECT a.id AS event_id, 'approval.' || a.event_type AS event_type,\n                     a.bot_id, a.actor_id, jsonb_build_object('channel_id', a.channel_id,\n                     'request_id', a.request_id, 'decision', a.decision,\n                     'detail', a.detail) AS detail, a.created_at\n              FROM approval_audit a\n              WHERE a.bot_id = v.bot_id AND $5::text IS NULL\n                AND ($3::timestamptz IS NULL OR a.created_at < $3)\n                AND ($6::text IS NULL OR 'approval.' || a.event_type = $6)\n              ORDER BY a.created_at DESC, a.id DESC\n              LIMIT $7) a)\n         ) events\n         ORDER BY created_at DESC, event_id DESC\n         LIMIT $7",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "event_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "event_type?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "host_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "actor_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "detail?",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "4ff15eba5f60525b02dbe1a9301836a6e9d5a1b8eb9faddd68fb1fd192c54b25"
+}

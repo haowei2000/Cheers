@@ -96,24 +96,40 @@ export default function FleetPage() {
   const [createBotOpen, setCreateBotOpen] = useState(false);
   const [hostBotId, setHostBotId] = useState<string | undefined>();
 
+  const applyFleet = useCallback((fleet: Awaited<ReturnType<typeof getAllFleet>>) => {
+    setApprovals(fleet.approvals);
+    setBots(fleet.bots);
+    setSummary(fleet.summary ?? {
+      online: fleet.bots.filter((bot) => bot.online && bot.busy_sessions === 0).length,
+      working: fleet.bots.filter((bot) => bot.online && bot.busy_sessions > 0).length,
+      offline: fleet.bots.filter((bot) => !bot.online).length,
+      waiting: fleet.approvals.filter((approval) => approval.actionable).length,
+    });
+  }, []);
+
   const refresh = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
+    // Roster and catalog gate the first paint; hosts and the audit feed fill in
+    // when they land instead of holding the whole page on the slowest request.
+    const extras = Promise.all([
+      getFleetHosts().catch(() => []).then(setHosts),
+      getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })).then((result) => setAudit(result.events)),
+    ]);
     try {
-      const [fleet, botCatalog, hostItems, auditResult] = await Promise.all([
-        getAllFleet(), listBots(), getFleetHosts().catch(() => []), getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })),
-      ]);
-      setApprovals(fleet.approvals);
-      setBots(fleet.bots);
-      setSummary(fleet.summary ?? {
-        online: fleet.bots.filter((bot) => bot.online && bot.busy_sessions === 0).length,
-        working: fleet.bots.filter((bot) => bot.online && bot.busy_sessions > 0).length,
-        offline: fleet.bots.filter((bot) => !bot.online).length,
-        waiting: fleet.approvals.filter((approval) => approval.actionable).length,
-      });
-      setCatalog(botCatalog); setHosts(hostItems); setAudit(auditResult.events);
+      const [fleet, botCatalog] = await Promise.all([getAllFleet(), listBots()]);
+      applyFleet(fleet);
+      setCatalog(botCatalog);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't load Fleet"); }
-    finally { setLoading(false); if (!quiet) setRefreshing(false); }
-  }, []);
+    finally { setLoading(false); }
+    await extras;
+    if (!quiet) setRefreshing(false);
+  }, [applyFleet]);
+
+  // Channel activity only moves approvals, liveness and sessions; the catalog,
+  // hosts and audit feed follow the slower poll.
+  const refreshLive = useCallback(async () => {
+    try { applyFleet(await getAllFleet()); } catch { /* the next poll retries */ }
+  }, [applyFleet]);
 
   useEffect(() => {
     void refresh();
@@ -122,7 +138,7 @@ export default function FleetPage() {
   }, [refresh]);
 
   const liveChannelIds = useMemo(() => [...new Set(bots.flatMap((bot) => bot.channels?.map((item) => item.channel_id) ?? (bot.channel_id ? [bot.channel_id] : [])))], [bots]);
-  useFleetLive(liveChannelIds, () => void refresh(true));
+  useFleetLive(liveChannelIds, () => void refreshLive());
   const selectedBot = catalog.find((bot) => bot.bot_id === route.botId);
   const actionableCount = approvals.filter((approval) => approval.actionable).length;
   const hostIssues = hosts.filter((item) => !item.revoked_at && (item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed")).length;
