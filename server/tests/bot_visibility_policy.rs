@@ -1020,3 +1020,141 @@ async fn visibility_read_counts(db: &PgPool) -> (i64, i64) {
     sqlx::query_as("SELECT COUNT(*) FILTER (WHERE kind='rules'),COUNT(*) FILTER (WHERE kind='groups') FROM visibility_policy_reads")
         .fetch_one(db).await.unwrap()
 }
+
+/// The Fleet audit feed merges four sources newest-first. Each source is capped
+/// per visible bot before the merge, so the feed must still equal a global sort:
+/// visibility, ordering, cursor pages and filters are checked against fixed data.
+#[sqlx::test]
+async fn fleet_audit_merges_visible_sources_newest_first(db: PgPool) {
+    let f = Fixture::start(&db).await;
+    // The viewer owns `mine`; `f.bot` belongs to another user.
+    let mine = Uuid::new_v4();
+    sqlx::query("INSERT INTO bot_accounts(bot_id,username,created_by) VALUES($1,$2,$3)")
+        .bind(mine.to_string())
+        .bind(format!("audit-{mine}"))
+        .bind(f.user.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    let base = chrono::Utc::now() - chrono::Duration::hours(1);
+    let at = |minute: i64| base + chrono::Duration::minutes(minute);
+    // Many ACP events on `mine` (more than one page) interleaved with the other
+    // sources, plus events on the foreign bot that the viewer must not see.
+    for minute in 0..12 {
+        sqlx::query("INSERT INTO acp_event_log(id,bot_id,channel_id,name,payload,created_at) VALUES($1,$2,$3,'tool_call','{}',$4)")
+            .bind(Uuid::new_v4().to_string()).bind(mine.to_string()).bind(f.channel.to_string()).bind(at(minute * 2))
+            .execute(&db).await.unwrap();
+        sqlx::query("INSERT INTO acp_event_log(id,bot_id,channel_id,name,payload,created_at) VALUES($1,$2,$3,'tool_call','{}',$4)")
+            .bind(Uuid::new_v4().to_string()).bind(f.bot.to_string()).bind(f.channel.to_string()).bind(at(minute * 2 + 1))
+            .execute(&db).await.unwrap();
+    }
+    sqlx::query("INSERT INTO bot_connection_events(bot_id,stream,event,created_at) VALUES($1,'data','connected',$2)")
+        .bind(mine.to_string()).bind(at(25)).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO approval_audit(id,event_type,bot_id,channel_id,created_at) VALUES($1,'requested',$2,$3,$4)")
+        .bind(Uuid::new_v4().to_string()).bind(mine.to_string()).bind(f.channel.to_string()).bind(at(26))
+        .execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO bot_management_audit(id,event_type,bot_id,actor_id,created_at) VALUES($1,'bot.updated',$2,$3,$4)")
+        .bind(Uuid::new_v4().to_string()).bind(mine.to_string()).bind(f.user.to_string()).bind(at(27))
+        .execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO bot_connection_events(bot_id,stream,event,created_at) VALUES($1,'data','connected',$2)")
+        .bind(f.bot.to_string()).bind(at(28)).execute(&db).await.unwrap();
+
+    let feed = |events: &Value| -> Vec<(String, String, String)> {
+        events["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["created_at"].as_str().unwrap().to_string(),
+                    e["source"].as_str().unwrap().to_string(),
+                    e["bot_id"].as_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect()
+    };
+    let sorted_desc =
+        |items: &[(String, String, String)]| items.windows(2).all(|pair| pair[0].0 >= pair[1].0);
+
+    // Viewer: only `mine`, from all four sources, newest first.
+    let (status, own) = f.get(&f.token, "/fleet/audit?limit=100").await;
+    assert!(status.is_success(), "{own}");
+    let own = feed(&own);
+    assert_eq!(own.len(), 15, "{own:?}");
+    assert!(
+        own.iter().all(|(_, _, bot)| bot == &mine.to_string()),
+        "{own:?}"
+    );
+    assert!(sorted_desc(&own), "{own:?}");
+    let sources: Vec<&str> = own
+        .iter()
+        .take(4)
+        .map(|(_, source, _)| source.as_str())
+        .collect();
+    assert_eq!(sources, ["management", "approval", "connection", "acp"]);
+
+    // Cursor pages of 3 walk the same feed with no gaps or repeats.
+    let mut paged = Vec::new();
+    let mut path = "/fleet/audit?limit=3".to_string();
+    loop {
+        let (status, page) = f.get(&f.token, &path).await;
+        assert!(status.is_success(), "{page}");
+        paged.extend(feed(&page));
+        match page["next_cursor"].as_str() {
+            Some(cursor) => path = format!("/fleet/audit?limit=3&cursor={}", url_encode(cursor)),
+            None => break,
+        }
+    }
+    assert_eq!(paged, own);
+
+    // Filters are applied inside every source.
+    let (_, acp) = f
+        .get(&f.token, "/fleet/audit?limit=100&event_type=tool_call")
+        .await;
+    assert_eq!(feed(&acp).len(), 12);
+    let (_, connection) = f
+        .get(
+            &f.token,
+            "/fleet/audit?limit=100&event_type=connection.connected",
+        )
+        .await;
+    assert_eq!(feed(&connection).len(), 1);
+
+    // Admin: both bots, still one global order; the bot filter narrows it.
+    let (_, all) = f.get(&f.admin_token, "/fleet/audit?limit=100").await;
+    let all = feed(&all);
+    assert!(all.len() >= 28, "{all:?}");
+    assert!(sorted_desc(&all), "{all:?}");
+    assert_eq!(
+        all[0].2,
+        f.bot.to_string(),
+        "the foreign connection event is newest"
+    );
+    let (_, foreign) = f
+        .get(
+            &f.admin_token,
+            &format!("/fleet/audit?limit=100&bot_id={}", f.bot),
+        )
+        .await;
+    let foreign = feed(&foreign);
+    assert!(foreign.iter().all(|(_, _, bot)| bot == &f.bot.to_string()));
+    assert_eq!(
+        foreign
+            .iter()
+            .filter(|(_, source, _)| source == "acp")
+            .count(),
+        12
+    );
+}
+
+fn url_encode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
