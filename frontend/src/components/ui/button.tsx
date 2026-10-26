@@ -14,7 +14,7 @@ import { selectedClasses, tabClasses, type TabOrientation } from "./selection";
 // types (same shape as lib/serverConfig.ts).
 const DEV = (import.meta as { env?: { DEV?: boolean } }).env?.DEV ?? false;
 
-type Variant = "primary" | "emphasis" | "ghost" | "danger" | "secondary" | "plain";
+type Variant = "primary" | "emphasis" | "ghost" | "danger" | "destructive" | "secondary" | "plain";
 export type ControlWidth = "slot" | "fill" | "content";
 export type ButtonContent = "icon" | "text" | "iconText";
 
@@ -45,6 +45,11 @@ const variantCls: Record<Variant, string> = {
     "bg-transparent text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
   danger:
     "bg-transparent text-danger-400 hover:bg-red-950 hover:text-danger-300 active:bg-red-900 active:scale-[0.98]",
+  // The one destructive action of a section or dialog (delete a channel, revoke
+  // everything, confirm a delete). Outlined so it never reads weaker than the
+  // neutral secondary beside it; repeated per-row actions stay `danger`.
+  destructive:
+    "bg-transparent text-danger-400 ring-1 ring-inset ring-danger-400/60 hover:bg-red-950 hover:text-danger-300 active:bg-red-900 active:scale-[0.98]",
   secondary:
     "bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active active:scale-[0.98]",
   plain:

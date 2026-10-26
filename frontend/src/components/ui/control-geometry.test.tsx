@@ -138,9 +138,18 @@ describe("shared control geometry", () => {
       const markup = renderToStaticMarkup(<Button variant={variant} content="iconText" action="revoke"><span /></Button>);
       expect(label(markup)).toContain("justify-start");
     }
-    const surfaced = renderToStaticMarkup(<Button variant="secondary" content="iconText" action="revoke"><span /></Button>);
-    expect(label(surfaced)).toContain("justify-center");
+    for (const variant of ["secondary", "destructive"] as const) {
+      const surfaced = renderToStaticMarkup(<Button variant={variant} content="iconText" action="revoke"><span /></Button>);
+      expect(label(surfaced)).toContain("justify-center");
+    }
     const fill = renderToStaticMarkup(<Button variant="plain" content="iconText" controlWidth="fill" label="Row"><span /></Button>);
     expect(label(fill)).toContain("justify-center");
+  });
+
+  it("outlines the destructive variant but keeps row-level danger quiet", () => {
+    const destructive = renderToStaticMarkup(<Button variant="destructive" content="iconText" action="delete"><span /></Button>);
+    expect(destructive).toContain("ring-danger-400/60");
+    const danger = renderToStaticMarkup(<Button variant="danger" content="iconText" action="revoke"><span /></Button>);
+    expect(danger).not.toContain("ring-danger-400/60");
   });
 });
