@@ -51,6 +51,8 @@
 
 - 新增配置：`acp_security.require_capability`。
 - 开启后，data 侧以下帧必须带 `acp_capability` envelope：`send/delta/done/resource_req/session_update/permission_request`。
+  - 例外：网关声明 `delta_capability = "first_per_stream"` 时，delta 只需每个流的首帧签名，
+    同一 data 连接上的后续 delta 沿用该流授权（详见 ACP_CAPABILITY_DELEGATION §1）。
 - 网关按 `acp_capability_delegations` 鉴权：
   - 查找 delegation
   - 校验签名（Ed25519）和时戳窗口（±5 分钟）

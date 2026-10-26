@@ -30,7 +30,10 @@ use crate::{
     errors::AppError,
     gateway::{
         realtime::frame::WireFrame,
-        stream::{handle_delta, handle_done, handle_send, handle_session_update},
+        stream::{
+            handle_delta, handle_done, handle_send, handle_session_update, DeltaCapabilityUse,
+            DeltaRefund,
+        },
         task_results::{self, TerminalError, TerminalOutcome},
     },
     infra::crypto::hash_host_credential,
@@ -53,8 +56,8 @@ const CLOSE_IDLE_TIMEOUT: u16 = 4409;
 /// can't spin the read loop / hammer logs. A good frame resets the counter.
 const MAX_MALFORMED_FRAMES: u32 = 20;
 use crate::gateway::bridge_frames::{
-    self, bridge_error, send_ack_err, send_ack_ok, terminal_ack_err, terminal_ack_ok,
-    BRIDGE_PROTOCOL_VERSION,
+    self, bridge_error, delta_capability_error, send_ack_err, send_ack_ok, terminal_ack_err,
+    terminal_ack_ok, BRIDGE_PROTOCOL_VERSION,
 };
 
 /// Gateway-side liveness: probe with a WS ping every PROBE_INTERVAL (the peer's
@@ -679,6 +682,9 @@ async fn handle_data(
     // ── 2. 注册 data 连接 ────────────────────────────────────────────────
     let connection_id = Uuid::new_v4();
     let (res_tx, mut res_rx) = mpsc::channel::<Value>(128);
+    // Terminal tasks answer on their own queue. Holding a clone of `res_tx` here
+    // would keep `res_rx` open and defeat the registry's unbind/kick close signal.
+    let (reply_tx, mut reply_rx) = mpsc::channel::<Value>(32);
 
     state
         .bot_registry
@@ -714,6 +720,7 @@ async fn handle_data(
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
     let mut malformed: u32 = 0;
+    let mut terminal_task: Option<tokio::task::JoinHandle<()>> = None;
     let idle = tokio::time::sleep(IDLE_TIMEOUT);
     tokio::pin!(idle);
     let mut probe = tokio::time::interval(PROBE_INTERVAL);
@@ -726,96 +733,44 @@ async fn handle_data(
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(frame) = serde_json::from_str::<Value>(&text) {
                             malformed = 0;
-                            let terminal = match frame.get("type").and_then(Value::as_str) {
-                                Some("done") => true,
-                                Some("error") => frame.get("msg_id").is_some(),
-                                _ => false,
-                            };
-                            // An exact committed receipt is a read-only answer:
-                            // its original session may now be idle or belong to
-                            // newer work, so do not authorize/touch it as a write.
-                            if terminal && replay_terminal_frame(&frame, &state, &bot, &mut socket).await {
+                            // Only Delta (the latency-critical stream, fenced per message by
+                            // the stream registry) and Ping (no ordering semantics; keeps the
+                            // heartbeat answered during a slow finalize) may overtake an
+                            // in-flight terminal frame. Every other frame keeps arrival
+                            // order, so finalize/channel_seq ordering is unchanged.
+                            if !matches!(
+                                frame.get("type").and_then(Value::as_str),
+                                Some("delta" | "ping")
+                            ) {
+                                if let Some(task) = terminal_task.take() {
+                                    if await_terminal_task(task, &mut socket, &mut reply_rx).await.is_err() {
+                                        break "write_failed";
+                                    }
+                                }
+                            }
+                            if is_terminal_data_frame(&frame) {
+                                // Fence the stream (no Delta may follow message_done) and end
+                                // its Delta binding. A limited delegation's unspent uses are
+                                // refunded before the terminal's own use check; others refund
+                                // in the background off the terminal's path.
+                                let refund = release_delta_capability(&frame, &state, &bot, connection_id);
+                                // Finalizing runs a PG transaction plus fan-out; doing it
+                                // inline stalls this bot's other live streams behind it.
+                                terminal_task = Some(tokio::spawn(process_terminal_frame(
+                                    frame,
+                                    state.clone(),
+                                    bot.clone(),
+                                    reply_tx.clone(),
+                                    refund,
+                                )));
                                 continue;
                             }
                             if bot.require_capability {
-                                if let Err(err) =
-                                    acp_capability::authorize_data_frame(
-                                        &state.db,
-                                        &bot.bot_id,
-                                        &bot.provider_account_id,
-                                        &frame,
-                                    )
-                                        .await
+                                if let Err(denial) =
+                                    authorize_capability(&frame, &state, &bot, connection_id).await
                                 {
-                                    let frame_type = frame
-                                        .get("type")
-                                        .and_then(Value::as_str)
-                                        .unwrap_or("unknown");
-                                    let decision_context = err.decision_context();
-                                    let action = decision_context.map(|ctx| ctx.action.as_str());
-                                    let resource = decision_context.and_then(|ctx| ctx.resource.as_deref());
-
-                                    let _ = acp_capability::log_capability_reject(
-                                        &state.db,
-                                        &bot.bot_id,
-                                        &bot.provider_account_id,
-                                        frame_type,
-                                        &err.to_string(),
-                                        action,
-                                        resource,
-                                        decision_context,
-                                    )
-                                    .await
-                                    .inspect_err(|log_err| {
-                                        tracing::warn!(
-                                            bot_id = %bot.bot_id,
-                                            frame_type = frame_type,
-                                            err = %log_err,
-                                            "failed to persist capability reject log"
-                                        );
-                                    });
-
-                                    if let Some(ctx) = err.decision_context() {
-                                        tracing::warn!(
-                                            bot_id = %bot.bot_id,
-                                            frame_type = %ctx.frame_type,
-                                            action = %ctx.action,
-                                            scope_type = %ctx.delegation_scope_type,
-                                            scope_id = ctx.delegation_scope_id.as_deref().unwrap_or("none"),
-                                            request_session_id = ctx.request_session_id.as_deref().unwrap_or("none"),
-                                            resolved_session_id = ctx.resolved_session_id.as_deref().unwrap_or("none"),
-                                            resolved_session_status = ctx.resolved_session_status.as_deref().unwrap_or("none"),
-                                            resolved_scope_type = ctx.resolved_session_scope_type.as_deref().unwrap_or("none"),
-                                            resolved_scope_id = ctx.resolved_session_scope_id.as_deref().unwrap_or("none"),
-                                            session_locator_source = ctx.session_locator_source.as_deref().unwrap_or("missing"),
-                                            session_locator_value = ctx.session_locator_value.as_deref().unwrap_or("none"),
-                                            resource = ctx.resource.as_deref().unwrap_or("none"),
-                                            detail = %err,
-                                            "data frame rejected by capability check"
-                                        );
-                                    } else {
-                                        let frame_type = frame
-                                            .get("type")
-                                            .and_then(Value::as_str)
-                                            .unwrap_or("unknown");
-                                        tracing::warn!(
-                                            bot_id = %bot.bot_id,
-                                            frame_type = frame_type,
-                                            err = %err,
-                                            "data frame rejected by capability check"
-                                        );
-                                    }
-                                    if terminal {
-                                        // A concurrent first result can commit
-                                        // between our receipt read and the active
-                                        // session check. Confirm it before denial.
-                                        if !replay_terminal_frame(&frame, &state, &bot, &mut socket).await {
-                                            reject_terminal_frame(&frame, &mut socket,
-                                                TerminalError::rejected("TERMINAL_FORBIDDEN", "terminal capability was denied")).await;
-                                        }
-                                    } else {
-                                        let _ = ws_send(&mut socket,
-                                            &bridge_error("CAPABILITY_DENIED", &err.to_string())).await;
+                                    if let Some(denial) = denial {
+                                        let _ = ws_send(&mut socket, &denial).await;
                                     }
                                     continue;
                                 }
@@ -834,6 +789,11 @@ async fn handle_data(
                     Some(Ok(Message::Close(_))) | None => break "closed",
                     _ => {}
                 }
+            }
+
+            // 终态任务的应答（terminal_ack 等）。
+            Some(reply) = reply_rx.recv() => {
+                if ws_send(&mut socket, &reply).await.is_err() { break "write_failed"; }
             }
 
             // Backend 发给 bot 的帧（permission_request、workspace_req 等）
@@ -858,6 +818,13 @@ async fn handle_data(
     };
 
     tracing::info!(bot_id = %bot.bot_id, reason, "data disconnected");
+    // Delta bindings never outlive their connection; refund what they prepaid.
+    for refund in state
+        .stream_registry
+        .take_delta_capabilities_on(bot.bot_id, connection_id)
+    {
+        state.stream_registry.queue_refund(refund);
+    }
     crate::domain::bot_events::record_bg(
         &state.db,
         bot.bot_id,
@@ -870,6 +837,332 @@ async fn handle_data(
     // 把实际在线的 bot 广播成离线）。
     state.bot_registry.unbind_data(bot.bot_id, connection_id);
     crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
+}
+
+/// Done, or Error that carries an execution `msg_id`: frames that finalize a turn.
+fn is_terminal_data_frame(frame: &Value) -> bool {
+    match frame.get("type").and_then(Value::as_str) {
+        Some("done") => true,
+        Some("error") => frame.get("msg_id").is_some(),
+        _ => false,
+    }
+}
+
+fn delta_msg_id(frame: &Value) -> Option<Uuid> {
+    if frame.get("type").and_then(Value::as_str) != Some("delta") {
+        return None;
+    }
+    frame.get("msg_id")?.as_str()?.parse().ok()
+}
+
+/// Authorize a data frame for a capability-enforced bot. `Err(Some(frame))` is
+/// sent back; `Err(None)` drops the frame silently (its stream was already told).
+///
+/// An unsigned Delta rides on its stream's binding, created when the stream's
+/// first signed Delta verified on this connection: its scope fields must match
+/// that Delta's, it spends a prepaid use, and the delegation is re-checked in PG
+/// at least every `DELTA_CAPABILITY_RECHECK` (revocation/expiry/session close).
+/// Running out of prepaid uses inside that window only reserves more
+/// (`max_uses`). Every other frame is verified per frame.
+async fn authorize_capability(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    connection_id: Uuid,
+) -> Result<(), Option<Value>> {
+    let delta_msg = delta_msg_id(frame);
+    let signed = frame.get("acp_capability").is_some();
+    let registry = &state.stream_registry;
+    if let (Some(msg_id), false) = (delta_msg, signed) {
+        let scope = acp_capability::delta_scope_fingerprint(frame);
+        let detail = match registry.use_delta_capability(msg_id, bot.bot_id, connection_id, &scope)
+        {
+            DeltaCapabilityUse::Granted => return Ok(()),
+            DeltaCapabilityUse::Recheck {
+                delegation_id,
+                prepaid,
+                full,
+            } => {
+                let checked = acp_capability::revalidate_delta_binding(
+                    &state.db,
+                    &bot.bot_id,
+                    &bot.provider_account_id,
+                    &delegation_id,
+                    frame,
+                    (acp_capability::DELTA_USE_BATCH - prepaid).max(0),
+                    full,
+                )
+                .await;
+                match checked {
+                    Ok(grant) => match registry.finish_delta_recheck(
+                        msg_id,
+                        bot.bot_id,
+                        connection_id,
+                        delegation_id,
+                        grant,
+                        full,
+                    ) {
+                        Ok(()) => return Ok(()),
+                        Err(refund) => {
+                            registry.queue_refund(refund);
+                            "delegation uses exhausted".to_string()
+                        }
+                    },
+                    // A store outage is not a denial: keep the binding, skip the audit
+                    // row, and do not ask the connector to re-sign.
+                    Err(err @ acp_capability::CapabilityError::Unavailable(_)) => {
+                        tracing::warn!(bot_id = %bot.bot_id, msg_id = %msg_id, err = %err, "delta capability recheck unavailable");
+                        return Err(Some(bridge_error(
+                            "CAPABILITY_UNAVAILABLE",
+                            &err.to_string(),
+                        )));
+                    }
+                    Err(err) => {
+                        if let Some(refund) =
+                            registry.take_delta_capability(msg_id, bot.bot_id, connection_id)
+                        {
+                            registry.queue_refund(refund);
+                        }
+                        log_capability_denial(frame, state, bot, &err).await;
+                        err.to_string()
+                    }
+                }
+            }
+            // An unsigned Delta can only pass through a binding. Answer at once
+            // instead of a doomed full check that would audit every in-flight Delta.
+            DeltaCapabilityUse::Unbound => {
+                tracing::debug!(bot_id = %bot.bot_id, msg_id = %msg_id, "unsigned delta without a matching stream binding");
+                "unsigned delta requires a verified signed delta with the same scope on this stream and connection".to_string()
+            }
+        };
+        // Name the stream once per lapse; the connector's next Delta for it is then
+        // signed. Repeating it for every in-flight Delta would re-sign each one.
+        return Err(registry
+            .note_delta_rejection(msg_id, bot.bot_id)
+            .then(|| delta_capability_error("DELTA_CAPABILITY_REQUIRED", &detail, msg_id)));
+    }
+    if let Err(err) = authorize_data_frame_logged(frame, state, bot).await {
+        let code = match err {
+            acp_capability::CapabilityError::Unavailable(_) => "CAPABILITY_UNAVAILABLE",
+            _ => "CAPABILITY_DENIED",
+        };
+        return Err(Some(match delta_msg {
+            Some(msg_id) if code == "CAPABILITY_DENIED" => {
+                delta_capability_error(code, &err.to_string(), msg_id)
+            }
+            _ => bridge_error(code, &err.to_string()),
+        }));
+    }
+    if let (Some(msg_id), Some(delegation_id)) =
+        (delta_msg, acp_capability::envelope_delegation_id(frame))
+    {
+        if let Some(previous) = registry.bind_delta_capability(
+            msg_id,
+            bot.bot_id,
+            connection_id,
+            delegation_id,
+            acp_capability::delta_scope_fingerprint(frame),
+        ) {
+            registry.queue_refund(previous);
+        }
+    }
+    Ok(())
+}
+
+/// A terminal frame fences its stream against later Delta and ends its Delta
+/// binding on this connection. Returns the unspent uses that must be refunded
+/// before the terminal's own use check (limited delegations); any other unspent
+/// uses are queued for background refund.
+fn release_delta_capability(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    connection_id: Uuid,
+) -> Option<DeltaRefund> {
+    let msg_id = frame.get("msg_id")?.as_str()?.parse().ok()?;
+    let registry = &state.stream_registry;
+    registry.begin_terminal(msg_id, bot.bot_id);
+    let refund = registry.take_delta_capability(msg_id, bot.bot_id, connection_id)?;
+    if refund.limited && refund.unused > 0 {
+        return Some(refund);
+    }
+    registry.queue_refund(refund);
+    None
+}
+
+/// Wait for the in-flight terminal task while still forwarding its replies;
+/// otherwise a full reply queue could deadlock it.
+async fn await_terminal_task(
+    mut task: tokio::task::JoinHandle<()>,
+    socket: &mut WebSocket,
+    reply_rx: &mut mpsc::Receiver<Value>,
+) -> Result<(), ()> {
+    loop {
+        tokio::select! {
+            _ = &mut task => break,
+            Some(frame) = reply_rx.recv() => ws_send(socket, &frame).await?,
+        }
+    }
+    // Replies sent just before the task finished stay ahead of later frames.
+    while let Ok(frame) = reply_rx.try_recv() {
+        ws_send(socket, &frame).await?;
+    }
+    Ok(())
+}
+
+/// Process one terminal frame off the read loop. Detached on disconnect: the
+/// commit still completes and the connector's resend receives a replay receipt.
+async fn process_terminal_frame(
+    frame: Value,
+    state: AppState,
+    bot: BotInfo,
+    replies: mpsc::Sender<Value>,
+    refund: Option<DeltaRefund>,
+) {
+    if let Some(refund) = refund {
+        acp_capability::refund_delta_uses(&state.db, &refund.delegation_id, refund.unused).await;
+    }
+    finalize_terminal_frame(&frame, &state, &bot, &replies).await;
+    // Lift the fence whatever the outcome; a committed result already removed
+    // the stream, and a rejected one may be retried.
+    if let Some(msg_id) = frame
+        .get("msg_id")
+        .and_then(Value::as_str)
+        .and_then(|raw| raw.parse().ok())
+    {
+        state.stream_registry.end_terminal(msg_id, bot.bot_id);
+    }
+}
+
+async fn finalize_terminal_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    replies: &mpsc::Sender<Value>,
+) {
+    // An exact committed receipt is a read-only answer: its original session may
+    // now be idle or belong to newer work, so do not authorize/touch it as a write.
+    if replay_terminal_frame(frame, state, bot, replies).await {
+        return;
+    }
+    if bot.require_capability {
+        if let Err(err) = authorize_data_frame_logged(frame, state, bot).await {
+            // A concurrent first result can commit between our receipt read and the
+            // active session check. Confirm it before denial.
+            if !replay_terminal_frame(frame, state, bot, replies).await {
+                let error = match err {
+                    acp_capability::CapabilityError::Unavailable(_) => TerminalError::unavailable(),
+                    _ => TerminalError::rejected(
+                        "TERMINAL_FORBIDDEN",
+                        "terminal capability was denied",
+                    ),
+                };
+                reject_terminal_frame(frame, replies, error).await;
+            }
+            return;
+        }
+    }
+    tracing::info!(
+        bot_id = %bot.bot_id,
+        msg_id = frame.get("msg_id").and_then(|v| v.as_str()).unwrap_or(""),
+        frame_type = frame.get("type").and_then(|v| v.as_str()).unwrap_or(""),
+        "terminal frame received"
+    );
+    handle_terminal_frame(frame, state, bot, replies).await;
+}
+
+/// Capability check for a data frame. A denial is logged and persisted; a store
+/// outage (`Unavailable`) is only traced, since it is not a decision.
+async fn authorize_data_frame_logged(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+) -> Result<(), acp_capability::CapabilityError> {
+    match acp_capability::authorize_data_frame(
+        &state.db,
+        &bot.bot_id,
+        &bot.provider_account_id,
+        frame,
+    )
+    .await
+    {
+        Ok(()) => Ok(()),
+        Err(err @ acp_capability::CapabilityError::Unavailable(_)) => {
+            tracing::warn!(bot_id = %bot.bot_id, err = %err, "capability check unavailable");
+            Err(err)
+        }
+        Err(err) => {
+            log_capability_denial(frame, state, bot, &err).await;
+            Err(err)
+        }
+    }
+}
+
+/// Persist and trace a capability denial for audit.
+async fn log_capability_denial(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    err: &acp_capability::CapabilityError,
+) {
+    let frame_type = frame
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let decision_context = err.decision_context();
+    let action = decision_context.map(|ctx| ctx.action.as_str());
+    let resource = decision_context.and_then(|ctx| ctx.resource.as_deref());
+
+    let _ = acp_capability::log_capability_reject(
+        &state.db,
+        &bot.bot_id,
+        &bot.provider_account_id,
+        frame_type,
+        &err.to_string(),
+        action,
+        resource,
+        decision_context,
+    )
+    .await
+    .inspect_err(|log_err| {
+        tracing::warn!(
+            bot_id = %bot.bot_id,
+            frame_type = frame_type,
+            err = %log_err,
+            "failed to persist capability reject log"
+        );
+    });
+
+    if let Some(ctx) = err.decision_context() {
+        tracing::warn!(
+            bot_id = %bot.bot_id,
+            frame_type = %ctx.frame_type,
+            action = %ctx.action,
+            scope_type = %ctx.delegation_scope_type,
+            scope_id = ctx.delegation_scope_id.as_deref().unwrap_or("none"),
+            request_session_id = ctx.request_session_id.as_deref().unwrap_or("none"),
+            resolved_session_id = ctx.resolved_session_id.as_deref().unwrap_or("none"),
+            resolved_session_status = ctx.resolved_session_status.as_deref().unwrap_or("none"),
+            resolved_scope_type = ctx.resolved_session_scope_type.as_deref().unwrap_or("none"),
+            resolved_scope_id = ctx.resolved_session_scope_id.as_deref().unwrap_or("none"),
+            session_locator_source = ctx.session_locator_source.as_deref().unwrap_or("missing"),
+            session_locator_value = ctx.session_locator_value.as_deref().unwrap_or("none"),
+            resource = ctx.resource.as_deref().unwrap_or("none"),
+            detail = %err,
+            "data frame rejected by capability check"
+        );
+    } else {
+        let frame_type = frame
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        tracing::warn!(
+            bot_id = %bot.bot_id,
+            frame_type = frame_type,
+            err = %err,
+            "data frame rejected by capability check"
+        );
+    }
 }
 
 /// Route raw data payloads so handlers can validate their operation-specific
@@ -909,22 +1202,10 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             }
         }
 
-        "done" => {
-            tracing::info!(
-                bot_id = %bot.bot_id,
-                msg_id = frame.get("msg_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "terminal (done) frame received"
-            );
-            handle_terminal_frame(frame, state, bot, socket).await;
-        }
-
+        // Done and execution-bound Error are routed to `process_terminal_frame`
+        // by the read loop (see `is_terminal_data_frame`) and never reach here.
         "error" => {
-            if frame.get("msg_id").is_some() {
-                // Preserve the original kind and fields in the immutable receipt.
-                handle_terminal_frame(frame, state, bot, socket).await;
-            } else {
-                tracing::debug!(bot_id = %bot.bot_id, "connector protocol error frame received");
-            }
+            tracing::debug!(bot_id = %bot.bot_id, "connector protocol error frame received");
         }
 
         "reply" => {
@@ -1489,14 +1770,14 @@ pub(crate) async fn allowed_seers(
         .collect()
 }
 
-async fn reject_terminal_frame(frame: &Value, socket: &mut WebSocket, error: TerminalError) {
+async fn reject_terminal_frame(frame: &Value, replies: &mpsc::Sender<Value>, error: TerminalError) {
     let response = match client_msg_id(frame) {
         Some(client_msg_id) => {
             terminal_ack_err(&client_msg_id, error.code, error.detail, error.retryable)
         }
         None => bridge_error(error.code, error.detail),
     };
-    let _ = ws_send(socket, &response).await;
+    let _ = replies.send(response).await;
 }
 
 /// True only when a committed replay or a definitive protocol/ledger error was
@@ -1505,7 +1786,7 @@ async fn replay_terminal_frame(
     frame: &Value,
     state: &AppState,
     bot: &BotInfo,
-    socket: &mut WebSocket,
+    replies: &mpsc::Sender<Value>,
 ) -> bool {
     match task_results::replay(&state.db, bot.bot_id, frame).await {
         Ok(None) => false,
@@ -1517,7 +1798,7 @@ async fn replay_terminal_frame(
                     .and_then(Value::as_str)
                     .and_then(|id| id.parse().ok()),
             ) {
-                let _ = ws_send(socket, &terminal_ack_ok(&client_msg_id, msg_id)).await;
+                let _ = replies.send(terminal_ack_ok(&client_msg_id, msg_id)).await;
             }
             true
         }
@@ -1525,7 +1806,7 @@ async fn replay_terminal_frame(
             unreachable!("a receipt read cannot commit a result")
         }
         Err(error) => {
-            reject_terminal_frame(frame, socket, error).await;
+            reject_terminal_frame(frame, replies, error).await;
             true
         }
     }
@@ -1535,7 +1816,7 @@ async fn handle_terminal_frame(
     frame: &Value,
     state: &AppState,
     bot: &BotInfo,
-    socket: &mut WebSocket,
+    replies: &mpsc::Sender<Value>,
 ) {
     let client_msg_id = client_msg_id(frame);
     let msg_id = frame
@@ -1557,7 +1838,7 @@ async fn handle_terminal_frame(
     {
         Ok(TerminalOutcome::Replayed) => {
             if let (Some(client_msg_id), Some(msg_id)) = (client_msg_id, msg_id) {
-                let _ = ws_send(socket, &terminal_ack_ok(&client_msg_id, msg_id)).await;
+                let _ = replies.send(terminal_ack_ok(&client_msg_id, msg_id)).await;
             }
         }
         Ok(TerminalOutcome::Committed) => {
@@ -1600,23 +1881,25 @@ async fn handle_terminal_frame(
                 return;
             };
             let Some(msg_id) = msg_id else {
-                let _ = ws_send(
-                    socket,
-                    &terminal_ack_err(&client_msg_id, "INVALID_FRAME", "missing msg_id", false),
-                )
-                .await;
+                let _ = replies
+                    .send(terminal_ack_err(
+                        &client_msg_id,
+                        "INVALID_FRAME",
+                        "missing msg_id",
+                        false,
+                    ))
+                    .await;
                 return;
             };
-            let ack = terminal_ack_ok(&client_msg_id, msg_id);
-            let _ = ws_send(socket, &ack).await;
+            let _ = replies.send(terminal_ack_ok(&client_msg_id, msg_id)).await;
         }
         Err(e) => {
             tracing::warn!(bot_id = %bot.bot_id, err = %e, "terminal frame rejected");
             if let Some(client_msg_id) = client_msg_id {
                 let ack = terminal_ack_err(&client_msg_id, e.code, e.detail, e.retryable);
-                let _ = ws_send(socket, &ack).await;
+                let _ = replies.send(ack).await;
             } else {
-                let _ = ws_send(socket, &bridge_error(e.code, e.detail)).await;
+                let _ = replies.send(bridge_error(e.code, e.detail)).await;
             }
         }
     }
@@ -2588,6 +2871,9 @@ fn server_capabilities(state: &AppState) -> Value {
         "resume": "ack_only",
         "file_upload": false,
         "acp_security": true,
+        // Signed bots sign a stream's first Delta; later Delta on the same data
+        // connection omit acp_capability. Done/Error stay signed per frame.
+        "delta_capability": "first_per_stream",
     });
     // Advertise the release version this gateway serves via its download proxy
     // so an opted-in connector can self-update. Absent when the operator pins

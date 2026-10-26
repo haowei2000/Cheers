@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE acp_capability_delegations\n         SET use_count = GREATEST(use_count - $2, 0), updated_at = NOW()\n         WHERE delegation_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e3d1853e67c4b36514751228ba79c6d41741a4d015516e2fc3c53c8fdc073a40"
+}

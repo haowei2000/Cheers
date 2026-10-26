@@ -9,7 +9,7 @@ use sqlx::PgPool;
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
-use super::fanout::{CloseReason, WireFrame};
+use super::fanout::{CloseReason, SharedFrame};
 
 // ── 连接注册接口（让 ConnectionManager 不直接依赖 InProcessFanout）────────────
 
@@ -21,11 +21,11 @@ pub trait LocalRegistry: Send + Sync {
         user_id: Uuid,
         session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     );
     fn rebind_session(&self, user_id: Uuid, conn_id: Uuid, session_id: &str) -> bool;
-    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>);
+    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<SharedFrame>);
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid);
     /// 成员资格被服务器撤销：移除该用户在该频道的所有连接订阅（subscribe 的反向边）。
     fn unsubscribe_user_channel(&self, channel_id: Uuid, user_id: Uuid);
@@ -44,7 +44,7 @@ impl LocalRegistry for InProcessFanout {
         user_id: Uuid,
         session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     ) {
         InProcessFanout::register_user(self, user_id, session_id, conn_id, tx, close_tx);
@@ -52,7 +52,7 @@ impl LocalRegistry for InProcessFanout {
     fn rebind_session(&self, user_id: Uuid, conn_id: Uuid, session_id: &str) -> bool {
         InProcessFanout::rebind_session(self, user_id, conn_id, session_id)
     }
-    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<SharedFrame>) {
         InProcessFanout::subscribe_channel(self, channel_id, conn_id, tx);
     }
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
@@ -183,7 +183,7 @@ impl ConnectionManager {
         user_id: Uuid,
         session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     ) {
         self.registry
@@ -206,7 +206,7 @@ impl ConnectionManager {
         user_id: Uuid,
         conn_id: Uuid,
         channel_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
     ) -> Result<(), &'static str> {
         // Pre-check (cache-assisted): keeps obvious non-members from ever
         // entering the fan-out list. NOT authoritative — see below.
