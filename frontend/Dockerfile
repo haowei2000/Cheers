@@ -7,7 +7,7 @@ ARG PNPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /repo/frontend
 RUN corepack enable
 COPY packages/cheers-canvas-runtime/ ../packages/cheers-canvas-runtime/
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm config set registry "${PNPM_REGISTRY}" && \
     pnpm install --frozen-lockfile
 ARG VITE_API_PROXY_TARGET=http://gateway:8000
