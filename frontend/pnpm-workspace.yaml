@@ -1,2 +1,9 @@
 allowBuilds:
   esbuild: false
+# Transitive security floors; `pnpm audit --audit-level=moderate` gates CI.
+# - zod (via eslint-plugin-react-hooks): GHSA-mrhx-c7xc-m3w5
+# - fast-uri (via vite-plugin-pwa > workbox-build > ajv): GHSA-w74x-v6f9-j3xg,
+#   GHSA-wjr9-j795-jxcr
+overrides:
+  zod: ^4.6.6
+  fast-uri: ^3.1.9
