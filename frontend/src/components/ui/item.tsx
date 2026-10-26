@@ -306,28 +306,25 @@ export function FileTreeItem({
   );
 }
 
+/** One line of a diff. Read-only text, not a control: it keeps the code's line
+ *  rhythm instead of the 28/36/44px touch-target rows. */
 export function DiffLineItem({
   marker,
   content,
   tone = "context",
   lineNumber,
-  controlSize,
 }: {
   marker?: ReactNode;
   content: ReactNode;
   tone?: "add" | "remove" | "context";
   lineNumber?: ReactNode;
-  controlSize?: ControlSize;
 }) {
-  const size = useControlSize(controlSize);
   return (
     <div
       role="listitem"
       data-diff-tone={tone}
-      data-control-size={size}
       className={cn(
-        "flex whitespace-pre px-2 font-code text-compact",
-        controlMinHeightClasses[size],
+        "flex whitespace-pre px-2 font-code text-compact leading-regular",
         tone === "add" && "bg-emerald-950/30 text-success-200",
         tone === "remove" && "bg-rose-950/30 text-removed-200",
         tone === "context" && "text-content-muted"

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { WorkspaceEntry } from "@/api/workspace";
 import { ContextActionsProvider } from "@/components/ui/context-actions";
-import { WorkspaceEntryRow, WorkspacePathLabel } from "./RemoteWorkspaceDialog";
+import { GitFileRow, WorkspaceEntryRow, WorkspacePathLabel } from "./RemoteWorkspaceDialog";
 
 function file(name: string): WorkspaceEntry {
   return { name, path: name, is_dir: false, size_bytes: 132 };
@@ -49,9 +49,13 @@ describe("RemoteWorkspaceDialog gestures", () => {
     expect(source.match(/useContextSurface\(/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("keeps workspace path and refresh controls in the floating panel chrome", () => {
-    expect(source).toContain("workspacePathControl");
-    expect(source).toContain("<FloatingPanelContextPortal>");
+  it("keeps refresh in the panel chrome and the location in the panel body", () => {
+    // The chrome band is one shared line for tabs and actions; bot, root, branch,
+    // host, and path used to be squeezed into it and truncated to nothing.
+    expect(source).not.toContain("panelContext=");
+    expect(source).not.toContain("FloatingPanelContextPortal");
+    expect(source).toContain("{workspaceLocationBar}");
+    expect(source).toContain("<WorkspacePathLabel treeRoot={treeRoot} cwd={cwd} />");
     expect(source).toContain('id: "refresh"');
     expect(source).not.toContain("Hide file tree");
     expect(source).not.toContain('title="Refresh"');
@@ -84,5 +88,19 @@ describe("WorkspacePathLabel", () => {
   it("falls back to the relative path before the root is known", () => {
     const markup = renderToStaticMarkup(<WorkspacePathLabel treeRoot={null} cwd="docs" />);
     expect(markup).toContain('title="/docs"');
+  });
+});
+
+describe("GitFileRow", () => {
+  // Working-tree changes and a commit's files share one row, so the two lists read
+  // the same and both use the shared selected state.
+  it("leads with the file name, mutes its folder, and ends with the status", () => {
+    const markup = renderToStaticMarkup(
+      <GitFileRow path="server/src/main.rs" mark={{ m: "M", cls: "text-warning-400" }} selected onOpen={() => {}} />
+    );
+    expect(markup.indexOf(">main.rs")).toBeLessThan(markup.indexOf(">server/src<"));
+    expect(markup).toContain('aria-selected="true"');
+    expect(markup).toContain("bg-selected");
+    expect(markup).toContain(">M<");
   });
 });
