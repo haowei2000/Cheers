@@ -759,7 +759,9 @@ async fn load_delegation(
     })
 }
 
-async fn ensure_delegation_active(delegation: &DelegationRecord) -> Result<(), CapabilityError> {
+/// Not revoked and not expired. `max_uses` is checked separately because a
+/// stream's prepaid Delta uses already count toward `use_count`.
+fn ensure_delegation_live(delegation: &DelegationRecord) -> Result<(), CapabilityError> {
     if delegation.revoked || delegation.status != "active" {
         return Err(CapabilityError::Denied("delegation is revoked".into()));
     }
@@ -768,6 +770,11 @@ async fn ensure_delegation_active(delegation: &DelegationRecord) -> Result<(), C
             return Err(CapabilityError::Denied("delegation expired".into()));
         }
     }
+    Ok(())
+}
+
+async fn ensure_delegation_active(delegation: &DelegationRecord) -> Result<(), CapabilityError> {
+    ensure_delegation_live(delegation)?;
 
     if let (Some(max), use_count) = (delegation.max_uses, delegation.use_count) {
         if use_count >= max {
@@ -957,6 +964,115 @@ pub async fn authorize_data_frame(
     )
     .await?;
     Ok(())
+}
+
+/// Unsigned Delta are charged to the delegation like signed frames, but prepaid
+/// in batches of up to this many so the stream path never writes per frame.
+/// A `max_uses`-limited delegation prepays at most 1/8 of its remaining uses
+/// (at least one), so concurrent streams cannot hoard the budget that signed
+/// frames such as send/done on the same delegation still need.
+pub const DELTA_USE_BATCH: i32 = 64;
+
+/// Delegation id named by a frame's `acp_capability` envelope, if any.
+pub fn envelope_delegation_id(frame: &Value) -> Option<Uuid> {
+    frame
+        .get("acp_capability")?
+        .get("delegation_id")?
+        .as_str()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// Re-validate the delegation bound to a stream for an unsigned Delta: the same
+/// active/scope/action/resource checks as a signed frame, without the per-frame
+/// signature and nonce (the binding is confined to the authenticated data
+/// connection that presented the signed first Delta). Then prepay up to `want`
+/// uses atomically under `max_uses`; returns how many were granted.
+pub async fn revalidate_delta_binding(
+    db: &PgPool,
+    bot_id: &Uuid,
+    provider_account_id: &str,
+    delegation_id: &Uuid,
+    frame: &Value,
+    want: i32,
+) -> Result<i32, CapabilityError> {
+    let delegation = load_delegation(db, bot_id, &delegation_id.to_string()).await?;
+    // Exhaustion is enforced by the reservation below and the stream's prepaid
+    // count; this stream's own unspent uses already sit in `use_count`.
+    ensure_delegation_live(&delegation)?;
+    let action = frame_action("delta")
+        .ok_or_else(|| CapabilityError::Denied("unsupported frame type".into()))?;
+    let resource = extract_frame_resource(frame);
+    verify_scope(
+        db,
+        bot_id,
+        provider_account_id,
+        &delegation,
+        frame,
+        action,
+        resource.as_deref(),
+        None,
+    )
+    .await?;
+    if !action_allowed(&delegation.allowed_actions, action) {
+        return Err(CapabilityError::Denied(format!(
+            "action not allowed: {action}"
+        )));
+    }
+    if !resource_allowed(&delegation.allowed_resources, resource.as_deref()) {
+        return Err(CapabilityError::Denied(format!(
+            "resource not allowed: {}",
+            resource.as_deref().unwrap_or("<none>")
+        )));
+    }
+    if want <= 0 {
+        return Ok(0);
+    }
+    let granted = sqlx::query_scalar!(
+        r#"UPDATE acp_capability_delegations d
+           SET use_count = d.use_count + g.granted, updated_at = NOW()
+           FROM (
+               SELECT delegation_id,
+                      CASE WHEN max_uses IS NULL THEN $2::int4
+                           ELSE LEAST($2::int4, max_uses - use_count,
+                                      GREATEST(1, (max_uses - use_count) / 8)) END AS granted
+               FROM acp_capability_delegations
+               WHERE delegation_id = $1 AND bot_id = $3
+               FOR UPDATE
+           ) g
+           WHERE d.delegation_id = g.delegation_id AND g.granted > 0
+           RETURNING g.granted AS "granted!""#,
+        delegation_id.to_string(),
+        want,
+        bot_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, ctx = "revalidate_delta_binding: reserve uses", "acp_capability db error");
+        CapabilityError::Denied("db error".into())
+    })?;
+    Ok(granted.unwrap_or(0))
+}
+
+/// Return prepaid Delta uses a finished or abandoned stream did not spend.
+pub async fn refund_delta_uses(db: &PgPool, delegation_id: &Uuid, uses: i32) {
+    if uses <= 0 {
+        return;
+    }
+    if let Err(e) = sqlx::query!(
+        "UPDATE acp_capability_delegations
+         SET use_count = GREATEST(use_count - $2, 0), updated_at = NOW()
+         WHERE delegation_id = $1",
+        delegation_id.to_string(),
+        uses,
+    )
+    .execute(db)
+    .await
+    {
+        tracing::warn!(error = %e, delegation_id = %delegation_id, uses, "failed to refund prepaid delta uses");
+    }
 }
 
 pub fn to_public_json() -> Value {

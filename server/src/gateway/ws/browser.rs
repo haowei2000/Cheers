@@ -15,7 +15,10 @@ use uuid::Uuid;
 use crate::{
     api::middleware::{session_valid_until, verify_token, VerifiedSession},
     app_state::AppState,
-    gateway::realtime::{fanout::CloseReason, frame::WireFrame},
+    gateway::realtime::{
+        fanout::CloseReason,
+        frame::{SharedFrame, WireFrame},
+    },
 };
 
 // ── 关闭码 ────────────────────────────────────────────────────────────────────
@@ -134,7 +137,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
     // ── 阶段 2：建立发送队列 + 注册连接 ──────────────────────────────────────
     let conn_id = Uuid::new_v4();
-    let (tx, mut rx) = mpsc::channel::<WireFrame>(SEND_QUEUE_SIZE);
+    let (tx, mut rx) = mpsc::channel::<SharedFrame>(SEND_QUEUE_SIZE);
     // 服务端关闭信号：背压（终态帧入队失败，I6/R3）或会话吊销（kick_user）时由
     // fan-out 触发。容量 1 即可——一次信号就足以关连接，重复信号忽略。
     let (close_tx, mut close_rx) = mpsc::channel::<CloseReason>(1);
@@ -209,8 +212,8 @@ async fn run_registered_socket(
     user_id: Uuid,
     conn_id: Uuid,
     mut session: VerifiedSession,
-    tx: &mpsc::Sender<WireFrame>,
-    rx: &mut mpsc::Receiver<WireFrame>,
+    tx: &mpsc::Sender<SharedFrame>,
+    rx: &mut mpsc::Receiver<SharedFrame>,
     close_rx: &mut mpsc::Receiver<CloseReason>,
     subscribed: &mut Vec<Uuid>,
 ) -> Result<(), SocketStop> {
@@ -249,7 +252,7 @@ async fn run_registered_socket(
 
     enum Next {
         Incoming(Option<Result<Message, axum::Error>>),
-        Outgoing(Option<WireFrame>),
+        Outgoing(Option<SharedFrame>),
     }
     loop {
         let next = session_bound(
@@ -304,19 +307,12 @@ async fn run_registered_socket(
             Next::Outgoing(frame) => {
                 match frame {
                     Some(f) => {
-                        let is_terminal = is_terminal_frame(&f);
-                        let json = match serde_json::to_string(&f) {
-                            Ok(s) => s,
-                            Err(_) => continue,
-                        };
-
-                        if session_bound(
-                            socket.send(Message::Text(json)),
+                        if let Err(is_terminal) = session_bound(
+                            write_frame_batch(socket, f, rx),
                             close_rx,
                             session.valid_until,
                         )
                         .await?
-                        .is_err()
                         {
                             if is_terminal {
                                 // 终态帧发送失败 → 背压关闭（写后投递原则：不丢终态帧）
@@ -417,7 +413,7 @@ async fn handle_client_frame(
     text: &str,
     user_id: Uuid,
     conn_id: Uuid,
-    tx: &mpsc::Sender<WireFrame>,
+    tx: &mpsc::Sender<SharedFrame>,
     subscribed: &mut Vec<Uuid>,
     socket: &mut WebSocket,
     state: &AppState,
@@ -584,6 +580,38 @@ async fn handle_client_frame(
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
+/// 一次写出的最大排队帧数。突发流式帧共用一次 flush，同时不让单批无限占用写循环。
+const MAX_WRITE_BATCH: usize = 64;
+
+/// 写出 `first` 及已在队列中的帧：逐帧 feed、末尾单次 flush，避免突发流式帧
+/// 每帧一次 flush/系统调用。失败时返回本批是否含终态帧，供调用方决定背压关闭。
+async fn write_frame_batch(
+    socket: &mut WebSocket,
+    first: SharedFrame,
+    rx: &mut mpsc::Receiver<SharedFrame>,
+) -> Result<(), bool> {
+    use futures_util::SinkExt;
+
+    let mut has_terminal = false;
+    let mut next = Some(first);
+    let mut written = 0;
+    while let Some(frame) = next.take() {
+        has_terminal |= is_terminal_frame(&frame);
+        // 同一帧的所有订阅者共享一次序列化结果。
+        if let Ok(json) = frame.to_json() {
+            socket
+                .feed(Message::Text(json.to_string()))
+                .await
+                .map_err(|_| has_terminal)?;
+        }
+        written += 1;
+        if written < MAX_WRITE_BATCH {
+            next = rx.try_recv().ok();
+        }
+    }
+    socket.flush().await.map_err(|_| has_terminal)
+}
+
 /// 终态帧：队列满时不丢，关闭连接（写后投递原则）。见 `WireFrame::is_terminal`。
 fn is_terminal_frame(frame: &WireFrame) -> bool {
     frame.is_terminal()
@@ -669,6 +697,49 @@ mod tests {
 
     fn frame(frame_type: &str) -> WireFrame {
         WireFrame::channel(Uuid::new_v4(), frame_type, json!({}))
+    }
+
+    #[tokio::test]
+    async fn queued_frames_are_written_in_order_as_one_batch() {
+        use axum::{extract::ws::WebSocketUpgrade, routing::get, Router};
+        use futures_util::StreamExt;
+        use std::sync::{Arc, Mutex};
+
+        let (tx, rx) = mpsc::channel::<SharedFrame>(8);
+        for frame_type in ["message_stream", "message_stream", "message_done"] {
+            tx.send(Arc::new(frame(frame_type))).await.unwrap();
+        }
+        let rx = Arc::new(Mutex::new(Some(rx)));
+        let app = Router::new().route(
+            "/",
+            get(move |ws: WebSocketUpgrade| {
+                let rx = rx.clone();
+                async move {
+                    ws.on_upgrade(move |mut socket| async move {
+                        let mut rx = rx.lock().unwrap().take().unwrap();
+                        let first = rx.recv().await.unwrap();
+                        write_frame_batch(&mut socket, first, &mut rx)
+                            .await
+                            .unwrap();
+                        assert!(rx.try_recv().is_err(), "the batch drains the queue");
+                    })
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
+            .await
+            .unwrap();
+        let mut types = Vec::new();
+        for _ in 0..3 {
+            let msg = client.next().await.unwrap().unwrap();
+            let value: serde_json::Value = serde_json::from_str(msg.to_text().unwrap()).unwrap();
+            types.push(value["type"].as_str().unwrap().to_string());
+        }
+        assert_eq!(types, ["message_stream", "message_stream", "message_done"]);
     }
 
     /// I6：终态帧（不可丢，背压时关连接）须被识别。

@@ -973,6 +973,8 @@ async fn attempt(
             session_id: intent.params.session_id,
             finalized: false,
             last_touched_ms: Default::default(),
+            ownership_verified: Default::default(),
+            delta_capability: None,
         })
         .map_err(|detail| AppError::Conflict(detail.into()))?;
     tx.commit().await?;

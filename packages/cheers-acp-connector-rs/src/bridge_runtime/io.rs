@@ -405,6 +405,14 @@ pub(super) fn spawn_bridge_io(
     let (stream_data_tx, stream_data_rx) = mpsc::channel(STREAM_DATA_QUEUE_CAPACITY);
     let last_event_seq = Arc::new(AtomicU64::new(data_hello.last_event_seq));
     let data_capabilities = data_hello.server_capabilities.clone();
+    let mut signer = signer;
+    if let Some(signer) = signer.as_mut() {
+        signer.set_delta_capability_mode(
+            data_capabilities
+                .as_ref()
+                .and_then(|cap| cap.delta_capability.as_deref()),
+        );
+    }
     let ack_timeout = config.send_ack_timeout;
     let terminal_ack_timeout = ack_timeout.min(Duration::from_secs(30));
     spawn_control_socket(
@@ -587,6 +595,7 @@ pub(super) fn spawn_data_socket(
                                     &mut signer,
                                     &runtime_tx,
                                     &mut pending_delta,
+                                    &mut delta_deadline,
                                     delta,
                                 ).await {
                                     return;
@@ -606,18 +615,15 @@ pub(super) fn spawn_data_socket(
                 },
                 maybe = stream_rx.recv(), if stream_open => match maybe {
                     Some(delta) => {
-                        let was_empty = pending_delta.is_none();
                         if !push_or_flush_delta(
                             &mut socket,
                             &mut signer,
                             &runtime_tx,
                             &mut pending_delta,
+                            &mut delta_deadline,
                             delta,
                         ).await {
                             return;
-                        }
-                        if was_empty || pending_delta.is_some() {
-                            delta_deadline = TokioInstant::now() + DELTA_COALESCE_WINDOW;
                         }
                     }
                     None => {
@@ -645,6 +651,11 @@ pub(super) fn spawn_data_socket(
                 msg = socket.next_json() => match msg {
                     Ok(Some(value)) => match serde_json::from_value::<DataInbound>(value) {
                         Ok(frame) => {
+                            if let (Some(signer), DataInbound::Error { error }) =
+                                (signer.as_mut(), &frame)
+                            {
+                                signer.observe_bridge_error(error);
+                            }
                             if runtime_tx
                                 .send(RuntimeInput::Data(Box::new(frame)))
                                 .await
@@ -713,15 +724,21 @@ async fn write_data_frame(
 }
 
 /// Adds one Delta to the current adjacent batch or flushes the previous batch.
+///
+/// The flush deadline is armed only when a new batch starts. Re-arming it on
+/// every merge would hold a fast token stream until the byte cap, turning
+/// smooth streaming into large bursts.
 async fn push_or_flush_delta(
     socket: &mut crate::bridge::BridgeWebSocket,
     signer: &mut Option<CapabilitySigner>,
     runtime_tx: &mpsc::Sender<RuntimeInput>,
     pending: &mut Option<DataOutbound>,
+    deadline: &mut tokio::time::Instant,
     next: DataOutbound,
 ) -> bool {
     let Some(current) = pending.as_mut() else {
         *pending = Some(next);
+        *deadline = tokio::time::Instant::now() + DELTA_COALESCE_WINDOW;
         return true;
     };
     match merge_adjacent_delta(current, next) {
@@ -733,6 +750,7 @@ async fn push_or_flush_delta(
                 }
             }
             *pending = Some(next);
+            *deadline = tokio::time::Instant::now() + DELTA_COALESCE_WINDOW;
         }
     }
     true
@@ -998,6 +1016,77 @@ mod tests {
             }
             other => panic!("unexpected frame: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn coalesce_deadline_is_fixed_from_first_delta_of_a_batch() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            let mut texts = Vec::new();
+            while let Some(Ok(msg)) = futures_util::StreamExt::next(&mut ws).await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+                    texts.push(text);
+                }
+            }
+            texts
+        });
+        let mut socket = crate::bridge::BridgeWebSocket::connect(&format!("ws://{addr}"), "cred")
+            .await
+            .unwrap();
+        let (runtime_tx, _runtime_rx) = mpsc::channel(4);
+        let mut signer = None;
+        let mut pending = None;
+        let mut deadline = tokio::time::Instant::now();
+
+        assert!(
+            push_or_flush_delta(
+                &mut socket,
+                &mut signer,
+                &runtime_tx,
+                &mut pending,
+                &mut deadline,
+                delta("message", 1, "a"),
+            )
+            .await
+        );
+        let first_deadline = deadline;
+        tokio::time::sleep(Duration::from_millis(3)).await;
+        assert!(
+            push_or_flush_delta(
+                &mut socket,
+                &mut signer,
+                &runtime_tx,
+                &mut pending,
+                &mut deadline,
+                delta("message", 2, "b"),
+            )
+            .await
+        );
+        assert_eq!(
+            deadline, first_deadline,
+            "a merge must not extend the window"
+        );
+
+        assert!(
+            push_or_flush_delta(
+                &mut socket,
+                &mut signer,
+                &runtime_tx,
+                &mut pending,
+                &mut deadline,
+                delta("other", 3, "c"),
+            )
+            .await
+        );
+        assert!(deadline > first_deadline, "a new batch re-arms the window");
+        drop(socket);
+        let texts = server.await.unwrap();
+        // Auth frame, then the flushed "ab" batch; "c" is still pending.
+        assert_eq!(texts.len(), 2);
+        assert!(texts[1].contains("\"delta\":\"ab\""));
     }
 
     #[test]

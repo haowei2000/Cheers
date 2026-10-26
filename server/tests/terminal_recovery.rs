@@ -125,6 +125,8 @@ impl Turn {
                 session_id: None,
                 finalized: false,
                 last_touched_ms: Default::default(),
+                ownership_verified: Default::default(),
+                delta_capability: None,
             });
         }
         let recorded = Arc::new(RecordingFanout::default());

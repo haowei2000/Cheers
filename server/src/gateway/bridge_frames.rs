@@ -198,7 +198,24 @@ pub(crate) fn bridge_error(code: &str, detail: &str) -> Value {
             detail: Some(detail.to_string()),
             request_id: None,
             client_msg_id: None,
+            msg_id: None,
             retryable: None,
+        },
+    })
+}
+
+/// Delta capability rejection naming the stream, so a per-stream signer signs
+/// that stream's next Delta again instead of losing the rest of the stream.
+pub(crate) fn delta_capability_error(code: &str, detail: &str, msg_id: Uuid) -> Value {
+    frame_value(&proto::DataInbound::Error {
+        error: proto::BridgeErrorFrame {
+            v: BRIDGE_PROTOCOL_VERSION,
+            code: code.to_string(),
+            detail: Some(detail.to_string()),
+            request_id: None,
+            client_msg_id: None,
+            msg_id: Some(msg_id.to_string()),
+            retryable: Some(true),
         },
     })
 }

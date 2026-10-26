@@ -53,10 +53,48 @@ pub struct StreamEntry {
     /// 行会产生写放大，故按 `SESSION_TOUCH_DEBOUNCE_MS` 去抖；首个 delta 仍立即置 busy。
     /// `Arc` 让 StreamEntry 的 Clone 与 DashMap Ref 共享同一计数器。
     pub last_touched_ms: Arc<AtomicU64>,
+    /// 上次 R1 在 PG 校验通过的时间（epoch millis，0 = 未校验）。窗口内的后续 delta
+    /// 以内存 entry 为准，免去每个 delta 一次 PG 往返（该往返串行阻塞 bridge 读循环）；
+    /// 窗口过后重新校验，使注册表之外的占位删除（如频道级联删除）在该时限内生效。
+    pub ownership_verified: Arc<AtomicU64>,
+    /// 首个签名 delta 通过 capability 校验后建立的流级授权（`delta_capability:
+    /// "first_per_stream"`）。同一连接上该流后续未签名 delta 沿用此授权；重连后
+    /// 新连接须重新出示签名。done/error 仍逐帧校验。
+    pub delta_capability: Option<DeltaCapabilityBinding>,
+}
+
+/// 流级 delta 授权：绑定到一条 data 连接与一个 delegation。未签名 delta 消耗预付
+/// 次数（按 `max_uses` 在 PG 原子预留），并至少每 `DELTA_CAPABILITY_RECHECK` 在 PG
+/// 复核一次 delegation 状态与作用域，使撤销/过期/会话关闭在该时限内生效。
+#[derive(Debug, Clone)]
+pub struct DeltaCapabilityBinding {
+    pub connection_id: Uuid,
+    pub delegation_id: Uuid,
+    /// 已在 PG 预付、尚未消耗的 delta 次数。
+    pub prepaid: i32,
+    /// 上次在 PG 复核 delegation 的时间。
+    pub checked_at: std::time::Instant,
+}
+
+/// 流级 delta 授权的最长复核间隔：撤销、过期、会话关闭的生效时限。
+pub const DELTA_CAPABILITY_RECHECK: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// 一个未签名 delta 对流级授权的使用结果。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum DeltaCapabilityUse {
+    /// 未绑定（或不属于本 bot/连接、已 finalize）：须走完整签名校验。
+    Unbound,
+    /// 已消耗一次预付次数，放行。
+    Granted,
+    /// 须先在 PG 复核并补充预付（复核超时或预付耗尽）。
+    Recheck { delegation_id: Uuid, prepaid: i32 },
 }
 
 /// 同一 session 行的 touch 去抖窗口（毫秒）。窗口内的 delta 仅损失亚秒级 last_used_at 精度。
 const SESSION_TOUCH_DEBOUNCE_MS: u64 = 2000;
+
+/// R1 PG 校验结果的复用窗口（毫秒）。
+const OWNERSHIP_RECHECK_MS: u64 = 1000;
 
 /// 当前时间的 epoch 毫秒（touch 去抖用）。时钟回拨时 saturating_sub 会退化为立即 touch。
 fn now_millis() -> u64 {
@@ -142,6 +180,134 @@ impl StreamRegistry {
                 }
             }
         }
+    }
+
+    /// 签名 delta 校验通过后，把该流的 delta 授权绑定到当前 data 连接与 delegation。
+    /// 仅限流的属主 bot 且未 finalize。返回被替换绑定的未用预付 `(delegation, n)`，
+    /// 由调用方退还。
+    pub(crate) fn bind_delta_capability(
+        &self,
+        msg_id: Uuid,
+        bot_id: Uuid,
+        connection_id: Uuid,
+        delegation_id: Uuid,
+    ) -> Option<(Uuid, i32)> {
+        let mut entry = self.entries.get_mut(&msg_id)?;
+        if entry.bot_id != bot_id || entry.finalized {
+            return None;
+        }
+        entry
+            .delta_capability
+            .replace(DeltaCapabilityBinding {
+                connection_id,
+                delegation_id,
+                prepaid: 0,
+                checked_at: std::time::Instant::now(),
+            })
+            .map(|old| (old.delegation_id, old.prepaid))
+    }
+
+    /// 一个未签名 delta 尝试使用该流在此 bot 这条连接上的授权。
+    pub(crate) fn use_delta_capability(
+        &self,
+        msg_id: Uuid,
+        bot_id: Uuid,
+        connection_id: Uuid,
+    ) -> DeltaCapabilityUse {
+        let Some(mut entry) = self.entries.get_mut(&msg_id) else {
+            return DeltaCapabilityUse::Unbound;
+        };
+        if entry.bot_id != bot_id || entry.finalized {
+            return DeltaCapabilityUse::Unbound;
+        }
+        match entry.delta_capability.as_mut() {
+            Some(binding) if binding.connection_id == connection_id => {
+                if binding.prepaid > 0 && binding.checked_at.elapsed() < DELTA_CAPABILITY_RECHECK {
+                    binding.prepaid -= 1;
+                    DeltaCapabilityUse::Granted
+                } else {
+                    DeltaCapabilityUse::Recheck {
+                        delegation_id: binding.delegation_id,
+                        prepaid: binding.prepaid,
+                    }
+                }
+            }
+            _ => DeltaCapabilityUse::Unbound,
+        }
+    }
+
+    /// PG 复核通过后记入新预付 `granted` 并消耗一次。失败（绑定已失效或预付耗尽）
+    /// 时清除绑定，返回 `Err(未用预付)` 由调用方退还。
+    pub(crate) fn finish_delta_recheck(
+        &self,
+        msg_id: Uuid,
+        bot_id: Uuid,
+        connection_id: Uuid,
+        delegation_id: Uuid,
+        granted: i32,
+    ) -> Result<(), i32> {
+        let Some(mut entry) = self.entries.get_mut(&msg_id) else {
+            return Err(granted);
+        };
+        if entry.bot_id != bot_id || entry.finalized {
+            return Err(granted);
+        }
+        let Some(binding) = entry.delta_capability.as_mut().filter(|binding| {
+            binding.connection_id == connection_id && binding.delegation_id == delegation_id
+        }) else {
+            return Err(granted);
+        };
+        binding.prepaid += granted;
+        binding.checked_at = std::time::Instant::now();
+        if binding.prepaid > 0 {
+            binding.prepaid -= 1;
+            Ok(())
+        } else {
+            entry.delta_capability = None;
+            Err(0)
+        }
+    }
+
+    /// 移除该流在此 bot 这条连接上的授权（流结束或复核失败），返回未用预付。
+    pub(crate) fn take_delta_capability(
+        &self,
+        msg_id: Uuid,
+        bot_id: Uuid,
+        connection_id: Uuid,
+    ) -> Option<(Uuid, i32)> {
+        let mut entry = self.entries.get_mut(&msg_id)?;
+        if entry.bot_id != bot_id || entry.delta_capability.as_ref()?.connection_id != connection_id
+        {
+            return None;
+        }
+        entry
+            .delta_capability
+            .take()
+            .map(|binding| (binding.delegation_id, binding.prepaid))
+    }
+
+    /// data 连接断开：移除该连接上的全部流级授权，返回各自未用预付。
+    pub(crate) fn take_delta_capabilities_on(
+        &self,
+        bot_id: Uuid,
+        connection_id: Uuid,
+    ) -> Vec<(Uuid, i32)> {
+        let mut refunds = Vec::new();
+        for mut entry in self.entries.iter_mut() {
+            if entry.bot_id != bot_id {
+                continue;
+            }
+            let on_connection = entry
+                .delta_capability
+                .as_ref()
+                .is_some_and(|binding| binding.connection_id == connection_id);
+            if on_connection {
+                if let Some(binding) = entry.delta_capability.take() {
+                    refunds.push((binding.delegation_id, binding.prepaid));
+                }
+            }
+        }
+        refunds
     }
 
     /// 清理注册表（done 帧到达后调用）。
@@ -254,13 +420,22 @@ pub async fn handle_delta(
 
     // 复制所需字段后立即释放 DashMap 分片读锁——不得跨 .await 持有守卫，否则并发写者
     // （register / claim_finalize / remove）会在 DB 往返期间被同步阻塞其 worker 线程。
-    let (session_id, last_touched_ms) = {
+    let (session_id, last_touched_ms, entry_bot_id, entry_channel_id, ownership_verified) = {
         let entry = registry
             .entries
             .get(&msg_id)
             .ok_or("stream not registered")?;
-        (entry.session_id, entry.last_touched_ms.clone())
+        (
+            entry.session_id,
+            entry.last_touched_ms.clone(),
+            entry.bot_id,
+            entry.channel_id,
+            entry.ownership_verified.clone(),
+        )
     };
+    if entry_bot_id != bot_id {
+        return Err("ownership check failed: msg_id not owned by this bot");
+    }
 
     // touch 去抖：首个 delta 立即置 busy；窗口内的后续 delta 跳过 session 行 UPDATE，
     // 仅损失亚秒级 last_used_at 精度。compare_exchange 防止并发帧重复 touch。
@@ -272,12 +447,27 @@ pub async fn handle_delta(
             .is_ok();
 
     // R1 所有权校验与（偶发的）session touch 并发执行——两者互不依赖，省去一次串行往返。
-    let (owner, _) = tokio::join!(verify_ownership(db, bot_id, msg_id), async {
-        if should_touch {
-            mark_session_alive(db, bot_id, provider_account_id, frame, session_id).await;
+    // 窗口内已校验的流跳过 PG 查询，直接使用注册时的 channel_id。
+    let verified_at = ownership_verified.load(Ordering::Acquire);
+    let verified = verified_at != 0 && now.saturating_sub(verified_at) < OWNERSHIP_RECHECK_MS;
+    let (owner, _) = tokio::join!(
+        async {
+            if verified {
+                Ok(entry_channel_id)
+            } else {
+                verify_ownership(db, bot_id, msg_id).await
+            }
+        },
+        async {
+            if should_touch {
+                mark_session_alive(db, bot_id, provider_account_id, frame, session_id).await;
+            }
         }
-    });
+    );
     let channel_id = owner?;
+    if !verified && channel_id == entry_channel_id {
+        ownership_verified.store(now, Ordering::Release);
+    }
 
     // R4: finalize 守卫——.await 后重新读取（done 已 remove entry 视同 gone）。
     match registry.entries.get(&msg_id).map(|e| e.finalized) {
@@ -1010,7 +1200,140 @@ mod tests {
             session_id: None,
             finalized: false,
             last_touched_ms: Default::default(),
+            ownership_verified: Default::default(),
+            delta_capability: None,
         }
+    }
+
+    /// delta 授权只绑定到属主 bot 的同一条 data 连接，finalize 后失效。
+    #[test]
+    fn delta_capability_binds_to_owner_and_connection_only() {
+        let registry = StreamRegistry::new();
+        let msg_id = Uuid::new_v4();
+        let e = entry(msg_id);
+        let bot = e.bot_id;
+        registry.register(e);
+        let conn = Uuid::new_v4();
+        let delegation = Uuid::new_v4();
+
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, conn),
+            DeltaCapabilityUse::Unbound
+        );
+        assert!(registry
+            .bind_delta_capability(msg_id, Uuid::new_v4(), conn, delegation)
+            .is_none());
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, conn),
+            DeltaCapabilityUse::Unbound,
+            "another bot cannot bind the stream"
+        );
+        registry.bind_delta_capability(msg_id, bot, conn, delegation);
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, Uuid::new_v4()),
+            DeltaCapabilityUse::Unbound,
+            "another connection does not inherit the binding"
+        );
+        assert_eq!(
+            registry.use_delta_capability(msg_id, Uuid::new_v4(), conn),
+            DeltaCapabilityUse::Unbound
+        );
+
+        let guard = registry.claim_finalize(msg_id).unwrap().unwrap();
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, conn),
+            DeltaCapabilityUse::Unbound,
+            "a finalizing stream accepts no unsigned Delta"
+        );
+        guard.remove();
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, conn),
+            DeltaCapabilityUse::Unbound
+        );
+    }
+
+    /// 预付耗尽或复核超时即要求 PG 复核；预付不足则解除绑定；未用预付可退还。
+    #[test]
+    fn delta_capability_spends_prepaid_uses_and_rechecks() {
+        let registry = StreamRegistry::new();
+        let msg_id = Uuid::new_v4();
+        let e = entry(msg_id);
+        let bot = e.bot_id;
+        registry.register(e);
+        let conn = Uuid::new_v4();
+        let delegation = Uuid::new_v4();
+        registry.bind_delta_capability(msg_id, bot, conn, delegation);
+
+        let recheck = DeltaCapabilityUse::Recheck {
+            delegation_id: delegation,
+            prepaid: 0,
+        };
+        assert_eq!(registry.use_delta_capability(msg_id, bot, conn), recheck);
+        assert_eq!(
+            registry.finish_delta_recheck(msg_id, bot, conn, delegation, 2),
+            Ok(())
+        );
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, conn),
+            DeltaCapabilityUse::Granted
+        );
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, conn),
+            recheck,
+            "prepaid uses ran out"
+        );
+
+        assert_eq!(
+            registry.finish_delta_recheck(msg_id, bot, conn, delegation, 3),
+            Ok(())
+        );
+        registry
+            .entries
+            .get_mut(&msg_id)
+            .unwrap()
+            .delta_capability
+            .as_mut()
+            .unwrap()
+            .checked_at -= DELTA_CAPABILITY_RECHECK;
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, conn),
+            DeltaCapabilityUse::Recheck {
+                delegation_id: delegation,
+                prepaid: 2,
+            },
+            "a stale binding is re-checked even with prepaid uses left"
+        );
+        assert_eq!(
+            registry.take_delta_capability(msg_id, bot, conn),
+            Some((delegation, 2)),
+            "unused prepaid uses are returned for refund"
+        );
+
+        registry.bind_delta_capability(msg_id, bot, conn, delegation);
+        assert_eq!(
+            registry.finish_delta_recheck(msg_id, bot, conn, delegation, 0),
+            Err(0),
+            "an exhausted delegation unbinds the stream"
+        );
+        assert_eq!(
+            registry.use_delta_capability(msg_id, bot, conn),
+            DeltaCapabilityUse::Unbound
+        );
+
+        registry.bind_delta_capability(msg_id, bot, conn, delegation);
+        assert_eq!(
+            registry.finish_delta_recheck(msg_id, bot, conn, Uuid::new_v4(), 4),
+            Err(4),
+            "a grant for a replaced delegation is refunded"
+        );
+        registry
+            .finish_delta_recheck(msg_id, bot, conn, delegation, 5)
+            .unwrap();
+        assert_eq!(
+            registry.take_delta_capabilities_on(bot, conn),
+            vec![(delegation, 4)]
+        );
+        assert!(registry.take_delta_capabilities_on(bot, conn).is_empty());
     }
 
     // ── R9: session-id 解析优先级（纯逻辑，不依赖 DB）─────────────────────────

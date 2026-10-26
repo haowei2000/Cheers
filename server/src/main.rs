@@ -363,6 +363,9 @@ async fn main() -> anyhow::Result<()> {
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    // Realtime WS frames (stream deltas, bridge frames) are small; Nagle plus
+    // delayed ACK would hold each one for tens of milliseconds.
+    .tcp_nodelay(true)
     .await?;
 
     Ok(())

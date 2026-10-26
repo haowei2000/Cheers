@@ -8,6 +8,21 @@
 
 - 在 ACP data WS 上，对 `send/delta/done/resource_req/session_update/permission_request` 做能力级鉴权（需签名 envelope）。
 - `require_capability=true` 时强制执行；否则保持向后兼容（网关放行，不做能力签名校验）。
+- `delta` 按流签名（网关 hello `server_capabilities.delta_capability = "first_per_stream"`）：
+  connector 只签每个流（`msg_id`）的首个 delta；网关校验通过后把该流的 delta 授权绑定到
+  当前 data 连接，同一连接上的后续未签名 delta 沿用授权。带签名的 delta 始终逐帧校验；
+  重连后新连接须重新签首个 delta；`done/error` 仍逐帧签名校验。未声明该能力的网关上，
+  connector 照旧逐帧签名。
+  - 计数：每个未签名 delta 仍计一次 `use_count`。网关按批（≤64）在 PG 原子预付，
+    不超过 `max_uses`；预付耗尽即拒绝，计数精确。流结束（done/error）或连接断开时
+    退还未用预付。
+  - 撤销/过期/会话关闭：绑定至少每 1 秒在 PG 复核一次 delegation 状态与作用域，
+    失效后下一个 delta 即被拒绝。
+  - 重放：未签名 delta 只在出示签名的那条已认证 data 连接上被接受，连接外无从重放；
+    签名帧仍逐帧消费 nonce。
+  - 恢复：拒绝 delta 的错误帧带 `msg_id`（`DELTA_CAPABILITY_REQUIRED` /
+    `CAPABILITY_DENIED`），connector 收到后对该流的下一个 delta 重新签名，单次签名失败
+    不会丢失整条流后续的 delta。
 - 鉴权目标是：
   - `谁`（delegation 的绑定对象）
   - `可做什么`（action）
