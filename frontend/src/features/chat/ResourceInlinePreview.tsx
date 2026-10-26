@@ -6,6 +6,7 @@ import { ResourceEnclosureMetadataContext } from "./ResourceEnclosure";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { parseLocator } from "./locator";
 import { ResourceCardContext } from "./ResourceCardContext";
+import { useNearViewport } from "@/hooks/useNearViewport";
 import { fileResourceStore } from "./workbench/fileResource";
 import { formatFor, errMsg } from "./workbench/jsonFile";
 import { A2UILens } from "./workbench/lens/a2ui/A2UILens";
@@ -113,18 +114,11 @@ export function ResourceInlinePreview({ uri }: { uri: string }) {
   const target = parseLocator(uri);
   const canPreview = !!host && (target?.kind === "desk" || (target?.kind==="resource"&&target.resourceKind==="desk"));
   const element = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(typeof IntersectionObserver === "undefined");
-  const [activated, setActivated] = useState(typeof IntersectionObserver === "undefined");
+  const visible = useNearViewport(element, { rootMargin: "160px", enabled: canPreview });
+  const [activated, setActivated] = useState(visible);
   useEffect(() => {
-    if (!canPreview || !element.current || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver((entries) => {
-      const shown = entries.some((entry) => entry.isIntersecting);
-      setVisible(shown);
-      if (shown) setActivated(true);
-    }, { rootMargin: "160px" });
-    observer.observe(element.current);
-    return () => observer.disconnect();
-  }, [canPreview]);
+    if (visible) setActivated(true);
+  }, [visible]);
   if (!host || !(target?.kind === "desk" || (target?.kind==="resource"&&target.resourceKind==="desk"))) return null;
   return <div ref={element} className="min-w-0 px-4 pb-4 font-utility text-regular">
     {activated ? target.kind==="resource"?<GlobalPreview uri={uri}/>:<DeskPreview key={target.path} path={target.path} active={visible} /> : <p className="text-body-secondary">Preview loads when this card is visible.</p>}

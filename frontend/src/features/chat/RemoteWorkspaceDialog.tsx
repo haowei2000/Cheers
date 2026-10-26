@@ -124,6 +124,14 @@ function pathSuffixMatch(a: string, b: string): boolean {
 }
 
 /** Compact relative age for an ISO-8601 date (falls back to the raw string). */
+/** Absolute local date-time for a commit tooltip; the raw value if unparseable. */
+function formatCommitDate(iso: string): string {
+  const t = Date.parse(iso);
+  return Number.isNaN(t)
+    ? iso
+    : new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 function relDate(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return iso;
@@ -1622,6 +1630,8 @@ export function RemoteWorkspaceDialog({
                       const active =
                         diff?.kind === "file" && diff.path === e.path && diff.staged === isStaged;
                       const dir = dirname(e.path);
+                      // Porcelain marks an untracked directory with a trailing slash.
+                      const name = basename(e.path) + (e.path.endsWith("/") ? "/" : "");
                       return (
                         <UiButton controlWidth="fill" variant="plain" role="option"
                           key={(isStaged ? "s:" : "u:") + e.path}
@@ -1632,7 +1642,7 @@ export function RemoteWorkspaceDialog({
  }`}
                         >
                           <span className="min-w-0 flex-1 truncate font-utility text-compact">
-                            {basename(e.path)}
+                            {name}
                             {dir && <span className="ml-2 font-normal text-minimal text-content-muted">{dir}</span>}
                           </span>
                           <span className={`w-3 shrink-0 text-center font-code text-minimal ${mk?.cls ?? "text-content-muted"}`}>
@@ -1665,7 +1675,7 @@ export function RemoteWorkspaceDialog({
                     return (
                       <>
                         {staged.length > 0 && group("Staged", staged, true)}
-                        {unstaged.length > 0 && group("Unstaged", unstaged, false)}
+                        {unstaged.length > 0 && group("Unstaged / Untracked", unstaged, false)}
                         {git.entries.length === 0 && (
                           <div className="px-2 py-3 font-utility text-compact text-content-muted">
                             Working tree clean
@@ -1677,19 +1687,21 @@ export function RemoteWorkspaceDialog({
                 </div>
             ) : leftView === "history" && git ? (
                 <div className="flex-1 overflow-auto p-1">
-                  {/* One line per commit, like the Files and Changes rows; hash
-                      and author stay in the tooltip and the opened diff header. */}
+                  {/* One line per commit, like the Files and Changes rows. The short
+                      hash stays visible (touch has no tooltip); author is in the
+                      tooltip and the opened diff header. */}
                   {log?.map((c) => {
                     const active = diff?.kind === "commit" && diff.hash === c.hash;
                     return (
                       <UiButton controlWidth="fill" variant="plain" role="option"
                         key={c.hash}
                         onClick={() => openCommit(c)}
-                        title={`${c.hash.slice(0, 7)} · ${c.author} · ${c.date}\n${c.subject}`}
+                        title={`${c.hash.slice(0, 7)} · ${c.author} · ${formatCommitDate(c.date)}\n${c.subject}`}
                         controlSize="compact" className={`flex items-center gap-2 text-left hover:bg-control text-content-primary ${
  active ? "bg-control font-medium": ""
  }`}
                       >
+                        <span className="shrink-0 font-code text-minimal text-content-muted">{c.hash.slice(0, 7)}</span>
                         <span className="min-w-0 flex-1 truncate font-utility text-compact">{c.subject}</span>
                         <span className="shrink-0 font-utility text-minimal tabular-nums text-content-muted">
                           {relDate(c.date)}

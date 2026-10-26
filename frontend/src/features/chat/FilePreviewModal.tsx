@@ -10,7 +10,7 @@ import type { FileInfo } from "@/types";
 import { downloadFile, extOf, formatBytes, previewKind } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
 import { PdfViewer } from "./PdfViewer";
-import { loadImageObjectUrl } from "./imageObjectUrl";
+import { useImageObjectUrl } from "./imageObjectUrl";
 
 const TEXT_CLIP = 256 * 1024; // cap what we highlight/render to keep the UI snappy
 
@@ -53,18 +53,8 @@ function Centered({ children, tone = "muted" }: { children: React.ReactNode; ton
 }
 
 function ImageBody({ file }: { file: FileInfo }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    // Usually already resolved: the inline thumbnail loaded the same bytes.
-    loadImageObjectUrl(file.file_id)
-      .then((url) => alive && setSrc(url))
-      .catch(() => alive && setFailed(true));
-    return () => {
-      alive = false;
-    };
-  }, [file.file_id]);
+  // Usually already resolved: the inline thumbnail holds the same bytes.
+  const { src, failed } = useImageObjectUrl(file.file_id);
   if (failed) return <Centered tone="error">Failed to load image</Centered>;
   if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading image…</Centered>;
   return (
