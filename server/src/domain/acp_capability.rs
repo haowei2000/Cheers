@@ -79,6 +79,9 @@ struct SessionContext {
 pub enum CapabilityError {
     InvalidSignature(String),
     Denied(String),
+    /// The check could not run (database unavailable). Not a denial: callers
+    /// retry and must not audit it, tear down bindings or ask for a re-sign.
+    Unavailable(String),
     DeniedWithContext {
         message: String,
         context: Box<CapabilityDecisionContext>,
@@ -90,6 +93,7 @@ impl std::fmt::Display for CapabilityError {
         match self {
             Self::InvalidSignature(msg) => write!(f, "{msg}"),
             Self::Denied(msg) => write!(f, "{msg}"),
+            Self::Unavailable(msg) => write!(f, "{msg}"),
             Self::DeniedWithContext { message, .. } => write!(f, "{message}"),
         }
     }
@@ -501,7 +505,7 @@ async fn resolve_active_session(
     }
         .map_err(|e| {
             tracing::error!(error = %e, ctx = "session lookup: select capability session", "acp_capability db error");
-            CapabilityError::Denied("session lookup failed".into())
+            CapabilityError::Unavailable("session lookup failed".into())
         })?
         .ok_or_else(|| CapabilityError::Denied("session not found".into()))?;
 
@@ -734,7 +738,7 @@ async fn load_delegation(
     .await
     .map_err(|e| {
         tracing::error!(error = %e, ctx = "load_delegation: select delegation", "acp_capability db error");
-        CapabilityError::Denied("db error".into())
+        CapabilityError::Unavailable("db error".into())
     })?
     .ok_or_else(|| CapabilityError::Denied("delegation not found".into()))?;
 
@@ -825,7 +829,7 @@ async fn consume_nonce_and_bump(
     .await
     .map_err(|e| {
         tracing::error!(error = %e, ctx = "consume_nonce_and_bump: nonce+bump CTE", "acp_capability db error");
-        CapabilityError::Denied("db error".into())
+        CapabilityError::Unavailable("db error".into())
     })?;
 
     let nonce_inserted: bool = row.nonce_inserted.clone().unwrap_or(false);
@@ -973,6 +977,29 @@ pub async fn authorize_data_frame(
 /// frames such as send/done on the same delegation still need.
 pub const DELTA_USE_BATCH: i32 = 64;
 
+/// The frame fields a Delta's scope/resource checks read. A stream binding
+/// records the signed first Delta's value, and an unsigned Delta must match it,
+/// so a signature still pins every scope-relevant field of the stream.
+pub fn delta_scope_fingerprint(frame: &Value) -> String {
+    json!([
+        extract_session_id(frame),
+        extract_provider_session_key(frame),
+        extract_provider_session_id(frame),
+        extract_channel_id(frame),
+        extract_frame_resource(frame),
+    ])
+    .to_string()
+}
+
+/// Uses granted by a Delta binding re-check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeltaGrant {
+    pub granted: i32,
+    /// The delegation has `max_uses`: its unspent uses must be refunded before
+    /// another frame's use check on it, not eventually.
+    pub limited: bool,
+}
+
 /// Delegation id named by a frame's `acp_capability` envelope, if any.
 pub fn envelope_delegation_id(frame: &Value) -> Option<Uuid> {
     frame
@@ -984,11 +1011,15 @@ pub fn envelope_delegation_id(frame: &Value) -> Option<Uuid> {
         .ok()
 }
 
-/// Re-validate the delegation bound to a stream for an unsigned Delta: the same
-/// active/scope/action/resource checks as a signed frame, without the per-frame
-/// signature and nonce (the binding is confined to the authenticated data
-/// connection that presented the signed first Delta). Then prepay up to `want`
-/// uses atomically under `max_uses`; returns how many were granted.
+/// Re-validate the delegation bound to a stream for an unsigned Delta and prepay
+/// up to `want` uses atomically under `max_uses`.
+///
+/// `full` runs the same live/scope/action/resource checks as a signed frame,
+/// without the per-frame signature and nonce: the binding is confined to the
+/// authenticated data connection that presented the signed first Delta, and
+/// the Delta's scope fields must equal that Delta's (`delta_scope_fingerprint`).
+/// A binding checked within the recheck window only needs more prepaid uses,
+/// so `full = false` runs just the reservation.
 pub async fn revalidate_delta_binding(
     db: &PgPool,
     bot_id: &Uuid,
@@ -996,7 +1027,60 @@ pub async fn revalidate_delta_binding(
     delegation_id: &Uuid,
     frame: &Value,
     want: i32,
-) -> Result<i32, CapabilityError> {
+    full: bool,
+) -> Result<DeltaGrant, CapabilityError> {
+    if full {
+        verify_delta_binding(db, bot_id, provider_account_id, delegation_id, frame).await?;
+    }
+    if want <= 0 {
+        return Ok(DeltaGrant {
+            granted: 0,
+            limited: false,
+        });
+    }
+    let row = sqlx::query!(
+        r#"UPDATE acp_capability_delegations d
+           SET use_count = d.use_count + g.granted, updated_at = NOW()
+           FROM (
+               SELECT delegation_id, max_uses IS NOT NULL AS limited,
+                      CASE WHEN max_uses IS NULL THEN $2::int4
+                           ELSE LEAST($2::int4, max_uses - use_count,
+                                      GREATEST(1, (max_uses - use_count) / 8)) END AS granted
+               FROM acp_capability_delegations
+               WHERE delegation_id = $1 AND bot_id = $3
+               FOR UPDATE
+           ) g
+           WHERE d.delegation_id = g.delegation_id AND g.granted > 0
+           RETURNING g.granted AS "granted!", g.limited AS "limited!""#,
+        delegation_id.to_string(),
+        want,
+        bot_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, ctx = "revalidate_delta_binding: reserve uses", "acp_capability db error");
+        CapabilityError::Unavailable("db error".into())
+    })?;
+    Ok(row.map_or(
+        DeltaGrant {
+            granted: 0,
+            limited: true,
+        },
+        |row| DeltaGrant {
+            granted: row.granted,
+            limited: row.limited,
+        },
+    ))
+}
+
+async fn verify_delta_binding(
+    db: &PgPool,
+    bot_id: &Uuid,
+    provider_account_id: &str,
+    delegation_id: &Uuid,
+    frame: &Value,
+) -> Result<(), CapabilityError> {
     let delegation = load_delegation(db, bot_id, &delegation_id.to_string()).await?;
     // Exhaustion is enforced by the reservation below and the stream's prepaid
     // count; this stream's own unspent uses already sit in `use_count`.
@@ -1026,34 +1110,7 @@ pub async fn revalidate_delta_binding(
             resource.as_deref().unwrap_or("<none>")
         )));
     }
-    if want <= 0 {
-        return Ok(0);
-    }
-    let granted = sqlx::query_scalar!(
-        r#"UPDATE acp_capability_delegations d
-           SET use_count = d.use_count + g.granted, updated_at = NOW()
-           FROM (
-               SELECT delegation_id,
-                      CASE WHEN max_uses IS NULL THEN $2::int4
-                           ELSE LEAST($2::int4, max_uses - use_count,
-                                      GREATEST(1, (max_uses - use_count) / 8)) END AS granted
-               FROM acp_capability_delegations
-               WHERE delegation_id = $1 AND bot_id = $3
-               FOR UPDATE
-           ) g
-           WHERE d.delegation_id = g.delegation_id AND g.granted > 0
-           RETURNING g.granted AS "granted!""#,
-        delegation_id.to_string(),
-        want,
-        bot_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, ctx = "revalidate_delta_binding: reserve uses", "acp_capability db error");
-        CapabilityError::Denied("db error".into())
-    })?;
-    Ok(granted.unwrap_or(0))
+    Ok(())
 }
 
 /// Return prepaid Delta uses a finished or abandoned stream did not spend.
@@ -1099,6 +1156,7 @@ pub fn map_app_error(err: CapabilityError) -> AppError {
     match err {
         CapabilityError::InvalidSignature(message) => AppError::Unauthorized(message),
         CapabilityError::Denied(message) => AppError::Forbidden(message),
+        CapabilityError::Unavailable(message) => AppError::ServiceUnavailable(message),
         CapabilityError::DeniedWithContext { message, .. } => AppError::Forbidden(message),
     }
 }

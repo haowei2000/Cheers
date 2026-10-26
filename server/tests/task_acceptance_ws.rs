@@ -2156,7 +2156,32 @@ async fn revoking_the_delegation_stops_a_bound_stream_within_the_recheck_window(
         .bind(delegation.to_string()).execute(&db).await.unwrap();
     tokio::time::sleep(Duration::from_millis(1100)).await;
 
-    let errors = delta_errors(&mut bridge.data, vec![stream_delta(&task, 3)]).await;
+    let in_flight = vec![
+        stream_delta(&task, 3),
+        stream_delta(&task, 4),
+        stream_delta(&task, 5),
+    ];
+    let errors = delta_errors(&mut bridge.data, in_flight).await;
+    assert_eq!(
+        errors.len(),
+        1,
+        "the lapse names the stream once, not once per in-flight Delta: {errors:?}"
+    );
+    assert_eq!(errors[0]["code"], "DELTA_CAPABILITY_REQUIRED");
+    assert_eq!(errors[0]["msg_id"], task["placeholder_msg_id"]);
+}
+
+#[sqlx::test]
+async fn an_unsigned_delta_cannot_change_the_signed_scope_fields(db: PgPool) {
+    let (_fixture, mut bridge, task, _execution, delegation, key) = signed_stream(&db, None).await;
+    let mut first = stream_delta(&task, 1);
+    sign_frame(&mut first, delegation, &key);
+    let errors = delta_errors(&mut bridge.data, vec![first, stream_delta(&task, 2)]).await;
+    assert!(errors.is_empty(), "{errors:?}");
+
+    let mut moved = stream_delta(&task, 3);
+    moved["session_id"] = json!(Uuid::new_v4());
+    let errors = delta_errors(&mut bridge.data, vec![moved]).await;
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(errors[0]["code"], "DELTA_CAPABILITY_REQUIRED");
     assert_eq!(errors[0]["msg_id"], task["placeholder_msg_id"]);

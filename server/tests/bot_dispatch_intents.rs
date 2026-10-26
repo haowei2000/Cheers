@@ -169,6 +169,8 @@ impl Turn {
             last_touched_ms: Default::default(),
             ownership_verified: Default::default(),
             delta_capability: None,
+            terminal_pending: false,
+            delta_rejection_noticed: false,
         });
         let capture = Locator::new();
         let recorded = Arc::new(RecordingFanout::default());

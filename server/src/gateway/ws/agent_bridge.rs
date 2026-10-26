@@ -32,6 +32,7 @@ use crate::{
         realtime::frame::WireFrame,
         stream::{
             handle_delta, handle_done, handle_send, handle_session_update, DeltaCapabilityUse,
+            DeltaRefund,
         },
         task_results::{self, TerminalError, TerminalOutcome},
     },
@@ -748,9 +749,10 @@ async fn handle_data(
                                 }
                             }
                             if is_terminal_data_frame(&frame) {
-                                // The stream is over for its Delta binding; its unspent
-                                // prepaid uses are refunded before the terminal's own
-                                // capability check so they cannot exhaust it.
+                                // Fence the stream (no Delta may follow message_done) and end
+                                // its Delta binding. A limited delegation's unspent uses are
+                                // refunded before the terminal's own use check; others refund
+                                // in the background off the terminal's path.
                                 let refund = release_delta_capability(&frame, &state, &bot, connection_id);
                                 // Finalizing runs a PG transaction plus fan-out; doing it
                                 // inline stalls this bot's other live streams behind it.
@@ -767,7 +769,9 @@ async fn handle_data(
                                 if let Err(denial) =
                                     authorize_capability(&frame, &state, &bot, connection_id).await
                                 {
-                                    let _ = ws_send(&mut socket, &denial).await;
+                                    if let Some(denial) = denial {
+                                        let _ = ws_send(&mut socket, &denial).await;
+                                    }
                                     continue;
                                 }
                             }
@@ -815,11 +819,11 @@ async fn handle_data(
 
     tracing::info!(bot_id = %bot.bot_id, reason, "data disconnected");
     // Delta bindings never outlive their connection; refund what they prepaid.
-    for (delegation_id, unused) in state
+    for refund in state
         .stream_registry
         .take_delta_capabilities_on(bot.bot_id, connection_id)
     {
-        spawn_refund_delta_uses(&state, delegation_id, unused);
+        state.stream_registry.queue_refund(refund);
     }
     crate::domain::bot_events::record_bg(
         &state.db,
@@ -851,27 +855,33 @@ fn delta_msg_id(frame: &Value) -> Option<Uuid> {
     frame.get("msg_id")?.as_str()?.parse().ok()
 }
 
-/// Authorize a data frame for a capability-enforced bot; `Err` is the frame to
-/// send back. An unsigned Delta rides on its stream's binding, created when the
-/// stream's first signed Delta verified on this connection: it spends a prepaid
-/// use, and the delegation is re-checked in PG at least every
-/// `DELTA_CAPABILITY_RECHECK` (revocation/expiry/session close) and whenever the
-/// prepaid uses run out (`max_uses`). Every other frame is verified per frame.
+/// Authorize a data frame for a capability-enforced bot. `Err(Some(frame))` is
+/// sent back; `Err(None)` drops the frame silently (its stream was already told).
+///
+/// An unsigned Delta rides on its stream's binding, created when the stream's
+/// first signed Delta verified on this connection: its scope fields must match
+/// that Delta's, it spends a prepaid use, and the delegation is re-checked in PG
+/// at least every `DELTA_CAPABILITY_RECHECK` (revocation/expiry/session close).
+/// Running out of prepaid uses inside that window only reserves more
+/// (`max_uses`). Every other frame is verified per frame.
 async fn authorize_capability(
     frame: &Value,
     state: &AppState,
     bot: &BotInfo,
     connection_id: Uuid,
-) -> Result<(), Value> {
+) -> Result<(), Option<Value>> {
     let delta_msg = delta_msg_id(frame);
     let signed = frame.get("acp_capability").is_some();
+    let registry = &state.stream_registry;
     if let (Some(msg_id), false) = (delta_msg, signed) {
-        let registry = &state.stream_registry;
-        match registry.use_delta_capability(msg_id, bot.bot_id, connection_id) {
+        let scope = acp_capability::delta_scope_fingerprint(frame);
+        let detail = match registry.use_delta_capability(msg_id, bot.bot_id, connection_id, &scope)
+        {
             DeltaCapabilityUse::Granted => return Ok(()),
             DeltaCapabilityUse::Recheck {
                 delegation_id,
                 prepaid,
+                full,
             } => {
                 let checked = acp_capability::revalidate_delta_binding(
                     &state.db,
@@ -880,94 +890,104 @@ async fn authorize_capability(
                     &delegation_id,
                     frame,
                     (acp_capability::DELTA_USE_BATCH - prepaid).max(0),
+                    full,
                 )
                 .await;
-                let detail = match checked {
-                    Ok(granted) => match registry.finish_delta_recheck(
+                match checked {
+                    Ok(grant) => match registry.finish_delta_recheck(
                         msg_id,
                         bot.bot_id,
                         connection_id,
                         delegation_id,
-                        granted,
+                        grant,
+                        full,
                     ) {
                         Ok(()) => return Ok(()),
-                        Err(unused) => {
-                            spawn_refund_delta_uses(state, delegation_id, unused);
+                        Err(refund) => {
+                            registry.queue_refund(refund);
                             "delegation uses exhausted".to_string()
                         }
                     },
+                    // A store outage is not a denial: keep the binding, skip the audit
+                    // row, and do not ask the connector to re-sign.
+                    Err(err @ acp_capability::CapabilityError::Unavailable(_)) => {
+                        tracing::warn!(bot_id = %bot.bot_id, msg_id = %msg_id, err = %err, "delta capability recheck unavailable");
+                        return Err(Some(bridge_error(
+                            "CAPABILITY_UNAVAILABLE",
+                            &err.to_string(),
+                        )));
+                    }
                     Err(err) => {
-                        if let Some((delegation_id, unused)) =
+                        if let Some(refund) =
                             registry.take_delta_capability(msg_id, bot.bot_id, connection_id)
                         {
-                            spawn_refund_delta_uses(state, delegation_id, unused);
+                            registry.queue_refund(refund);
                         }
                         log_capability_denial(frame, state, bot, &err).await;
                         err.to_string()
                     }
-                };
-                return Err(delta_capability_error(
-                    "DELTA_CAPABILITY_REQUIRED",
-                    &detail,
-                    msg_id,
-                ));
+                }
             }
+            // An unsigned Delta can only pass through a binding. Answer at once
+            // instead of a doomed full check that would audit every in-flight Delta.
             DeltaCapabilityUse::Unbound => {
-                // An unsigned Delta can only pass through a binding. Answer at once
-                // instead of a doomed full check: Delta already in flight when a
-                // binding ends would otherwise each write an audit row and warn.
-                tracing::debug!(bot_id = %bot.bot_id, msg_id = %msg_id, "unsigned delta without a stream binding");
-                return Err(delta_capability_error(
-                    "DELTA_CAPABILITY_REQUIRED",
-                    "unsigned delta requires a verified signed delta on this stream and connection",
-                    msg_id,
-                ));
+                tracing::debug!(bot_id = %bot.bot_id, msg_id = %msg_id, "unsigned delta without a matching stream binding");
+                "unsigned delta requires a verified signed delta with the same scope on this stream and connection".to_string()
             }
-        }
+        };
+        // Name the stream once per lapse; the connector's next Delta for it is then
+        // signed. Repeating it for every in-flight Delta would re-sign each one.
+        return Err(registry
+            .note_delta_rejection(msg_id, bot.bot_id)
+            .then(|| delta_capability_error("DELTA_CAPABILITY_REQUIRED", &detail, msg_id)));
     }
-    if let Err(detail) = authorize_data_frame_logged(frame, state, bot).await {
-        return Err(match delta_msg {
-            Some(msg_id) => delta_capability_error("CAPABILITY_DENIED", &detail, msg_id),
-            None => bridge_error("CAPABILITY_DENIED", &detail),
-        });
+    if let Err(err) = authorize_data_frame_logged(frame, state, bot).await {
+        let code = match err {
+            acp_capability::CapabilityError::Unavailable(_) => "CAPABILITY_UNAVAILABLE",
+            _ => "CAPABILITY_DENIED",
+        };
+        return Err(Some(match delta_msg {
+            Some(msg_id) if code == "CAPABILITY_DENIED" => {
+                delta_capability_error(code, &err.to_string(), msg_id)
+            }
+            _ => bridge_error(code, &err.to_string()),
+        }));
     }
     if let (Some(msg_id), Some(delegation_id)) =
         (delta_msg, acp_capability::envelope_delegation_id(frame))
     {
-        if let Some((previous, unused)) = state.stream_registry.bind_delta_capability(
+        if let Some(previous) = registry.bind_delta_capability(
             msg_id,
             bot.bot_id,
             connection_id,
             delegation_id,
+            acp_capability::delta_scope_fingerprint(frame),
         ) {
-            spawn_refund_delta_uses(state, previous, unused);
+            registry.queue_refund(previous);
         }
     }
     Ok(())
 }
 
-/// A terminal frame ends its stream's Delta binding on this connection; returns
-/// the unspent prepaid uses `(delegation, n)` to refund.
+/// A terminal frame fences its stream against later Delta and ends its Delta
+/// binding on this connection. Returns the unspent uses that must be refunded
+/// before the terminal's own use check (limited delegations); any other unspent
+/// uses are queued for background refund.
 fn release_delta_capability(
     frame: &Value,
     state: &AppState,
     bot: &BotInfo,
     connection_id: Uuid,
-) -> Option<(Uuid, i32)> {
+) -> Option<DeltaRefund> {
     let msg_id = frame.get("msg_id")?.as_str()?.parse().ok()?;
-    state
-        .stream_registry
-        .take_delta_capability(msg_id, bot.bot_id, connection_id)
-}
-
-fn spawn_refund_delta_uses(state: &AppState, delegation_id: Uuid, unused: i32) {
-    if unused <= 0 {
-        return;
+    let registry = &state.stream_registry;
+    registry.begin_terminal(msg_id, bot.bot_id);
+    let refund = registry.take_delta_capability(msg_id, bot.bot_id, connection_id)?;
+    if refund.limited && refund.unused > 0 {
+        return Some(refund);
     }
-    let db = state.db.clone();
-    tokio::spawn(async move {
-        acp_capability::refund_delta_uses(&db, &delegation_id, unused).await;
-    });
+    registry.queue_refund(refund);
+    None
 }
 
 /// Wait for the in-flight terminal task while still forwarding its replies;
@@ -997,32 +1017,50 @@ async fn process_terminal_frame(
     state: AppState,
     bot: BotInfo,
     replies: mpsc::Sender<Value>,
-    refund: Option<(Uuid, i32)>,
+    refund: Option<DeltaRefund>,
 ) {
-    if let Some((delegation_id, unused)) = refund {
-        acp_capability::refund_delta_uses(&state.db, &delegation_id, unused).await;
+    if let Some(refund) = refund {
+        acp_capability::refund_delta_uses(&state.db, &refund.delegation_id, refund.unused).await;
     }
+    finalize_terminal_frame(&frame, &state, &bot, &replies).await;
+    // Lift the fence whatever the outcome; a committed result already removed
+    // the stream, and a rejected one may be retried.
+    if let Some(msg_id) = frame
+        .get("msg_id")
+        .and_then(Value::as_str)
+        .and_then(|raw| raw.parse().ok())
+    {
+        state.stream_registry.end_terminal(msg_id, bot.bot_id);
+    }
+}
+
+async fn finalize_terminal_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+    replies: &mpsc::Sender<Value>,
+) {
     // An exact committed receipt is a read-only answer: its original session may
     // now be idle or belong to newer work, so do not authorize/touch it as a write.
-    if replay_terminal_frame(&frame, &state, &bot, &replies).await {
+    if replay_terminal_frame(frame, state, bot, replies).await {
         return;
     }
-    if bot.require_capability
-        && authorize_data_frame_logged(&frame, &state, &bot)
-            .await
-            .is_err()
-    {
-        // A concurrent first result can commit between our receipt read and the
-        // active session check. Confirm it before denial.
-        if !replay_terminal_frame(&frame, &state, &bot, &replies).await {
-            reject_terminal_frame(
-                &frame,
-                &replies,
-                TerminalError::rejected("TERMINAL_FORBIDDEN", "terminal capability was denied"),
-            )
-            .await;
+    if bot.require_capability {
+        if let Err(err) = authorize_data_frame_logged(frame, state, bot).await {
+            // A concurrent first result can commit between our receipt read and the
+            // active session check. Confirm it before denial.
+            if !replay_terminal_frame(frame, state, bot, replies).await {
+                let error = match err {
+                    acp_capability::CapabilityError::Unavailable(_) => TerminalError::unavailable(),
+                    _ => TerminalError::rejected(
+                        "TERMINAL_FORBIDDEN",
+                        "terminal capability was denied",
+                    ),
+                };
+                reject_terminal_frame(frame, replies, error).await;
+            }
+            return;
         }
-        return;
     }
     tracing::info!(
         bot_id = %bot.bot_id,
@@ -1030,16 +1068,16 @@ async fn process_terminal_frame(
         frame_type = frame.get("type").and_then(|v| v.as_str()).unwrap_or(""),
         "terminal frame received"
     );
-    handle_terminal_frame(&frame, &state, &bot, &replies).await;
+    handle_terminal_frame(frame, state, bot, replies).await;
 }
 
-/// Capability check for a data frame; a denial is logged and persisted, and
-/// its detail returned for the caller's protocol response.
+/// Capability check for a data frame. A denial is logged and persisted; a store
+/// outage (`Unavailable`) is only traced, since it is not a decision.
 async fn authorize_data_frame_logged(
     frame: &Value,
     state: &AppState,
     bot: &BotInfo,
-) -> Result<(), String> {
+) -> Result<(), acp_capability::CapabilityError> {
     match acp_capability::authorize_data_frame(
         &state.db,
         &bot.bot_id,
@@ -1049,9 +1087,13 @@ async fn authorize_data_frame_logged(
     .await
     {
         Ok(()) => Ok(()),
+        Err(err @ acp_capability::CapabilityError::Unavailable(_)) => {
+            tracing::warn!(bot_id = %bot.bot_id, err = %err, "capability check unavailable");
+            Err(err)
+        }
         Err(err) => {
             log_capability_denial(frame, state, bot, &err).await;
-            Err(err.to_string())
+            Err(err)
         }
     }
 }
