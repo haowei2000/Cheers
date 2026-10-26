@@ -3,6 +3,7 @@ import { useNearbyContentActions } from "./content-action-scope";
 import { ButtonGroup } from "./button-group";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { selectedClasses } from "./selection";
 import {
   PresentationProvider,
   usePresentationLevel,
@@ -121,7 +122,7 @@ export function ItemRow({
     controlMinHeightClasses[size],
     size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected
-      ? "border-l-selected-indicator bg-selected text-content-primary"
+      ? selectedClasses("rail")
       : "border-l-transparent text-content-primary hover:bg-control hover:text-content-strong",
     disabled && "pointer-events-none opacity-50",
     className
@@ -285,7 +286,7 @@ export function FileTreeItem({
       className={cn(
         "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-content-primary hover:bg-control hover:text-content-strong",
         controlMinHeightClasses[size],
-        selected && "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70"
+        selected && selectedClasses("ring")
       )}
       style={{ paddingLeft: depth * 12 + 8 }}
     >

@@ -34,6 +34,7 @@ import { cwdBasename, sessionTag, statusDotColor } from "./sessionLabel";
 import { formatWorkspaceDisplayPath } from "@/lib/recentWorkspaces";
 import { NewSessionDialog } from "./NewSessionDialog";
 import { whenPointerMeans } from "@/lib/hoverIntent";
+import { highlightedClasses } from "@/components/ui/selection";
 
 export interface SwitcherBot {
   botId: string;
@@ -316,8 +317,7 @@ export function SessionChip({
   const rowCls = (i: number, isSelected: boolean) =>
     cn(
       "flex w-full items-center gap-2 px-3 py-2 rounded-sm text-regular text-left transition-colors",
-      i === activeIndex ? "bg-zinc-800 text-content-primary" : "text-content-secondary hover:bg-zinc-800",
-      isSelected && "text-accent-200"
+      !isSelected && (i === activeIndex ? highlightedClasses : "text-content-secondary")
     );
 
   return (
@@ -372,7 +372,7 @@ export function SessionChip({
               <NavigationItem
                 title="Auto · @mention → primary"
                 leading={<Layers className="w-3.5 h-3.5 text-content-muted shrink-0" />}
-                trailing={!value ? <Check className="w-3.5 h-3.5 text-accent-400 shrink-0" /> : undefined}
+                trailing={!value ? <Check className="w-3.5 h-3.5 shrink-0" /> : undefined}
                 selected={!value}
                 role="option"
                 aria-selected={!value}
@@ -382,7 +382,7 @@ export function SessionChip({
                   select("");
                 }}
                 onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(autoIdx))}
-                className={cn(rowCls(autoIdx, !value), "border-0")}
+                className={cn(rowCls(autoIdx, !value), "border-b-0")}
               />
             );
           })()}
@@ -406,7 +406,7 @@ export function SessionChip({
                     )}
                     leading={<PresenceDot contentSize="regular" className={statusDotColor(s.status)} />}
                     status={<span className="text-compact text-content-muted">{s.status}</span>}
-                    trailing={isSel ? <Check className="w-3.5 h-3.5 text-accent-400 shrink-0" /> : undefined}
+                    trailing={isSel ? <Check className="w-3.5 h-3.5 shrink-0" /> : undefined}
                     selected={isSel}
                     role="option"
                     aria-selected={isSel}
@@ -416,7 +416,7 @@ export function SessionChip({
                       select(s.session_id);
                     }}
                     onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
-                    className={cn(rowCls(idx, isSel), "border-0")}
+                    className={cn(rowCls(idx, isSel), "border-b-0")}
                   />
                 );
               })}
@@ -443,7 +443,7 @@ export function SessionChip({
                       setNewOpen(true);
                     }}
                     onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
-                    className={idx === activeIndex ? "bg-zinc-800" : undefined}
+                    className={idx === activeIndex ? highlightedClasses : undefined}
                   >
                     <Plus className={controlIconClasses.regular} />
                   </IconButton>
@@ -461,7 +461,7 @@ export function SessionChip({
                     onManageSessions();
                   }}
                   onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
-                  className={idx === activeIndex ? "bg-zinc-800" : undefined}
+                  className={idx === activeIndex ? highlightedClasses : undefined}
                 >
                   <LayoutDashboard className={controlIconClasses.regular} />
                 </IconButton>

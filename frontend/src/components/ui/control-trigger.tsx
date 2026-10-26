@@ -7,6 +7,7 @@ import {
   useControlSize,
   type ControlSize,
 } from "./control-size";
+import { selectedClasses, tabClasses } from "./selection";
 
 /**
  * Non-action trigger for selectors, tabs, disclosures, and navigation. Actions
@@ -56,17 +57,12 @@ export const ControlTrigger = forwardRef<HTMLButtonElement, ControlTriggerProps>
                 : "w-24 max-w-full px-3"
           ),
           isTab
-            ? cn(
-                "rounded-none border-b-2 bg-transparent ring-0 shadow-none hover:bg-transparent",
-                selected
-                  ? "border-content-strong text-content-strong font-semibold"
-                  : "border-transparent text-content-primary hover:text-content-strong",
-              )
+            ? tabClasses(selected)
             : cn(
-                "rounded-sm transition-all duration-150 ring-1 ring-inset",
+                "rounded-sm transition-all duration-150",
                 selected
-                  ? "bg-selected text-content-strong font-semibold ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active shadow-sm"
-                  : "bg-transparent ring-transparent text-content-primary hover:bg-control/40 hover:ring-zinc-300/80 dark:hover:ring-zinc-700/80 hover:text-content-strong active:bg-control-active",
+                  ? selectedClasses("ring")
+                  : "bg-transparent ring-1 ring-inset ring-transparent text-content-primary hover:bg-control/40 hover:ring-zinc-300/80 dark:hover:ring-zinc-700/80 hover:text-content-strong active:bg-control-active",
               ),
           className,
         )}

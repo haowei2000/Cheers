@@ -6,6 +6,7 @@ import {
   useControlSize,
   type ControlSize,
 } from "./control-size";
+import { highlightedClasses, selectedClasses } from "./selection";
 
 interface MenuOptionProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
@@ -13,6 +14,8 @@ interface MenuOptionProps
   leading?: ReactNode;
   trailing?: ReactNode;
   selected?: boolean;
+  /** Keyboard/pointer highlight (active descendant); styled as hover, not selection. */
+  highlighted?: boolean;
   controlSize?: ControlSize;
 }
 
@@ -24,6 +27,7 @@ export const MenuOption = forwardRef<HTMLButtonElement, MenuOptionProps>(
       leading,
       trailing,
       selected = false,
+      highlighted = false,
       controlSize,
       className,
       type = "button",
@@ -43,8 +47,8 @@ export const MenuOption = forwardRef<HTMLButtonElement, MenuOptionProps>(
           controlMinHeightClasses[size],
           controlTextClasses[size],
           selected
-            ? "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover"
-            : "text-content-primary hover:bg-control hover:text-content-strong",
+            ? selectedClasses("ring")
+            : cn("text-content-primary hover:bg-control hover:text-content-strong", highlighted && highlightedClasses),
           className
         )}
         {...props}

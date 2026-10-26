@@ -131,28 +131,19 @@ export default function PermissionsPage() {
               {bots.map((b) => {
                 const isSelected = b.bot_id === selectedBotId;
                 return (
-                  <div
+                  <ControlTrigger
                     key={b.bot_id}
-                    role="button"
-                    tabIndex={0}
+                    role="tab"
+                    aria-selected={isSelected}
+                    selected={isSelected}
+                    controlWidth="content"
                     onClick={() => selectBot(b.bot_id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        selectBot(b.bot_id);
-                      }
-                    }}
-                    className={cn(
-                      "flex items-center gap-2 px-3 py-1 rounded-sm text-compact transition-colors shrink-0 cursor-pointer",
-                      isSelected
-                        ? "bg-zinc-800 text-content-strong font-medium shadow-sm"
-                        : "bg-surface-elevated/40 text-content-primary hover:text-content-strong hover:bg-zinc-800/60"
-                    )}
+                    className="shrink-0 gap-2"
                   >
                     <Avatar name={b.display_name || b.username} src={b.avatar_url} size="small" />
                     <span className="truncate max-w-[140px]">{b.display_name || b.username}</span>
                     <Badge tone="neutral">Bot</Badge>
-                  </div>
+                  </ControlTrigger>
                 );
               })}
             </div>
@@ -424,9 +415,7 @@ function PolicyOptionCard({
         onClick={onClick}
         className={cn(
           "h-auto items-stretch whitespace-normal rounded-sm text-left transition-all relative flex flex-col justify-between",
-          selected
-            ? "bg-zinc-800 text-content-strong ring-1 ring-accent-400/80 shadow-sm hover:bg-zinc-800"
-            : "bg-surface-elevated/60 text-content-primary hover:bg-zinc-800/50 hover:text-content-strong"
+          !selected && "bg-surface-elevated/60 text-content-primary hover:bg-zinc-800/50 hover:text-content-strong"
         )}
       >
         <div>

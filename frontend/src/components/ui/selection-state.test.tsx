@@ -2,6 +2,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Button } from "./button";
 import { ControlTrigger } from "./control-trigger";
+import { ChoiceButton } from "./choice-button";
+import { IconButton } from "./icon-button";
+import { NavigationItem } from "./item";
+import { MenuOption } from "./menu-option";
+import { highlightedClasses, selectedLabelClasses } from "./selection";
 import { TabOption } from "./tab-option";
 
 describe("shared control selection state", () => {
@@ -64,5 +69,47 @@ describe("shared control selection state", () => {
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).not.toContain("aria-pressed");
     expect(markup).toContain("bg-selected");
+  });
+
+  it("gives every selectable primitive the same surface and label", () => {
+    const markups = [
+      renderToStaticMarkup(<Button variant="plain" selected>Model</Button>),
+      renderToStaticMarkup(<ControlTrigger selected>Members</ControlTrigger>),
+      renderToStaticMarkup(<ChoiceButton label="Light" leading={<span />} selected />),
+      renderToStaticMarkup(<MenuOption label="Files" selected />),
+      renderToStaticMarkup(<IconButton label="Split" selected><span /></IconButton>),
+      renderToStaticMarkup(<NavigationItem title="general" selected onClick={() => undefined} />),
+    ];
+    for (const markup of markups) {
+      expect(markup).toContain("bg-selected");
+      expect(markup).toContain("hover:bg-selected-hover");
+      for (const token of selectedLabelClasses.split(" ")) expect(markup).toContain(token);
+      expect(markup).not.toContain("shadow-sm");
+    }
+  });
+
+  it("keeps a selected IconButton from reapplying its resting tone", () => {
+    const markup = renderToStaticMarkup(<IconButton label="Split" selected><span /></IconButton>);
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).not.toContain("hover:bg-control-hover");
+  });
+
+  it("styles a keyboard highlight as hover, not as selection", () => {
+    const markup = renderToStaticMarkup(<MenuOption label="Files" highlighted />);
+    expect(markup).toContain(highlightedClasses);
+    expect(markup).not.toContain("bg-selected");
+  });
+
+  it("gives vertical tabs the row rail instead of an underline", () => {
+    const markup = renderToStaticMarkup(
+      <Button role="tab" tabOrientation="vertical" selected aria-selected="true">
+        main.rs
+      </Button>,
+    );
+    expect(markup).toContain("border-l-2");
+    expect(markup).toContain("border-l-selected-indicator");
+    expect(markup).toContain("bg-selected");
+    expect(markup).not.toContain("border-b-2");
+    expect(markup).not.toContain("aria-pressed");
   });
 });

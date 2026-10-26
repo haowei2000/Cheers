@@ -156,9 +156,7 @@ function DiscussionTopicRow({
         )}
         className={cn(
           "rounded-none border-b border-b-control/40 transition-colors",
-          selected
-            ? "border-l-content-strong bg-selected/50 font-medium text-content-strong"
-            : "border-l-transparent bg-transparent hover:bg-control/30 text-content-primary"
+          !selected && "bg-transparent hover:bg-control/30"
         )}
       />
     </div>

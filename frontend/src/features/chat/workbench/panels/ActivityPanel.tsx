@@ -602,10 +602,7 @@ function ActivityBody({ ctx }: { ctx: PanelContext }) {
                 onClick={() => setLens(l)}
                 controlSize={FLOATING_CHROME_CONTROL_SIZE}
                 className={cn(
-                  "rounded-none border-b-2 bg-transparent ring-0 shadow-none px-2 capitalize transition-colors hover:bg-transparent mb-[-3px]",
-                  lens === l
-                    ? "border-content-strong text-content-strong font-semibold"
-                    : "border-transparent text-content-primary hover:text-content-strong",
+                  "px-2 capitalize transition-colors mb-[-3px]",
                 )}
               >
                 {l}
