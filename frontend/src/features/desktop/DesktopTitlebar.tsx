@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefCallback } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefCallback, type SVGProps } from "react";
+import { FleetIcon } from "@/components/ui/editorial-icons";
 import {
   ArrowLeft,
   Bell,
@@ -7,12 +8,10 @@ import {
   Mail,
   PanelLeftClose,
   PanelLeftOpen,
-  Radar,
   Search,
   Settings,
   Shield,
   Users,
-  type LucideIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog } from "@/components/ui/dialog";
@@ -105,12 +104,15 @@ export function resolveDesktopParentPath(pathname: string): string | null {
   return null;
 }
 
+/** Lucide glyphs and editorial product icons both render as an <svg>. */
+type TitlebarIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
 type SearchEntry = {
   id: string;
   label: string;
   detail: string;
   path: string;
-  Icon: LucideIcon;
+  Icon: TitlebarIcon;
 };
 
 function DesktopSearch({ onClose }: { onClose: () => void }) {
@@ -130,7 +132,7 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
   const entries = useMemo<SearchEntry[]>(() => {
     const destinations: SearchEntry[] = [
       { id: "activity", label: "Activity", detail: "Approvals and invitations", path: "/activity", Icon: Bell },
-      { id: "fleet", label: "Fleet", detail: "Bots, hosts, and audit", path: "/fleet", Icon: Radar },
+      { id: "fleet", label: "Fleet", detail: "Bots, hosts, and audit", path: "/fleet", Icon: FleetIcon },
       { id: "friends", label: "Friends", detail: "Friends and requests", path: "/friends", Icon: Users },
       { id: "permissions", label: "Permissions", detail: "Bot social and operational permissions", path: "/permissions", Icon: Shield },
       { id: "settings", label: "Settings", detail: "Account and application settings", path: "/settings", Icon: Settings },
@@ -234,9 +236,9 @@ export function DesktopTitlebar({
   const channel = channels.find((candidate) => candidate.channel_id === selectedChannelId);
   const context = resolveDesktopTitlebarContext(location.pathname, { workspace, channel });
   const section = location.pathname.split("/").filter(Boolean)[0] ?? "chat";
-  const contextIcons: Record<string, LucideIcon> = {
+  const contextIcons: Record<string, TitlebarIcon> = {
     activity: Bell,
-    fleet: Radar,
+    fleet: FleetIcon,
     friends: Users,
     settings: Settings,
   };
@@ -304,7 +306,7 @@ export function DesktopTitlebarChrome({
   actionsRef,
 }: {
   context: TitlebarContext;
-  contextIcon: LucideIcon;
+  contextIcon: TitlebarIcon;
   authenticated: boolean;
   activePath: string;
   canNavigateUp: boolean;

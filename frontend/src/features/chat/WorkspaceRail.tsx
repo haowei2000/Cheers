@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { IconButton } from "@/components/ui/icon-button";
 import { ControlSizeProvider, controlIconClasses } from "@/components/ui/control-size";
-import { EditorialIcon } from "@/components/ui/editorial-icons";
+import { FleetIcon } from "@/components/ui/editorial-icons";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
 import { disablePush } from "@/lib/push";
@@ -194,7 +194,7 @@ export function WorkspaceRail({
           label="Fleet — bots & status"
           className="relative text-content-primary"
         >
-          <EditorialIcon name="agentMark" contentSize="large" />
+          <FleetIcon contentSize="large" />
         </IconButton>
 
         <IconButton

@@ -1,4 +1,4 @@
-import { Bot as BotIcon } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";

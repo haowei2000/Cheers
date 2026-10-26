@@ -5,7 +5,8 @@ import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Bot, Check, Folder, FolderOpen, Plus } from "lucide-react";
+import { Check, Folder, FolderOpen, Plus } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import { createChannelBotSession } from "@/api/sessionControl";
 import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
 import { Button } from "@/components/ui/button";
@@ -121,7 +122,7 @@ export function NewSessionDialog({
           <DropdownSelect
             ariaLabel="Bot"
             ariaLabelledBy="new-session-bot-label"
-            leading={<Bot className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
+            leading={<BotIcon contentSize="small" className="shrink-0 text-content-muted" />}
             label={bots.find((b) => b.id === botId)?.label ?? "Select a bot"}
             value={botId}
             options={bots.map((b) => ({ value: b.id, label: b.label }))}
