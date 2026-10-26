@@ -1,4 +1,5 @@
 import { HelpLabel } from "@/components/ui/help-text";
+import { SectionNav } from "@/components/ui/section-nav";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
@@ -19,7 +20,7 @@ import { ActionButton } from "@/components/ui/action-button";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { BotIcon, FleetIcon } from "@/components/ui/editorial-icons";
-import { ItemList, NavigationItem } from "@/components/ui/item";
+import { NavigationItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import { UnreadBadge } from "@/components/ui/unread-badge";
@@ -183,38 +184,17 @@ export default function FleetPage() {
       </header>
     </RouteChromeHeader>
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
-      {/* Section switching changes the URL, so these are navigation items, not
-          tabs: NavigationItem gives the left marker, the selected fill and
-          aria-current="page" without hand-rolling ARIA. */}
-      <nav aria-label="Fleet sections" className="sm:w-48 sm:shrink-0">
-        <ItemList
-          presentationLevel="minimal"
-          controlSize="regular"
-          className="flex gap-1 overflow-x-auto sm:flex-col"
-        >
-          {sections.map((item) => {
-            const Icon = item.icon;
-            const active = section === item.id;
-            return (
-              <NavigationItem
-                key={item.id}
-                title={item.label}
-                leading={<Icon className="h-4 w-4" aria-hidden="true" />}
-                selected={active}
-                criticalStatus={
-                  item.id === "overview" && actionableCount > 0 ? (
-                    <UnreadBadge tone="approval" contentSize="small">
-                      {actionableCount}
-                    </UnreadBadge>
-                  ) : undefined
-                }
-                onClick={() => navigate(item.id === "overview" ? "/fleet" : `/fleet/${item.id}`)}
-                className="shrink-0 max-sm:w-auto"
-              />
-            );
-          })}
-        </ItemList>
-      </nav>
+      <SectionNav
+        ariaLabel="Fleet sections"
+        items={sections.map((item) => ({
+          ...item,
+          badge: item.id === "overview" && actionableCount > 0 ? (
+            <UnreadBadge tone="approval" contentSize="small">{actionableCount}</UnreadBadge>
+          ) : undefined,
+        }))}
+        selected={section}
+        onSelect={(id) => navigate(id === "overview" ? "/fleet" : `/fleet/${id}`)}
+      />
       <main className="min-w-0 flex-1">
         <ContentActionScope>
         <div className="mb-4 flex flex-wrap items-center gap-3" data-content-toolbar="fleet">
