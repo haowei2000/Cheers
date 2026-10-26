@@ -34,6 +34,15 @@ impl TerminalError {
         }
     }
 
+    /// The capability check could not reach its store; retry the same result.
+    pub(crate) fn unavailable() -> Self {
+        Self {
+            code: "CAPABILITY_UNAVAILABLE",
+            detail: "capability check is temporarily unavailable",
+            retryable: true,
+        }
+    }
+
     pub(crate) fn busy() -> Self {
         Self {
             code: "TERMINAL_BUSY",

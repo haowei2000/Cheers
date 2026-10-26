@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE acp_capability_delegations d\n           SET use_count = d.use_count + g.granted, updated_at = NOW()\n           FROM (\n               SELECT delegation_id, max_uses IS NOT NULL AS limited,\n                      CASE WHEN max_uses IS NULL THEN $2::int4\n                           ELSE LEAST($2::int4, max_uses - use_count,\n                                      GREATEST(1, (max_uses - use_count) / 8)) END AS granted\n               FROM acp_capability_delegations\n               WHERE delegation_id = $1 AND bot_id = $3\n               FOR UPDATE\n           ) g\n           WHERE d.delegation_id = g.delegation_id AND g.granted > 0\n           RETURNING g.granted AS \"granted!\", g.limited AS \"limited!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "granted!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "limited!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "7b67e2b560617723085f6411111206a5d4716fdeaf6fd5ad53b6b0c62145115c"
+}

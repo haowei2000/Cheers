@@ -2021,3 +2021,192 @@ async fn task_claim_http_errors_match_persisted_state_and_fast_results_are_not_o
     assert!(state["resolution_note"].is_null());
     assert_no_task_before_pong(&mut bridge.control).await;
 }
+
+/// A capability-enforced stream whose execution is granted, plus the delegation
+/// key that signs its frames. `max_uses` of None means unlimited.
+async fn signed_stream(
+    db: &PgPool,
+    max_uses: Option<i32>,
+) -> (Fixture, Bridge, Value, Uuid, Uuid, ed25519_dalek::Keypair) {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use ed25519_dalek::{Keypair, PublicKey, SecretKey};
+    let fixture = Fixture::start(db).await;
+    sqlx::query("UPDATE bot_accounts SET binding_config=jsonb_set(binding_config,'{acp_security,require_capability}','true') WHERE bot_id=$1")
+        .bind(fixture.bot.id.to_string()).execute(db).await.unwrap();
+    let mut bridge = fixture.bridge(true).await;
+    let task = fixture.dispatch(&mut bridge.control).await;
+    let execution = Uuid::new_v4();
+    accept(&mut bridge.control, acceptance(&task, execution), "granted").await;
+    let secret = SecretKey::from_bytes(&[42; 32]).unwrap();
+    let public = PublicKey::from(&secret);
+    let key = Keypair { secret, public };
+    let delegation = Uuid::new_v4();
+    sqlx::query("INSERT INTO acp_capability_delegations(delegation_id,bot_id,scope_type,allowed_actions,allowed_resources,public_key,granted_by,expires_at,max_uses) VALUES($1,$2,'global',$3,ARRAY['*']::text[],$4,$5,NOW()+INTERVAL '1 hour',$6)")
+        .bind(delegation.to_string()).bind(fixture.bot.id.to_string()).bind(vec!["stream"])
+        .bind(STANDARD.encode(key.public.to_bytes())).bind(fixture.user.to_string()).bind(max_uses)
+        .execute(db).await.unwrap();
+    (fixture, bridge, task, execution, delegation, key)
+}
+
+fn sign_frame(frame: &mut Value, delegation: Uuid, key: &ed25519_dalek::Keypair) {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use ed25519_dalek::Signer;
+    let frame_type = frame["type"].as_str().unwrap().to_string();
+    let timestamp = chrono::Utc::now().timestamp();
+    let nonce = Uuid::new_v4().to_string();
+    let request = Uuid::new_v4().to_string();
+    let signable = format!("anx-cap|v1|type={frame_type}|kid={delegation}|ts={timestamp}|nonce={nonce}|request={request}|payload={}", canonical_frame(frame));
+    frame["acp_capability"] = json!({"delegation_id":delegation,"ts":timestamp,"nonce":nonce,
+        "request_id":request,"signature":STANDARD.encode(key.sign(signable.as_bytes()).to_bytes())});
+}
+
+fn stream_delta(task: &Value, seq: u64) -> Value {
+    json!({"type":"delta","v":1,"msg_id":task["placeholder_msg_id"],"seq":seq,"delta":"x",
+        "provider_session_key":task["provider_session_key"],"session_id":task["session_id"]})
+}
+
+/// Send frames, then a ping; return every error the gateway sent before the pong.
+/// Delta are processed in order on the data loop, so the pong fences them.
+async fn delta_errors(data: &mut Socket, frames: Vec<Value>) -> Vec<Value> {
+    for frame in frames {
+        send(data, frame).await;
+    }
+    send(data, json!({"type":"ping","v":1})).await;
+    let mut errors = Vec::new();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match data.next().await.expect("bridge must remain open").unwrap() {
+                Message::Text(text) => {
+                    let frame: Value = serde_json::from_str(&text).unwrap();
+                    match frame["type"].as_str() {
+                        Some("pong") => return,
+                        Some("error") => errors.push(frame),
+                        _ => {}
+                    }
+                }
+                Message::Ping(bytes) => data.send(Message::Pong(bytes)).await.unwrap(),
+                Message::Close(reason) => panic!("bridge closed: {reason:?}"),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("pong");
+    errors
+}
+
+async fn delegation_uses(db: &PgPool, delegation: Uuid) -> i32 {
+    sqlx::query_scalar("SELECT use_count FROM acp_capability_delegations WHERE delegation_id=$1")
+        .bind(delegation.to_string())
+        .fetch_one(db)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test]
+async fn unsigned_delta_ride_the_streams_verified_signature_within_max_uses(db: PgPool) {
+    let (_fixture, mut bridge, task, _execution, delegation, key) =
+        signed_stream(&db, Some(4)).await;
+    let msg_id = task["placeholder_msg_id"].clone();
+
+    let errors = delta_errors(&mut bridge.data, vec![stream_delta(&task, 1)]).await;
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0]["code"], "DELTA_CAPABILITY_REQUIRED");
+    assert_eq!(
+        errors[0]["msg_id"], msg_id,
+        "the rejection names the stream so the connector re-signs it"
+    );
+
+    let mut first = stream_delta(&task, 2);
+    sign_frame(&mut first, delegation, &key);
+    let frames = vec![
+        first,
+        stream_delta(&task, 3),
+        stream_delta(&task, 4),
+        stream_delta(&task, 5),
+    ];
+    let errors = delta_errors(&mut bridge.data, frames).await;
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(
+        delegation_uses(&db, delegation).await,
+        4,
+        "one signed Delta plus three prepaid unsigned Delta"
+    );
+
+    let errors = delta_errors(&mut bridge.data, vec![stream_delta(&task, 6)]).await;
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0]["code"], "DELTA_CAPABILITY_REQUIRED");
+    assert_eq!(errors[0]["msg_id"], msg_id);
+    assert_eq!(
+        delegation_uses(&db, delegation).await,
+        4,
+        "max_uses is exact"
+    );
+}
+
+#[sqlx::test]
+async fn revoking_the_delegation_stops_a_bound_stream_within_the_recheck_window(db: PgPool) {
+    let (_fixture, mut bridge, task, _execution, delegation, key) = signed_stream(&db, None).await;
+    let mut first = stream_delta(&task, 1);
+    sign_frame(&mut first, delegation, &key);
+    let errors = delta_errors(&mut bridge.data, vec![first, stream_delta(&task, 2)]).await;
+    assert!(errors.is_empty(), "{errors:?}");
+
+    sqlx::query("UPDATE acp_capability_delegations SET revoked=TRUE,status='revoked',revoked_at=NOW() WHERE delegation_id=$1")
+        .bind(delegation.to_string()).execute(&db).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+
+    let in_flight = vec![
+        stream_delta(&task, 3),
+        stream_delta(&task, 4),
+        stream_delta(&task, 5),
+    ];
+    let errors = delta_errors(&mut bridge.data, in_flight).await;
+    assert_eq!(
+        errors.len(),
+        1,
+        "the lapse names the stream once, not once per in-flight Delta: {errors:?}"
+    );
+    assert_eq!(errors[0]["code"], "DELTA_CAPABILITY_REQUIRED");
+    assert_eq!(errors[0]["msg_id"], task["placeholder_msg_id"]);
+}
+
+#[sqlx::test]
+async fn an_unsigned_delta_cannot_change_the_signed_scope_fields(db: PgPool) {
+    let (_fixture, mut bridge, task, _execution, delegation, key) = signed_stream(&db, None).await;
+    let mut first = stream_delta(&task, 1);
+    sign_frame(&mut first, delegation, &key);
+    let errors = delta_errors(&mut bridge.data, vec![first, stream_delta(&task, 2)]).await;
+    assert!(errors.is_empty(), "{errors:?}");
+
+    let mut moved = stream_delta(&task, 3);
+    moved["session_id"] = json!(Uuid::new_v4());
+    let errors = delta_errors(&mut bridge.data, vec![moved]).await;
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0]["code"], "DELTA_CAPABILITY_REQUIRED");
+    assert_eq!(errors[0]["msg_id"], task["placeholder_msg_id"]);
+}
+
+#[sqlx::test]
+async fn a_finished_stream_refunds_prepaid_delta_uses(db: PgPool) {
+    let (_fixture, mut bridge, task, execution, delegation, key) = signed_stream(&db, None).await;
+    let mut first = stream_delta(&task, 1);
+    sign_frame(&mut first, delegation, &key);
+    let errors = delta_errors(&mut bridge.data, vec![first, stream_delta(&task, 2)]).await;
+    assert!(errors.is_empty(), "{errors:?}");
+
+    let mut done = terminal(&task, execution, Uuid::new_v4(), "finished");
+    sign_frame(&mut done, delegation, &key);
+    let ack = terminal_ack(&mut bridge.data, &done).await;
+    assert_eq!(ack["ok"], true, "{ack}");
+
+    // Signed Delta + unsigned Delta + signed Done; the unspent prepaid batch is
+    // refunded asynchronously after the stream ends.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while delegation_uses(&db, delegation).await != 3 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("use_count settles at frames actually sent"));
+}

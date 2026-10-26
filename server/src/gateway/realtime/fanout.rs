@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-pub use super::frame::WireFrame;
+pub use super::frame::{SharedFrame, WireFrame};
 
 /// Why the server is closing a browser connection out-of-band (via the per-conn
 /// close signal registered in `register_user`).
@@ -82,7 +82,7 @@ pub trait Fanout: Send + Sync {
 
 // ── 进程内实现 ────────────────────────────────────────────────────────────────
 
-/// 单进程 fan-out。每条浏览器 WS 连接持有一个 `mpsc::Sender<WireFrame>`，
+/// 单进程 fan-out。每条浏览器 WS 连接持有一个 `mpsc::Sender<SharedFrame>`，
 /// 注册时把 Sender 存入 DashMap，断线时移除。
 pub struct InProcessFanout {
     /// channel_id → 订阅该频道的所有连接的发送端
@@ -112,7 +112,7 @@ struct FocusEntry {
 #[derive(Clone)]
 struct ConnSender {
     conn_id: Uuid,
-    tx: mpsc::Sender<WireFrame>,
+    tx: mpsc::Sender<SharedFrame>,
 }
 
 struct ConnIdentity {
@@ -138,7 +138,7 @@ impl InProcessFanout {
         user_id: Uuid,
         session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     ) {
         self.closers.insert(conn_id, close_tx);
@@ -189,8 +189,10 @@ impl InProcessFanout {
 
     /// 向一组连接投递一帧。流式帧队列满时静默丢弃（靠 message_done 自愈）；
     /// 终态帧队列满时不丢，触发该连接的背压关闭信号（I6）。
-    fn deliver(&self, senders: &[ConnSender], frame: &WireFrame) {
+    fn deliver(&self, senders: &[ConnSender], frame: WireFrame) {
         let terminal = frame.is_terminal();
+        // 共享一份帧：每个订阅者只增引用计数，写循环复用同一份 JSON。
+        let frame: SharedFrame = std::sync::Arc::new(frame);
         for s in senders.iter() {
             let Some(identity) = self.conn_users.get(&s.conn_id) else {
                 continue;
@@ -243,7 +245,12 @@ impl InProcessFanout {
     }
 
     /// 浏览器订阅某频道后，注册 channel 级发送端。
-    pub fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+    pub fn subscribe_channel(
+        &self,
+        channel_id: Uuid,
+        conn_id: Uuid,
+        tx: mpsc::Sender<SharedFrame>,
+    ) {
         let mut senders = self.channels.entry(channel_id).or_default();
         senders.retain(|sender| sender.conn_id != conn_id);
         senders.push(ConnSender { conn_id, tx });
@@ -356,7 +363,7 @@ impl Default for InProcessFanout {
 impl Fanout for InProcessFanout {
     async fn broadcast_channel(&self, channel_id: Uuid, frame: WireFrame) {
         if let Some(senders) = self.channels.get(&channel_id) {
-            self.deliver(senders.value(), &frame);
+            self.deliver(senders.value(), frame);
         }
     }
 
@@ -380,13 +387,13 @@ impl Fanout for InProcessFanout {
                 })
                 .cloned()
                 .collect();
-            self.deliver(&filtered, &frame);
+            self.deliver(&filtered, frame);
         }
     }
 
     async fn broadcast_user(&self, user_id: Uuid, frame: WireFrame) {
         if let Some(senders) = self.users.get(&user_id) {
-            self.deliver(senders.value(), &frame);
+            self.deliver(senders.value(), frame);
         }
     }
 
@@ -428,9 +435,9 @@ mod tests {
     fn full_conn(
         fanout: &InProcessFanout,
         user: Uuid,
-    ) -> (mpsc::Receiver<WireFrame>, mpsc::Receiver<CloseReason>) {
+    ) -> (mpsc::Receiver<SharedFrame>, mpsc::Receiver<CloseReason>) {
         let conn = Uuid::new_v4();
-        let (tx, rx) = mpsc::channel::<WireFrame>(1);
+        let (tx, rx) = mpsc::channel::<SharedFrame>(1);
         let (close_tx, close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(user, &Uuid::new_v4().to_string(), conn, tx, close_tx);
         (rx, close_rx)
@@ -450,6 +457,27 @@ mod tests {
         assert!(
             close_rx.try_recv().is_ok(),
             "终态帧入队失败必须触发背压关闭信号"
+        );
+    }
+
+    /// 多订阅者共享同一帧与同一份序列化结果，fan-out 不随订阅者数深拷贝/重复编码。
+    #[tokio::test]
+    async fn subscribers_share_one_frame_and_one_encoding() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let (mut rx1, _close1) = full_conn(&fanout, user);
+        let (mut rx2, _close2) = full_conn(&fanout, user);
+
+        fanout.broadcast_user(user, frame("message_stream")).await;
+
+        let a = rx1.try_recv().expect("first subscriber receives");
+        let b = rx2.try_recv().expect("second subscriber receives");
+        assert!(std::sync::Arc::ptr_eq(&a, &b));
+        let json = a.to_json().unwrap();
+        assert!(std::sync::Arc::ptr_eq(&json, &b.to_json().unwrap()));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&json).unwrap()["type"],
+            "message_stream"
         );
     }
 
@@ -549,7 +577,7 @@ mod tests {
         let conn = Uuid::new_v4();
         let channel = Uuid::new_v4();
         let bot = Uuid::new_v4();
-        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (tx, _rx) = mpsc::channel::<SharedFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(
             user,
@@ -579,7 +607,7 @@ mod tests {
         let user = Uuid::new_v4();
         let conn = Uuid::new_v4();
         let channel = Uuid::new_v4();
-        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (tx, _rx) = mpsc::channel::<SharedFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(
             user,
@@ -602,7 +630,7 @@ mod tests {
         let conn = Uuid::new_v4();
         let channel = Uuid::new_v4();
         let other = Uuid::new_v4();
-        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (tx, _rx) = mpsc::channel::<SharedFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(
             user,
@@ -644,7 +672,7 @@ mod tests {
         let fanout = InProcessFanout::new();
         let user = Uuid::new_v4();
         let conn = Uuid::new_v4();
-        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (tx, _rx) = mpsc::channel::<SharedFrame>(1);
         let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(user, &Uuid::new_v4().to_string(), conn, tx, close_tx);
         assert!(fanout.closers.contains_key(&conn));

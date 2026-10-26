@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bot, Check, X } from "lucide-react";
+import { Check, X } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import toast from "react-hot-toast";
 import {
   cancelTaskClaim,
@@ -82,7 +83,7 @@ export function TaskClaimsPanel({
       {claims.map((c) => (
         <OperationsItem
           key={c.claim_id}
-          leading={<Bot className="h-4 w-4 text-accent-400" />}
+          leading={<BotIcon className="text-accent-400" />}
           title={<span title={`${c.bot_name}: ${c.summary} — ${c.proposed_action}`}>
             {c.bot_name}: {c.summary}
           </span>}

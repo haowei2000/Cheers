@@ -14,7 +14,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    connect_async,
+    connect_async_with_config,
     tungstenite::{client::IntoClientRequest, protocol::Message},
     MaybeTlsStream, WebSocketStream,
 };
@@ -446,7 +446,9 @@ impl BridgeWebSocket {
         let request = url
             .into_client_request()
             .with_context(|| format!("invalid websocket URL: {url}"))?;
-        let (stream, _response) = connect_async(request)
+        // Disable Nagle: Delta frames are small and latency-sensitive, and
+        // Nagle plus delayed ACK can stall each one by tens of milliseconds.
+        let (stream, _response) = connect_async_with_config(request, None, true)
             .await
             .with_context(|| format!("failed to connect websocket: {url}"))?;
         let mut socket = Self { stream };

@@ -316,6 +316,11 @@ pub struct ServerCapabilities {
     pub resume: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acp_security: Option<bool>,
+    /// `"first_per_stream"`: a signed connector signs only the first Delta of
+    /// each stream; later Delta on the same data connection omit the envelope.
+    /// Absent: every Delta must be signed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_capability: Option<String>,
     /// Version of the connector release this gateway serves via its download
     /// proxy — the self-updater's trigger signal (see `self_update`). Absent on
     /// gateways that pin no release version.
@@ -523,6 +528,10 @@ pub struct BridgeErrorFrame {
     pub request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_msg_id: Option<String>,
+    /// Stream the error concerns. A Delta capability rejection carries it so a
+    /// per-stream signer signs that stream's next Delta again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub msg_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retryable: Option<bool>,
 }

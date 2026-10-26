@@ -22,7 +22,8 @@ import { Textarea as UiTextarea } from "@/components/ui/textarea";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Layers, CircleDot, X, Bot as BotIcon, Info, Folder, ArrowUp, Save } from "lucide-react";
+import { Layers, CircleDot, X, Info, Folder, ArrowUp, Save } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -505,7 +506,7 @@ function BotGroup({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 px-1">
-        <BotIcon className="w-3.5 h-3.5 text-accent-400 shrink-0" />
+        <BotIcon contentSize="small" className="text-accent-400 shrink-0" />
         <span className="text-compact font-medium text-content-secondary truncate" title={botId}>
           {label}
         </span>

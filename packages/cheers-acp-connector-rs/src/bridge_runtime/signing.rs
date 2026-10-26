@@ -3,7 +3,14 @@
 //! Private keys remain connector-local. Each signed request receives a fresh
 //! timestamp, nonce, and monotonic request identifier before canonicalization.
 
+use std::collections::HashSet;
+
 use super::*;
+
+/// Gateway capability value that lets a stream's later Delta omit the envelope.
+pub(super) const DELTA_CAPABILITY_FIRST_PER_STREAM: &str = "first_per_stream";
+/// Bound on remembered streams. Overflow only makes later Delta signed again.
+const MAX_SIGNED_STREAMS: usize = 4096;
 
 pub(super) struct CapabilitySigner {
     delegation_id: String,
@@ -11,6 +18,11 @@ pub(super) struct CapabilitySigner {
     request_id_prefix: String,
     seq: u64,
     key: SigningKey,
+    /// Sign only the first Delta of each stream (gateway `delta_capability`).
+    per_stream_delta: bool,
+    /// Streams whose first Delta was signed on this data connection. The signer
+    /// lives for one bridge session, so a reconnect starts empty and re-signs.
+    signed_streams: HashSet<String>,
 }
 
 impl CapabilitySigner {
@@ -55,13 +67,49 @@ impl CapabilitySigner {
                 .unwrap_or_else(|| "acp-cap".to_string()),
             seq: 0,
             key,
+            per_stream_delta: false,
+            signed_streams: HashSet::new(),
         }))
+    }
+
+    /// A Delta capability rejection names its stream: sign that stream's next
+    /// Delta again so one rejected signature does not lose the rest of it.
+    pub(super) fn observe_bridge_error(&mut self, error: &crate::bridge::BridgeErrorFrame) {
+        let delta_capability_error = matches!(
+            error.code.as_str(),
+            "DELTA_CAPABILITY_REQUIRED" | "CAPABILITY_DENIED"
+        );
+        if let (true, Some(msg_id)) = (delta_capability_error, error.msg_id.as_deref()) {
+            self.signed_streams.remove(msg_id);
+        }
+    }
+
+    /// Follow the gateway's advertised Delta signing mode for this session.
+    pub(super) fn set_delta_capability_mode(&mut self, mode: Option<&str>) {
+        self.per_stream_delta = mode == Some(DELTA_CAPABILITY_FIRST_PER_STREAM);
     }
 
     pub(super) fn attach(&mut self, frame: &mut DataOutbound) -> anyhow::Result<()> {
         let Some(frame_type) = signed_frame_type(frame) else {
             return Ok(());
         };
+        if self.per_stream_delta {
+            match frame {
+                DataOutbound::Delta { msg_id, .. } => {
+                    if self.signed_streams.contains(msg_id) {
+                        return Ok(());
+                    }
+                    if self.signed_streams.len() >= MAX_SIGNED_STREAMS {
+                        self.signed_streams.clear();
+                    }
+                    self.signed_streams.insert(msg_id.clone());
+                }
+                DataOutbound::Done { msg_id, .. } | DataOutbound::Error { msg_id, .. } => {
+                    self.signed_streams.remove(msg_id);
+                }
+                _ => {}
+            }
+        }
         let mut value = serde_json::to_value(&*frame)?;
         if let Some(obj) = value.as_object_mut() {
             obj.remove("acp_capability");
@@ -189,5 +237,93 @@ pub(super) fn canonical_serialize(value: &Value) -> String {
                     .join(",")
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn signer() -> CapabilitySigner {
+        CapabilitySigner {
+            delegation_id: Uuid::new_v4().to_string(),
+            kid: None,
+            request_id_prefix: "test".to_string(),
+            seq: 0,
+            key: SigningKey::from_bytes(&[7u8; 32]),
+            per_stream_delta: false,
+            signed_streams: HashSet::new(),
+        }
+    }
+
+    fn frame(value: serde_json::Value) -> DataOutbound {
+        serde_json::from_value(value).expect("frame parses")
+    }
+
+    fn delta(msg_id: &str) -> DataOutbound {
+        frame(json!({"type": "delta", "msg_id": msg_id, "seq": 1, "delta": "x"}))
+    }
+
+    fn signed(signer: &mut CapabilitySigner, mut frame: DataOutbound) -> bool {
+        signer.attach(&mut frame).expect("attach");
+        serde_json::to_value(&frame)
+            .unwrap()
+            .get("acp_capability")
+            .is_some()
+    }
+
+    #[test]
+    fn every_delta_is_signed_without_gateway_support() {
+        let mut signer = signer();
+        signer.set_delta_capability_mode(None);
+        assert!(signed(&mut signer, delta("m")));
+        assert!(signed(&mut signer, delta("m")));
+    }
+
+    #[test]
+    fn first_per_stream_signs_first_delta_and_every_terminal() {
+        let mut signer = signer();
+        signer.set_delta_capability_mode(Some(DELTA_CAPABILITY_FIRST_PER_STREAM));
+        assert!(signed(&mut signer, delta("a")));
+        assert!(!signed(&mut signer, delta("a")));
+        assert!(
+            signed(&mut signer, delta("b")),
+            "each stream signs its own first Delta"
+        );
+        let done = frame(json!({"type": "done", "client_msg_id": "c", "msg_id": "a"}));
+        assert!(signed(&mut signer, done), "terminal frames stay signed");
+        assert!(
+            signed(&mut signer, delta("a")),
+            "a finished stream re-signs"
+        );
+    }
+
+    #[test]
+    fn a_named_delta_rejection_makes_the_next_delta_signed_again() {
+        let mut signer = signer();
+        signer.set_delta_capability_mode(Some(DELTA_CAPABILITY_FIRST_PER_STREAM));
+        assert!(signed(&mut signer, delta("a")));
+        assert!(!signed(&mut signer, delta("a")));
+
+        let error = |code: &str, msg_id: Option<&str>| crate::bridge::BridgeErrorFrame {
+            v: 1,
+            code: code.to_string(),
+            detail: None,
+            request_id: None,
+            client_msg_id: None,
+            msg_id: msg_id.map(str::to_string),
+            retryable: Some(true),
+        };
+        signer.observe_bridge_error(&error("INVALID_FRAME", Some("a")));
+        signer.observe_bridge_error(&error("DELTA_CAPABILITY_REQUIRED", None));
+        assert!(
+            !signed(&mut signer, delta("a")),
+            "unrelated errors keep the binding"
+        );
+
+        signer.observe_bridge_error(&error("DELTA_CAPABILITY_REQUIRED", Some("a")));
+        assert!(signed(&mut signer, delta("a")));
+        assert!(!signed(&mut signer, delta("a")));
     }
 }

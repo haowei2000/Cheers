@@ -2,11 +2,12 @@ import { HelpLabel } from "@/components/ui/help-text";
 import { useEffect, useState, useCallback } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Bot, RefreshCw, Circle, CircleDot, Ban } from "lucide-react";
+import { RefreshCw, Circle, CircleDot, Ban } from "lucide-react";
 import {
   listBots,
 } from "@/api/bots";
 import { ActionButton } from "@/components/ui/action-button";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import { EntityItem } from "@/components/ui/item";
 import { CreateBotDialog } from "./CreateBotDialog";
 import { CreateHostWizard } from "./CreateHostWizard";
@@ -31,7 +32,7 @@ function BotRow({
       selected={active}
       title={`${bot.display_name || bot.username} · @${bot.username}`}
       leading={<div className={`flex shrink-0 items-center justify-center rounded-sm bg-indigo-900/50 ${avatarSizeClasses.regular}`}>
-        <Bot className="w-4 h-4 text-accent-300" />
+        <BotIcon className="text-accent-300" />
       </div>}
       criticalStatus={bot.is_disabled ? (
         <Ban
@@ -105,7 +106,7 @@ export function BotsManager() {
   return (
     <section>
       <h2 className="text-compact font-semibold text-content-muted uppercase tracking-section mb-4 flex items-center gap-2">
-        <Bot className="w-3.5 h-3.5" />
+        <BotIcon contentSize="small" />
         Bots
         <ActionButton
           action="add"

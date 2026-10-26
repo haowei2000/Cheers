@@ -172,6 +172,21 @@ async fn main() -> anyhow::Result<()> {
     let bot_locator = locator as Arc<dyn gateway::registry::BotLocator>;
 
     let stream_registry = StreamRegistry::new();
+    // Return prepaid Delta capability uses of streams that ended on any path
+    // (cancel, reclaim, finalize, disconnect) without spending them.
+    if let Some(mut refunds) = stream_registry.take_refund_receiver() {
+        let db = db.clone();
+        tokio::spawn(async move {
+            while let Some(refund) = refunds.recv().await {
+                server::domain::acp_capability::refund_delta_uses(
+                    &db,
+                    &refund.delegation_id,
+                    refund.unused,
+                )
+                .await;
+            }
+        });
+    }
     let workspace_rpc = Arc::new(gateway::workspace_rpc::WorkspaceRpc::new());
 
     // Web Push (PWA notifications): disabled unless a VAPID key is configured.
@@ -363,6 +378,9 @@ async fn main() -> anyhow::Result<()> {
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    // Realtime WS frames (stream deltas, bridge frames) are small; Nagle plus
+    // delayed ACK would hold each one for tens of milliseconds.
+    .tcp_nodelay(true)
     .await?;
 
     Ok(())
