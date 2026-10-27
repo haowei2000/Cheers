@@ -1,6 +1,6 @@
 import { AnnotationsLauncher } from "@/features/annotations/AnnotationProvider";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Check, LayoutGrid, Settings } from "lucide-react";
+import { Check, LayoutGrid, Settings, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import { usePopoverDismiss } from "@/components/ui/popover";
@@ -165,10 +165,7 @@ export function ChannelToolbar(props: Props) {
           aria-haspopup="dialog"
           selected={membersOpen}
         >
-          <span className="font-code text-minimal uppercase tracking-overline text-content-muted/80">
-            ROSTER
-          </span>
-          <span className="font-code text-minimal text-content-muted/40">·</span>
+          <Users className="h-4 w-4 text-content-muted" aria-hidden="true" />
           <span className="font-code text-compact tabular-nums font-medium text-content-primary">
             {props.memberCount || 0}
           </span>
