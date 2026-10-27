@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE connector_hosts SET mcp_rejected_at = NOW(), mcp_rejection = $2\n         WHERE host_id = $1 AND revoked_at IS NULL\n           AND (mcp_rejected_at IS NULL\n                OR mcp_rejected_at < NOW() - INTERVAL '30 seconds'\n                OR mcp_rejection IS DISTINCT FROM $2\n                OR mcp_rejected_at < mcp_last_seen_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "24a6c56457ee460ea3d3a90c41738b77ce57ddfc8b0eec8bae294878c18ebf52"
+}

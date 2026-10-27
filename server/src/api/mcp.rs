@@ -1500,7 +1500,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
             Ok(result) => result,
             Err(message) => return invalid_params(era, id, &message),
         },
-        "completion/complete" => match complete_argument(&state, identity.bot_id, params).await {
+        "completion/complete" => match complete_argument(&state, &identity, params).await {
             Ok(result) => result,
             Err(message) => return invalid_params(era, id, &message),
         },
@@ -1574,18 +1574,21 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         ProtocolEra::Legacy => legacy_result(result),
     };
     let final_response = json!({"jsonrpc": "2.0", "id": id, "result": result});
-    if method == "tools/call" {
-        if let Some(progress_token) = params
-            .get("_meta")
-            .and_then(Value::as_object)
-            .and_then(|meta| meta.get("progressToken"))
-        {
-            return progress_sse_response(progress_token, final_response);
+    // Real tools report no intermediate progress: they finish before a response
+    // exists, so a `progressToken` gets the plain JSON result. Only the conformance
+    // fixtures replay canned progress over SSE, as their scenarios expect.
+    if method == "tools/call" && era == ProtocolEra::Modern && conformance_fixtures_enabled() {
+        let name = params.get("name").and_then(Value::as_str);
+        if name.is_some_and(is_conformance_tool) {
+            if let Some(progress_token) = params
+                .get("_meta")
+                .and_then(Value::as_object)
+                .and_then(|meta| meta.get("progressToken"))
+            {
+                return progress_sse_response(progress_token, final_response);
+            }
         }
-        if era == ProtocolEra::Modern
-            && conformance_fixtures_enabled()
-            && params.get("name").and_then(Value::as_str) == Some("test_streaming_elicitation")
-        {
+        if name == Some("test_streaming_elicitation") {
             return progress_sse_response(&json!("token-abc"), final_response);
         }
     }
@@ -1639,6 +1642,9 @@ fn truncated(value: &str, max_chars: usize) -> String {
 
 /// Records a successfully authenticated and handled MCP method as connectivity evidence,
 /// along with the protocol version and client identity the MCP check reports.
+/// Unchanged evidence is rewritten at most every 30 seconds so steady traffic does not
+/// write the host row on every request; a rejection newer than the last stamp, or any
+/// changed field, still writes immediately.
 async fn mark_mcp_connected(
     state: &AppState,
     host_id: Uuid,
@@ -1654,7 +1660,14 @@ async fn mark_mcp_connected(
              mcp_protocol_version = $3,
              mcp_client_name = COALESCE($4, mcp_client_name),
              mcp_client_version = COALESCE($5, mcp_client_version)
-         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL",
+         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL
+           AND (mcp_last_seen_at IS NULL
+                OR mcp_last_seen_at < NOW() - INTERVAL '30 seconds'
+                OR mcp_rejected_at >= mcp_last_seen_at
+                OR mcp_connection_state IS DISTINCT FROM $2
+                OR mcp_protocol_version IS DISTINCT FROM $3
+                OR ($4::TEXT IS NOT NULL AND mcp_client_name IS DISTINCT FROM $4)
+                OR ($5::TEXT IS NOT NULL AND mcp_client_version IS DISTINCT FROM $5))",
         host_id.to_string(),
         mcp_state_for_evidence(McpConnectionEvidence::AuthenticatedRequest,),
         truncated(seen.protocol_version, 16),
@@ -1687,6 +1700,8 @@ async fn mark_mcp_authorizing(state: &AppState, host_id: &str) -> Result<(), sql
 
 /// Records why an authenticated request was refused before any method ran. It is the
 /// only trace a client that cannot speak this endpoint leaves for the MCP check.
+/// A client retrying the same refusal rewrites the row at most every 30 seconds; a new
+/// reason, or a refusal after a later success, still writes immediately.
 async fn record_mcp_rejection(
     state: &AppState,
     host_id: Uuid,
@@ -1703,7 +1718,11 @@ async fn record_mcp_rejection(
     };
     let recorded = sqlx::query!(
         "UPDATE connector_hosts SET mcp_rejected_at = NOW(), mcp_rejection = $2
-         WHERE host_id = $1 AND revoked_at IS NULL",
+         WHERE host_id = $1 AND revoked_at IS NULL
+           AND (mcp_rejected_at IS NULL
+                OR mcp_rejected_at < NOW() - INTERVAL '30 seconds'
+                OR mcp_rejection IS DISTINCT FROM $2
+                OR mcp_rejected_at < mcp_last_seen_at)",
         host_id.to_string(),
         truncated(&reason, 255),
     )
@@ -2289,11 +2308,16 @@ async fn get_prompt(
     }
 }
 
+/// Suggests argument values. Suggestions are bounded by the token, not only by the
+/// bot: a channel-narrowed token is offered only its own channel, so completion
+/// cannot disclose channels the token could never act on. Requests past the
+/// per-host rate limit get an empty suggestion list, which clients already handle.
 async fn complete_argument(
     state: &AppState,
-    bot_id: Uuid,
+    identity: &McpIdentity,
     params: &Map<String, Value>,
 ) -> Result<Value, String> {
+    const MAX_VALUES: usize = 100;
     let argument = params
         .get("argument")
         .and_then(Value::as_object)
@@ -2307,20 +2331,27 @@ async fn complete_argument(
         .and_then(Value::as_str)
         .ok_or_else(|| "argument.value is required".to_string())?;
     let mut values = Vec::new();
-    if name == "channel_id" {
-        let rows = sqlx::query!(
+    let limited =
+        !crate::infra::ratelimit::mcp_completion_limiter().try_hit(&identity.host_id.to_string());
+    if limited {
+        tracing::debug!(host_id = %identity.host_id, "MCP completion rate limited");
+    } else if name == "channel_id" {
+        // One row past the cap tells whether more matches exist.
+        let rows = sqlx::query_scalar!(
             "SELECT channel_id FROM channel_memberships
              WHERE member_type = 'bot' AND member_id = $1
-             ORDER BY channel_id LIMIT 100",
-            bot_id.to_string(),
+               AND starts_with(channel_id, $2)
+               AND ($3::TEXT IS NULL OR channel_id = $3)
+             ORDER BY channel_id LIMIT $4",
+            identity.bot_id.to_string(),
+            prefix,
+            identity.channel_scope.map(|channel| channel.to_string()),
+            (MAX_VALUES + 1) as i64,
         )
         .fetch_all(&state.db)
         .await
         .map_err(|_| "completion is unavailable".to_string())?;
-        values.extend(
-            rows.into_iter()
-                .filter_map(|row| Some(row.channel_id.clone())),
-        );
+        values.extend(rows);
     } else if conformance_fixtures_enabled() {
         values.extend(
             ["apple", "apricot", "banana"]
@@ -2331,11 +2362,16 @@ async fn complete_argument(
     values.retain(|value| value.starts_with(prefix));
     values.sort();
     values.dedup();
-    values.truncate(100);
-    let total = values.len();
+    let has_more = values.len() > MAX_VALUES;
+    values.truncate(MAX_VALUES);
+    let count = values.len();
+    let mut completion = json!({"values": values, "hasMore": has_more});
+    if !has_more {
+        completion["total"] = json!(count);
+    }
     Ok(json!({
         "resultType":"complete",
-        "completion":{"values":values,"total":total,"hasMore":false},
+        "completion":completion,
         "_meta":result_meta()
     }))
 }
@@ -2628,8 +2664,12 @@ fn validate_mirrored_headers(
         "tools/call" | "prompts/get" => params.get("name").and_then(Value::as_str),
         _ => None,
     };
-    match (expected_name, header_string(headers, MCP_NAME_HEADER)) {
-        (Some(expected), Some(actual)) if expected == actual => Ok(()),
+    // Names and URIs that are not header-safe ASCII arrive in the Base64 sentinel
+    // form, which must be decoded before comparison; an undecodable value is
+    // malformed and counts as a mismatch.
+    let header_name = header_string(headers, MCP_NAME_HEADER).map(decode_mcp_param);
+    match (expected_name, header_name) {
+        (Some(expected), Some(Some(actual))) if expected == actual => Ok(()),
         (Some(_), None) if !required => Ok(()),
         (Some(_), _) => Err(MetadataError {
             code: -32020,
@@ -3016,22 +3056,21 @@ fn mcp_resource_template_definitions() -> Vec<Value> {
     templates
 }
 
+/// The credentials of an `Authorization` header using `scheme`. Scheme names are
+/// case-insensitive (RFC 9110 §11.1), so `bearer x` is as valid as `Bearer x`.
+fn authorization_credentials<'a>(headers: &'a HeaderMap, scheme: &str) -> Option<&'a str> {
+    let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
+    let (name, credentials) = value.split_once(' ')?;
+    let credentials = credentials.trim();
+    (name.eq_ignore_ascii_case(scheme) && !credentials.is_empty()).then_some(credentials)
+}
+
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    authorization_credentials(headers, "Bearer")
 }
 
 fn basic_client_credentials(headers: &HeaderMap) -> Option<(String, String)> {
-    let encoded = headers
-        .get(header::AUTHORIZATION)?
-        .to_str()
-        .ok()?
-        .strip_prefix("Basic ")?
-        .trim();
+    let encoded = authorization_credentials(headers, "Basic")?;
     let decoded = STANDARD.decode(encoded).ok()?;
     let decoded = String::from_utf8(decoded).ok()?;
     let (client_id, client_secret) = decoded.split_once(':')?;
@@ -3254,6 +3293,49 @@ mod tests {
                 .unwrap_err()
                 .code,
             -32020
+        );
+    }
+
+    #[test]
+    fn decodes_base64_name_header_before_comparing() {
+        let uri = "cheers:desk/报告.md";
+        let mut headers = modern_headers("resources/read");
+        let encoded = format!("=?base64?{}?=", STANDARD.encode(uri));
+        headers.insert(MCP_NAME_HEADER, HeaderValue::from_str(&encoded).unwrap());
+        let mut params = modern_params();
+        params.insert("uri".to_string(), json!(uri));
+        assert!(validate_request_metadata(&headers, "resources/read", &params).is_ok());
+
+        // A sentinel that does not decode is malformed, not a literal name.
+        headers.insert(MCP_NAME_HEADER, HeaderValue::from_static("=?base64?!!!?="));
+        assert_eq!(
+            validate_request_metadata(&headers, "resources/read", &params)
+                .unwrap_err()
+                .code,
+            -32020
+        );
+    }
+
+    #[test]
+    fn authorization_scheme_is_case_insensitive() {
+        let mut headers = HeaderMap::new();
+        for value in ["Bearer abc", "bearer abc", "BEARER  abc "] {
+            headers.insert(header::AUTHORIZATION, HeaderValue::from_static(value));
+            assert_eq!(bearer_token(&headers), Some("abc"), "{value}");
+        }
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearerabc"));
+        assert_eq!(bearer_token(&headers), None);
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Basic abc"));
+        assert_eq!(bearer_token(&headers), None);
+
+        let basic = format!("basic {}", STANDARD.encode("host:secret"));
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&basic).unwrap(),
+        );
+        assert_eq!(
+            basic_client_credentials(&headers),
+            Some(("host".to_string(), "secret".to_string()))
         );
     }
 
