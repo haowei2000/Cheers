@@ -29,6 +29,12 @@ interface DiffLine {
   newNo?: number;
 }
 
+export interface ParsedDiff {
+  /** Text before the first file that carries no hunks — `git show`'s commit header. */
+  preamble: string[];
+  sections: FileSection[];
+}
+
 interface FileSection {
   /** Display path (new path; `old → new` for renames). */
   title: string;
@@ -36,6 +42,12 @@ interface FileSection {
   adds: number;
   dels: number;
   binary: boolean;
+}
+
+/** Git's per-file header lines. The section header already names the file, so they
+ *  are parsed (for the title) but not repeated as rows. */
+function isFileHeaderLine(line: DiffLine): boolean {
+  return line.kind === "meta" && /^(?:diff --git |index |--- |\+\+\+ )/.test(line.text);
 }
 
 /** Per-section rows rendered before "show more" is needed. */
@@ -104,6 +116,15 @@ function sectionTitle(headerLines: string[]): string {
  * e.g. `git diff` inside one file) becomes a single untitled section.
  */
 export function parseSections(diff: string): FileSection[] {
+  return parseDiff(diff).sections;
+}
+
+/**
+ * Like `parseSections`, but text before the first `diff --git` that has no hunk
+ * (a `git show` commit header: commit, Author, Date, message) is returned as a
+ * preamble instead of a numbered, file-less section.
+ */
+export function parseDiff(diff: string): ParsedDiff {
   const raw = diff.replace(/\n$/, "").split("\n");
   const sections: FileSection[] = [];
   let cur: FileSection | null = null;
@@ -113,7 +134,9 @@ export function parseSections(diff: string): FileSection[] {
 
   const push = () => {
     if (cur) {
-      cur.title = cur.title || sectionTitle(curHeader);
+      // A leading section with no file header stays untitled until it proves to
+      // be a bare hunk diff; parseDiff splits it off as a preamble otherwise.
+      cur.title = cur.title || (curHeader.length || cur.lines.some((l) => l.kind === "hunk") ? sectionTitle(curHeader) : "");
       sections.push(cur);
     }
   };
@@ -164,7 +187,11 @@ export function parseSections(diff: string): FileSection[] {
     }
   }
   push();
-  return sections;
+  const [first] = sections;
+  if (first && !first.title.length && !first.lines.some((l) => l.kind === "hunk")) {
+    return { preamble: first.lines.map((l) => l.text), sections: sections.slice(1) };
+  }
+  return { preamble: [], sections };
 }
 
 function Gutter({ line }: { line: DiffLine }) {
@@ -180,8 +207,9 @@ function Gutter({ line }: { line: DiffLine }) {
 function FileSectionView({ section }: { section: FileSection }) {
   const [open, setOpen] = useState(section.lines.length <= AUTO_COLLAPSE_LINES);
   const [shown, setShown] = useState(PAGE_LINES);
-  const lines = open ? section.lines.slice(0, shown) : [];
-  const hidden = section.lines.length - lines.length;
+  const rows = useMemo(() => section.lines.filter((l) => !isFileHeaderLine(l)), [section.lines]);
+  const lines = open ? rows.slice(0, shown) : [];
+  const hidden = rows.length - lines.length;
 
   return (
     <div className="border-b border-zinc-900 last:border-b-0">
@@ -206,7 +234,6 @@ function FileSectionView({ section }: { section: FileSection }) {
       </ControlTrigger>
       {lines.map((l, i) => (
         <DiffLineItem key={i}
-          controlSize="compact"
           tone={l.kind === "add" ? "add" : l.kind === "del" ? "remove" : "context"}
           marker={l.kind === "meta" || l.kind === "hunk" ? (
             <span className="sticky left-0 inline-block w-21.5 shrink-0 select-none bg-zinc-950" />
@@ -235,7 +262,7 @@ export function DiffView({
   diff: string;
   className?: string;
 }) {
-  const sections = useMemo(() => parseSections(diff), [diff]);
+  const { preamble, sections } = useMemo(() => parseDiff(diff), [diff]);
 
   if (!diff.trim()) {
     return (
@@ -254,9 +281,14 @@ export function DiffView({
           <span className="text-content-muted">
             {sections.length} file{sections.length === 1 ? "" : "s"}
           </span>
-          <span className="text-success-400">+{totalAdds}</span>
-          <span className="text-removed-400">−{totalDels}</span>
+          {totalAdds > 0 && <span className="text-success-400">+{totalAdds}</span>}
+          {totalDels > 0 && <span className="text-removed-400">−{totalDels}</span>}
         </div>
+        {preamble.some((l) => l.trim()) && (
+          <div className="whitespace-pre border-b border-zinc-800 px-2 py-2 text-compact text-content-muted">
+            {preamble.join("\n").replace(/^\n+|\n+$/g, "")}
+          </div>
+        )}
         {sections.map((s, i) => (
           <FileSectionView key={`${s.title}:${i}`} section={s} />
         ))}

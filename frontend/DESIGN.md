@@ -116,6 +116,21 @@ Selection is its own semantic layer: `bg-selected`, `hover:bg-selected-hover`,
 `active:bg-selected-active`, and `ring-selected-indicator`. A selected control
 combines the neutral fill with a persistent rail, underline, checkmark, or
 selected-state inset ring; focus retains the separate two-pixel focus ring.
+The recipe lives once in `src/components/ui/selection.ts`:
+
+| Surface | Selected look | Owner |
+|---|---|---|
+| Button, IconButton, ControlTrigger, ChoiceButton, MenuOption, FileTreeItem | fill + `text-content-strong font-semibold` + inset ring | `selectedClasses("ring")` |
+| ItemRow / NavigationItem rows | fill + strong semibold label + left rail | `selectedClasses("rail")` |
+| Tabs (`role="tab"` on Button/ControlTrigger, `TabOption`) | transparent + strong semibold label + underline | `tabClasses(selected)` |
+| Vertical tab lists (`<Button role="tab" tabOrientation="vertical">` in an `aria-orientation="vertical"` tablist) | same as list rows: fill + strong semibold label + left rail | `tabClasses(selected, "vertical")` |
+| Content containers (selected message, canvas node, choice card) | fill + inset ring; body copy keeps its weight | `selectedContainerClasses` |
+| Listbox keyboard/pointer highlight (active descendant) | hover fill only, never the selected look | `highlightedClasses` / `MenuOption highlighted` |
+
+Business code passes `selected` (or `highlighted`) to the primitive; it never
+re-adds fill, weight, ring, rail, or underline classes, and never overrides the
+selected foreground with a resting `text-*` class. `design-system:check`
+enforces this with the `localSelectionStyling` rule.
 Feature code must not recreate selection with `bg-zinc-*` or translucent
 `bg-indigo-*/15` recipes. `prefers-contrast: more` strengthens these shared
 tokens without adding another appearance option.
@@ -207,7 +222,7 @@ as field boundaries and **states**: neutral (`ring-zinc-600`), focus
 
 - **Substrates & carbon ink**: Light mode uses warm uncoated bond paper (`#FAF8F4` canvas, `#FFFEFC` panel, `#F3F0E8` rail/substrate); dark mode uses carbon slate stone (`#161719` canvas, `#1E1F23` panel). Foreground copy uses the four-tier carbon ink ladder (`#0F1012` dense carbon ink, `#1C1D20` primary, `#403F3C` secondary, `#686660` muted) exceeding WCAG AAA standards.
 - **De-glassification (Solid Paper Stacking)**: Floating windows (`FloatingPanel`), diff headers, and floating action layers rely on physical paper stacking (`.floating-panel-surface`, `.elevation-raised`, `.elevation-overlay`), using opaque paper fills, 1px hairline perimeter rules, and controlled elevation shadows. Translucent glassmorphism (`backdrop-blur`) is avoided across all interactive surfaces.
-- **Dispatch chrome & typewriter cursor**: Channel headers feature an uppercase tracking `DISPATCH` label. Active message streaming renders a mechanical typewriter block cursor (`w-2 h-4 bg-content-strong animate-blink`).
+- **Typewriter cursor**: Active message streaming renders a mechanical typewriter block cursor (`w-2 h-4 bg-content-strong animate-blink`).
 - **Seal stamp authorizations**: Bot trace cards and permission requests render sign-off states as uppercase monospace seal stamps (`[✓ Approved]`, `[✕ Denied]`, `[Needs approval]`) using vermilion (`--tone-danger`) and seal wax amber (`--tone-warning`).
 - **Dispatch send action**: Primary message dispatch uses solid carbon ink (`bg-content-strong text-content-on-light`) with tactile active scale response.
 
@@ -479,17 +494,10 @@ cut-out mask, not a decorative border.)
 
 ### 2.8 Tabs — two styles only
 
-- **Underline tabs** (page & detail navigation — FriendsPage, BotDetailPanel):
-  container `flex gap-1 border-b border-zinc-800`; item
-  `px-3 py-2 text-regular border-b-2 -mb-px transition-colors` with active
-  `border-indigo-500 text-content-primary`, inactive
-  `border-transparent text-content-muted hover:text-content-secondary`.
-- **Pill tabs** (dense panel toolbars — ViewBoard):
-  `rounded-md px-2 py-1 text-compact` with active `bg-zinc-800 text-content-primary`,
-  inactive `text-content-muted hover:bg-zinc-800/60 hover:text-content-secondary`.
-
-Don't introduce a third style; segmented controls reuse the pill recipe
-inside a `bg-zinc-800` container.
+- **Underline tabs** are the only tab style. Use `<TabOption>` or pass
+  `role="tab"` plus `selected` to `<Button>` / `<ControlTrigger>`; the primitive
+  draws the underline (`tabClasses`). Call sites add only layout such as `-mb-px`.
+- Segmented single-choice controls are not tabs: use `<ChoiceGroup>`.
 
 Mutually exclusive form choices use `<ChoiceGroup>` and its registered
 `<ChoiceButton>` anatomy, not tabs or feature-owned buttons. The group exposes
@@ -528,10 +536,11 @@ floating panels may add `rounded p-0.5 hover:bg-zinc-800`. Hover target is
 
 ### 2.12 List rows
 
-Selectable rows use the shared Item geometry and hover fill. Selected
-NavigationItems use `bg-zinc-800 text-content-primary` plus `aria-current="page"`;
-the fill remains visible even when a borderless placement suppresses the
-ordinary left marker. Every interactive row needs a hover state.
+Selectable rows use the shared Item geometry and hover fill. Pass `selected`;
+the row draws `selectedClasses("rail")` and NavigationItems expose
+`aria-current="page"`. Never suppress the rail with `border-0` (use
+`border-b-0` to drop only the divider). Every interactive row needs a hover
+state.
 
 Use `<DataTable>` only for genuine two-dimensional data whose columns need a
 shared scan order. It owns caption, column scopes, keyboard sorting, loading

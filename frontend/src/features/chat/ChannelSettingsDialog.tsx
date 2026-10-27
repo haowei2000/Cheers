@@ -684,10 +684,10 @@ export function ChannelSettingsDialog({
                   disabled={deleting}
                   onClick={() => setConfirmingDelete(false)}
                 />
-                <Button action="delete" aria-label="Delete channel" variant="danger" controlSize="compact" loading={deleting} onClick={() => void doDelete()} />
+                <Button action="delete" aria-label="Delete channel" variant="destructive" controlSize="compact" loading={deleting} onClick={() => void doDelete()} />
               </div>
             ) : (
-              <Button content="iconText" action="delete" aria-label="Delete channel" variant="danger" controlSize="compact" className="shrink-0" onClick={() => setConfirmingDelete(true)}>
+              <Button content="iconText" action="delete" aria-label="Delete channel" variant="destructive" controlSize="compact" className="shrink-0" onClick={() => setConfirmingDelete(true)}>
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
             )}

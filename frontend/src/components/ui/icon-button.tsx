@@ -9,6 +9,8 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   label: string;
   tone?: IconButtonTone;
   controlSize?: ControlSize;
+  /** Toggle state; the shared selected styling replaces the tone's resting colours. */
+  selected?: boolean;
 }
 
 const toneClasses: Record<IconButtonTone, string> = {
@@ -24,6 +26,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       label,
       tone = "neutral",
       controlSize,
+      selected = false,
       className,
       children,
       type = "button",
@@ -40,9 +43,10 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         content="icon"
         controlSize={controlSize}
         variant="plain"
+        selected={selected}
         className={cn(
           "shrink-0",
-          toneClasses[tone],
+          !selected && toneClasses[tone],
           className
         )}
         {...props}

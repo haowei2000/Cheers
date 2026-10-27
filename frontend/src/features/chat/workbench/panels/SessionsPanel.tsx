@@ -220,7 +220,9 @@ function SessionCard({
           type="button"
           title={open ? "Hide details" : "Session details"}
           onClick={() => setOpen((v) => !v)}
-          className={`shrink-0 ${open ? "text-content-strong font-semibold": "text-content-primary hover:text-content-strong"}`}
+          aria-expanded={open}
+          selected={open}
+          className={open ? "shrink-0" : "shrink-0 text-content-primary hover:text-content-strong"}
         >
           <Info className="w-3.5 h-3.5" />
         </UiButton>

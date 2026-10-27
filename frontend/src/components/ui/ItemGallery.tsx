@@ -632,9 +632,9 @@ export function ItemGallery() {
         <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
           <h2 id="specialized-register" className="mb-1 font-utility text-compact font-semibold uppercase tracking-overline text-content-muted">Specialized diff</h2>
           <ItemList className="overflow-x-auto bg-zinc-950">
-            <DiffLineItem controlSize="compact" tone="remove" lineNumber="18" marker="−" content="border-radius: 12px;" />
-            <DiffLineItem controlSize="regular" tone="add" lineNumber="18" marker="+" content="border-radius: 10px;" />
-            <DiffLineItem controlSize="comfortable" lineNumber="19" marker=" " content="font-family: var(--font-utility);" />
+            <DiffLineItem tone="remove" lineNumber="18" marker="−" content="border-radius: 12px;" />
+            <DiffLineItem tone="add" lineNumber="18" marker="+" content="border-radius: 10px;" />
+            <DiffLineItem lineNumber="19" marker=" " content="font-family: var(--font-utility);" />
           </ItemList>
         </div>
       </section>

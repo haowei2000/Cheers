@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { EmptyState } from "./empty-state";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "./button";
 import { ButtonGroup } from "./button-group";
@@ -326,12 +327,13 @@ export function CollectionEmptyItem({
   onClear?: () => void;
 }) {
   const searching = Boolean(query?.trim());
+  // The shared compact empty state, not a row: a fake row with a divider reads
+  // as one real (blank) item in the list.
   return (
-    <OperationsItem
-      presentationLevel="medium"
-      controlSize="regular"
+    <EmptyState
       title={searching ? "No matching items" : "No items yet"}
-      actions={searching && onClear ? (
+      className="py-4"
+      action={searching && onClear ? (
           <Button action="clear" type="button" variant="ghost" controlSize="compact" onClick={onClear} />
         ) : undefined}
     />

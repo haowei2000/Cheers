@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { CalendarClock, CirclePause, CirclePlay, History, Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { listChannels, listChannelMembers } from "@/api/channels";
@@ -261,7 +262,7 @@ export function ScheduledMessagesManager() {
             </>}
           />
         ))}
-        {tasks.length === 0 && <WorkbenchItem title="No scheduled tasks" />}
+        {tasks.length === 0 && <EmptyState icon={CalendarClock} title="No scheduled tasks" className="py-4" />}
       </ItemSection>
       </SettingsCard>
 

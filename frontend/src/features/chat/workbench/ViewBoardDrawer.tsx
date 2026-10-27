@@ -167,10 +167,7 @@ export const ViewBoardMobileTabs = memo(function ViewBoardMobileTabs({
             onClick={() => onSelect(b.id)}
             controlSize="regular"
             className={cn(
-              "inline-flex shrink-0 items-center gap-2 whitespace-nowrap transition-colors rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
-              isActive
-                ? "border-content-strong text-content-strong font-semibold"
-                : "border-transparent text-content-primary hover:text-content-strong"
+              "inline-flex shrink-0 items-center gap-2 whitespace-nowrap transition-colors -mb-px",
             )}
           >
             {Icon && <Icon className="w-3.5 h-3.5" />}

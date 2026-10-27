@@ -111,3 +111,17 @@ it("provides stronger selected-state tokens for increased contrast", () => {
   expect(increased).toContain("--surface-selected:");
   expect(increased).toContain("--selection-indicator:");
 });
+
+describe("themed colour scales", () => {
+  // tailwind.config.ts maps every scale to `rgb(var(--tone-<name>-<shade>))` with
+  // no fallback. A shade missing from the base theme makes the colour invalid in
+  // dark mode, where it silently renders as inherited text — which is how every
+  // danger/warning/success/diff colour went white after the Tailwind 4 migration.
+  const config = readFileSync(new URL("../../../tailwind.config.ts", import.meta.url), "utf8");
+  const scales = [...new Set([...config.matchAll(/themedScale\("([a-z]+)"\)/g)].map((m) => m[1]))];
+  const shades = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+
+  it.each(scales)("defines every %s shade in the base theme", (name) => {
+    for (const shade of shades) expect(() => token(dark, `tone-${name}-${shade}`)).not.toThrow();
+  });
+});

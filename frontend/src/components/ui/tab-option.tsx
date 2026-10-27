@@ -26,10 +26,7 @@ export const TabOption = forwardRef<HTMLButtonElement, TabOptionProps>(
         aria-selected={selected}
         selected={selected}
         className={cn(
-          "gap-2 rounded-none border-b-2 bg-transparent ring-0 shadow-none px-2 transition-colors duration-150 hover:bg-transparent focus-visible:ring-inset",
-          selected
-            ? "border-content-strong text-content-strong font-semibold"
-            : "border-transparent text-content-primary hover:text-content-strong",
+          "gap-2 px-2 transition-colors duration-150 focus-visible:ring-inset",
           className
         )}
         {...props}

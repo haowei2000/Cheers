@@ -1338,6 +1338,18 @@ export function ChannelView({
     [messages],
   );
 
+  // The reply target's context item, when the reply itself added it. The reply
+  // banner stands in for that item, so backing out of the reply takes it back out.
+  const replyContextRef = useRef<{ channelId: string; id: string } | null>(null);
+  const releaseReplyContext = useCallback(() => {
+    const added = replyContextRef.current;
+    replyContextRef.current = null;
+    if (added) useContextPickStore.getState().remove(added.channelId, added.id);
+  }, []);
+  useEffect(() => {
+    if (!replyTo) releaseReplyContext();
+  }, [replyTo, releaseReplyContext]);
+
   // Reply uses the same bottom composer as a normal send. The only difference is
   // defaults copied from the source turn: session target, @bot, and message context.
   // `reply_to_msg_id` still nests the outgoing message under the source.
@@ -1388,12 +1400,18 @@ export function ChannelView({
         }
       }
 
+      releaseReplyContext();
       if (channel?.channel_id) {
         const ctx = messageContextItem(m);
-        if (ctx) useContextPickStore.getState().add(channel.channel_id, ctx);
+        const store = useContextPickStore.getState();
+        const alreadyPicked = (store.byChannel[channel.channel_id] ?? []).some((item) => item.id === ctx?.id);
+        if (ctx && !alreadyPicked) {
+          store.add(channel.channel_id, ctx);
+          replyContextRef.current = { channelId: channel.channel_id, id: ctx.id };
+        }
       }
     },
-    [messages, mentionables, channel?.channel_id, setComposePrefill],
+    [messages, mentionables, channel?.channel_id, setComposePrefill, releaseReplyContext],
   );
 
   const mentionMember = useCallback(

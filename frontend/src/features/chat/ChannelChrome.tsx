@@ -58,10 +58,6 @@ export function ChannelChrome({
         <span className="min-w-0 truncate font-utility text-regular font-semibold tracking-tight text-content-strong max-md:pl-1">
           {title}
         </span>
-        <span className="hidden items-center gap-1 font-code text-minimal uppercase tracking-overline text-content-muted/75 lg:inline-flex" aria-label="Dispatch channel">
-          <span className="select-none text-content-muted/40" aria-hidden="true">·</span>
-          DISPATCH
-        </span>
       </div>
       {isVoiceChannel && <VoiceToolbarHost />}
       {!panelNavigation && purpose && (

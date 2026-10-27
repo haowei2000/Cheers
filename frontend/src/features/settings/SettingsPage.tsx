@@ -1,4 +1,5 @@
 import { HelpLabel } from "@/components/ui/help-text";
+import { SectionNav } from "@/components/ui/section-nav";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -45,7 +46,7 @@ import {
   LegalLinks,
   SignOutAction,
 } from "./AccountSettings";
-import { ItemList, NavigationItem } from "@/components/ui/item";
+import { ItemList } from "@/components/ui/item";
 import { SettingsCard, SettingsCardSection, SettingsSection } from "@/components/ui/settings-card";
 
 type SectionId =
@@ -133,28 +134,12 @@ export default function SettingsPage() {
       </RouteChromeHeader>
 
       <div className="max-w-5xl mx-auto p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col sm:flex-row gap-6">
-        {/* Nav rail */}
-        <nav aria-label="Settings sections" className="sm:w-48 sm:shrink-0">
-          <ItemList
-            presentationLevel="minimal"
-            controlSize="regular"
-            className="flex gap-1 overflow-x-auto sm:flex-col"
-          >
-            {items.map(({ id, label, icon: Icon }) => {
-              const active = section === id;
-              return (
-                <NavigationItem
-                  key={id}
-                  title={label}
-                  leading={<Icon className="h-4 w-4" aria-hidden="true" />}
-                  selected={active}
-                  onClick={() => navigate(`/settings/${id}`)}
-                  className="shrink-0 max-sm:w-auto"
-                />
-              );
-            })}
-          </ItemList>
-        </nav>
+        <SectionNav
+          ariaLabel="Settings sections"
+          items={items}
+          selected={section}
+          onSelect={(id) => navigate(`/settings/${id}`)}
+        />
 
         {/* Active section */}
         <div className="flex-1 min-w-0">
