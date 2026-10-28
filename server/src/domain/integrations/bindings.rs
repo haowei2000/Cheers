@@ -117,6 +117,7 @@ pub async fn for_external(
 /// re-bind treats those rows as human-owned and cannot demote them.
 pub async fn unbind(db: &PgPool, channel_id: &str) -> anyhow::Result<bool> {
     let mut tx = db.begin().await?;
+    super::super::channel_memberships::lock_channel(&mut tx, channel_id).await?;
     let removed = sqlx::query!(
         "DELETE FROM channel_integration_bindings WHERE channel_id = $1",
         channel_id,
@@ -191,6 +192,9 @@ pub async fn sync_members(
 ) -> anyhow::Result<SyncReport> {
     let mut report = SyncReport::default();
     let mut tx = db.begin().await?;
+    // Serialize the projection snapshot with manual role changes and detach.
+    // Otherwise a delayed rewrite could undo a newly manual owner promotion.
+    super::super::channel_memberships::lock_channel(&mut tx, channel_id).await?;
 
     let workspace_id: String = sqlx::query_scalar!(
         "SELECT workspace_id FROM channels WHERE channel_id = $1",

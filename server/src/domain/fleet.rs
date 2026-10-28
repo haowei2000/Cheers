@@ -241,9 +241,9 @@ pub async fn cost_today(
 /// (an invite not yet accepted) grants no access, matching the rest of the
 /// workspace reads (`status = 'active'`); serving Fleet on a pending row would
 /// leak the bot roster + pending approvals to an invitee who hasn't joined.
-/// Personal workspaces have no membership rows — their owner is
-/// `workspaces.owner_user_id` (see
-/// `domain::workspaces::get_or_create_personal_workspace`), so accept either.
+/// Older personal workspaces may still lack an owner membership until their
+/// next lookup or channel creation. Accept `workspaces.owner_user_id` as well
+/// so their owner can still reach Fleet during that repair window.
 pub async fn is_workspace_member(
     db: &PgPool,
     workspace_id: Uuid,

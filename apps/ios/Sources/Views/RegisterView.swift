@@ -73,6 +73,7 @@ struct RegisterView: View {
                 .accessibilityHidden(true)
 
             Text("Join Cheers")
+                .helpExplanation("Step 1: Verify your email · Step 2: Create your account")
                 .font(Theme.displayFont(for: "Join Cheers"))
                 .foregroundStyle(Theme.textPrimary)
 
@@ -83,10 +84,7 @@ struct RegisterView: View {
                 .foregroundStyle(Theme.textMuted)
                 .multilineTextAlignment(.center)
 
-            Text("Step 1: Verify your email · Step 2: Create your account")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
+
         }
     }
 
@@ -159,10 +157,8 @@ struct RegisterView: View {
             )
 
             secureInputField("Password", text: $password, field: .password, submitLabel: .next)
-            Text("Use at least 12 characters. A longer, unique passphrase is recommended.")
-                .font(.footnote)
-                .foregroundStyle(Theme.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .helpExplanation("Use at least 12 characters. A longer, unique passphrase is recommended.")
+
             secureInputField("Confirm password", text: $passwordConfirmation, field: .passwordConfirmation, submitLabel: .done)
 
             if let errorText {

@@ -1,6 +1,6 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { Input as UiInput } from "@/components/ui/input";
-import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -38,10 +38,11 @@ import {
 import { isTauri } from "@/lib/serverConfig";
 import { ConnectorConfigForm } from "./ConnectorConfigForm";
 import { ConnectorChanges } from "./ConnectorChanges";
+import { LocalHostSetup } from "./LocalHostSetup";
 import { AgentUpdates } from "./AgentUpdates";
-import { AgentPicker, type DetectedAgent } from "./AgentPicker";
+import { type DetectedAgent } from "./AgentPicker";
 import { consumeConnectorIntent } from "./connectorIntent";
-import { createHost, listBots, redeemHostPairing, type AgentType } from "@/api/bots";
+import { listBots, redeemHostPairing, type AgentType } from "@/api/bots";
 import type { BotItem } from "@/types";
 
 /** Shape returned by the Tauri `connector_list` command (src-tauri/src/connector.rs). */
@@ -115,8 +116,9 @@ async function ensureAdapterReady(agentType: AgentType): Promise<boolean> {
       toast.error(detail, { id: toastId });
       return false;
     }
-  } catch {
-    return true;
+  } catch (error) {
+    toast.error(typeof error === "string" ? error : "Could not check installed agents. Try again.");
+    return false;
   }
 }
 
@@ -213,7 +215,6 @@ export function ConnectorManager() {
   const [pairingCode, setPairingCode] = useState("");
   const [agentType, setAgentType] = useState<AgentType>("codex");
   const [onboarding, setOnboarding] = useState(false);
-  const [onboardingError, setOnboardingError] = useState<string | null>(null);
   // Advanced fallback: start straight from an existing .toml on disk.
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -398,44 +399,6 @@ export function ConnectorManager() {
     }
   }
 
-  // ── onboarding (the New tile) ──────────────────────────────────────────────
-  async function onboard() {
-    setOnboardingError(null);
-    setOnboarding(true);
-    try {
-      // Pre-flight the adapter before creating a pending host, so an
-      // unavailable local agent does not leave a pairing behind.
-      if (!(await ensureAdapterReady(agentType))) {
-        return;
-      }
-
-      const botId = existingBotId;
-      if (!botId) {
-        toast.error("Pick a bot first");
-        return;
-      }
-      const pairing = await createHost(botId, agentType, "Cheers Desktop");
-      const redeemed = await redeemHostPairing(pairing.pairing_code, "Cheers Desktop");
-      const configPath = await invokeDesktop<string>("connector_write_onboarded", {
-        accountId: redeemed.account_id,
-        configToml: redeemed.config_toml,
-        token: redeemed.credential,
-        tokenFile: redeemed.credential_file,
-      });
-      await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
-      toast.success(`Host "${redeemed.account_id}" is running`);
-      setModal(null);
-      refresh();
-    } catch (e) {
-      const detail =
-        typeof e === "string" ? e : e instanceof Error ? e.message : "onboarding failed";
-      setOnboardingError(detail);
-      toast.error(detail);
-    } finally {
-      setOnboarding(false);
-    }
-  }
-
   // ── detail openers (each shows a modal) ────────────────────────────────────
   async function openLogs(inst: ConnectorInstance) {
     setModal({ kind: "logs", inst });
@@ -510,10 +473,10 @@ export function ConnectorManager() {
       <div className="bg-zinc-900 rounded-sm p-6">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-regular font-medium text-content-secondary">Bots installed on this Mac</p>
-            <p className="mt-1 text-compact text-content-muted">
+            <p className="text-regular font-medium text-content-secondary"><HelpLabel help={<>
               Local connector processes. Registered devices and credentials are listed above.
-            </p>
+            </>}>Bots installed on this Mac</HelpLabel></p>
+
           </div>
           <div className="flex items-center gap-1">
             <UiButton action="setup" content="iconText" variant="secondary" controlSize="compact" onClick={() => setModal({ kind: "onboard" })}>
@@ -526,8 +489,7 @@ export function ConnectorManager() {
         </div>
 
         {instances.length === 0 && (
-          <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-content-muted">
-            No connector is running on this Mac. Add a host or use a pairing code.
+          <p className="mb-3 rounded-sm bg-zinc-800/60 px-3 py-4 text-compact text-content-muted"><HelpLabel help={<>Add a host or use a pairing code.</>}>No connector is running on this Mac.</HelpLabel>
           </p>
         )}
 
@@ -677,14 +639,14 @@ export function ConnectorManager() {
 
       {/* ── Modals ── */}
       {modal?.kind === "redeem" && (
-        <Dialog title="I have a code" onClose={() => setModal(null)} maxWidth="max-w-lg">
-          <div className="space-y-3">
-            <p className="text-compact text-content-muted">
-              Paste the one-time code from wherever the bot was created — the
+        <Dialog title={<HelpLabel help={<>Paste the one-time code from wherever the bot was created — the
               Cheers app on your phone, the web UI, or a teammate. This Mac
-              becomes the machine that runs it.
-            </p>
+              becomes the machine that runs it.</>}>{"I have a code"}</HelpLabel>} onClose={() => setModal(null)} maxWidth="max-w-lg">
+          <div className="space-y-3">
+
+            <Field label="Pairing code" htmlFor="connector-pairing-code" hint="Codes are single-use and expire after about 15 minutes.">
             <UiInput
+              id="connector-pairing-code"
               value={pairingCode}
               onChange={(e) => setPairingCode(e.target.value)}
               placeholder="agbpair_…"
@@ -692,9 +654,9 @@ export function ConnectorManager() {
               controlSize="regular"
               className="font-code"
             />
+            </Field>
             <p className="text-compact text-content-muted">
-              Codes are single-use and expire after about 15 minutes. Using one
-              activates this host, so the bot's previously active
+              Using this code activates this host, so the bot's previously active
               host will stop.
             </p>
             <div className="flex justify-end gap-2">
@@ -715,12 +677,8 @@ export function ConnectorManager() {
           <OnboardForm
             bots={bots}
             existingBotId={existingBotId}
-            setExistingBotId={setExistingBotId}
             agentType={agentType}
-            setAgentType={setAgentType}
-            onboarding={onboarding}
-            onboardingError={onboardingError}
-            onSubmit={() => void onboard()}
+            onDone={() => { setModal(null); refresh(); }}
             advancedOpen={advancedOpen}
             setAdvancedOpen={setAdvancedOpen}
             newName={newName}
@@ -766,17 +724,16 @@ export function ConnectorManager() {
       )}
 
       {modal?.kind === "workspace" && (
-        <Dialog title={`Workspace — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-lg">
-          <p className="text-compact text-content-muted mb-3">
-            Open the agent's own directories in a local editor or Finder — only
-            this desktop app can reach your disk.
-          </p>
+        <Dialog title={<HelpLabel help={<>Open the agent's own directories in a local editor or Finder — only
+            this desktop app can reach your disk.</>}>{`Workspace — ${modal.inst.name}`}</HelpLabel>} onClose={() => setModal(null)} maxWidth="max-w-lg">
+
           {roots === null ? (
             <p className="text-compact text-content-muted">Loading…</p>
           ) : wsDirs.length === 0 ? (
             <p className="text-compact text-content-muted">
-              No workspace roots on disk (check the config's{" "}
-              <code className="bg-zinc-800 rounded-sm px-1">[policy.workspace]</code>).
+              <HelpLabel help={<>Check <code>[policy.workspace]</code> in the connector config.</>}>
+                No workspace roots on disk.
+              </HelpLabel>
             </p>
           ) : (
             <div className="space-y-3">
@@ -960,11 +917,10 @@ function AuditTimeline({
         </UiButton>
       </div>
       {shown.length === 0 ? (
-        <p className="text-compact text-content-muted">
-          No audit events yet. Advanced per-command and file detail requires{" "}
+        <HelpLabel help={<> Advanced per-command and file detail requires{" "}
           <code className="bg-zinc-800 rounded-sm px-1">RUST_LOG=debug</code>; default logs still show
           restarts, permission asks/decisions and errors.
-        </p>
+        </>}>No audit events yet.</HelpLabel>
       ) : (
         <div className="space-y-2 max-h-[60vh] overflow-auto pr-1" role="list">
           {shown.map((e, i) => (
@@ -1001,12 +957,8 @@ function AuditRow({ e }: { e: AuditEvent }) {
 function OnboardForm(props: {
   bots: BotItem[];
   existingBotId: string;
-  setExistingBotId: (v: string) => void;
   agentType: AgentType;
-  setAgentType: (v: AgentType) => void;
-  onboarding: boolean;
-  onboardingError: string | null;
-  onSubmit: () => void;
+  onDone: () => void;
   advancedOpen: boolean;
   setAdvancedOpen: (v: boolean) => void;
   newName: string;
@@ -1019,66 +971,7 @@ function OnboardForm(props: {
   const p = props;
   return (
     <div className="grid gap-3">
-      <div className="rounded-sm bg-indigo-950/35 p-3 text-compact text-accent-100">
-        <p className="font-medium">Four steps, all on this Mac</p>
-        <p className="mt-1 text-accent-200/75">
-          Choose a bot → check its agent → save its host config → start and verify it.
-          If startup fails, the host remains below with recovery and diagnostics.
-        </p>
-      </div>
-      <Field label="Bot identity" htmlFor="onb-bot">
-          <UiSelect
-            id="onb-bot"
-            value={p.existingBotId}
-            onChange={(e) => p.setExistingBotId(e.target.value)}
-            controlSize="regular"
-          >
-            {p.bots.length === 0 && <option value="">No manageable bots</option>}
-            {p.bots.map((b) => (
-              <option key={b.bot_id} value={b.bot_id}>
-                {b.display_name || b.username}
-              </option>
-            ))}
-          </UiSelect>
-        </Field>
-      {p.bots.length === 0 && <div className="rounded-sm bg-amber-950/30 p-3 text-compact text-warning-200">
-        Create a bot identity first; hosts cannot create bots.
-        <div className="mt-2"><Button action="open" variant="secondary" controlSize="compact" onClick={() => window.location.assign("/fleet/bots")}>Create bot in Fleet</Button></div>
-      </div>}
-
-      <Field label="Agent">
-        <AgentPicker
-          value={p.agentType}
-          onPick={(key) => {
-            // Picker keys are Cheers agent ids (claude/codex/opencode/registry-id)
-            // or "custom" → generic placeholder config.
-            p.setAgentType(key === "custom" ? "generic" : key);
-          }}
-        />
-      </Field>
-
-      <AgentUpdates />
-
-      {p.onboardingError && (
-        <div className="rounded-sm bg-rose-950/35 p-3 text-compact text-removed-200">
-          <p className="font-medium">Setup needs attention</p>
-          <p className="mt-1 wrap-break-word text-removed-200/80">{p.onboardingError}</p>
-          <p className="mt-1 text-removed-200/70">
-            You can fix the agent or configuration and retry. The saved host remains on this page.
-          </p>
-        </div>
-      )}
-
-      <div>
-        <Button action="setup" content="iconText"
-          controlSize="compact"
-          loading={p.onboarding}
-          disabled={p.onboarding || !p.existingBotId}
-          onClick={p.onSubmit}
-        >
-          <Play className="w-3.5 h-3.5" />
-        </Button>
-      </div>
+      <LocalHostSetup bots={p.bots} initialBotId={p.existingBotId} initialAgent={p.agentType} onDone={p.onDone} />
 
       <div>
         <UiButton action={p.advancedOpen ? "collapse" : "expand"} variant="plain"
@@ -1090,6 +983,7 @@ function OnboardForm(props: {
         </UiButton>
         {p.advancedOpen && (
           <div className="grid gap-3 mt-3">
+            <AgentUpdates />
             <Field label="Name" htmlFor="conn-name">
               <Input
                 id="conn-name"

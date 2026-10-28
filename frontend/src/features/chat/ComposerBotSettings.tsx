@@ -1,15 +1,16 @@
 import { Select as UiSelect } from "@/components/ui/select";
-import { useEffect, useMemo, useState } from "react";
+import { Field } from "@/components/ui/field";
+import { controlIconClasses } from "@/components/ui/control-size";
+import { useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
 import { SlidersHorizontal, Lock } from "lucide-react";
 import {
   setSessionMode,
   setSessionConfigOption,
-  type SessionControls,
-  type SessionInfo,
 } from "@/api/sessionControl";
-import { readBotControls, bustBotControls } from "./sessionControlsCache";
+import { useBotControls, resolveTargetSession, bustBotControls } from "./sessionControlsCache";
+import { AgentOptionsFeedback } from "@/features/bots/AgentOptionsFeedback";
 
 export interface MentionedBot {
   botId: string;
@@ -35,14 +36,10 @@ export function ComposerBotSettings({
   channelId,
   bots,
   selectedSessionId,
-  onApplied,
 }: {
   channelId: string;
   bots: MentionedBot[];
   selectedSessionId: string;
-  /** Fires after a mode/config change lands (cache already busted) — lets the
-      model chip re-resolve its label. */
-  onApplied?: () => void;
 }) {
   return (
     <>
@@ -52,7 +49,6 @@ export function ComposerBotSettings({
           channelId={channelId}
           bot={b}
           selectedSessionId={selectedSessionId}
-          onApplied={onApplied}
         />
       ))}
     </>
@@ -63,49 +59,22 @@ function BotInlineSettings({
   channelId,
   bot,
   selectedSessionId,
-  onApplied,
 }: {
   channelId: string;
   bot: MentionedBot;
   selectedSessionId: string;
-  onApplied?: () => void;
 }) {
-  const [controls, setControls] = useState<SessionControls | null>(null);
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const { data, loading, error, refresh } = useBotControls(channelId, bot.botId, selectedSessionId);
+  const controls = data?.controls;
   const [busy, setBusy] = useState(false);
   // Optimistic overlay so an applied change shows immediately; cleared when the
   // baseline (target session / controls) changes.
   const [localMode, setLocalMode] = useState<string | null>(null);
   const [localCfg, setLocalCfg] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // Shared read-through cache — the model chip already fetched this pair
-        // for its label, so opening the popover usually costs no request.
-        const { controls: c, sessions: s } = await readBotControls(channelId, bot.botId);
-        if (cancelled) return;
-        setControls(c);
-        setSessions(s);
-      } catch {
-        /* not a channel member — render nothing */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [channelId, bot.botId]);
-
-  // The session this message will hit: the selected one if it's this bot's, else
-  // its primary. Drives both the displayed current values and the apply target.
-  const targetSession = useMemo(
-    () =>
-      sessions.find((s) => s.session_id === selectedSessionId) ||
-      sessions.find((s) => s.is_primary) ||
-      sessions[0],
-    [sessions, selectedSessionId]
-  );
+  // An explicit target must resolve exactly; only automatic routing falls back
+  // to the primary. A missing pinned target never edits another session.
+  const targetSession = resolveTargetSession(data?.sessions ?? [], selectedSessionId);
   const target = targetSession?.session_id || "";
 
   // New baseline → drop optimistic overlays.
@@ -114,11 +83,14 @@ function BotInlineSettings({
     setLocalCfg({});
   }, [target, controls]);
 
-  if (!controls) return null;
+  if (error || !controls) return <AgentOptionsFeedback loading={loading || !error} error={error} onRetry={refresh} />;
   const hasMode = controls.allowed_modes.length > 0;
-  if (!hasMode && controls.config_options.length === 0) return null;
 
-  async function apply(fn: () => Promise<void>, optimistic: () => void) {
+  async function apply(
+    fn: () => Promise<void>,
+    optimistic: () => void,
+    rollback: () => void,
+  ) {
     setBusy(true);
     optimistic();
     try {
@@ -126,51 +98,51 @@ function BotInlineSettings({
       // Server state moved: drop the cached controls/sessions pair so the model
       // chip (and the next popover open) re-reads the effective values.
       bustBotControls(channelId, bot.botId);
-      onApplied?.();
       toast.success("Applied");
     } catch (e) {
+      // Keep the control aligned with the server's effective value after a
+      // rejected update; the overlay only exists to make successful changes
+      // feel immediate.
+      rollback();
       notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }
   }
 
-  const selOn = "text-compact text-content-secondary";
-  // Read-only look: muted, no caret, not-allowed cursor — "you can see it, not change it".
-  const selOff = "text-compact text-content-muted opacity-50 cursor-not-allowed appearance-none";
-
   // Effective current values: optimistic overlay → session override → bot/agent default.
   const mode = localMode ?? targetSession?.session_config?.permission_mode ?? controls.current_mode ?? "";
-  const canMode = controls.can_set_mode && !!target;
+  const canMode = controls.can_set_mode && !!target && !loading;
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-sm bg-control/40 px-2 py-1">
+    <div className="flex min-w-0 flex-col gap-3" aria-busy={loading}>
       <span className="inline-flex items-center gap-1">
-        <SlidersHorizontal className="w-3.5 h-3.5 text-content-muted" />
-        <span className="text-compact font-medium text-content-secondary">@{bot.name}</span>
+        <SlidersHorizontal className={controlIconClasses.regular} />
+        <span className="truncate text-regular font-semibold text-content-primary">@{bot.name}</span>
       </span>
 
+      {!target && (
+        <p className="text-regular text-content-muted" role="status">
+          {selectedSessionId ? "The pinned session is unavailable. Switch sessions to change its settings." : "Start a session to change these settings."}
+        </p>
+      )}
+
       {hasMode && (
-        <span
-          className="inline-flex items-center gap-1"
-          title={controls.can_set_mode ? "Session mode" : "Session mode — read-only (no permission)"}
-        >
-          <span className="text-minimal text-content-muted">mode</span>
-          {!controls.can_set_mode && <Lock className="h-3.5 w-3.5 text-content-muted" />}
+        <Field label={<span className="inline-flex items-center gap-1">Mode{!controls.can_set_mode && <Lock className={controlIconClasses.regular} aria-label="Read only" />}</span>}>
           <UiSelect
             value={mode}
+            aria-label={`Mode for @${bot.name}`}
             disabled={!canMode || busy}
-            controlSize="compact"
-            controlWidth="content"
-            variant={canMode ? "default" : "plain"}
+            controlSize="regular"
+            controlWidth="fill"
             onChange={(e) => {
               const v = e.target.value;
               apply(
                 () => setSessionMode(channelId, bot.botId, target, v),
-                () => setLocalMode(v)
+                () => setLocalMode(v),
+                () => setLocalMode(mode),
               );
             }}
-            className={canMode ? selOn : selOff}
           >
             {!mode && <option value="">—</option>}
             {!controls.allowed_modes.includes(mode) && mode && <option value={mode}>{mode}</option>}
@@ -180,38 +152,35 @@ function BotInlineSettings({
               </option>
             ))}
           </UiSelect>
-        </span>
+        </Field>
       )}
 
       {controls.config_options.map((opt) => {
-        const canCfg = controls.can_set_config_option && !!target;
+        const canCfg = controls.can_set_config_option && !!target && !loading;
         const cur =
           localCfg[opt.id] ??
           targetSession?.session_config?.config_options?.[opt.id] ??
           opt.currentValue ??
           "";
         return (
-          <span
+          <Field
             key={opt.id}
-            className="inline-flex items-center gap-1"
-            title={canCfg ? opt.name : `${opt.name} — read-only (no permission)`}
+            label={<span className="inline-flex items-center gap-1">{opt.name}{!controls.can_set_config_option && <Lock className={controlIconClasses.regular} aria-label="Read only" />}</span>}
           >
-            <span className="text-minimal text-content-muted">{opt.name}</span>
-            {!controls.can_set_config_option && <Lock className="h-3.5 w-3.5 text-content-muted" />}
             <UiSelect
               value={cur}
+              aria-label={`${opt.name} for @${bot.name}`}
               disabled={!canCfg || busy}
-              controlSize="compact"
-              controlWidth="content"
-              variant={canCfg ? "default" : "plain"}
+              controlSize="regular"
+              controlWidth="fill"
               onChange={(e) => {
                 const v = e.target.value;
                 apply(
                   () => setSessionConfigOption(channelId, bot.botId, target, opt.id, v),
-                  () => setLocalCfg((c) => ({ ...c, [opt.id]: v }))
+                  () => setLocalCfg((c) => ({ ...c, [opt.id]: v })),
+                  () => setLocalCfg((c) => ({ ...c, [opt.id]: cur })),
                 );
               }}
-              className={canCfg ? selOn : selOff}
             >
               {!cur && <option value="">—</option>}
               {!opt.options.some((o) => o.value === cur) && cur && <option value={cur}>{cur}</option>}
@@ -221,9 +190,10 @@ function BotInlineSettings({
                 </option>
               ))}
             </UiSelect>
-          </span>
+          </Field>
         );
       })}
-    </span>
+      {controls.config_options.length === 0 && <AgentOptionsFeedback loading={loading} onRetry={refresh} />}
+    </div>
   );
 }

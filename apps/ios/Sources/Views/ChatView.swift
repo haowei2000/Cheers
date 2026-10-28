@@ -88,11 +88,10 @@ private struct ChannelMessageSearchSheet: View {
         NavigationStack {
             Group {
                 if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    ContentUnavailableView(
-                        "Search messages",
-                        systemImage: "magnifyingglass",
-                        description: Text("Search the full history of #\(channel.displayName).")
-                    )
+                    ContentUnavailableView {
+                        Label("Search messages", systemImage: "magnifyingglass")
+                            .helpExplanation("Search the full history of #\(channel.displayName).")
+                }
                 } else if isSearching && results.isEmpty {
                     ProgressView("Searching…")
                 } else if let errorText, results.isEmpty {
@@ -677,7 +676,10 @@ struct ChatView: View {
             onFile: { artifactReference = "cheers:inbox/\($0.fileId)"; panel = .workbench },
             onReport: { reportTarget = $0 },
             onBlock: { blockTarget = $0 },
-            onStop: { message in Task { await model.stopTurn(msgId: message.msgId) } }
+            onStop: { message in Task { await model.stopTurn(msgId: message.msgId) } },
+            onResolveTaskClaim: { claimId, decision in
+                try await model.resolveTaskClaim(claimId: claimId, decision: decision)
+            }
         )
         .overlay(alignment: .bottomTrailing) {
             if !atBottom || model.hasTrimmedNewer {
@@ -952,6 +954,7 @@ private struct ChatCollectionTimeline: UIViewRepresentable {
     let onReport: (MessageDto) -> Void
     let onBlock: (MessageDto) -> Void
     let onStop: (MessageDto) -> Void
+    let onResolveTaskClaim: (String, String) async throws -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -1020,7 +1023,8 @@ private struct ChatCollectionTimeline: UIViewRepresentable {
                     onFile: self.parent.onFile,
                     onReport: self.parent.onReport,
                     onBlock: self.parent.onBlock,
-                    onStop: self.parent.onStop
+                    onStop: self.parent.onStop,
+                    onResolveTaskClaim: self.parent.onResolveTaskClaim
                 )
                 .environment(self.parent.app)
             }
@@ -1162,6 +1166,7 @@ private struct ChatTimelineRow: View {
     let onReport: (MessageDto) -> Void
     let onBlock: (MessageDto) -> Void
     let onStop: (MessageDto) -> Void
+    let onResolveTaskClaim: (String, String) async throws -> Void
 
     @ViewBuilder
     var body: some View {
@@ -1243,7 +1248,8 @@ private struct ChatTimelineRow: View {
                     ) : nil
                 )
                 if message.msgType == "task_claim_confirmation" {
-                    TaskClaimConfirmationFooter(message: message, channelId: channelId)
+                    TaskClaimConfirmationFooter(message: message, onResolve: onResolveTaskClaim)
+                        .id(message.msgId)
                         .padding(.leading, 58 + CGFloat(depth) * 16)
                 }
             }
@@ -1396,6 +1402,7 @@ private struct ForwardSheet: View {
 /// trail — who approved/denied which agent action, when.
 
 // MARK: - File preview sheet
+
 
 
 private struct ResourceContextSheet: View {

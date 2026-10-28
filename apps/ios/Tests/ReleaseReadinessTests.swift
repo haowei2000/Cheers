@@ -599,6 +599,148 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertEqual(MessageTree.permissionSourceId(perm), "bot1")
     }
 
+    @MainActor
+    func testTaskClaimEventRequiresMatchingEnvelopeChannel() throws {
+        let event = Data("""
+        {"type":"task_claim_updated","channel_id":"c1","data":{
+          "claim_id":"claim1","channel_id":"c1","status":"cancelled","execution_msg_id":null,
+          "confirmation_message":{"msg_id":"confirmation1","content_data":{
+            "claim_id":"claim1","claim_status":"cancelled","claim_revision":3,"resolved":true}},
+          "future_field":true}}
+        """.utf8)
+        let update = try XCTUnwrap(ChatSocket.taskClaimUpdate(from: event))
+        XCTAssertEqual(update.status, "cancelled")
+        let wrongChannel = Data(String(decoding: event, as: UTF8.self)
+            .replacingOccurrences(of: "\"channel_id\":\"c1\",\"data\"", with: "\"channel_id\":\"c2\",\"data\"").utf8)
+        XCTAssertNil(ChatSocket.taskClaimUpdate(from: wrongChannel))
+    }
+
+    func testTaskClaimHttpAndSocketProjectionsCannotDowngradeEachOther() {
+        let pending = claimConfirmation(status: "pending", revision: 1)
+        let cancelled = TaskClaimUpdate(
+            claimId: "claim1", channelId: "c1", status: "cancelled", executionMsgId: nil,
+            confirmationMessage: .init(msgId: pending.msgId, contentData: claimData(status: "cancelled", revision: 3))
+        )
+        let lateApproval = TaskClaimUpdate(
+            claimId: "claim1", channelId: "c1", status: "executing", executionMsgId: "execution1",
+            confirmationMessage: .init(msgId: pending.msgId, contentData: claimData(status: "executing", revision: 2))
+        )
+        let current = TaskClaimProjection.applying(cancelled, to: pending)
+        XCTAssertEqual(current.contentData?["claim_status"]?.stringValue, "cancelled")
+        XCTAssertEqual(current.content, pending.content)
+        XCTAssertEqual(current.channelSeq, pending.channelSeq)
+        XCTAssertEqual(TaskClaimProjection.applying(lateApproval, to: current), current)
+        XCTAssertEqual(TaskClaimProjection.applying(cancelled, to: current), current)
+        XCTAssertEqual(TaskClaimProjection.preservingNewerMetadata(in: pending, previous: current), current)
+    }
+
+    func testTaskClaimProjectionRejectsUnrelatedMessagesAndMalformedRevisions() {
+        let pending = claimConfirmation(status: "pending", revision: 1)
+        func update(channel: String = "c1", claim: String = "claim1", message: String = "confirmation1", revision: Double = 2) -> TaskClaimUpdate {
+            .init(claimId: claim, channelId: channel, status: "failed", executionMsgId: nil,
+                  confirmationMessage: .init(msgId: message, contentData: claimData(status: "failed", revision: revision)))
+        }
+        for invalid in [update(channel: "c2"), update(claim: "other"), update(message: "source1"), update(revision: 0), update(revision: 1.5)] {
+            XCTAssertEqual(TaskClaimProjection.applying(invalid, to: pending), pending)
+        }
+        var other = pending
+        other.msgType = "normal"
+        XCTAssertEqual(TaskClaimProjection.applying(update(), to: other), other)
+        other = pending
+        other.isDeleted = true
+        XCTAssertEqual(TaskClaimProjection.applying(update(), to: other), other)
+    }
+
+    func testTaskClaimWarmCacheRevalidationPreservesNewerProjection() {
+        var legacy = claimConfirmation(status: "pending", revision: 1)
+        legacy.contentData = .object(["claim_id": .string("claim1"), "resolved": .bool(false)])
+        XCTAssertTrue(TaskClaimProjection.needsRevalidation(legacy))
+        let executing = claimConfirmation(status: "executing", revision: 2)
+        XCTAssertTrue(TaskClaimProjection.needsRevalidation(executing))
+        let completed = claimConfirmation(status: "completed", revision: 3)
+        XCTAssertFalse(TaskClaimProjection.needsRevalidation(completed))
+        XCTAssertEqual(TaskClaimProjection.applyingSnapshot(completed, to: legacy).contentData, completed.contentData)
+        XCTAssertEqual(TaskClaimProjection.applyingSnapshot(executing, to: completed), completed)
+        var unrelated = completed
+        unrelated.msgId = "another-message"
+        XCTAssertEqual(TaskClaimProjection.applyingSnapshot(unrelated, to: legacy), legacy)
+        var legacyClosed = legacy
+        legacyClosed.contentData = .object(["claim_id": .string("claim1"), "resolved": .bool(true)])
+        XCTAssertEqual(TaskClaimProjection.applyingSnapshot(legacy, to: legacyClosed), legacyClosed)
+        var equalRevisionPending = completed
+        equalRevisionPending.contentData = claimData(status: "pending", revision: 3)
+        XCTAssertEqual(TaskClaimProjection.applyingSnapshot(equalRevisionPending, to: completed), completed)
+        XCTAssertNil(TaskClaimProjection.revision(claimData(status: "pending", revision: 9_007_199_254_740_992)))
+    }
+
+    func testDiscussionMergePreservesNewerTaskClaimMetadata() {
+        let root = MessageDto(msgId: "root", channelId: "c1", channelSeq: 1,
+                              senderType: "user", senderId: "u1", content: "Task")
+        var stale = claimConfirmation(status: "executing", revision: 2)
+        stale.replyToMsgId = root.msgId
+        var completed = claimConfirmation(status: "completed", revision: 3)
+        completed.replyToMsgId = root.msgId
+        let merged = MessageTree.mergeDiscussion(root: root, replies: [completed], live: [stale])
+        XCTAssertEqual(merged.first { $0.msgId == completed.msgId }?.contentData, completed.contentData)
+    }
+
+    func testTaskClaimRevalidationAppliesOnlyMatchingExplicitTombstones() {
+        let pending = claimConfirmation(status: "pending", revision: 1)
+        var tombstone = pending
+        tombstone.isDeleted = true
+        let deleted = TaskClaimProjection.applyingSnapshot(tombstone, to: pending)
+        XCTAssertEqual(deleted.isDeleted, true)
+        XCTAssertTrue(deleted.content.isEmpty)
+        XCTAssertFalse(TaskClaimProjection.needsRevalidation(deleted))
+        XCTAssertEqual(TaskClaimProjection.preservingNewerMetadata(in: pending, previous: deleted), deleted)
+
+        let completed = claimConfirmation(status: "completed", revision: 3)
+        let newerDeleted = TaskClaimProjection.applyingSnapshot(tombstone, to: completed)
+        XCTAssertEqual(newerDeleted.isDeleted, true)
+        XCTAssertEqual(newerDeleted.contentData, completed.contentData)
+        for keyPath in [\MessageDto.msgId, \MessageDto.channelId] {
+            var unrelated = tombstone
+            unrelated[keyPath: keyPath] = "another-id"
+            XCTAssertEqual(TaskClaimProjection.applyingSnapshot(unrelated, to: pending), pending)
+        }
+        var unrelated = tombstone
+        unrelated.senderId = "another-bot"
+        XCTAssertEqual(TaskClaimProjection.applyingSnapshot(unrelated, to: pending), pending)
+        unrelated = tombstone
+        unrelated.contentData = .object(["claim_id": .string("another-claim")])
+        XCTAssertEqual(TaskClaimProjection.applyingSnapshot(unrelated, to: pending), pending)
+    }
+
+    func testTaskClaimActionsRequirePendingOrLegacyUnresolvedState() {
+        let pending = claimConfirmation(status: "pending", revision: 1)
+        XCTAssertTrue(TaskClaimProjection.isUnresolved(pending))
+        var legacy = pending
+        legacy.contentData = .object(["claim_id": .string("claim1"), "resolved": .bool(false)])
+        XCTAssertTrue(TaskClaimProjection.isUnresolved(legacy))
+        for status in ["executing", "completed", "failed", "cancelled", "rejected", "unknown"] {
+            var inconsistent = claimConfirmation(status: status, revision: 2)
+            var fields = inconsistent.contentData!.objectValue!
+            fields["resolved"] = .bool(false)
+            inconsistent.contentData = .object(fields)
+            XCTAssertFalse(TaskClaimProjection.isUnresolved(inconsistent))
+        }
+        legacy.isDeleted = true
+        XCTAssertFalse(TaskClaimProjection.isUnresolved(legacy))
+    }
+
+    private func claimData(status: String, revision: Double) -> JSONValue {
+        .object(["claim_id": .string("claim1"), "requester_id": .string("u1"),
+                 "claim_status": .string(status), "claim_revision": .number(revision),
+                 "resolved": .bool(status != "pending")])
+    }
+
+    private func claimConfirmation(status: String, revision: Double) -> MessageDto {
+        MessageDto(msgId: "confirmation1", channelId: "c1", channelSeq: 2,
+                   senderType: "bot", senderId: "b1", content: "Claim request",
+                   msgType: "task_claim_confirmation", isPartial: false,
+                   contentData: claimData(status: status, revision: revision))
+    }
+
     private func permissionRequest(_ json: String) throws -> PermissionRequest {
         let value = try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
         return try XCTUnwrap(PermissionRequest(contentData: value))

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_bot_monitoring SET last_evaluated_seq=$3,\n                 next_eligible_at=clock_timestamp()+INTERVAL '10 seconds',updated_at=NOW()\n             WHERE channel_id=$1 AND bot_id=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "47037d1919becc3dd1f54bd2ce7f359094b56b202dc431fc369330633f23f8e4"
+}

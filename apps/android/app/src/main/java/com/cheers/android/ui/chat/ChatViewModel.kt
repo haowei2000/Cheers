@@ -5,12 +5,17 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.cheers.android.data.api.CheersApi
 import com.cheers.android.data.api.MessageDto
+import com.cheers.android.data.api.SendMessageRequest
 import com.cheers.android.data.api.userMessage
+import com.cheers.android.data.auth.SessionRefreshResult
 import com.cheers.android.data.ws.ChatSocket
 import com.cheers.android.data.ws.ConnectionStatus
 import com.cheers.android.data.ws.SocketEvent
 import com.cheers.android.di.AppContainer
+import com.cheers.android.di.SessionState
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -63,14 +68,16 @@ class ChatViewModel(
     isDm: Boolean,
 ) : ViewModel() {
 
-    private val repo = container.chatRepository
+    private val initialSession = container.currentSessionOrNull()
+    private val identity = initialSession?.identity
+    private val authRepository = container.authRepository
     private val json = container.json
 
     private val _state = MutableStateFlow(
         ChatUiState(
             title = initialTitle.ifBlank { "Conversation" },
             isDm = isDm,
-            currentUserId = container.currentSessionOrNull()?.userId,
+            currentUserId = initialSession?.userId,
         ),
     )
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
@@ -86,7 +93,7 @@ class ChatViewModel(
     private var markReadJob: Job? = null
 
     init {
-        val session = container.currentSessionOrNull()
+        val session = initialSession
         if (session == null) {
             _state.update { it.copy(loading = false, fatalError = "Not signed in") }
         } else {
@@ -94,14 +101,29 @@ class ChatViewModel(
                 client = container.httpClient,
                 json = json,
                 wsUrl = container.wsUrl(session.serverUrl),
-                token = session.token,
+                identity = session.identity,
+                authRepository = authRepository,
                 channelId = channelId,
                 scope = viewModelScope,
             )
             socket = s
             viewModelScope.launch { s.events.collect(::onSocketEvent) }
             viewModelScope.launch {
-                s.status.collect { st -> _state.update { it.copy(connection = st) } }
+                s.status.collect { st ->
+                    if (isCurrent()) _state.update { it.copy(connection = st) }
+                }
+            }
+            viewModelScope.launch {
+                var observedToken = session.token
+                container.sessionState.collect { state ->
+                    val current = (state as? SessionState.LoggedIn)?.session
+                    if (current == null || current.identity != session.identity) {
+                        s.stop()
+                    } else if (current.token != observedToken) {
+                        observedToken = current.token
+                        s.credentialsChanged()
+                    }
+                }
             }
             s.start()
             viewModelScope.launch { initialLoad() }
@@ -112,6 +134,20 @@ class ChatViewModel(
     override fun onCleared() {
         socket?.stop()
         super.onCleared()
+    }
+
+    private suspend fun isCurrent(): Boolean =
+        identity?.let { authRepository.isCurrent(it) } == true
+
+    /** Bind each call to this page's login; refresh never retargets an old VM. */
+    private suspend fun scopedApi(): CheersApi {
+        val expected = identity ?: throw CancellationException("No active session")
+        return when (val result = authRepository.validSession(expected)) {
+            is SessionRefreshResult.Fresh -> container.apiFor(result.session)
+            SessionRefreshResult.Retryable -> throw IOException("Connection temporarily unavailable")
+            SessionRefreshResult.Ended, SessionRefreshResult.Stale ->
+                throw CancellationException("Session changed")
+        }
     }
 
     // ── Ordering (clone of web sortMessages/upsertMessage) ──
@@ -145,7 +181,8 @@ class ChatViewModel(
 
     private suspend fun initialLoad() {
         try {
-            val page = repo.listMessages(channelId, limit = 50)
+            val page = scopedApi().listMessages(channelId, limit = 50)
+            if (!isCurrent()) return
             _state.update {
                 it.copy(
                     messages = merge(it.messages, page.messages),
@@ -158,6 +195,7 @@ class ChatViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
+            if (!isCurrent()) return
             _state.update { it.copy(loading = false, fatalError = t.userMessage(json)) }
         }
     }
@@ -168,10 +206,11 @@ class ChatViewModel(
         try {
             // No seq known yet (channel was empty) → re-pull the newest page.
             val page = if (since == null) {
-                repo.listMessages(channelId, limit = 50)
+                scopedApi().listMessages(channelId, limit = 50)
             } else {
-                repo.listMessages(channelId, sinceSeq = since)
+                scopedApi().listMessages(channelId, sinceSeq = since)
             }
+            if (!isCurrent()) return
             if (page.messages.isNotEmpty()) {
                 _state.update { st ->
                     st.copy(
@@ -199,7 +238,8 @@ class ChatViewModel(
         _state.update { it.copy(loadingOlder = true) }
         viewModelScope.launch {
             try {
-                val page = repo.listMessages(channelId, before = oldest, limit = 50)
+                val page = scopedApi().listMessages(channelId, before = oldest, limit = 50)
+                if (!isCurrent()) return@launch
                 _state.update {
                     it.copy(
                         messages = merge(it.messages, page.messages),
@@ -210,6 +250,7 @@ class ChatViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
+                if (!isCurrent()) return@launch
                 _state.update {
                     it.copy(loadingOlder = false, transientError = t.userMessage(json))
                 }
@@ -218,15 +259,20 @@ class ChatViewModel(
     }
 
     private suspend fun loadMembers() {
-        runCatching { repo.listMembers(channelId) }
-            .onSuccess { members ->
-                _state.update { it.copy(memberCount = members.size) }
-            }
+        try {
+            val members = scopedApi().listMembers(channelId)
+            if (isCurrent()) _state.update { it.copy(memberCount = members.size) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            // Presence and subsequent reloads can recover a transient failure.
+        }
     }
 
     // ── Realtime ──
 
-    private fun onSocketEvent(event: SocketEvent) {
+    private suspend fun onSocketEvent(event: SocketEvent) {
+        if (!isCurrent()) return
         when (event) {
             SocketEvent.Subscribed -> {
                 if (loadedOnce) viewModelScope.launch { catchUp() }
@@ -274,6 +320,9 @@ class ChatViewModel(
             is SocketEvent.AuthError -> {
                 _state.update { it.copy(transientError = "Realtime connection: ${event.reason}") }
             }
+            is SocketEvent.ChannelError -> {
+                _state.update { it.copy(fatalError = event.reason) }
+            }
         }
     }
 
@@ -286,13 +335,15 @@ class ChatViewModel(
         _state.update { it.copy(sending = true) }
         viewModelScope.launch {
             try {
-                val sent = repo.sendMessage(channelId, text)
+                val sent = scopedApi().sendMessage(channelId, SendMessageRequest(content = text))
+                if (!isCurrent()) return@launch
                 _state.update {
                     it.copy(messages = upsert(it.messages, sent), sending = false)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
+                if (!isCurrent()) return@launch
                 // Give the text back if the composer is still empty.
                 if (draft.value.isEmpty()) draft.value = text
                 _state.update {
@@ -313,7 +364,7 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 if (artifact.sourceKind == "attachment") {
-                    container.currentApi().downloadFile(artifact.sourceId).use { response ->
+                    scopedApi().downloadFile(artifact.sourceId).use { response ->
                         withContext(Dispatchers.IO) {
                             (openOutput() ?: error("Could not open the selected destination")).use { output ->
                                 response.byteStream().use { it.copyTo(output) }
@@ -344,7 +395,13 @@ class ChatViewModel(
         markReadJob?.cancel()
         markReadJob = viewModelScope.launch {
             delay(500)
-            runCatching { repo.markRead(channelId) }
+            try {
+                scopedApi().markRead(channelId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // Read receipts are best effort; never replay the POST automatically.
+            }
         }
     }
 

@@ -453,11 +453,13 @@ mod contract_tests {
 /// All traces for one bot turn, oldest-first (the per-turn replay/display query).
 pub async fn list_for_message(
     db: &PgPool,
+    channel_id: &str,
     msg_id: &str,
     limit: i64,
 ) -> Result<Vec<Value>, sqlx::Error> {
-    let rows = sqlx::query_as!(crate::infra::db::query_rows::TraceRow, r###"SELECT id, msg_id, channel_id, bot_id, task_id, run_id, trace_seq, stream, kind, phase, status, title, message, data, request_id, approval_kind, decision, option_id, actor_id, created_at FROM message_traces WHERE msg_id = $1 ORDER BY trace_seq ASC LIMIT $2"###,
+    let rows = sqlx::query_as!(crate::infra::db::query_rows::TraceRow, r###"SELECT id, msg_id, channel_id, bot_id, task_id, run_id, trace_seq, stream, kind, phase, status, title, message, data, request_id, approval_kind, decision, option_id, actor_id, created_at FROM message_traces WHERE msg_id = $1 AND channel_id = $2 ORDER BY trace_seq ASC LIMIT $3"###,
         msg_id,
+        channel_id,
         limit,
     ).fetch_all(db)
         .await?;

@@ -1,30 +1,19 @@
-import { useEffect, useState } from "react";
-import { getChannelProfile, type ChannelProfile } from "@/api/channelProfiles";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import type { ChannelProfile } from "@/api/channelProfiles";
+import { channelProfileStore } from "@/stores/channelProfileStore";
 
 export function useChannelProfile(
   channelId: string,
   enabled = true,
   refreshKey?: unknown,
 ): ChannelProfile | null {
-  const [profile, setProfile] = useState<ChannelProfile | null>(null);
-
-  useEffect(() => setProfile(null), [channelId]);
-
+  const resource = channelProfileStore.resource(channelId);
+  const key = useRef(refreshKey);
+  key.current = refreshKey;
+  const subscribe = useMemo(() => (notify: () => void) => resource.subscribe(notify, enabled, key.current), [resource, enabled]);
+  const profile = useSyncExternalStore(subscribe, resource.snapshot, resource.snapshot);
   useEffect(() => {
-    if (!enabled) return;
-    let active = true;
-    const load = () => {
-      void getChannelProfile(channelId)
-        .then((value) => { if (active) setProfile(value); })
-        .catch(() => { if (active) setProfile(null); });
-    };
-    load();
-    const interval = window.setInterval(load, 5000);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [channelId, enabled, refreshKey]);
-
+    if (enabled) resource.invalidate(refreshKey);
+  }, [resource, enabled, refreshKey]);
   return profile;
 }

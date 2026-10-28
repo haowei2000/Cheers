@@ -172,6 +172,21 @@ async fn main() -> anyhow::Result<()> {
     let bot_locator = locator as Arc<dyn gateway::registry::BotLocator>;
 
     let stream_registry = StreamRegistry::new();
+    // Return prepaid Delta capability uses of streams that ended on any path
+    // (cancel, reclaim, finalize, disconnect) without spending them.
+    if let Some(mut refunds) = stream_registry.take_refund_receiver() {
+        let db = db.clone();
+        tokio::spawn(async move {
+            while let Some(refund) = refunds.recv().await {
+                server::domain::acp_capability::refund_delta_uses(
+                    &db,
+                    &refund.delegation_id,
+                    refund.unused,
+                )
+                .await;
+            }
+        });
+    }
     let workspace_rpc = Arc::new(gateway::workspace_rpc::WorkspaceRpc::new());
 
     // Web Push (PWA notifications): disabled unless a VAPID key is configured.
@@ -217,6 +232,15 @@ async fn main() -> anyhow::Result<()> {
         web_push,
         push,
     };
+
+    // Recover admitted dispatches from the existing run ledger. Socket
+    // enqueue is not a receipt; only an execution grant ends delivery retries.
+    gateway::dispatch_intents::spawn(
+        state.db.clone(),
+        state.stream_registry.clone(),
+        state.fanout.clone(),
+        state.bot_locator.clone(),
+    );
 
     // Orphan-placeholder reclaimer (flow 8 gap): finalize placeholders that
     // never got a `done` (backend restart lost the in-memory registry, or a bot
@@ -292,9 +316,19 @@ async fn main() -> anyhow::Result<()> {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
-            match server::api::task_claims::sweep_expired_claims(&sweep_state.db).await {
-                Ok(0) => {}
-                Ok(n) => tracing::info!(expired = n, "task-claim expiry sweep"),
+            match server::domain::task_claims::expire(&sweep_state.db).await {
+                Ok(updates) => {
+                    if !updates.is_empty() {
+                        tracing::info!(expired = updates.len(), "task-claim expiry sweep");
+                    }
+                    for update in updates {
+                        gateway::resource_effects::publish_claim_update(
+                            sweep_state.fanout.as_ref(),
+                            &update,
+                        )
+                        .await;
+                    }
+                }
                 Err(e) => tracing::warn!(err = %e, "task-claim expiry sweep failed"),
             }
         }
@@ -330,15 +364,23 @@ async fn main() -> anyhow::Result<()> {
 
     let app = router::build(state);
 
-    let addr = format!("0.0.0.0:{}", config.port);
+    // Local worktree/demo processes can bind loopback without exposing their
+    // development credentials on LAN interfaces. Containers retain the default.
+    let bind_address: std::net::IpAddr = std::env::var("BIND_ADDRESS")
+        .unwrap_or_else(|_| "0.0.0.0".into())
+        .parse()?;
+    let addr = std::net::SocketAddr::new(bind_address, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!(addr, "listening");
+    info!(addr = %addr, "listening");
     // ConnectInfo gives handlers the peer socket address — the rate limiter keys
     // on it unless TRUST_PROXY_HEADERS explicitly opts into proxy headers.
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    // Realtime WS frames (stream deltas, bridge frames) are small; Nagle plus
+    // delayed ACK would hold each one for tens of milliseconds.
+    .tcp_nodelay(true)
     .await?;
 
     Ok(())

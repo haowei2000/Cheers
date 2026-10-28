@@ -41,7 +41,7 @@ const secondToolEvent: TraceEvent = {
       operation: "run",
       confidence: "explicit",
       matched_by: "test",
-      command: "npm run typecheck",
+      command: "pnpm typecheck",
     },
   },
 };
@@ -127,7 +127,7 @@ describe("BotTracePanel disclosure labels", () => {
     );
 
     expect(markup).not.toContain("server/Cargo.toml");
-    expect(markup).toContain("npm run typecheck");
+    expect(markup).toContain("pnpm typecheck");
   });
 
   it("renders an inline approval without a duplicate trace header", () => {

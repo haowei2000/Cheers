@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM task_claim_evaluations\n               WHERE channel_id=$1 AND bot_id=$2 AND status='dispatched'\n                 AND source_seq_to=$3) AS \"pending!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fd47a21037ce7715ab3d19743112b02c3770927f0df0b43d447d880e5a90ff01"
+}

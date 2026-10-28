@@ -151,7 +151,7 @@ ACP/MCP 接入,而非内建。
 
 Cheers 有三种运行方式 —— 三种方式详见[部署指南](docs/help/deployment.zh-CN.md)：
 
-1. **源码运行** —— `cargo run` + `npm run dev`，依赖服务用 Docker（开发）。
+1. **源码运行** —— `cargo run` + `pnpm dev`，依赖服务用 Docker（开发）。
 2. **Docker Compose** —— 单机、全容器（自托管、演示）。见下方快速开始。
 3. **Helm / Kubernetes** —— 集群工作负载（生产、横向扩展）；chart 位于 `deploy/helm/cheers`。
 
@@ -198,8 +198,8 @@ cargo run
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 ## Bots

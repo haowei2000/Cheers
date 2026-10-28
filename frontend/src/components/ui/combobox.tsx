@@ -221,7 +221,8 @@ export function Combobox({
                   id={`${optionIdPrefix}-${index}`}
                   role="option"
                   aria-selected={optionSelected}
-                  selected={active || optionSelected}
+                  selected={optionSelected}
+                  highlighted={active}
                   disabled={option.disabled}
                   controlSize="regular"
                   label={option.label}

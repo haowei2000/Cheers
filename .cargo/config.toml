@@ -2,3 +2,13 @@
 # Checked SQLx queries use committed schema metadata for ordinary builds.
 # `cargo sqlx prepare` switches to online mode to refresh/check that metadata.
 SQLX_OFFLINE = { value = "true", force = false }
+
+[build]
+# Keep build artifacts local to each worktree to avoid Cargo target locks.
+incremental = false
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"

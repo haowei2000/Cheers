@@ -3,9 +3,11 @@ import toast from "react-hot-toast";
 import { listMessages } from "@/api/messages";
 import { markChannelRead } from "@/api/channels";
 import type { Channel, Message, PermissionContentData, TraceEvent } from "@/types";
-import { setChannelCache, seedFromCache } from "../chatCache";
+import { setChannelCache, seedFromCache, patchCachedMessageContentData, patchCachedMessage } from "../chatCache";
+import { clientSessionGeneration } from "@/lib/clientSession";
+import { reconcileClaimConfirmations } from "../reconcileClaimConfirmations";
 import { coalesceTraceEvents } from "../traceEvent";
-import { mergeMessages, sortMessages, upsertMessage } from "../messageCollection";
+import { mergeMessages, patchMessageContentData, sortMessages, upsertMessage } from "../messageCollection";
 
 export function useChannelMessages({
   channel,
@@ -13,12 +15,16 @@ export function useChannelMessages({
   activeChannelRef,
   patchChannel,
   onPermissionResolved,
+  additionalMessagesRef,
+  additionalMessageUpdatedRef,
 }: {
   channel: Channel | null;
   preview: boolean;
   activeChannelRef: MutableRefObject<string | null>;
   patchChannel: (channelId: string, patch: Partial<Channel>) => void;
   onPermissionResolved: () => void;
+  additionalMessagesRef?: MutableRefObject<Message[]>;
+  additionalMessageUpdatedRef?: MutableRefObject<((update: Partial<Message> & { msg_id: string }) => void) | null>;
 }) {
   const isPreview = preview;
   const [messages, setMessages] = useState<Message[]>([]);
@@ -26,6 +32,52 @@ export function useChannelMessages({
   const [loadError, setLoadError] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const reconciliationRef = useRef(new Map<string, { promise: Promise<void>; queued: Map<string, Message>; seen: Set<string> }>());
+  const reconcileLoadedClaims = useCallback((loaded?: Message[]) => {
+    if (!channel || isPreview) return Promise.resolve();
+    const cid = channel.channel_id;
+    const generation = clientSessionGeneration();
+    const key = `${generation}:${cid}`;
+    const candidates = [...(loaded ?? messagesRef.current), ...(additionalMessagesRef?.current ?? [])];
+    const inFlight = reconciliationRef.current.get(key);
+    if (inFlight) {
+      for (const message of candidates) {
+        if (inFlight.seen.has(message.msg_id)) continue;
+        inFlight.seen.add(message.msg_id);
+        inFlight.queued.set(message.msg_id, message);
+      }
+      return inFlight.promise;
+    }
+    const current = () => mountedRef.current && activeChannelRef.current === cid && clientSessionGeneration() === generation;
+    const queued = new Map(candidates.map((message) => [message.msg_id, message]));
+    const seen = new Set(queued.keys());
+    const apply = (message: Message) => {
+      setMessages((previous) => previous.some((row) => row.msg_id === message.msg_id) ? upsertMessage(previous, message) : previous);
+      patchCachedMessage(cid, message);
+      additionalMessageUpdatedRef?.current?.(message);
+    };
+    const pending = (async () => {
+      while (current() && queued.size) {
+        const targets = [...queued.values()];
+        queued.clear();
+        await reconcileClaimConfirmations(cid, targets, current, apply);
+      }
+    })().finally(() => {
+      if (reconciliationRef.current.get(key)?.promise !== pending) return;
+      reconciliationRef.current.delete(key);
+      // A history response can enqueue a target between the last pass and this settlement.
+      if (queued.size && current()) void reconcileLoadedClaims([...queued.values()]);
+    });
+    reconciliationRef.current.set(key, { promise: pending, queued, seen });
+    return pending;
+  }, [activeChannelRef, additionalMessageUpdatedRef, additionalMessagesRef, channel, isPreview]);
 
   // Highest delivered channel_seq, used as the reconnect/refresh catch-up cursor.
   const lastSeqRef = useRef(0);
@@ -45,18 +97,18 @@ export function useChannelMessages({
   // cache write-back effect can never attribute one channel's rows to another
   // during the one commit where `channel` has switched but `messages` hasn't.
   const msgsOwnerRef = useRef<string | null>(null);
+  const msgsGenerationRef = useRef(clientSessionGeneration());
   // `loading` mirrored for stable callbacks (handleReady's catch-up dedup).
   const loadingRef = useRef(false);
   const pendingCatchUpRef = useRef(false);
-  const catchUpInFlightRef = useRef(false);
+  const catchUpInFlightRef = useRef(new Set<string>());
   // A catch-up requested while one is already in flight used to be silently
   // dropped with no retry — if that request was healing the only gap covering
   // a message (e.g. a resubscribe racing a reconnect), the message could stay
   // permanently missing even though it persisted server-side (#330). Coalesce
   // instead: remember the latest overlapping request and run exactly one more
   // pass (with the freshest cursor) right after the in-flight one finishes.
-  const catchUpPendingRef = useRef(false);
-  const catchUpPendingSinceRef = useRef<number | undefined>(undefined);
+  const catchUpPendingRef = useRef(new Map<string, number | undefined>());
 
   // Reconnect/refresh self-heal: pull everything past our last seq and merge.
   // `sinceSeq` overrides the ref when the caller just seeded state (the ref
@@ -64,34 +116,35 @@ export function useChannelMessages({
   const catchUp = useCallback(
     async (sinceSeq?: number) => {
       if (!channel) return;
-      if (catchUpInFlightRef.current) {
-        catchUpPendingRef.current = true;
-        catchUpPendingSinceRef.current = sinceSeq;
+      const cid = channel.channel_id;
+      const generation = clientSessionGeneration();
+      const key = `${generation}:${cid}`;
+      if (catchUpInFlightRef.current.has(key)) {
+        catchUpPendingRef.current.set(key, sinceSeq);
         return;
       }
-      const cid = channel.channel_id;
-      catchUpInFlightRef.current = true;
+      catchUpInFlightRef.current.add(key);
       try {
         const res = await listMessages(cid, {
           since_seq: sinceSeq ?? lastSeqRef.current,
         });
-        if (activeChannelRef.current !== cid) return;
+        if (!mountedRef.current || activeChannelRef.current !== cid || generation !== clientSessionGeneration()) return;
         const incoming = res.messages ?? res.data ?? [];
         if (incoming.length)
           setMessages((prev) => mergeMessages(prev, incoming));
+        void reconcileLoadedClaims();
       } catch {
         /* best-effort; the live stream still delivers new frames */
       } finally {
-        catchUpInFlightRef.current = false;
-        if (catchUpPendingRef.current) {
-          catchUpPendingRef.current = false;
-          const rerunSince = catchUpPendingSinceRef.current;
-          catchUpPendingSinceRef.current = undefined;
-          void catchUp(rerunSince);
+        catchUpInFlightRef.current.delete(key);
+        if (catchUpPendingRef.current.has(key)) {
+          const rerunSince = catchUpPendingRef.current.get(key);
+          catchUpPendingRef.current.delete(key);
+          if (mountedRef.current && activeChannelRef.current === cid && generation === clientSessionGeneration()) void catchUp(rerunSince);
         }
       }
     },
-    [activeChannelRef, channel],
+    [activeChannelRef, channel, reconcileLoadedClaims],
   );
 
   // Initial history load (backend returns ascending: oldest first). Warm path:
@@ -103,7 +156,10 @@ export function useChannelMessages({
   const loadHistory = useCallback(() => {
     if (!channel || isPreview) return;
     const cid = channel.channel_id;
+    const generation = clientSessionGeneration();
+    msgsGenerationRef.current = generation;
     setLoadError(false);
+    setLoadingMore(false);
     pendingCatchUpRef.current = false;
 
     const seeded = seedFromCache(cid);
@@ -121,6 +177,7 @@ export function useChannelMessages({
         return seeded.messages;
       });
       setHasMore(seeded.hasMore);
+      void reconcileLoadedClaims(seeded.messages);
       void catchUp(maxSeq);
       return;
     }
@@ -132,7 +189,7 @@ export function useChannelMessages({
     setHasMore(false);
     listMessages(cid, { limit: 50 })
       .then((res) => {
-        if (activeChannelRef.current !== cid) return;
+        if (!mountedRef.current || activeChannelRef.current !== cid || generation !== clientSessionGeneration()) return;
         const msgs = sortMessages(res.messages ?? res.data ?? []);
         let maxSeq = 0;
         for (const m of msgs) {
@@ -140,11 +197,12 @@ export function useChannelMessages({
             maxSeq = m.channel_seq;
         }
         lastSeqRef.current = maxSeq;
-        setMessages(() => {
+        setMessages((previous) => {
           msgsOwnerRef.current = cid;
-          return msgs;
+          return mergeMessages(previous, msgs);
         });
         setHasMore(res.meta?.has_more_before ?? false);
+        void reconcileLoadedClaims(msgs);
         // A subscribe ack raced the initial load → run the deferred catch-up now
         // that the real seq cursor is known (a since_seq=0 catch-up would have
         // re-fetched the very page this load just delivered).
@@ -154,15 +212,15 @@ export function useChannelMessages({
         }
       })
       .catch(() => {
-        if (activeChannelRef.current === cid) setLoadError(true);
+        if (mountedRef.current && activeChannelRef.current === cid && generation === clientSessionGeneration()) setLoadError(true);
       })
       .finally(() => {
-        if (activeChannelRef.current === cid) {
+        if (mountedRef.current && activeChannelRef.current === cid && generation === clientSessionGeneration()) {
           setLoading(false);
           loadingRef.current = false;
         }
       });
-  }, [activeChannelRef, channel, isPreview, catchUp]);
+  }, [activeChannelRef, channel, isPreview, catchUp, reconcileLoadedClaims]);
 
   useEffect(() => {
     if (!channel || isPreview) {
@@ -180,7 +238,7 @@ export function useChannelMessages({
   // (new channel, previous channel's rows) a no-op.
   useEffect(() => {
     const cid = channel?.channel_id;
-    if (!cid || msgsOwnerRef.current !== cid) return;
+    if (!cid || msgsOwnerRef.current !== cid || msgsGenerationRef.current !== clientSessionGeneration()) return;
     setChannelCache(cid, { messages, hasMore });
   }, [messages, hasMore, channel?.channel_id]);
 
@@ -198,27 +256,31 @@ export function useChannelMessages({
     if (!channel || loadingMore || !hasMore) return;
     const oldest = messages[0];
     if (!oldest) return;
+    const generation = clientSessionGeneration();
+    const current = () => mountedRef.current && activeChannelRef.current === channel.channel_id && generation === clientSessionGeneration();
     setLoadingMore(true);
     try {
       const res = await listMessages(channel.channel_id, {
         before: oldest.msg_id,
         limit: 50,
       });
-      if (activeChannelRef.current !== channel.channel_id) return;
+      if (!current()) return;
       setMessages((prev) =>
         mergeMessages(prev, res.messages ?? res.data ?? []),
       );
       setHasMore(res.meta?.has_more_before ?? false);
+      void reconcileLoadedClaims(res.messages ?? res.data ?? []);
     } catch {
+      if (!current()) return;
       // hasMore stays true, so scrolling up again retries this page. Stable id so a
       // momentum-scroll at the top that re-fires loadMore collapses to one toast.
       toast.error("Couldn't load older messages — scroll up to try again", {
         id: "load-older-failed",
       });
     } finally {
-      setLoadingMore(false);
+      if (current()) setLoadingMore(false);
     }
-  }, [activeChannelRef, channel, messages, hasMore, loadingMore]);
+  }, [activeChannelRef, channel, messages, hasMore, loadingMore, reconcileLoadedClaims]);
 
   const handleMessage = useCallback((msg: Message) => {
     setMessages((prev) => upsertMessage(prev, msg));
@@ -318,10 +380,12 @@ export function useChannelMessages({
   );
 
   const handleContentDataUpdated = useCallback((msgId: string, contentData: Message["content_data"]) => {
-    setMessages((prev) => prev.map((message) =>
-      message.msg_id === msgId ? { ...message, content_data: contentData } : message,
-    ));
-  }, []);
+    const cid = activeChannelRef.current;
+    if (!cid) return;
+    patchCachedMessageContentData(cid, msgId, contentData);
+    setMessages((prev) => patchMessageContentData(prev, msgId, contentData));
+    additionalMessageUpdatedRef?.current?.({ msg_id: msgId, content_data: contentData });
+  }, [activeChannelRef, additionalMessageUpdatedRef]);
 
   const handleBotTrace = useCallback(
     (event: TraceEvent) => {

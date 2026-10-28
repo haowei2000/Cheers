@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages SET content_data = $2 WHERE msg_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d5fe6d14b18a277e50b96823a870eea6cc6dfb085ffd6e088ac4d9e6f9d6a4c"
+}

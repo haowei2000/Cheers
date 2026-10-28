@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
 import { listChannels, listDms, listVoicePresence } from "@/api/channels";
@@ -20,8 +20,9 @@ import type { NotificationItem } from "@/api/notifications";
 import type { PermissionContentData, PermissionOption, VoicePresenceSnapshot } from "@/types";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { Sidebar } from "./Sidebar";
-import { ChannelView } from "./ChannelView";
 import { useShallow } from "zustand/react/shallow";
+
+const ChannelView = lazy(() => import("./ChannelView").then((module) => ({ default: module.ChannelView })));
 
 // Human-readable byte size for the native banner context line.
 function formatBytes(n: number): string {
@@ -296,7 +297,10 @@ export default function ChatLayout() {
     hydrateSelection(urlWorkspaceId, urlChannelId ?? null);
   }, [urlWorkspaceId, urlChannelId, hydrateSelection]);
 
-  // Store → path: mirror any in-app selection back out.
+  // Desktop channel switches are navigation history: users expect the titlebar
+  // Back command to return to the channel they just left. Mobile chat selection
+  // is a stacked list → detail transition, so replacing keeps one history entry
+  // for the chat screen and lets Back return to the list.
   useEffect(() => {
     if (!selectedWorkspaceId) return;
     const want = `/chat/${selectedWorkspaceId}${
@@ -304,17 +308,15 @@ export default function ChatLayout() {
     }`;
     if (want === location.pathname) return;
     appliedPathRef.current = `${selectedWorkspaceId}/${selectedChannelId ?? ""}`;
-    // replace, not push: on mobile the conversation screen is itself a pushed history
-    // entry (see openChatScreen), so a second entry per channel switch would make Back
-    // land on the previous channel instead of popping to the channel list. `state` is
-    // carried through for the same reason — dropping it would strip that push flag and
-    // bounce the user out of the conversation they just opened.
-    navigate(want, { replace: true, state: location.state });
+    // Keep the mobile pushed-chat marker while desktop channel switches add a
+    // history entry for each channel.
+    navigate(want, { replace: isMobile, state: location.state });
   }, [
     selectedWorkspaceId,
     selectedChannelId,
     location.pathname,
     location.state,
+    isMobile,
     navigate,
   ]);
 
@@ -525,7 +527,9 @@ export default function ChatLayout() {
         <div className="flex h-full bg-canvas overflow-hidden">
           {showChat ? (
             <main className="flex-1 min-w-0 flex flex-col">
-              <ChannelView channel={selectedChannel} onBack={closeChatScreen} />
+              <Suspense fallback={<div className="flex-1" aria-busy="true" />}>
+                <ChannelView channel={selectedChannel} onBack={closeChatScreen} />
+              </Suspense>
             </main>
           ) : bootstrapFailed ? (
             <main className="flex-1 min-w-0 flex flex-col">{bootstrapErrorPanel}</main>
@@ -568,12 +572,14 @@ export default function ChatLayout() {
           {bootstrapFailed ? (
             bootstrapErrorPanel
           ) : (
-            <ChannelView
-              channel={selectedChannel}
-              channelSelectionPending={channelSelectionPending}
-              sidebarOpen={sidebarOpen}
-              onToggleSidebar={toggleSidebar}
-            />
+            <Suspense fallback={<div className="flex-1" aria-busy="true" />}>
+              <ChannelView
+                channel={selectedChannel}
+                channelSelectionPending={channelSelectionPending}
+                sidebarOpen={sidebarOpen}
+                onToggleSidebar={toggleSidebar}
+              />
+            </Suspense>
           )}
         </main>
       </div>

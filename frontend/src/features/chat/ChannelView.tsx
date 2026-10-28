@@ -1,3 +1,6 @@
+import { ResourceCardProvider } from "./ResourceCardContext";
+import { channelFileClient } from "./workbench/channelFileClient";
+import { clientSessionGeneration } from "@/lib/clientSession";
 import { AnnotationProvider } from "@/features/annotations/AnnotationProvider";
 import { PanelWorkspace } from "./workbench/PanelWorkspace";
 import { Button as UiButton } from "@/components/ui/button";
@@ -20,7 +23,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { listMessages, sendMessage } from "@/api/messages";
+import { listMessages, sendMessage, sendResourceInteraction } from "@/api/messages";
 import {
   useContextPickStore,
   toBundle,
@@ -95,6 +98,7 @@ import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { LocatorOpenContext } from "./messageLinks";
 import { ProfileCardProvider } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
+import { resolveResource } from "@/api/resources";
 import { parseLocator } from "./locator";
 import { locateWorkspaceFile } from "./wsLocate";
 import { useAuthStore } from "@/stores/authStore";
@@ -150,6 +154,11 @@ export function ChannelView({
     !!channel && channel.type !== "dm" && channel.is_member === false;
   const activeChannelRef = useRef<string | null>(channel?.channel_id ?? null);
   activeChannelRef.current = channel?.channel_id ?? null;
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const {
     mentionables,
     setMembers,
@@ -159,6 +168,8 @@ export function ChannelView({
     setVoiceTranscripts,
     loadVoiceTranscript,
   } = useChannelRoster({ channel, preview: isPreview, activeChannelRef });
+  const discussionThreadRef = useRef<Message[]>([]);
+  const discussionMessageUpdatedRef = useRef<((update: Partial<Message> & { msg_id: string }) => void) | null>(null);
   const permissionResolvedRef = useRef<() => void>(() => {});
   const onPermissionResolved = useCallback(
     () => permissionResolvedRef.current(),
@@ -191,6 +202,8 @@ export function ChannelView({
     activeChannelRef,
     patchChannel,
     onPermissionResolved,
+    additionalMessagesRef: discussionThreadRef,
+    additionalMessageUpdatedRef: discussionMessageUpdatedRef,
   });
   // Slash-commands advertised by the channel's bots (⑦ command palette). Flat
   // list across all bots; refreshed on channel open and on reconnect catch-up.
@@ -214,8 +227,6 @@ export function ChannelView({
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [discussionComposerRoot, setDiscussionComposerRoot] =
     useState<Message | null>(null);
-  /** Live+REST rows for the open topic — reply defaults look here, not only the chat window. */
-  const discussionThreadRef = useRef<Message[]>([]);
   const [creatingDiscussion, setCreatingDiscussion] = useState(false);
   const [openDiscussionRequest, setOpenDiscussionRequest] = useState<{
     id: string;
@@ -553,8 +564,11 @@ export function ChannelView({
   // windows as full-screen sheets, so there is no geometry to share there.
   const isMobile = useIsMobile();
   const layoutChannelId = channel?.channel_id ?? "";
+  const cardResources = useMemo(() => ({ principalId: user?.user_id, fs: channelFileClient(sendResourceReq, layoutChannelId) }), [sendResourceReq, layoutChannelId, user?.user_id]);
+  const cardFileClient = cardResources.fs;
   const channelLayout = useChannelLayout({
     channelId: layoutChannelId,
+    fileClient: cardFileClient,
     sendResourceReq,
     getLaneBounds,
     enabled: !isMobile && !!layoutChannelId && !isPreview,
@@ -811,6 +825,10 @@ export function ChannelView({
   );
   const closeWorkbench = useCallback(() => setWbOpen(false), [setWbOpen]);
 
+  const composerPinnedTargetName = selectedSessionId && selectedSessionBotId
+    ? switcherBots.find((bot) => bot.botId === selectedSessionBotId)?.name ?? selectedSessionBotId
+    : undefined;
+
   // Hoisted so the memoized MessageComposer isn't handed a fresh `toolbar` element
   // on every streaming delta render. Null when there's no channel (composer unmounted).
   const composerToolbar = useMemo(
@@ -1046,6 +1064,23 @@ export function ChannelView({
         setRefError(`Unrecognized locator:\n${uri.slice(0, 200)}`);
         return;
       }
+      if (loc.kind === "resource") {
+        const sourceChannel = channel.channel_id;
+        const generation = clientSessionGeneration();
+        const current = () => mountedRef.current && activeChannelRef.current === sourceChannel && generation === clientSessionGeneration();
+        try {
+          const target=await resolveResource(uri);
+          if (!current()) return;
+          if(target.channel_id!==channel.channel_id) {
+            sessionStorage.setItem(`cheers:resource-focus:${target.channel_id}`,uri);
+            await selectChannel(target.channel_id);
+          } else if(target.kind==="desk") {setWbTarget(uri);setWbOpen(true);}
+          else if(target.kind==="inbox") {setFilesFocus(target.resource_id);setFilesOpen(true);}
+          else if(target.kind==="msg") {void jumpToMessage(target.resource_id);}
+          else {openBoard(target.kind);}
+        } catch(error){if (current()) setRefError(String(error));}
+        return;
+      }
       if (loc.kind === "desk") {
         setWbTarget(loc.inspectableId ? uri : loc.path);
         setWbOpen(true);
@@ -1057,7 +1092,7 @@ export function ChannelView({
         return;
       }
       if (loc.kind === "msg") {
-        setRefError("Message locators (cheers:msg/…) aren't supported yet.");
+        void jumpToMessage(loc.messageId);
         return;
       }
       if (loc.kind !== "ws") {
@@ -1128,12 +1163,22 @@ export function ChannelView({
     [
       channel,
       botLabels,
+      selectChannel,
+      jumpToMessage,
+      setWbTarget,
       openBoard,
       setWbOpen,
       setWsInit,
       setWsOpen,
     ],
   );
+
+  useEffect(()=>{
+    if(!channel)return;
+    const key=`cheers:resource-focus:${channel.channel_id}`;
+    const uri=sessionStorage.getItem(key);
+    if(uri){sessionStorage.removeItem(key);void openLocator(uri);}
+  },[channel,openLocator]);
 
   // A renderer plugin suggested a message (cheers:compose). Prefill only — the human
   // reviews, edits, and presses send; that keystroke is what makes it a channel action.
@@ -1144,6 +1189,12 @@ export function ChannelView({
       seq: (p?.seq ?? 0) + 1,
     }));
   }, [setComposePrefill]);
+  const requestInteraction = useCallback(async (event: Parameters<typeof sendResourceInteraction>[1]) => {
+    if (!channel) return Promise.reject(new Error("The source channel is unavailable."));
+    const source=parseLocator(event.sourceUri);
+    const sourceChannel=source?.kind==="resource"?(await resolveResource(event.sourceUri)).channel_id:channel.channel_id;
+    return sendResourceInteraction(sourceChannel, event);
+  }, [channel]);
 
   const handleSend = useCallback(
     async (
@@ -1299,6 +1350,18 @@ export function ChannelView({
     [messages],
   );
 
+  // The reply target's context item, when the reply itself added it. The reply
+  // banner stands in for that item, so backing out of the reply takes it back out.
+  const replyContextRef = useRef<{ channelId: string; id: string } | null>(null);
+  const releaseReplyContext = useCallback(() => {
+    const added = replyContextRef.current;
+    replyContextRef.current = null;
+    if (added) useContextPickStore.getState().remove(added.channelId, added.id);
+  }, []);
+  useEffect(() => {
+    if (!replyTo) releaseReplyContext();
+  }, [replyTo, releaseReplyContext]);
+
   // Reply uses the same bottom composer as a normal send. The only difference is
   // defaults copied from the source turn: session target, @bot, and message context.
   // `reply_to_msg_id` still nests the outgoing message under the source.
@@ -1349,12 +1412,18 @@ export function ChannelView({
         }
       }
 
+      releaseReplyContext();
       if (channel?.channel_id) {
         const ctx = messageContextItem(m);
-        if (ctx) useContextPickStore.getState().add(channel.channel_id, ctx);
+        const store = useContextPickStore.getState();
+        const alreadyPicked = (store.byChannel[channel.channel_id] ?? []).some((item) => item.id === ctx?.id);
+        if (ctx && !alreadyPicked) {
+          store.add(channel.channel_id, ctx);
+          replyContextRef.current = { channelId: channel.channel_id, id: ctx.id };
+        }
       }
     },
-    [messages, mentionables, channel?.channel_id, setComposePrefill],
+    [messages, mentionables, channel?.channel_id, setComposePrefill, releaseReplyContext],
   );
 
   const mentionMember = useCallback(
@@ -1425,6 +1494,7 @@ export function ChannelView({
           seq: (previous?.seq ?? 0) + 1,
         }));
       },
+      onContentDataUpdated: handleContentDataUpdated,
       onSuggestionsLoaded: (msgId, questions) => {
         handleContentDataUpdated(msgId, {
           ...((messages.find((m) => m.msg_id === msgId)?.content_data as object) ?? {}),
@@ -1602,6 +1672,9 @@ export function ChannelView({
           await jumpToMessage(item.target.msg_id);
         }
       }}>
+    <ResourceCardProvider key={cardResources.principalId} fs={cardFileClient} channelId={channel.channel_id} filesTick={boardTick.files ?? 0}
+      openLocator={openLocator} composeMessage={composeMessage}
+      requestInteraction={channel.my_role === "readonly" ? undefined : requestInteraction}>
     <ProfileCardProvider
       members={memberById}
       currentUserId={user?.user_id}
@@ -1687,9 +1760,11 @@ export function ChannelView({
                 channelId={channel.channel_id}
                 sendResourceReq={sendResourceReq}
                 openFilePath={wbTarget}
+                fileClient={cardFileClient}
                 filesTick={boardTick.files}
                 onOpenLocator={openLocator}
                 onCompose={composeMessage}
+                onRequestInteraction={channel.my_role === "readonly" ? undefined : requestInteraction}
                 sendPresenceFocus={sendPresenceFocus}
                 workspaceFocus={workspaceFocus}
                 currentUserId={user?.user_id}
@@ -1754,6 +1829,7 @@ export function ChannelView({
                     openDiscussionId={openDiscussionRequest?.id ?? null}
                     liveMessages={messages}
                     discussionThreadRef={discussionThreadRef}
+                    messageUpdatedRef={discussionMessageUpdatedRef}
                     footer={
                       !selectMode ? (
                         <>
@@ -1775,6 +1851,7 @@ export function ChannelView({
                           <MessageComposer
                             channelId={channel.channel_id}
                             channelName={channel.name}
+                            sessionTargetName={composerPinnedTargetName}
                             mentionables={mentionables}
                             commands={commands}
                             toolbar={composerToolbar}
@@ -1904,6 +1981,7 @@ export function ChannelView({
                   <MessageComposer
                     channelId={channel.channel_id}
                     channelName={channel.name}
+                    sessionTargetName={composerPinnedTargetName}
                     mentionables={mentionables}
                     commands={commands}
                     toolbar={composerToolbar}
@@ -1960,6 +2038,7 @@ export function ChannelView({
       </div>
       </VoiceToolbarHostProvider>
     </ProfileCardProvider>
+    </ResourceCardProvider>
     </AnnotationProvider>
   );
 }

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE resource_executions SET status=$2,result=$3,updated_at=NOW() WHERE execution_id=$1 AND status IN ('accepted','running')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eda7e1da7a7ffdda31ed4ae245f5e6ab9e3d63b2cc00a8621e47155c88628373"
+}

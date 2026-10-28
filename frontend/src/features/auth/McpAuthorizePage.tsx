@@ -4,6 +4,7 @@ import { apiJson } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Spinner } from "@/components/ui/spinner";
 import { PublicPageShell, publicPanelClass } from "@/components/public/PublicPageShell";
 
@@ -125,14 +126,11 @@ export default function McpAuthorizePage() {
               </p>
             )}
             <div>
-              <p className="mb-2 text-compact font-medium text-content-secondary">Requested access</p>
+              <p className="mb-2 text-compact font-medium text-content-secondary"><HelpLabel help="OAuth scopes only reduce access. Channel membership, roles, approvals, host revocation and audit policy still apply to every operation.">Requested access</HelpLabel></p>
               <ul className="space-y-1 text-compact text-content-muted">
                 {preview.scopes.map((scope) => <li key={scope}>• {scopeLabels[scope] ?? scope}</li>)}
               </ul>
             </div>
-            <p className="text-compact text-content-muted">
-              OAuth scopes only reduce access. Channel membership, roles, approvals, host revocation and audit policy still apply to every operation.
-            </p>
             <div className="flex justify-end gap-2">
               <Button action="cancel" variant="secondary" disabled={busy} onClick={() => void finish(false)} />
               <Button action="approve" disabled={busy || !hostId || !channelId} loading={busy} onClick={() => void finish(true)} />

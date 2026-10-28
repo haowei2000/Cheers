@@ -2,7 +2,7 @@
 """Plan affected Cheers CI/CD lanes and report workflow efficiency.
 
 The dependency map lives in .github/ci-paths.json so CI, CD, and local checks
-cannot silently drift apart. The tool uses only the Python standard library.
+cannot silently drift apart. Requires Python 3.11+; uses only its standard library.
 """
 
 from __future__ import annotations
@@ -11,9 +11,11 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +25,18 @@ from typing import Iterable, Sequence
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = REPO_ROOT / ".github" / "ci-paths.json"
 ZERO_SHA = "0" * 40
+# Build entry points, not a second dependency map: local dependencies and embedded
+# files below these manifests are discovered from their source declarations.
+BUILD_MANIFESTS = {
+    "gateway": ("server/Cargo.toml",),
+    "frontend": ("frontend/package.json",),
+    "plugin": (
+        "packages/cheers-acp-connector-rs/Cargo.toml",
+        "packages/cheers-mcp-server/Cargo.toml",
+    ),
+    "desktop": ("apps/macos/src-tauri/Cargo.toml",),
+}
+RUST_LITERAL_INCLUDE = re.compile(r'include_(?:str|bytes)!\(\s*"([^"\n]+)"\s*\)')
 
 
 class CiToolError(RuntimeError):
@@ -178,6 +192,96 @@ def write_summary(
             )
 
 
+def local_build_inputs(repo_root: Path, manifests: Sequence[str]) -> tuple[set[str], set[str]]:
+    """Read transitive local manifests and literal Rust includes, without building.
+
+    Cargo target-specific dependency tables are included. Literal includes outside
+    a crate are inputs too (including test fixtures); non-literal includes such as
+    CARGO_MANIFEST_DIR/assets remain covered by the crate's own directory rule.
+    """
+
+    repo_root = repo_root.resolve()
+    package_dirs: set[str] = set()
+    embedded_files: set[str] = set()
+    pending = [repo_root / manifest for manifest in manifests]
+    seen: set[Path] = set()
+
+    def relative(path: Path) -> str:
+        try:
+            return path.relative_to(repo_root).as_posix()
+        except ValueError as exc:
+            raise CiToolError(f"local build input is outside the repository: {path}") from exc
+
+    while pending:
+        manifest = pending.pop().resolve()
+        if manifest in seen:
+            continue
+        seen.add(manifest)
+        directory = manifest.parent
+        package_dirs.add(relative(directory))
+        if manifest.name == "Cargo.toml":
+            data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+            tables = [data, *data.get("target", {}).values()]
+            for table in tables:
+                for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+                    for dependency in table.get(section, {}).values():
+                        if isinstance(dependency, dict) and "path" in dependency:
+                            pending.append(directory / dependency["path"] / "Cargo.toml")
+            sources = [directory / "build.rs"]
+            for source_dir in (directory / "src", directory / "tests"):
+                if source_dir.is_dir():
+                    sources.extend(source_dir.rglob("*.rs"))
+            for source in sources:
+                if not source.is_file():
+                    continue
+                for name in RUST_LITERAL_INCLUDE.findall(source.read_text(encoding="utf-8")):
+                    included = (source.parent / name).resolve()
+                    if not included.is_relative_to(directory):
+                        if not included.is_file():
+                            raise CiToolError(f"missing embedded build input: {relative(included)}")
+                        embedded_files.add(relative(included))
+        else:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            for section in ("dependencies", "devDependencies", "optionalDependencies"):
+                for dependency in data.get(section, {}).values():
+                    if isinstance(dependency, str) and dependency.startswith(("file:", "link:")):
+                        pending.append(directory / dependency.split(":", 1)[1] / "package.json")
+    return package_dirs, embedded_files
+
+
+def audit_build_dependencies(
+    config: dict,
+    repo_root: Path = REPO_ROOT,
+    build_manifests: dict[str, tuple[str, ...]] = BUILD_MANIFESTS,
+) -> list[str]:
+    """Check lane coverage against actual local build inputs, including transitive ones."""
+
+    errors: list[str] = []
+    inputs = {
+        lane: local_build_inputs(repo_root, manifests)
+        for lane, manifests in build_manifests.items()
+    }
+    for workflow, workflow_config in config.get("workflows", {}).items():
+        for lane, lane_patterns in workflow_config.get("lanes", {}).items():
+            if lane not in inputs:
+                continue
+            patterns = [*workflow_config.get("global_patterns", []), *lane_patterns]
+            package_dirs, embedded_files = inputs[lane]
+            for directory in sorted(package_dirs):
+                # A manifest-only rule is insufficient: a source edit must select
+                # the consumer as well. Match probes instead of requiring one
+                # exact glob spelling, so broader valid rules are accepted.
+                if not all(matches_any(f"{directory}/{probe}", patterns) for probe in (
+                    "Cargo.toml" if (repo_root / directory / "Cargo.toml").is_file() else "package.json",
+                    "src/__ci_build_input__",
+                )):
+                    errors.append(f"{workflow}.{lane}: missing local build dependency {directory}/**")
+            for path in sorted(embedded_files):
+                if not matches_any(path, patterns):
+                    errors.append(f"{workflow}.{lane}: missing embedded build input {path}")
+    return errors
+
+
 def audit(config: dict) -> list[str]:
     """Validate dependency-map shape and its integration with workflow files."""
 
@@ -211,17 +315,17 @@ def audit(config: dict) -> list[str]:
             if token not in workflow_text:
                 errors.append(f"{workflow}: missing planner output {lane}")
 
-    required_patterns = {
-        ("ci", "frontend"): "website/**",
-        ("cd", "frontend"): "website/**",
-        ("ci", "gateway"): "packages/cheers-acp-connector-rs/bridge-protocol/**",
-        ("cd", "gateway"): "packages/cheers-acp-connector-rs/bridge-protocol/**",
-    }
-    for (workflow, lane), pattern in required_patterns.items():
+    required_patterns = (
+        ("ci", "frontend", "website/**"),
+        ("cd", "frontend", "website/**"),
+        ("cd", "frontend", "design-system/**"),
+    )
+    for workflow, lane, pattern in required_patterns:
         patterns = workflows.get(workflow, {}).get("lanes", {}).get(lane, [])
         if pattern not in patterns:
             errors.append(f"{workflow}.{lane}: missing build dependency {pattern}")
 
+    errors.extend(audit_build_dependencies(config))
     return errors
 
 

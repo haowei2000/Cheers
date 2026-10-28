@@ -6,6 +6,7 @@ import { Banner } from "@/components/ui/banner";
 import { IconButton } from "@/components/ui/icon-button";
 import { ItemChip, NavigationItem } from "@/components/ui/item";
 import { OverflowText } from "@/components/ui/overflow-text";
+import { highlightedClasses } from "@/components/ui/selection";
 import { cn } from "@/lib/cn";
 import type { MentionCandidate } from "./MessageComposer";
 
@@ -51,8 +52,7 @@ export function ComposerMentionPicker({
             />
           )}
           criticalStatus={candidate.type === "bot" ? <span className="text-minimal text-accent-300">{candidate.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
-          selected={index === activeIndex}
-          className={index === activeIndex ? undefined : cn(
+          className={index === activeIndex ? highlightedClasses : cn(
             candidate.type === "bot" && candidate.isOnline === false
                 ? "text-content-muted hover:bg-zinc-800"
                 : "text-content-secondary hover:bg-zinc-800",

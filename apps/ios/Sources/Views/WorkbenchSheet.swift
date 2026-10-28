@@ -303,6 +303,7 @@ private struct ArtifactCollectionsSheet: View {
                         Text("Choose a collection to organize artifacts. All files remain available in Source files.")
                     } actions: {
                         Button("Browse collections") { showSceneManager = true }
+
                     }
                 } else if horizontalSizeClass == .regular {
                     regularLayout
@@ -477,11 +478,10 @@ private struct ArtifactCollectionsSheet: View {
             )
             .id("\(selectedPath):\(entry.version)")
         } else {
-            ContentUnavailableView(
-                "No native items",
-                systemImage: "square.dashed",
-                description: Text("This scene’s unsupported files are still available from Raw.")
-            )
+            ContentUnavailableView {
+                Label("No native items", systemImage: "square.dashed")
+                    .helpExplanation("This scene’s unsupported files are still available from Raw.")
+                }
         }
     }
 
@@ -897,11 +897,10 @@ private struct LegacyWorkbenchSheet: View {
                     Button("Retry") { Task { await load() } }
                 }
             } else if nodes.isEmpty {
-                ContentUnavailableView(
-                    "No files",
-                    systemImage: "folder",
-                    description: Text("Files created in this channel will appear here.")
-                )
+                ContentUnavailableView {
+                    Label("No files", systemImage: "folder")
+                        .helpExplanation("Files created in this channel will appear here.")
+                }
             } else {
                 List(nodes) { node in
                     NavigationLink(value: node.isDir ? Route.folder(node.path) : Route.file(node.path)) {
@@ -1567,7 +1566,10 @@ private struct TableWorkbenchEditor: View {
             }
         }
         .overlay {
-            if rows.isEmpty { ContentUnavailableView("No rows", systemImage: "tablecells", description: Text("Add the first row to start this table.")) }
+            if rows.isEmpty { ContentUnavailableView {
+                        Label("No rows", systemImage: "tablecells")
+                            .helpExplanation("Add the first row to start this table.")
+                } }
         }
         .safeAreaInset(edge: .bottom) {
             Button { Task { _ = await onPatch([["op": "insert", "path": [], "index": rows.count, "value": Dictionary(uniqueKeysWithValues: columns.map { ($0, "") })]]) } } label: {
@@ -1865,9 +1867,8 @@ private struct CodemapWorkbenchEditor: View {
         } else {
             ContentUnavailableView {
                 Label("Codemap is empty", systemImage: "point.3.connected.trianglepath.dotted")
-            } description: {
-                Text("Ask the agent to explore the repository and maintain codemap/map.yaml. New modules will appear here automatically.")
-            }
+                    .helpExplanation("Ask the agent to explore the repository and maintain codemap/map.yaml. New modules will appear here automatically.")
+                }
         }
     }
 
@@ -2506,10 +2507,10 @@ struct RemoteWorkspaceSheet: View {
             } else if opened.isText, let content = opened.content {
                 RawRenderer(content: content)
             } else {
-                ContentUnavailableView(
-                    "Binary file", systemImage: "doc",
-                    description: Text("Add it to context so an authorized agent can read it on demand.")
-                )
+                ContentUnavailableView {
+                    Label("Binary file", systemImage: "doc")
+                        .helpExplanation("Add it to context so an authorized agent can read it on demand.")
+                }
             }
             if let errorText { Text(errorText).font(.caption).foregroundStyle(.red).padding(.horizontal) }
         }

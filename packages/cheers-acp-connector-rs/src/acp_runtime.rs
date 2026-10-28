@@ -43,9 +43,9 @@ use crate::acp_semantics::{apply_settings_to_config, default_client_capabilities
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
-    AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient, PromptResult,
-    RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult, SessionStartOptions,
-    SessionStartResult,
+    drain_updates, AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient,
+    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult,
+    SessionStartOptions, SessionStartResult,
 };
 
 type RequestRoutes = std::sync::Arc<Mutex<HashMap<String, RequestRoute>>>;
@@ -135,117 +135,12 @@ impl RuntimeAcpAdapter {
             .map_err(|_| anyhow!("ACP runtime actor is gone (method={method})"))
     }
 
-    /// Pushes the configured permission mode to the agent via `session/set_mode`
-    /// (best-effort), mirroring the hand-rolled adapter. Without this the agent
-    /// keeps its native policy — e.g. codex self-approves and never sends
-    /// `session/request_permission`, so no approval card is ever produced.
-    async fn apply_permission_mode(&self, session_id: &str) {
-        let Some(mode) = self.config.agent_native_permission_mode.clone() else {
-            return;
-        };
-        if mode.trim().is_empty() {
-            return;
-        }
-        match self
-            .request(
-                AGENT_METHOD_NAMES.session_set_mode,
-                typed_params(SetSessionModeRequest::new(
-                    session_id.to_string(),
-                    mode.clone(),
-                )),
-                self.request_timeout_ms(),
-            )
-            .await
-        {
-            Ok(_) => tracing::info!(
-                account = %self.account_id,
-                session = %session_id,
-                mode = %mode,
-                "applied ACP session mode (runtime)"
-            ),
-            Err(err) => tracing::warn!(
-                account = %self.account_id,
-                mode = %mode,
-                "session/set_mode failed (runtime: unknown modeId or agent rejected?): {err}"
-            ),
-        }
-    }
-
-    /// Pushes the backend-desired ACP config options to the agent via
-    /// `session/set_config_option` (best-effort), one id at a time — the
-    /// `set_config_option` analogue of [`Self::apply_permission_mode`]. Values are
-    /// opaque strings (ACP-generic); the map was already clamped to
-    /// `allowed_config_options` at the `config_update` boundary.
-    async fn apply_config_options(&self, session_id: &str) {
-        let Some(map) = self
-            .config
-            .config_options
-            .as_ref()
-            .and_then(|v| v.as_object())
-        else {
-            return;
-        };
-        for (config_id, value) in map {
-            let Some(value) = value.as_str() else {
-                continue;
-            };
-            match self
-                .request(
-                    AGENT_METHOD_NAMES.session_set_config_option,
-                    typed_params(SetSessionConfigOptionRequest::new(
-                        session_id.to_string(),
-                        config_id.to_string(),
-                        SessionConfigValueId::new(value.to_string()),
-                    )),
-                    self.request_timeout_ms(),
-                )
-                .await
-            {
-                Ok(_) => tracing::info!(
-                    account = %self.account_id,
-                    session = %session_id,
-                    config_id = %config_id,
-                    value = %value,
-                    "applied ACP config option (runtime)"
-                ),
-                // "model" has a native ACP twin: agents that predate the
-                // config-options extension (e.g. older codex-acp) only accept
-                // `session/set_model` — retry there before giving up.
-                Err(err) if config_id == "model" => {
-                    match self
-                        .request(
-                            "session/set_model",
-                            json!({ "sessionId": session_id, "modelId": value }),
-                            self.request_timeout_ms(),
-                        )
-                        .await
-                    {
-                        Ok(_) => tracing::info!(
-                            account = %self.account_id,
-                            session = %session_id,
-                            value = %value,
-                            "applied model via native session/set_model fallback (runtime)"
-                        ),
-                        Err(err2) => tracing::warn!(
-                            account = %self.account_id,
-                            "model rejected by both set_config_option ({err}) and set_model ({err2})"
-                        ),
-                    }
-                }
-                Err(err) => tracing::warn!(
-                    account = %self.account_id,
-                    config_id = %config_id,
-                    "session/set_config_option failed (runtime: unknown id/value or agent rejected?): {err}"
-                ),
-            }
-        }
-    }
-
     /// A cheap, clone-able issuer for the lock-free concurrent-prompt path
     /// (the runtime-backed equivalent of `AcpAdapter::requester`).
     pub fn requester(&self) -> RuntimeRequester {
         RuntimeRequester {
             cmd_tx: self.cmd_tx.clone(),
+            event_tx: self.event_tx.clone(),
         }
     }
 
@@ -395,8 +290,6 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("ACP session/new did not return sessionId"))?
             .to_string();
-        self.apply_permission_mode(&session_id).await;
-        self.apply_config_options(&session_id).await;
         Ok(SessionStartResult {
             session_id,
             metadata: result,
@@ -418,8 +311,6 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
                 request_route,
             )
             .await?;
-        self.apply_permission_mode(session_id).await;
-        self.apply_config_options(session_id).await;
         Ok(SessionLoadResult { metadata: result })
     }
 
@@ -1032,6 +923,7 @@ async fn request_via(
 #[derive(Clone)]
 pub struct RuntimeRequester {
     cmd_tx: Option<mpsc::Sender<Command>>,
+    event_tx: mpsc::Sender<RuntimeEvent>,
 }
 
 impl RuntimeRequester {
@@ -1052,7 +944,12 @@ impl RuntimeRequester {
             timeout_ms,
             None,
         )
-        .await?;
+        .await;
+        // The SDK awaits each notification hook before dispatching the following
+        // response, but that hook only enqueues an event. Wait for the runtime
+        // consumer as well, including error/cancelled responses and empty turns.
+        drain_updates(&self.event_tx).await?;
+        let result = result?;
         Ok(PromptResult {
             stop_reason: result
                 .get("stopReason")

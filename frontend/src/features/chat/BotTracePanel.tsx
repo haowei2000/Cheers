@@ -326,17 +326,17 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
         <DiffDelta stats={diffs.length === 1 ? selectedStats : total} />
       </div>
       <div className="grid min-h-64 grid-cols-[minmax(9rem,12rem)_minmax(0,1fr)] gap-3">
-        <div className="min-w-0 space-y-1 py-1">
+        <div role="tablist" aria-orientation="vertical" aria-label="Changed files" className="min-w-0 space-y-1 py-1">
           {diffs.map((diff) => {
             const stats = diffStats(diff);
             const active = diff.path === selected.path;
             return (
-              <UiButton controlWidth="fill" variant="plain" role="tab" aria-selected={active} selected={active}
+              <UiButton controlWidth="fill" variant="plain" role="tab" tabOrientation="vertical" aria-selected={active} selected={active}
                 key={diff.path}
                 type="button"
                 onClick={() => setSelectedPath(diff.path)}
                 controlSize="regular"
-                className={cn("flex items-center gap-2 rounded-sm text-left transition-colors", !active && "text-content-primary hover:text-content-strong")}
+                className="flex items-center gap-2 text-left transition-colors"
                 title={diff.path}
               >
                 <span className="min-w-0 flex-1 truncate font-code text-compact">
@@ -700,10 +700,8 @@ function TraceItem({
         type="button"
         onClick={onToggle}
         aria-expanded={active}
-        controlSize="compact" className={cn(
- "justify-start gap-2 text-left text-content-primary transition-colors hover:bg-zinc-900/70",
- active && "bg-zinc-900/70",
- )}
+        selected={active}
+        controlSize="compact" className="justify-start gap-2 text-left"
       >
         <Icon className={cn("h-3.5 w-3.5 shrink-0", tone)} />
         <span className="min-w-0 max-w-[45%] shrink truncate text-compact font-medium text-content-secondary">

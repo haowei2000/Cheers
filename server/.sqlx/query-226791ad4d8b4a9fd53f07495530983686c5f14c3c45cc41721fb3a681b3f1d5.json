@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_evaluations SET status=$2,error=$3,completed_at=NOW()\n         WHERE evaluation_id=$1 AND status='dispatched'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "226791ad4d8b4a9fd53f07495530983686c5f14c3c45cc41721fb3a681b3f1d5"
+}

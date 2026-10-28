@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState } from "react";
@@ -21,6 +22,8 @@ interface ConfigFields {
   allowed_roots: string[];
   default_cwd: string | null;
   auto_allow: boolean;
+  remote_terminal:boolean;
+  remote_open:boolean;
   env_inherit: boolean;
   env_allow: string[];
   forward_to_backend: boolean;
@@ -116,7 +119,7 @@ export function ConnectorConfigForm({
   if (rawMode) {
     return (
       <div className="mt-3 space-y-2">
-        <p className="text-compact text-content-muted">Raw TOML — full control.</p>
+        <HelpLabel help="Edit the full connector configuration as TOML.">Raw TOML</HelpLabel>
         <Textarea
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
@@ -280,6 +283,8 @@ export function ConnectorConfigForm({
             </p>
           )}
         </Field>
+        <CheckboxField checked={f.remote_terminal} onChange={e=>patch({remote_terminal:e.target.checked})} label="Allow remote terminal (host account permissions)" controlSize="compact" />
+        <CheckboxField checked={f.remote_open} onChange={e=>patch({remote_open:e.target.checked})} label="Allow remote file opening" controlSize="compact" />
         <CheckboxField
           label="Auto-approve tool calls (skip permission prompts) — use with care"
           checked={f.auto_allow}

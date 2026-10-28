@@ -3,9 +3,43 @@
 Rust local daemon for the Cheers ACP connector.
 
 This binary owns daemon lifecycle commands: `start`, `stop`, `restart`,
-`status`, and `logs`. Its `run` command validates the local TOML security
+`status`, `list`, and `logs`. Its `run` command validates the local TOML security
 config, starts the Rust BridgeRuntime, and connects Agent Bridge to a local ACP
 agent through the configured adapter.
+
+For desktop supervision or scripts, use `cce-acp-connector list --json` or
+`cce-acp-connector --name helper status --json`. Both return a versioned report
+(`schema_version: 1`, `instances: [...]`). The CLI validates process identity
+before setting `running`; a reused PID does not count as a running daemon.
+An unsuccessful command means status is unavailable, so callers must not treat
+it as a list of stopped instances.
+
+Bot defaults and persisted session overrides are reconciled after every ACP
+session create/load and after an immediate session change. Gateway task snapshots
+restore overrides made offline or before the first runtime session exists.
+Monotonic revisions prevent an older queued task from restoring stale settings;
+local host policy still clamps every session override.
+
+Since 0.1.54, standard tasks require the Gateway's `task_acceptance` capability
+and an explicit `acceptance_required` task flag. The Connector reserves the task,
+requests an execution grant, and starts ACP only after a matching committed
+`granted` response. The existing Gateway `bot_runs` record is the durable owner;
+there is no second local task ledger. Duplicate frames cannot reuse one grant,
+and a restarted Connector cannot take over the previous connection's execution.
+Denied or timed-out grants never execute or finalize another owner's message.
+Standard tasks also stop after an authentication failure rather than automatically
+re-prompting. See [Task Delivery and Completion](../../docs/arch/TASK_DELIVERY.md)
+for the receipt contract, recovery limits and coordinated rollout requirements.
+
+Since 0.1.55, standard tasks also require `terminal_replay`. Done and Error carry
+the granted execution identity and are saved to a durable result outbox before
+network delivery. A result-only worker retries pending entries on startup and
+while connected, using the same receipt ID and a fresh signature. Only a matching
+committed ACK removes the entry. It never re-runs ACP work. The Gateway commits
+its receipt with the message and answers exact retries without publishing another
+reply or touching a newer turn's session. Results whose uncommitted placeholders
+were already reclaimed remain rejected and retained locally; see the recovery
+limits above.
 
 Every session receives the canonical Gateway HTTP MCP URL from the authenticated
 Bridge hello, and the Connector requires `mcpCapabilities.http=true`.

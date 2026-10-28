@@ -1,5 +1,6 @@
 import { parse as yamlParse } from "yaml";
 import type { RendererExtension, RendererMatch } from "../sandbox/rendererExtension";
+import { acceptsA2UIDocument } from "../lens/a2ui/document";
 
 // A renderer turns ONE file's content into an interactive UI. Renderers come from two
 // places, kept uniform here: built-in lenses and personal extensions (sandboxed code).
@@ -102,6 +103,15 @@ export function accepts(desc: RendererDesc, path: string, content: string): bool
 // pickable for any markdown. table/kanban need external config (columns), so they're
 // resolvable (a template's view supplies config) but NOT offered in the generic picker.
 const BUILTINS: RendererDesc[] = [
+  {
+    id: "builtin:a2ui",
+    title: "Interactive UI",
+    format: ["json", "yaml"],
+    source: "builtin",
+    lensId: "a2ui",
+    match: { format: ["json", "yaml"], dataHas: ["a2ui", "messages"] },
+    acceptsData: acceptsA2UIDocument,
+  },
   {
     id: "builtin:markdown",
     title: "Markdown",

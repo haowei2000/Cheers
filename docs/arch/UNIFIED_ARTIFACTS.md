@@ -149,3 +149,26 @@ migrated and counts/content/permissions have been reconciled. Compatibility stay
 at the boundary; there must be one business implementation behind it. Deploy the
 rebuilt gateway before clients use new resource verbs. Connector protocol changes
 follow the repository's signed-release and configuration-floor rules.
+
+## Integration with develop (2026-10-28)
+
+Merged develop at `0a83396b`. The artifact migrations now follow upstream's
+resource identity, drafts and execution migrations as `0116` and `0117`;
+upstream applied migrations are unchanged. The complete sequence was applied to
+a new scratch database. SQLx metadata was regenerated with all targets and the
+integration feature.
+
+Upstream global resource links and execution contracts remain available alongside
+artifact discovery. Artifact reads expose the provider URI, and shared editor
+sessions retain a separate provider revision for interactive actions; artifact
+writes continue to check the catalog version. Browser mutations use upstream's
+shared effects dispatcher. Android artifact requests use the new authenticated
+socket lifecycle, and exports use the session-bound API. SDK-free tests cover
+request/controller state; WebSocket integration runs with Android's authentication
+tests in the app unit-test target.
+
+Integration checks: 1,218 Web tests, TypeScript, production build, design audit,
+37 MCP tests, 22 Android app tests and debug APK, 11 standalone protocol/state
+tests, and iOS simulator build passed. 524 Gateway unit tests and seven artifact integration tests also pass on the
+merged code. Visual acceptance and the remaining
+migration gates above are still open; no deployment was performed.

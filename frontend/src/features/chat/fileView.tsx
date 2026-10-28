@@ -8,6 +8,8 @@ import { transcribeFile } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { downloadFile, formatBytes, isAudioFile } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
+import { useImageObjectUrl } from "./imageObjectUrl";
+import { useNearViewport } from "@/hooks/useNearViewport";
 import { useContextSurface } from "@/components/ui/context-actions";
 import { useContextPickStore } from "./context/contextPick";
 
@@ -23,41 +25,47 @@ const FilePreviewModal = lazy(() =>
 // Re-exported for callers that historically imported these from fileView.
 export { downloadFile, formatBytes } from "./fileUtils";
 
-// Inline image thumbnail. An <img src> can't carry the Bearer, so fetch the blob with auth
-// then render an object URL (revoked on unmount). Clicking the tile opens the full preview.
-function ImagePreview({ file }: { file: FileInfo }) {
-  const [src, setSrc] = useState<string | null>(null);
+// Inline image thumbnail. Loads only once the tile nears view in its scroll
+// container, so opening a channel full of images doesn't queue every download ahead
+// of the visible ones; the bytes come from the shared cache the full preview reads.
+// Only the loaded image is a button (it opens the preview); the failed state holds
+// its own Retry, so no button is ever nested in another.
+function ImagePreview({ file, onOpen }: { file: FileInfo; onOpen: () => void }) {
+  const placeholderRef = useRef<HTMLDivElement | null>(null);
+  const [activated, setActivated] = useState(false);
+  const near = useNearViewport(placeholderRef, { rootMargin: "400px 0px", enabled: !activated });
   useEffect(() => {
-    let url: string | null = null;
-    let alive = true;
-    apiFetch(`/files/${file.file_id}/download`)
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("dl"))))
-      .then((b) => {
-        if (alive) {
-          url = URL.createObjectURL(b);
-          setSrc(url);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [file.file_id]);
+    if (near) setActivated(true);
+  }, [near]);
+  const { src, failed, retry } = useImageObjectUrl(file.file_id, activated);
 
   if (!src) {
     return (
-      <div className="h-32 w-32 rounded-sm bg-zinc-800/60 flex items-center justify-center text-minimal text-content-muted">
-        Loading image…
+      <div ref={placeholderRef} className="h-32 w-32 rounded-sm bg-zinc-800/60 flex flex-col items-center justify-center gap-1 text-minimal text-content-muted">
+        {failed ? (
+          <>
+            Image unavailable
+            <UiButton action="retry" variant="plain" onClick={retry}>Retry</UiButton>
+          </>
+        ) : (
+          "Loading image…"
+        )}
       </div>
     );
   }
   return (
-    <img
-      src={src}
-      alt={file.original_filename || "image"}
-      className="max-h-48 max-w-[240px] rounded-sm object-cover hover:opacity-90 transition-opacity"
-    />
+    <UiButton variant="plain" role="option"
+      type="button"
+      onClick={onOpen}
+      title={file.original_filename || file.file_id}
+      className="block h-auto rounded-sm transition-opacity hover:opacity-90"
+    >
+      <img
+        src={src}
+        alt={file.original_filename || "image"}
+        className="max-h-48 max-w-[240px] rounded-sm object-cover"
+      />
+    </UiButton>
   );
 }
 
@@ -240,14 +248,7 @@ export function FileTile({ file, channelId }: { file: FileInfo; channelId?: stri
       {isAudioFile(file) ? (
         <AudioTile file={file} />
       ) : isImage ? (
-        <UiButton variant="plain" role="option"
-          type="button"
-          onClick={() => setOpen(true)}
-          title={file.original_filename || file.file_id}
-          className="block rounded-sm transition-opacity hover:opacity-90"
-        >
-          <ImagePreview file={file} />
-        </UiButton>
+        <ImagePreview file={file} onOpen={() => setOpen(true)} />
       ) : (
         <UiButton content="iconText" variant="plain" role="option"
           type="button"

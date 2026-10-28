@@ -79,7 +79,7 @@ export function DropdownSelect({
   placement?: "up" | "down";
   align?: "start" | "end";
   controlSize?: ControlSize;
-  controlWidth?: "slot" | "fill";
+  controlWidth?: "slot" | "fill" | "content";
   disabled?: boolean;
   className?: string;
   menuClassName?: string;

@@ -6,7 +6,7 @@ Cheers 有三种运行方式，按目标选择：
 
 | 方式 | 适合 | 网关与前端如何运行 |
 |---|---|---|
-| **1. 源码运行** | 开发调试 | 本机 `cargo run` + `npm run dev`；依赖服务用 Docker |
+| **1. 源码运行** | 开发调试 | 本机 `cargo run` + `pnpm dev`；依赖服务用 Docker |
 | **2. Docker Compose** | 单机自托管、演示 | 所有服务作为容器运行在一台主机上 |
 | **3. Helm / Kubernetes** | 集群、生产、横向扩展 | 所有服务作为 Kubernetes 工作负载 |
 
@@ -128,7 +128,7 @@ docker compose up -d postgres rustfs
 cd server && cargo run
 
 # 4) 另开一个终端运行前端开发服务器（热重载）
-cd frontend && npm install && npm run dev     # → http://localhost:5173
+cd frontend && pnpm install && pnpm dev       # → http://localhost:5173
 ```
 
 Vite 开发服务器会把 `/api` 和 `/ws` 代理到 `http://127.0.0.1:8000` 的网关

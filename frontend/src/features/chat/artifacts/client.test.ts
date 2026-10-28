@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { artifactEditorClient, makeArtifactClient, type Artifact } from "./client";
+import { fileSessionController } from "../workbench/fileSessionController";
 import { makeFsClient } from "../workbench/fsClient";
 import { contextItemLocator, locatorToContextItem } from "../context/contextPick";
 
@@ -16,11 +17,12 @@ describe("artifact references", () => {
     const send = async (resource: string, params: Record<string, unknown>) => {
       calls.push({ resource, params });
       return { kind: "text", content: "value: 1", truncated: false, version: 2,
-        artifact: { ...artifact, path: "renamed.yaml", version: 8 } };
+        uri: "cheers:resource/service/desk/source",
+        artifact: { ...artifact, path: "renamed.yaml", version: 8, source_version: 2 } };
     };
     const editor = artifactEditorClient(makeFsClient(send, "channel"), send, "channel", artifact);
-    expect((await editor.read("old.yaml")).version).toBe(8);
-    expect(await editor.write("old.yaml", "value: 2", 8)).toEqual({ path: "renamed.yaml", version: 8 });
+    expect(await editor.read("old.yaml")).toMatchObject({ version: 8, source_version: 2, uri: "cheers:resource/service/desk/source" });
+    expect(await editor.write("old.yaml", "value: 2", 8)).toEqual({ path: "renamed.yaml", version: 8, source_version: 2 });
     await editor.patch("old.yaml", [{ op: "set", path: ["value"], value: 3 }], 8);
     expect(calls.slice(0, 3).map(({ resource }) => resource)).toEqual([
       "channel.artifacts.read", "channel.artifacts.update", "channel.artifacts.patch",
@@ -28,6 +30,12 @@ describe("artifact references", () => {
     expect(calls[1].params).toEqual({ channel_id: "channel", artifact_id: "stable", content: "value: 2", if_version: 8 });
     await editor.read(".workbench.json");
     expect(calls[3].resource).toBe("fs.read");
+    const session = fileSessionController(editor, "old.yaml", { autoSave: false });
+    await session.ensureLoaded();
+    expect(session.snapshot()).toMatchObject({ version: 8, sourceVersion: 2, resourceUri: "cheers:resource/service/desk/source" });
+    session.actions.editText("value: 4");
+    await session.actions.save();
+    expect(session.snapshot()).toMatchObject({ version: 8, sourceVersion: 2 });
   });
   it("round-trips the stable identity through composer context", () => {
     const uri = "cheers:artifact/49ca7c5f-37cb-4f02-831c-e36da3492361";

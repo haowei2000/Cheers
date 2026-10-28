@@ -56,7 +56,7 @@ export function ConfirmDialog({
         />
         <Button
           action={confirmAction}
-          variant="danger"
+          variant="destructive"
           controlSize="compact"
           loading={busy}
           disabled={busy}

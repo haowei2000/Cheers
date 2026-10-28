@@ -1,6 +1,7 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
-import { AtSign, Bot, MessageCircle, Settings, UserRound, Users } from "lucide-react";
+import { AtSign, MessageCircle, Settings, UserRound, Users } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import { listChannelMembers } from "@/api/channels";
 import { Avatar } from "@/components/ui/avatar";
 import { PopoverPanel } from "@/components/ui/popover";
@@ -56,7 +57,7 @@ function MemberRow({
         onClick={openProfile}
         title={name}
         leading={<Avatar name={name} src={member.avatar_url ?? undefined} id={member.member_id} size="regular" online={member.is_online ?? undefined} />}
-        status={member.member_type === "bot" ? <Bot className="h-3.5 w-3.5 text-accent-400" /> : undefined}
+        status={member.member_type === "bot" ? <BotIcon contentSize="small" className="text-accent-400" /> : undefined}
         trailing={member.role && member.role !== "member" ? <span className="text-minimal capitalize text-content-muted">{member.role}</span> : undefined}
       />
     </div>

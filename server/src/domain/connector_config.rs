@@ -283,6 +283,55 @@ pub fn overlay_model_state(
     options
 }
 
+/// Project a raw ACP session snapshot into the flat select vocabulary exposed by
+/// the owner and session-control APIs. ACP select options may be grouped; group
+/// names qualify flattened labels, while leaf `value`s remain the actual values
+/// accepted by session/set_config_option. Keep the persisted snapshot raw.
+/// `None` preserves the manual-override path when no vocabulary was advertised.
+pub fn advertised_config_options(
+    agent_type: &str,
+    snapshot: &serde_json::Value,
+) -> Option<Vec<serde_json::Value>> {
+    use serde_json::Value;
+    let base = snapshot.get("configOptions").and_then(Value::as_array);
+    let mut options = overlay_model_state(snapshot, base.cloned().unwrap_or_default());
+    if options.is_empty() && base.is_none() {
+        return None;
+    }
+    options = dedup_mode_config_options(agent_type, options);
+    for option in &mut options {
+        let Some(values) = option.get_mut("options").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        let mut leaves = Vec::new();
+        for value in values.iter() {
+            if value.get("value").and_then(Value::as_str).is_some() {
+                leaves.push(value.clone());
+            } else if value.get("group").and_then(Value::as_str).is_some() {
+                if let Some(group) = value.get("options").and_then(Value::as_array) {
+                    for leaf in group
+                        .iter()
+                        .filter(|leaf| leaf.get("value").and_then(Value::as_str).is_some())
+                    {
+                        let mut projected = leaf.clone();
+                        if let (Some(group_name), Some(name)) = (
+                            value.get("name").and_then(Value::as_str),
+                            leaf.get("name").and_then(Value::as_str),
+                        ) {
+                            if !group_name.is_empty() {
+                                projected["name"] = Value::String(format!("{group_name} · {name}"));
+                            }
+                        }
+                        leaves.push(projected);
+                    }
+                }
+            }
+        }
+        *values = leaves;
+    }
+    Some(options)
+}
+
 /// Inputs for [`render_toml`]. `account_id` is the TOML table key under
 /// `[accounts.<id>...]` and the daemon `--name`; it is sanitized for you.
 pub struct RenderParams<'a> {
@@ -451,6 +500,8 @@ allow_local_file_refs = false
 [accounts.{id}.policy.workspace]
 default_cwd         = "~/.cheers/workspace"
 allowed_roots       = ["~/.cheers/workspace"]
+remote_terminal     = false
+remote_open         = false
 backend_may_set_cwd = true
 
 [accounts.{id}.policy.env]
@@ -515,6 +566,51 @@ allowed_servers                  = ["cheers"]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn advertised_projection_flattens_group_leaves_without_mutating_raw_snapshot() {
+        let snapshot = serde_json::json!({"configOptions":[{
+            "id":"model","name":"Model","type":"select","currentValue":"leaf-one",
+            "options":[
+                {"group":"family","name":"Family","options":[
+                    {"value":"leaf-one","name":"One","_meta":{"vendor":"preserved"}},
+                    {"value":"leaf-two","name":"Two"}
+                ]},
+                {"value":"flat","name":"Flat"}
+            ]
+        }], "models":{"availableModels":[{"modelId":"legacy"}]}});
+        let original = snapshot.clone();
+        let projected = advertised_config_options("codex", &snapshot).unwrap();
+        assert_eq!(
+            projected.len(),
+            1,
+            "the advertised model must not be duplicated"
+        );
+        assert_eq!(
+            projected[0]["options"],
+            serde_json::json!([
+                {"value":"leaf-one","name":"Family · One","_meta":{"vendor":"preserved"}},
+                {"value":"leaf-two","name":"Family · Two"},{"value":"flat","name":"Flat"}
+            ])
+        );
+        assert_eq!(snapshot, original);
+    }
+
+    #[test]
+    fn advertised_projection_distinguishes_missing_and_explicit_empty_vocabulary() {
+        assert!(advertised_config_options("generic", &serde_json::json!({})).is_none());
+        assert_eq!(
+            advertised_config_options("generic", &serde_json::json!({"configOptions":[]})),
+            Some(Vec::new())
+        );
+        let projected = advertised_config_options("claude", &serde_json::json!({"configOptions":[
+            {"id":"mode","category":"mode","options":[{"value":"default","name":"Default"}]},
+            {"id":"model","options":[{"group":"family","name":"Family","options":[{"value":"selected","name":"Selected"}]}]}
+        ]})).unwrap();
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0]["id"], "model");
+        assert_eq!(projected[0]["options"][0]["value"], "selected");
+    }
 
     #[test]
     fn sanitizes_account_ids() {

@@ -210,7 +210,11 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
             .get("content")
             .and_then(Value::as_str)
             .unwrap_or("");
+        let service = crate::api::resources::service_id(db)
+            .await
+            .map_err(|e| super::resource_error("INTERNAL", e.to_string()))?;
         json!({"content":text, "data":fs::parse_structured(artifact.path.as_deref().unwrap_or(""), text),
+               "uri":cheers_interactive_core::global_uri::format(&service,"desk",&artifact.source_id,None),
                "kind":"text", "truncated":false})
     } else {
         files::handle_read(db, principal, &json!({"channel_id":artifact.channel_id,

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { pointRect, useContextActions } from "@/components/ui/context-actions";
 import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons";
 import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
-import { ResourceError } from "../../hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import type { FsClient } from "../fsClient";
 import { formatOf } from "../renderers/registry";
 import type { RendererExtension } from "./rendererExtension";

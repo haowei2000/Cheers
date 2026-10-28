@@ -24,7 +24,8 @@ describe("ChannelToolbar", () => {
   it("renders roster button with count and aria labels", () => {
     const markup = renderToStaticMarkup(<ChannelToolbar {...defaultProps} />);
 
-    expect(markup).toContain("ROSTER");
+    expect(markup).not.toContain("ROSTER");
+    expect(markup).toContain(">5</span>");
     expect(markup).toContain('aria-label="Channel roster: 5 members, 2 online"');
   });
 

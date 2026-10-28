@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bot_runs\n         (bot_run_id,task_id,channel_id,trigger_msg_id,bot_id,placeholder_msg_id,binding_type,status,chain_id,dispatch_input,next_offer_at)\n         VALUES($1,$1,$2,$3,$4,$5,'acp','pending',$6,$7,NOW())\n         ON CONFLICT(placeholder_msg_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c20380e08bb83b2023bcab63386896b10ae640d2279d8143b431b515b397659"
+}

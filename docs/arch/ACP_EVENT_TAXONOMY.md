@@ -118,7 +118,48 @@ agent-initiated tool-use reads (`RealizeFile`, `WorkspaceReq`).
 | SEE · `output` (bot's chat reply) | **membership-level** — a conversation reply isn't hidden per-member (incoherent, and would mean filtering every token) |
 | `set_mode` / `set_config_option` | **deny-default but GRANTABLE** (`OWNER_DEFAULT_INITIATE`). **Bot owner / platform admin are allowed by default**; every other subject is denied unless an explicit INITIATE grant widens it. Owner sets the bot-level default via `PUT /permissions/posture` · `/config-option`; an authorized channel member changes a *session's* mode/config via `POST /channels/:ch/bots/:bot/sessions/:sid/mode` · `/config-option` (fail-closed, value-clamped by L0). They appear in the INITIATE matrix. See [SESSION_MODEL.md](SESSION_MODEL.md). ⚠️ **Changed** — previously excluded/owner-only. |
 
-Per-subscriber SEE: the caller computes the allowed-user set (`allowed_seers`: online users × channel role × bot rules; platform admins bypass; fail-open) and the fanout delivers only to those connections (`broadcast_channel_to_users`, in-process + Redis see-subject). All authorization runs through the single `acp_policy::allows(…)` chokepoint.
+Live WS events, persisted Trace reads and Fleet pending cards share
+`bot_event_policy::AccessBatch`. Each request or broadcast loads a bot's rules
+once and resolves dynamic groups once per `(bot, user)`. Successful and
+failed lookups are reused only within that operation. There is no cross-event
+TTL cache: a later operation reloads rule changes, expirations and group changes
+through the same checked loader and `resolve_access` matrix. Named ACP methods
+still use `acp_policy::allows` for the registry's name-to-class mapping.
+WS membership reads are limited to online recipients, and each broadcast loads
+the bot's rules at most once. Dynamic group reads are needed only when the rules
+reference groups; repeated cards and event classes reuse the same subject result.
+
+Per-subscriber SEE intersects online subscriptions with current channel members
+before applying the matrix. Even a broadcast with no explicit SEE rule checks
+membership. The fanout still delivers only to the filtered subscriptions via
+`broadcast_channel_to_users` (in-process + Redis see-subject). Platform admins
+bypass SEE after the adapter's channel access check; bot ownership alone does
+not bypass SEE. Fleet applies the same administrator visibility exception while
+keeping its pending inbox restricted to channels the user belongs to. RESPOND
+remains a separate owner/delegate/explicit-grant decision, including for admins.
+
+Policy read errors fail closed: Trace returns an error; WS and Fleet omit the
+affected recipients or rows. Message Trace queries bind both the message ID and
+the authorized route's channel ID. These checks govern each read/broadcast;
+later changes cannot retract an event already delivered.
+
+Channel removal and self-leave share `domain::channel_memberships`: membership,
+pending invites, approval delegations and that channel's per-user event rules
+are removed in one transaction. A cleanup or commit failure preserves the
+previous authority. After a successful commit, the HTTP adapter revokes live
+subscriptions before awaiting notification resolution or presence updates.
+This does not retract messages already delivered or make post-commit fanout
+effects durable across a process crash.
+
+Membership removal, leave and role changes serialize on a channel-scoped
+transaction advisory lock and read caller/target authority after acquiring it.
+Workspace detachment, account deletion and integration projection use the same
+guard when changing existing memberships; invite acceptance also participates
+so an in-flight acceptance cannot reuse an invite consumed by removal. Commands
+affecting multiple channels acquire guards in advisory-key order, after any
+workspace parent locks. The guard is separate from the channel row used to
+allocate message sequences, avoiding a lock-order inversion with message/task
+authorization.
 
 > Net: the permission system reduces to **(a) the connector's event-type allow-list** +
 > **(b) Cheers's two (user × event) matrices (initiate / see+respond)**. `request_permission`

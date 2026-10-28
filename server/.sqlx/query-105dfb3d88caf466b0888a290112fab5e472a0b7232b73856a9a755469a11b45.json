@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.bot_id FROM channel_memberships m JOIN bot_accounts b ON b.bot_id=m.member_id\n             WHERE m.channel_id=$1 AND m.member_type='bot' AND m.member_id=$2\n               AND m.role IN ('owner','admin','member') AND b.is_disabled=FALSE FOR SHARE OF m,b",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "105dfb3d88caf466b0888a290112fab5e472a0b7232b73856a9a755469a11b45"
+}

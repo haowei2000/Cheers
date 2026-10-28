@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT is_suspended, is_deleted FROM users WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_suspended",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_deleted",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "442c3330223cea3aa51edc2a09a3d145078d910f65da6edb4c2f160663ea459e"
+}

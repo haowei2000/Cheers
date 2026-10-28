@@ -18,6 +18,10 @@ export interface FsEntry {
 }
 
 export interface FileContent {
+  uri?: string;
+  source_version?: number;
+  resource_id?: string;
+  channel_id?: string;
   path: string;
   content: string;
   version: number;
@@ -41,7 +45,7 @@ export function makeFsClient(send: SendResourceReq, channelId: string) {
         path,
         content,
         ...(ifVersion !== undefined ? { if_version: ifVersion } : {}),
-      }) as Promise<{ path: string; version: number }>,
+      }) as Promise<{ path: string; version: number; source_version?: number }>,
     // Structured edits, applied atomically under the same optimistic lock. Preferred
     // over `write` for machine-edited documents: it preserves YAML comments that a
     // whole-document rewrite loses whenever an array's LENGTH changes, and a rejected
@@ -51,6 +55,7 @@ export function makeFsClient(send: SendResourceReq, channelId: string) {
       send("fs.patch", { ...ch(), path, ops, if_version: ifVersion }) as Promise<{
         path: string;
         version: number;
+        source_version?: number;
       }>,
     // Destructive: server gates rm to owner/admin on the user path (PERMISSION_DENIED).
     rm: (path: string, recursive = false) =>

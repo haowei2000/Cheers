@@ -1,6 +1,35 @@
 import SwiftUI
 import UIKit
 
+/// Existing text owns its explanation. Long press and VoiceOver expose the same
+/// content on touch devices without adding a separate help button.
+private struct HelpExplanation: ViewModifier {
+    let content: LocalizedStringKey
+    @State private var isPresented = false
+
+    func body(content view: Content) -> some View {
+        view
+            .help(Text(content))
+            .accessibilityHint(Text(content))
+            .accessibilityAction(named: Text("Show explanation")) { isPresented = true }
+            .onLongPressGesture { isPresented = true }
+            .popover(isPresented: $isPresented) {
+                Text(content)
+                    .font(Theme.utilityFont)
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(Theme.space4)
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .presentationCompactAdaptation(.popover)
+            }
+    }
+}
+
+extension View {
+    func helpExplanation(_ content: LocalizedStringKey) -> some View {
+        modifier(HelpExplanation(content: content))
+    }
+}
+
 enum PresentationLevel: String, CaseIterable, Sendable {
     case max
     case medium

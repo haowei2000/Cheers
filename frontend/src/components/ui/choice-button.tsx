@@ -63,16 +63,13 @@ export const ChoiceButton = forwardRef<HTMLButtonElement, ChoiceButtonProps>(
         aria-checked={selected}
         aria-label={description ? `${label}: ${description}` : label}
         title={description}
-        data-selected={selected || undefined}
+        selected={selected}
         content="iconText"
         controlWidth="fill"
         controlSize={size}
         variant="plain"
         className={cn(
-          "text-content-muted",
-          selected
-            ? "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover active:bg-selected-active"
-            : "hover:bg-zinc-700/60 hover:text-content-secondary",
+          !selected && "text-content-muted hover:bg-zinc-700/60 hover:text-content-secondary",
           className,
         )}
       >

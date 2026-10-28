@@ -1,11 +1,17 @@
+import { RemoteTerminal } from "./RemoteTerminal";
 import { Button as UiButton } from "@/components/ui/button";
 import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { cn } from "@/lib/cn";
 import { DropdownSelect, type DropdownSelectOption } from "@/components/ui/dropdown-select";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FloatingPanel, FloatingPanelContextPortal } from "@/components/ui/floating-panel";
+import { FloatingPanel } from "@/components/ui/floating-panel";
+import { Banner } from "@/components/ui/banner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Badge } from "@/components/ui/badge";
+import { controlSquareClasses } from "@/components/ui/control-size";
+import { formatBytes } from "./fileUtils";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PresenceDot } from "@/components/ui/presence-dot";
+import { HelpLabel } from "@/components/ui/help-text";
 import { FsTreeIcon } from "./FsTreeIcon";
 import { LocalOpen } from "@/features/desktop/LocalOpen";
 import {
@@ -16,8 +22,10 @@ import { useContextSurface, type ContextAction } from "@/components/ui/context-a
 import { addRecentWorkspace } from "@/lib/recentWorkspaces";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
+  ArrowLeft,
   ArrowUp,
   Bot,
+  Terminal as TerminalIcon,
   File,
   FolderTree,
   Download,
@@ -102,6 +110,15 @@ function gitMark(xy: string): { m: string; cls: string } | null {
   return { m: "M", cls: "text-warning-400" };
 }
 
+/** Marker for a commit's `--name-status` letter (M / A / D / R### / C###). */
+function commitFileMark(status: string): { m: string; cls: string } {
+  const letter = status.charAt(0) || "M";
+  if (letter === "A") return { m: "A", cls: "text-success-400" };
+  if (letter === "D") return { m: "D", cls: "text-removed-400" };
+  if (letter === "R" || letter === "C") return { m: letter, cls: "text-info-400" };
+  return { m: letter, cls: "text-warning-400" };
+}
+
 /**
  * Match a git status path (repo-root-relative) against a tree entry path (workspace-
  * root-relative). The two share the same tail; only the prefix depth differs by where
@@ -121,6 +138,14 @@ function pathSuffixMatch(a: string, b: string): boolean {
 }
 
 /** Compact relative age for an ISO-8601 date (falls back to the raw string). */
+/** Absolute local date-time for a commit tooltip; the raw value if unparseable. */
+function formatCommitDate(iso: string): string {
+  const t = Date.parse(iso);
+  return Number.isNaN(t)
+    ? iso
+    : new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 function relDate(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return iso;
@@ -169,6 +194,13 @@ function isUnstagedCode(xy: string): boolean {
 /** Last segment of a path — what names a folder when the full path will not fit. */
 function basename(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() || path;
+}
+
+/** Everything before the last segment (`""` for a top-level entry). */
+function dirname(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const i = trimmed.lastIndexOf("/");
+  return i > 0 ? trimmed.slice(0, i) : "";
 }
 
 function joinAbs(root: string, rel: string): string {
@@ -222,11 +254,11 @@ export function WorkspaceEntryRow({
       controlWidth="fill"
       variant="plain"
       role="option"
+      aria-selected={selected}
+      selected={selected}
       onClick={onOpen}
       controlSize="compact"
-      className={`flex items-center gap-2 text-left hover:bg-control text-content-primary ${
-        selected ? "bg-control font-medium" : ""
-      }`}
+      className={cn("flex items-center gap-2 text-left", !selected && "text-content-primary hover:bg-control")}
       onContextMenu={surface.onContextMenu}
       onKeyDown={surface.onKeyDown}
       onPointerDown={surface.onPointerDown}
@@ -243,6 +275,47 @@ export function WorkspaceEntryRow({
           {mark.m}
         </span>
       )}
+    </UiButton>
+  );
+}
+
+/** One changed file — shared by the working-tree Changes list and a commit's files,
+ *  so both read the same: file name first, its folder muted, the status letter last. */
+export function GitFileRow({
+  path,
+  mark,
+  selected,
+  onOpen,
+  title,
+}: {
+  path: string;
+  mark: { m: string; cls: string } | null;
+  selected: boolean;
+  onOpen: () => void;
+  title?: string;
+}) {
+  const dir = dirname(path);
+  // Porcelain marks an untracked directory with a trailing slash; keep it visible.
+  const name = basename(path) + (path.endsWith("/") ? "/" : "");
+  return (
+    <UiButton
+      controlWidth="fill"
+      variant="plain"
+      role="option"
+      aria-selected={selected}
+      selected={selected}
+      onClick={onOpen}
+      title={title ?? path}
+      controlSize="compact"
+      className={cn("flex items-center gap-2 text-left", !selected && "text-content-primary hover:bg-control")}
+    >
+      <span className="min-w-0 flex-1 truncate font-utility text-compact">
+        {name}
+        {dir && <span className="ml-2 font-normal text-minimal text-content-muted">{dir}</span>}
+      </span>
+      <span className={`w-3 shrink-0 text-center font-code text-minimal ${mark?.cls ?? "text-content-muted"}`}>
+        {mark?.m ?? "•"}
+      </span>
     </UiButton>
   );
 }
@@ -300,6 +373,7 @@ export function RemoteWorkspaceDialog({
   } | null;
 }) {
   const [bots, setBots] = useState<WorkspaceBot[] | null>(null);
+  const [terminalOpen,setTerminalOpen]=useState(false);
   const [botId, setBotId] = useState<string | null>(initialBotId ?? null);
   const [cwd, setCwd] = useState("");
   const [entries, setEntries] = useState<WorkspaceEntry[] | null>(null);
@@ -367,8 +441,7 @@ export function RemoteWorkspaceDialog({
     | { kind: "file"; path: string; staged: boolean; text: string }
     | {
         kind: "commit";
-        hash: string;
-        subject: string;
+        commit: GitCommitInfo;
         text: string;
         files: GitCommitFile[] | null;
         path: string | null;
@@ -456,6 +529,33 @@ export function RemoteWorkspaceDialog({
   const liveRef = useRef({ cwd, file, dirty, leftView, diff, git, treeRoot });
   liveRef.current = { cwd, file, dirty, leftView, diff, git, treeRoot };
 
+  // Every foreground action that replaces the editor's file or browse context uses
+  // the same guard. Read from the live mirror so callbacks never rely on stale state.
+  // With nothing to lose it answers true and the caller continues; with unsaved
+  // edits it asks in the shared confirm dialog and runs `proceed` once the user
+  // discards — by then the buffer is clean, so the same guard lets it through.
+  const [discardPrompt, setDiscardPrompt] = useState<{
+    filename: string;
+    destination: string;
+    proceed: () => void;
+  } | null>(null);
+  const confirmDiscardDirtyBuffer = useCallback((destination: string, proceed: () => void) => {
+    const current = liveRef.current;
+    if (!current.dirty || !current.file) return true;
+    setDiscardPrompt({ filename: current.file.filename, destination, proceed });
+    return false;
+  }, []);
+  const discardAndProceed = () => {
+    const prompt = discardPrompt;
+    setDiscardPrompt(null);
+    if (!prompt) return;
+    liveRef.current = { ...liveRef.current, dirty: false };
+    setDirty(false);
+    prompt.proceed();
+  };
+  // Force overwrite discards the version changed on the bot's machine.
+  const [overwritePrompt, setOverwritePrompt] = useState(false);
+
   useEffect(() => {
     let alive = true;
     listWorkspaceBots(channelId)
@@ -483,9 +583,10 @@ export function RemoteWorkspaceDialog({
   // cleaned error message on failure (null on success) so a caller that OWNS
   // error semantics (manual refreshAll) can still surface a swallowed failure.
   const loadDir = useCallback(
-    async (path: string, opts?: { background?: boolean }): Promise<string | null> => {
+    async (path: string, opts?: { background?: boolean; confirmed?: boolean }): Promise<string | null> => {
       if (!botId) return null;
       const bg = opts?.background === true;
+      if (!bg && !opts?.confirmed && !confirmDiscardDirtyBuffer("opening this folder", () => void loadDir(path, opts))) return null;
       // Foreground navigation opens a new epoch (superseding everything in flight);
       // a background re-pull rides the current one and yields to any newer action.
       const ep = bg ? epochRef.current : ++epochRef.current;
@@ -530,7 +631,7 @@ export function RemoteWorkspaceDialog({
         if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
-    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch, noteConnHealth]
+    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch, noteConnHealth, confirmDiscardDirtyBuffer]
   );
 
   // `background` = a live-refresh of an already-open CLEAN file: swap the content
@@ -540,6 +641,12 @@ export function RemoteWorkspaceDialog({
     async (path: string, opts?: { background?: boolean }) => {
       if (!botId) return;
       const bg = opts?.background === true;
+      if (!bg && liveRef.current.dirty && liveRef.current.file?.path === path) return;
+      if (
+        !bg &&
+        liveRef.current.file?.path !== path &&
+        !confirmDiscardDirtyBuffer("opening another file", () => void openFile(path, opts))
+      ) return;
       const ep = bg ? epochRef.current : ++epochRef.current;
       if (!bg) {
         setBusy(true);
@@ -574,7 +681,7 @@ export function RemoteWorkspaceDialog({
             }
           } else {
             // A directory clicked via deep-link: fall back to listing it.
-            await loadDir(path, opts);
+            await loadDir(path, { background: bg, confirmed: true });
           }
         } else if (!bg) {
           setErr(cleanErr(e));
@@ -583,7 +690,7 @@ export function RemoteWorkspaceDialog({
         if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
-    [channelId, botId, loadDir, rootParam, effectiveSessionId]
+    [channelId, botId, loadDir, rootParam, effectiveSessionId, confirmDiscardDirtyBuffer]
   );
 
   // Fetch git state for the *current directory's* repo. Supplementary: a non-repo
@@ -735,8 +842,7 @@ export function RemoteWorkspaceDialog({
       if (cachedText != null && cachedFiles != null) {
         setDiff({
           kind: "commit",
-          hash: c.hash,
-          subject: c.subject,
+          commit: c,
           text: cachedText,
           files: cachedFiles,
           path,
@@ -764,7 +870,7 @@ export function RemoteWorkspaceDialog({
         showCache.current.set(showKey, text);
         if (files) commitFilesCache.current.set(filesKey, files);
         if (ep !== epochRef.current) return;
-        setDiff({ kind: "commit", hash: c.hash, subject: c.subject, text, files, path });
+        setDiff({ kind: "commit", commit: c, text, files, path });
       } catch (e) {
         if (ep === epochRef.current) setErr(cleanErr(e));
       } finally {
@@ -965,6 +1071,7 @@ export function RemoteWorkspaceDialog({
   // (the current cwd may not exist under the other root set). Nulling `entries`
   // re-triggers the mount effect above, which re-lists the root with the new scope.
   const toggleScoped = useCallback(() => {
+    if (!confirmDiscardDirtyBuffer("changing the workspace scope", () => toggleScoped())) return;
     setScoped((s) => !s);
     setEntries(null);
     setTreeRoot(null);
@@ -978,12 +1085,13 @@ export function RemoteWorkspaceDialog({
     setLogDone(false);
     setRoot(null); // the other scope has a different effective root set
     setRootSessionId(null);
-  }, []);
+  }, [confirmDiscardDirtyBuffer]);
 
   // Switch the browse to another root option (null = Auto): reset like a scope flip. A
   // session-workdir option also scopes the browse to its owning session (via
   // rootSessionId → effectiveSessionId) so the connector accepts the workdir as a root.
   const selectRoot = useCallback((opt: RootOption | null) => {
+    if (!confirmDiscardDirtyBuffer("changing the workspace root", () => selectRoot(opt))) return;
     setRoot(opt?.path ?? null);
     setRootSessionId(opt?.sessionId ?? null);
     setEntries(null);
@@ -996,7 +1104,7 @@ export function RemoteWorkspaceDialog({
     setDiff(null);
     setLog(null);
     setLogDone(false);
-  }, []);
+  }, [confirmDiscardDirtyBuffer]);
 
   // Live-push: the "workspace" board ticked → an agent finished a turn and may have
   // changed files on its machine. Debounce-refetch (full: a tick carries no paths);
@@ -1257,8 +1365,12 @@ export function RemoteWorkspaceDialog({
       })),
   ];
 
-  const workspaceContextControls = (
-    <div className="flex w-full min-w-0 flex-nowrap items-center gap-1 font-utility text-compact font-medium">
+  // Where the browse is: bot, root, scope, branch, machine, and live status. It sits
+  // in the panel body, under the chrome — the chrome band is one shared line for
+  // tabs and actions, and squeezing this in there truncated the host to "stud…"
+  // and pushed the path out of view.
+  const workspaceLocationBar = (
+    <div className="flex h-9 min-w-0 shrink-0 flex-nowrap items-center gap-2 border-b border-control/80 px-2 font-utility text-compact font-medium">
       {/* A DropdownSelect, not a native <select>. A native one sizes itself to its
           LONGEST option — here a display name plus "(no access)" — so in the panel's
           capped corner it either blew the island open or, constrained, shrank past its
@@ -1276,7 +1388,9 @@ export function RemoteWorkspaceDialog({
           }`,
           disabled: !bot.online || bot.can_read === false,
         }))}
-        onSelect={(value) => {
+        onSelect={function switchBot(value) {
+          if (value === (botId ?? "")) return;
+          if (!confirmDiscardDirtyBuffer("switching bots", () => switchBot(value))) return;
           setBotId(value || null);
           setEntries(null);
           setCwd("");
@@ -1293,8 +1407,8 @@ export function RemoteWorkspaceDialog({
           deepLinked.current = true;
         }}
         controlSize="compact"
-        controlWidth="fill"
-        className="min-w-0 flex-1 font-utility text-compact font-medium"
+        controlWidth="content"
+        className="min-w-0 max-w-48 font-utility text-compact font-medium"
         menuClassName="max-w-72"
       />
             {botId && rootOptions.length > 1 && (
@@ -1306,8 +1420,8 @@ export function RemoteWorkspaceDialog({
                 options={rootPickerOptions}
                 onSelect={(value) => selectRoot(rootOptions.find((option) => option.path === value) ?? null)}
                 controlSize="compact"
-                controlWidth="fill"
-                className="min-w-0 flex-1 font-utility text-compact font-medium"
+                controlWidth="content"
+                className="min-w-0 max-w-48 font-utility text-compact font-medium"
                 menuClassName="max-w-96"
               />
             )}
@@ -1319,15 +1433,21 @@ export function RemoteWorkspaceDialog({
                 options={[{ value: "session", label: "Current session roots" }, { value: "all", label: "Entire allowed roots" }]}
                 onSelect={(value) => { if ((value === "session") !== scoped) toggleScoped(); }}
                 controlSize="compact"
-                controlWidth="fill"
-                className="min-w-0 flex-1 font-utility text-compact font-medium"
+                controlWidth="slot"
+                className="shrink-0 font-utility text-compact font-medium"
               />
             )}
       {git && (
-        <span className="shrink-0 text-content-muted" role="img"
+        <span className="flex min-w-0 shrink items-center gap-1 text-content-muted"
           aria-label={`Git: ${git.branch || "detached"}, ${git.entries.length} changes, ${git.ahead ?? 0} ahead, ${git.behind ?? 0} behind`}
           title={`${git.branch || "detached"} · ${git.entries.length} changes · ↑${git.ahead ?? 0} ↓${git.behind ?? 0}${git.upstream ? ` · ${git.upstream}` : ""}`}>
-          <GitBranch className="h-3.5 w-3.5" aria-hidden="true" />
+          <GitBranch className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate text-content-secondary">{git.branch || "detached"}</span>
+          {(git.ahead || git.behind) ? (
+            <span className="shrink-0 tabular-nums">
+              {[git.ahead ? `↑${git.ahead}` : "", git.behind ? `↓${git.behind}` : ""].filter(Boolean).join(" ")}
+            </span>
+          ) : null}
         </span>
       )}
       {/* Which machine, read-only. `allowed_roots` are that host's config, so the
@@ -1338,41 +1458,22 @@ export function RemoteWorkspaceDialog({
           title={`Browsing ${selectedBot.host_name} — the machine currently serving this bot`}
         >
           <span aria-hidden="true" className="text-content-muted/60">·</span>
-          <span className="truncate max-w-36 font-utility text-compact font-medium">{selectedBot.host_name}</span>
+          <span className="truncate max-w-48 font-utility text-compact font-medium">{selectedBot.host_name}</span>
         </span>
       )}
-      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-content-muted shrink-0" />}
-      {err && <span className="truncate text-danger-400 max-w-32 font-utility text-compact font-medium" title={err}>{err}</span>}
-      {degraded && !err && (
-        <span
-          className="truncate text-warning-400 font-utility text-compact font-medium"
-          title="The connector isn't responding, so live auto-refresh has slowed to an occasional retry. Click Refresh to try now."
-        >
-          paused
-        </span>
-      )}
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {degraded && !err && (
+          <span
+            className="text-warning-400"
+            title="The connector isn't responding, so live auto-refresh has slowed to an occasional retry. Click Refresh to try now."
+          >
+            Live refresh paused
+          </span>
+        )}
+        {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-content-muted" aria-label="Loading" />}
+      </span>
     </div>
   );
-
-  const workspacePathControl = botId && leftView === "files" ? (
-    <FloatingPanelContextPortal>
-      <div className="flex min-w-0 max-w-64 items-center gap-1 font-utility text-compact font-medium">
-        <UiButton
-          variant="plain"
-          onClick={() => parent !== null && loadDir(parent)}
-          disabled={!cwd}
-          title="Go up one level"
-          aria-label="Go up one level"
-          content="icon"
-          controlSize="compact"
-          className="shrink-0 rounded-sm hover:bg-control disabled:opacity-50"
-        >
-          <ArrowUp className="h-3.5 w-3.5" />
-        </UiButton>
-        <WorkspacePathLabel treeRoot={treeRoot} cwd={cwd} />
-      </div>
-    </FloatingPanelContextPortal>
-  ) : null;
 
   return (
     <>
@@ -1382,12 +1483,7 @@ export function RemoteWorkspaceDialog({
       // Guard against silently discarding edits to a file on the bot's machine:
       // a dirty buffer must confirm before the panel closes (X, backdrop, Esc).
       onClose={() => {
-        if (
-          dirty &&
-          file &&
-          !window.confirm(`Discard unsaved changes to ${file.filename}?`)
-        )
-          return;
+        if (!confirmDiscardDirtyBuffer("closing the workspace", onClose)) return;
         onClose();
       }}
       storageKey="cheers.float.workspace"
@@ -1400,7 +1496,6 @@ export function RemoteWorkspaceDialog({
       // The panes stack (mobile) or sit side-by-side (desktop) and stretch — the
       // body must be a non-scrolling flex column in both cases.
       bodyClassName="relative flex flex-col overflow-hidden p-0 space-y-0"
-      panelContext={workspaceContextControls}
       primaryNavigation={git ? {
         ariaLabel: "Workspace views",
         items: [
@@ -1409,7 +1504,7 @@ export function RemoteWorkspaceDialog({
           { id: "history", label: "History", icon: History, selected: leftView === "history", onSelect: () => selectPrimaryView("history") },
         ],
       } : undefined}
-      panelActions={[{
+      panelActions={[...(botId?[{id:"terminal",label:terminalOpen?"Return to files":"Open remote terminal",icon:TerminalIcon,priority:"secondary" as const,onSelect:()=>setTerminalOpen(open=>!open),control:<UiButton action="open" content="icon" controlSize="compact" aria-label="Open remote terminal" onClick={()=>setTerminalOpen(open=>!open)}><TerminalIcon className="h-4 w-4"/></UiButton>}]:[]),{
         id: "refresh",
         label: "Refresh workspace",
         priority: "secondary",
@@ -1470,11 +1565,17 @@ export function RemoteWorkspaceDialog({
         </>
       )}
     >
-      {workspacePathControl}
       <div
         data-workspace-content=""
         className="flex min-h-0 flex-1 flex-col p-2 md:absolute md:inset-0"
       >
+      {workspaceLocationBar}
+      {/* A failed action names itself in full here, not as a clipped red word in the bar. */}
+      {err && (
+        <Banner severity="error" onDismiss={() => setErr(null)} className="mt-2 shrink-0 text-compact">
+          {err}
+        </Banner>
+      )}
 
       {/* Workspace presence — who ELSE is viewing this bot's workspace right now, so
           co-editing is visible before conflicts happen. */}
@@ -1487,20 +1588,16 @@ export function RemoteWorkspaceDialog({
             // Emphasize when a peer is on the very file we have open.
             const sameFile = !!file && !!v.path && v.path === file.path;
             return (
-              <span
+              <Badge
                 key={v.user_id + ":" + (v.path ?? "")}
+                tone={sameFile ? "warning" : "neutral"}
+                indicator
                 title={v.path ?? name}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm font-medium ${
-                  sameFile
-                    ? "bg-amber-950/40 text-warning-300"
-                    : "bg-control text-content-muted"
-                }`}
               >
-                <PresenceDot contentSize="small" className="bg-emerald-500" />
-                <span className="text-content-secondary">{name}</span>
-                {base && <span className="text-content-muted truncate max-w-[140px]">· {base}</span>}
-                {sameFile && <span className="text-warning-400 shrink-0">· also editing</span>}
-              </span>
+                <span className="truncate max-w-64">
+                  {[name, base, sameFile ? "also editing" : null].filter(Boolean).join(" · ")}
+                </span>
+              </Badge>
             );
           })}
         </div>
@@ -1510,7 +1607,7 @@ export function RemoteWorkspaceDialog({
         <div className="py-10 text-center font-utility text-compact text-content-muted">
           Select an online bot to browse the workspace on its machine.
         </div>
-      ) : (
+      ) : terminalOpen ? (<RemoteTerminal key={`${botId}:${root}:${cwd}`} channelId={channelId} botId={botId} root={root} path={cwd}/>) : (
         // Desktop: side-by-side tree + editor filling the window height.
         // Mobile: a full-screen sheet, so stack the panes vertically. Either way the
         // panes fill the remaining body height and keep their own internal scroll.
@@ -1532,10 +1629,7 @@ export function RemoteWorkspaceDialog({
                     }}
                     controlSize="regular"
                     className={cn(
-                      "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
-                      leftView === "files"
-                        ? "border-content-strong text-content-strong font-semibold"
-                        : "border-transparent text-content-primary",
+                      "-mb-px transition-colors",
                     )}
                   >
                     Files
@@ -1548,10 +1642,7 @@ export function RemoteWorkspaceDialog({
                     onClick={() => setLeftView("changes")}
                     controlSize="regular"
                     className={cn(
-                      "flex items-center gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
-                      leftView === "changes"
-                        ? "border-content-strong text-content-strong font-semibold"
-                        : "border-transparent text-content-primary",
+                      "flex items-center gap-1 -mb-px transition-colors",
                     )}
                   >
                     Changes
@@ -1570,10 +1661,7 @@ export function RemoteWorkspaceDialog({
                     onClick={() => setLeftView("history")}
                     controlSize="regular"
                     className={cn(
-                      "flex items-center gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px text-content-primary transition-colors hover:text-content-strong hover:bg-transparent",
-                      leftView === "history"
-                        ? "border-content-strong text-content-strong font-semibold"
-                        : "border-transparent text-content-primary",
+                      "flex items-center gap-1 -mb-px transition-colors",
                     )}
                   >
                     <History className="w-3.5 h-3.5" /> History
@@ -1582,75 +1670,48 @@ export function RemoteWorkspaceDialog({
               )}
 
               {leftView === "changes" && git ? (
-                <>
-                  <div className="flex h-9 shrink-0 items-center gap-1 px-2 border-b border-control/80 font-utility text-compact text-content-muted">
-                    <span className="flex-1 font-medium text-content-secondary truncate">Changes</span>
-                    <UiButton action="diffWorking" content="icon" variant="plain"
-                    onClick={() => openDiff("", false)}
-                    selected={diff?.kind === "file" && diff.path === "" && !diff.staged}
-                    title="Diff the whole working tree (unstaged)"
-                    controlSize="compact"
-                    className="flex items-center gap-1 rounded-sm text-content-primary hover:text-content-strong"
-                  >
-                    <GitCompare className="w-3.5 h-3.5" />
-                  </UiButton>
-                  <UiButton action="diffStaged" content="icon" variant="plain"
-                    onClick={() => openDiff("", true)}
-                    selected={diff?.kind === "file" && diff.path === "" && diff.staged}
-                    title="Diff everything staged (git diff --staged)"
-                    controlSize="compact"
-                    className="flex items-center gap-1 rounded-sm text-content-primary hover:text-content-strong"
-                  >
-                    <GitCompare className="w-3.5 h-3.5" />                  </UiButton>
-                  {diffBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-                </div>
                 <div className="flex-1 overflow-auto p-1">
                   {(() => {
                     // Split by porcelain XY: index char (staged) vs worktree char
                     // (unstaged/untracked). A file can appear in both groups.
                     const staged = git.entries.filter((e) => isStagedCode(e.xy));
                     const unstaged = git.entries.filter((e) => isUnstagedCode(e.xy));
-                    const renderRow = (e: GitStatusEntry, isStaged: boolean) => {
-                      const mk = gitMark(e.xy);
-                      const active =
-                        diff?.kind === "file" && diff.path === e.path && diff.staged === isStaged;
-                      return (
-                        <UiButton controlWidth="fill" variant="plain" role="option"
-                          key={(isStaged ? "s:" : "u:") + e.path}
-                          onClick={() => openDiff(e.path, isStaged)}
-                          title={e.path}
-                          controlSize="compact" className={`flex items-center gap-2 text-left hover:bg-control ${
- active ? "bg-control text-content-primary font-medium": "text-content-primary"
- }`}
-                        >
-                          <span
-                            className={`w-3 shrink-0 text-center font-code text-minimal ${mk?.cls ?? "text-content-muted"}`}
-                          >
-                            {mk?.m ?? "•"}
+                    // One line per file, file name first: a truncated full path
+                    // cut off exactly the part that identifies the file.
+                    const renderRow = (e: GitStatusEntry, isStaged: boolean) => (
+                      <GitFileRow
+                        key={(isStaged ? "s:" : "u:") + e.path}
+                        path={e.path}
+                        mark={gitMark(e.xy)}
+                        selected={diff?.kind === "file" && diff.path === e.path && diff.staged === isStaged}
+                        onOpen={() => openDiff(e.path, isStaged)}
+                      />
+                    );
+                    // Group label owns its whole-group diff, so the two diff
+                    // actions are told apart by where they sit, not by tooltip.
+                    const group = (text: string, items: GitStatusEntry[], isStaged: boolean) => (
+                      <>
+                        <div className="flex h-7 items-center gap-1 pl-2 font-utility text-minimal uppercase tracking-label text-content-muted">
+                          <span className="flex-1 truncate">
+                            {text} <span className="tabular-nums">{items.length}</span>
                           </span>
-                          <span className="truncate flex-1 font-utility text-compact">{e.path}</span>
-                        </UiButton>
-                      );
-                    };
-                    const label = (text: string, n: number) => (
-                      <div className="px-2 pt-2 pb-1 font-utility text-minimal uppercase tracking-label text-content-muted">
-                        {text} <span className="tabular-nums text-content-muted">{n}</span>
-                      </div>
+                          <UiButton action={isStaged ? "diffStaged" : "diffWorking"} content="icon" variant="plain"
+                            onClick={() => openDiff("", isStaged)}
+                            selected={diff?.kind === "file" && diff.path === "" && diff.staged === isStaged}
+                            title={isStaged ? "Diff everything staged (git diff --staged)" : "Diff the whole working tree (unstaged)"}
+                            controlSize="compact"
+                            className="rounded-sm text-content-primary hover:text-content-strong"
+                          >
+                            <GitCompare className="w-3.5 h-3.5" />
+                          </UiButton>
+                        </div>
+                        {items.map((e) => renderRow(e, isStaged))}
+                      </>
                     );
                     return (
                       <>
-                        {staged.length > 0 && (
-                          <>
-                            {label("Staged", staged.length)}
-                            {staged.map((e) => renderRow(e, true))}
-                          </>
-                        )}
-                        {unstaged.length > 0 && (
-                          <>
-                            {label("Unstaged / Untracked", unstaged.length)}
-                            {unstaged.map((e) => renderRow(e, false))}
-                          </>
-                        )}
+                        {staged.length > 0 && group("Staged", staged, true)}
+                        {unstaged.length > 0 && group("Unstaged / Untracked", unstaged, false)}
                         {git.entries.length === 0 && (
                           <div className="px-2 py-3 font-utility text-compact text-content-muted">
                             Working tree clean
@@ -1660,42 +1721,77 @@ export function RemoteWorkspaceDialog({
                     );
                   })()}
                 </div>
-              </>
-            ) : leftView === "history" && git ? (
-              <>
-                <div className="flex h-9 shrink-0 items-center gap-1 px-2 border-b border-control/80 font-utility text-compact text-content-muted">
-                  <span className="flex items-center gap-1 flex-1 font-medium text-content-secondary truncate">
-                    <History className="w-3.5 h-3.5" /> Commits
-                  </span>
-                  {logBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-content-muted" />}
-                </div>
+            ) : leftView === "history" && git && diff?.kind === "commit" ? (
                 <div className="flex-1 overflow-auto p-1">
+                  {/* Commit detail: what changed in this commit, in the same rows as
+                      the working-tree Changes list. Back returns to the log. */}
+                  <div className="flex items-start gap-1 px-1 pb-2 border-b border-control/80 mb-1">
+                    <UiButton action="back" content="icon" variant="plain"
+                      onClick={() => setDiff(null)}
+                      title="Back to history"
+                      aria-label="Back to history"
+                      controlSize="compact"
+                      className="shrink-0"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                    </UiButton>
+                    <div className="min-w-0 flex-1 pt-1 font-utility">
+                      <p className="line-clamp-2 text-compact font-medium text-content-primary" title={diff.commit.subject}>
+                        {diff.commit.subject}
+                      </p>
+                      <p className="mt-1 truncate text-minimal text-content-muted" title={`${diff.commit.hash}\n${diff.commit.author} · ${formatCommitDate(diff.commit.date)}`}>
+                        <span className="font-code">{diff.commit.hash.slice(0, 7)}</span>
+                        {diff.commit.author && <> · {diff.commit.author}</>}
+                        {diff.commit.date && <> · {relDate(diff.commit.date)}</>}
+                      </p>
+                    </div>
+                  </div>
+                  <div role="listbox" aria-label="Files in this commit">
+                    <UiButton controlWidth="fill" variant="plain" role="option"
+                      aria-selected={diff.path === null}
+                      selected={diff.path === null}
+                      onClick={() => void openCommit(diff.commit, null)}
+                      controlSize="compact"
+                      className={cn("flex items-center gap-2 text-left", diff.path !== null && "text-content-primary hover:bg-control")}
+                    >
+                      <span className="min-w-0 flex-1 truncate font-utility text-compact">All files</span>
+                      {diff.files && (
+                        <span className="shrink-0 font-utility text-minimal tabular-nums text-content-muted">{diff.files.length}</span>
+                      )}
+                    </UiButton>
+                    {diff.files?.map((f) => (
+                      <GitFileRow
+                        key={f.path}
+                        path={f.path}
+                        mark={commitFileMark(f.status)}
+                        title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
+                        selected={diff.path === f.path}
+                        onOpen={() => void openCommit(diff.commit, f.path)}
+                      />
+                    ))}
+                  </div>
+                </div>
+            ) : leftView === "history" && git ? (
+                <div className="flex-1 overflow-auto p-1">
+                  {/* One line per commit, like the Files and Changes rows. The short
+                      hash stays visible (touch has no tooltip); author is in the
+                      tooltip and the opened diff header. */}
                   {log?.map((c) => {
-                    const active = diff?.kind === "commit" && diff.hash === c.hash;
+                    const active = diff?.kind === "commit" && diff.commit.hash === c.hash;
                     return (
                       <UiButton controlWidth="fill" variant="plain" role="option"
                         key={c.hash}
                         onClick={() => openCommit(c)}
-                        title={c.subject}
-                        controlSize="compact" className={`flex flex-col gap-1 text-left border-b border-panel hover:bg-control ${
- active ? "bg-control": ""
- }`}
+                        title={`${c.hash.slice(0, 7)} · ${c.author} · ${formatCommitDate(c.date)}\n${c.subject}`}
+                        aria-selected={active}
+                          selected={active}
+                          controlSize="compact" className={cn("flex items-center gap-2 text-left", !active && "text-content-primary hover:bg-control")}
                       >
-                        <div className="flex items-center gap-2 font-utility text-compact">
-                          <GitCommit className="w-3.5 h-3.5 text-content-muted shrink-0" />
-                          <span className="font-code text-minimal text-warning-400 shrink-0">
-                            {c.hash.slice(0, 7)}
-                          </span>
-                          <span
-                            className={`truncate flex-1 ${active ? "text-content-primary font-medium" : "text-content-secondary"}`}
-                          >
-                            {c.subject}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 pl-4 font-utility text-minimal text-content-muted">
-                          <span className="truncate">{c.author}</span>
-                          <span className="shrink-0">· {relDate(c.date)}</span>
-                        </div>
+                        <span className="shrink-0 font-code text-minimal text-content-muted">{c.hash.slice(0, 7)}</span>
+                        <span className="min-w-0 flex-1 truncate font-utility text-compact">{c.subject}</span>
+                        <span className="shrink-0 font-utility text-minimal tabular-nums text-content-muted">
+                          {relDate(c.date)}
+                        </span>
                       </UiButton>
                     );
                   })}
@@ -1715,25 +1811,20 @@ export function RemoteWorkspaceDialog({
                     </UiButton>
                   )}
                 </div>
-              </>
             ) : (
               <>
                 <div className="flex h-9 shrink-0 items-center gap-1 px-2 border-b border-control/80 font-utility text-compact text-content-muted">
-                  <span className="flex-1 truncate font-medium text-content-secondary">
-                    {cwd ? basename(cwd) : "Files"}
-                  </span>
-                  {cwd && (
-                    <UiButton variant="plain"
-                      onClick={() => parent !== null && loadDir(parent)}
-                      disabled={!cwd}
-                      title="Go up one level"
-                      aria-label="Go up one level"
-                      content="icon" controlSize="compact"
-                      className="rounded-sm hover:bg-control disabled:opacity-50"
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </UiButton>
-                  )}
+                  <UiButton variant="plain"
+                    onClick={() => parent !== null && loadDir(parent)}
+                    disabled={!cwd}
+                    title="Go up one level"
+                    aria-label="Go up one level"
+                    content="icon" controlSize="compact"
+                    className="shrink-0"
+                  >
+                    <ArrowUp className="w-3.5 h-3.5" />
+                  </UiButton>
+                  <WorkspacePathLabel treeRoot={treeRoot} cwd={cwd} />
                   {git && !!cwd && (
                     <UiButton variant="plain"
                       onClick={() => openDiff(cwd, false)}
@@ -1817,14 +1908,14 @@ export function RemoteWorkspaceDialog({
                   {diff.kind === "commit" ? (
                     <>
                       <GitCommit className="w-3.5 h-3.5 text-content-muted shrink-0" />
-                      <span className="font-code text-compact text-warning-400 shrink-0">
-                        {diff.hash.slice(0, 7)}
+                      <span className="font-code text-compact text-content-muted shrink-0">
+                        {diff.commit.hash.slice(0, 7)}
                       </span>
                       <span
-                        className="text-content-secondary truncate flex-1 font-medium"
-                        title={diff.subject}
+                        className={cn("text-content-secondary truncate flex-1 font-medium", diff.path && "font-code")}
+                        title={diff.path ?? diff.commit.subject}
                       >
-                        {diff.subject}
+                        {diff.path ?? diff.commit.subject}
                       </span>
                     </>
                   ) : (
@@ -1851,54 +1942,6 @@ export function RemoteWorkspaceDialog({
                     <X className="w-3.5 h-3.5" />
                   </UiButton>
                 </div>
-                {/* Changed-file strip for a commit: jump between per-file diffs without
-                    fetching (cached) or scrolling through the whole patch. */}
-                {diff.kind === "commit" && diff.files && diff.files.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1 max-h-20 overflow-auto px-2 py-1 border-b border-control/80 font-utility text-minimal">
-                    <UiButton variant="plain" role="tab" aria-selected={diff.path === null} selected={diff.path === null}
-                      onClick={() =>
-                        void openCommit(
-                          { hash: diff.hash, subject: diff.subject, author: "", date: "" },
-                          null
-                        )
-                      }
-                      controlSize="compact"
-                      className="rounded-sm text-content-primary hover:text-content-strong"
-                    >
-                      All files ({diff.files.length})
-                    </UiButton>
-                    {diff.files.map((f) => {
-                      const letter = f.status.charAt(0);
-                      const cls =
-                        letter === "A"
-                          ? "text-success-400"
-                          : letter === "D"
-                            ? "text-removed-400"
-                            : letter === "R" || letter === "C"
-                              ? "text-info-400"
-                              : "text-warning-400";
-                      return (
-                        <UiButton variant="plain" role="tab" aria-selected={diff.path === f.path} selected={diff.path === f.path}
-                          key={f.path}
-                          onClick={() =>
-                            void openCommit(
-                              { hash: diff.hash, subject: diff.subject, author: "", date: "" },
-                              f.path
-                            )
-                          }
-                          title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
-                          controlSize="compact"
-                          className="flex items-center gap-1 rounded-sm font-code text-content-primary hover:text-content-strong"
-                        >
-                          <span className={cls}>{letter}</span>
-                          <span className="max-w-[180px] truncate">
-                            {f.path.split("/").pop()}
-                          </span>
-                        </UiButton>
-                      );
-                    })}
-                  </div>
-                )}
                 <DiffView diff={diff.text} className="flex-1" />
               </>
             ) : !file ? (
@@ -1922,7 +1965,7 @@ export function RemoteWorkspaceDialog({
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center text-compact text-content-muted p-4">
                   <File className="w-5 h-5 mb-2 text-content-muted/60" aria-hidden="true" />
-                  <span>Select a file on the left to view it</span>
+                  <HelpLabel help="Choose a file from the file list to view its contents.">Select a file</HelpLabel>
                 </div>
               </>
             ) : (
@@ -1949,23 +1992,26 @@ export function RemoteWorkspaceDialog({
                     {file.filename}
                   </span>
                   <span className="text-content-muted shrink-0 tabular-nums mr-1">
-                    {file.size_bytes}B
+                    {formatBytes(file.size_bytes)}
                   </span>
                   {file.is_text &&
                     (canWrite ? (
                       dirty && (
-                        <UiButton variant="plain"
+                        <UiButton variant="emphasis"
                           onClick={() => doSave(etag ?? undefined)}
                           disabled={busy}
                           title="Save changes back to the bot's machine"
-                          content="icon" controlSize="compact" className="shrink-0 flex items-center justify-center rounded-sm bg-emerald-700 hover:bg-emerald-600 text-content-primary disabled:opacity-50"
+                          aria-label="Save changes back to the bot's machine"
+                          content="icon" controlSize="compact" className="shrink-0"
                         >
                           <Save className="w-3.5 h-3.5" />
                         </UiButton>
                       )
                     ) : (
                       <span
-                        className="shrink-0 w-7 h-7 flex items-center justify-center text-warning-400"
+                        className={cn("flex shrink-0 items-center justify-center text-warning-400", controlSquareClasses.compact)}
+                        role="img"
+                        aria-label="Read-only"
                         title="This bot's owner hasn't granted you write access to its workspace."
                       >
                         <Lock className="w-3.5 h-3.5" />
@@ -1993,31 +2039,22 @@ export function RemoteWorkspaceDialog({
                 {conflict && (
                   <div className="flex items-center gap-2 max-md:flex-wrap px-2 py-2 border-b border-amber-800/50 bg-amber-950/30 font-utility text-compact text-warning-300">
                     <span className="flex-1">
-                      File changed on the server (remote {conflict.sizeBytes}B).
-                      Reload replaces your edits; Force overwrite discards the
-                      remote change.
+                      This file changed on the bot&apos;s machine ({formatBytes(conflict.sizeBytes)} now).
+                      Reload discards your edits; Replace overwrites the newer version.
                     </span>
-                    <UiButton action="reload" content="iconText" variant="plain"
+                    <UiButton action="reload" content="iconText"
                       onClick={() => void openFile(file.path)}
                       disabled={busy}
                       title="Discard your edits and reload the latest from the server"
-                      controlSize="compact" className="shrink-0 flex items-center gap-1 rounded-sm bg-control hover:bg-control-hover text-content-primary disabled:opacity-50"
+                      controlSize="compact" variant="secondary" className="shrink-0"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                     </UiButton>
-                    <UiButton action="discard" content="iconText" variant="plain"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            "Force overwrite will discard the version changed on the server — that version will be lost. Continue?"
-                          )
-                        ) {
-                          void doSave(conflict.currentEtag ?? undefined);
-                        }
-                      }}
+                    <UiButton action="replace" content="iconText" variant="danger"
+                      onClick={() => setOverwritePrompt(true)}
                       disabled={busy}
                       title="Overwrite the server version with your edits"
-                      controlSize="compact" className="shrink-0 flex items-center gap-1 rounded-sm bg-amber-700 hover:bg-amber-600 text-content-primary disabled:opacity-50"
+                      controlSize="compact" className="shrink-0"
                     >
                       <Save className="w-3.5 h-3.5" />
                     </UiButton>
@@ -2049,7 +2086,7 @@ export function RemoteWorkspaceDialog({
                     />
                   ) : (
                     <div className="p-4 text-compact text-content-muted">
-                      Binary file — no preview. Use "Download" above to get it.
+                      <HelpLabel help="Use Download in the toolbar to get this file.">Binary file — no preview.</HelpLabel>
                     </div>
                   )}
                 </div>
@@ -2060,6 +2097,33 @@ export function RemoteWorkspaceDialog({
       )}
       </div>
     </FloatingPanel>
+    {discardPrompt && (
+      <ConfirmDialog
+        title="Discard unsaved changes?"
+        confirmAction="discard"
+        onConfirm={discardAndProceed}
+        onClose={() => setDiscardPrompt(null)}
+      >
+        Your edits to {discardPrompt.filename} have not been saved to the bot&apos;s machine.
+        They will be lost before {discardPrompt.destination}.
+      </ConfirmDialog>
+    )}
+    {overwritePrompt && file && conflict && (
+      <ConfirmDialog
+        title="Overwrite the newer version?"
+        confirmAction="replace"
+        confirmLabel="Overwrite"
+        busy={busy}
+        onConfirm={() => {
+          setOverwritePrompt(false);
+          void doSave(conflict.currentEtag ?? undefined);
+        }}
+        onClose={() => setOverwritePrompt(false)}
+      >
+        {file.filename} changed on the bot&apos;s machine after you opened it. Saving your
+        edits replaces that version, and it cannot be recovered here.
+      </ConfirmDialog>
+    )}
     {newSessionOpen && selectedBot && botId && (
       <NewSessionDialog
         channelId={channelId}

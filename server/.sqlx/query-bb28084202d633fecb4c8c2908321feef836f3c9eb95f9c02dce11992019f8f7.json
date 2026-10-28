@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE cheers_sessions s\n         SET status=$1,last_used_at=$2,updated_at=$2\n         WHERE s.session_id=$3 AND s.status NOT IN ('terminated','revoked','expired')\n           AND NOT EXISTS (\n               SELECT 1 FROM messages m\n               WHERE m.sender_type='bot' AND m.is_partial=TRUE AND m.channel_seq IS NULL\n                 AND m.is_deleted=FALSE AND m.content_data->>'session_id'=s.session_id\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bb28084202d633fecb4c8c2908321feef836f3c9eb95f9c02dce11992019f8f7"
+}

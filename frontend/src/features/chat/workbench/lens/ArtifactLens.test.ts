@@ -4,6 +4,7 @@ import { artifactCsp, buildArtifactHtml } from "./ArtifactLens";
 import { compileArtifactTsx } from "./artifactCompiler";
 import { runInNewContext } from "node:vm";
 import { version as reactVersion } from "react";
+import * as React from "react";
 import reactRuntime from "virtual:artifact-react-runtime";
 
 describe("ArtifactLens format & registry matching", () => {
@@ -53,16 +54,33 @@ describe("isolated artifact document", () => {
     expect(html).not.toContain("eval(");
   });
 
+  it("executes typed JSX and fragments with only the iframe's React global", () => {
+    const compiled = compileArtifactTsx(`
+import React from "react";
+type Props = { label: string };
+function Note({ label }: Props) { return <section data-cheers-source="authored">{label}</section>; }
+export default function App() { return <><Note label="Ready" /><button>Send</button></>; }
+`);
+    const tree = runInNewContext(`${compiled}; window.__CHEERS_ROOT_COMPONENT__();`, { window: {}, React });
+    expect(tree.type).toBe(React.Fragment);
+    const [note, button] = tree.props.children;
+    expect(note.type(note.props).props["data-cheers-source"]).toBe("authored");
+    expect(button.type).toBe("button");
+    expect(button.props.children).toBe("Send");
+    expect(button.props["data-cheers-source"]).toBe("5");
+  });
+
   it("escapes script closing tags in embedded compiled code", () => {
     const html = buildArtifactHtml("export default function App() {}", "react", 'const marker = "</script><script>window.injected=true</script>";');
     expect(html).toContain("<\\/script><script>window.injected=true<\\/script>");
     expect(html).not.toContain("</script><script>window.injected=true</script>");
   });
 
-  it("emits a syntactically valid bridge", () => {
+  it("emits a syntactically valid bridge with request capability", () => {
     const html = buildArtifactHtml('<main data-cheers-canvas><div data-cheers-id="card" data-cheers-position="10,20"/></main>', "html");
     const bridge = html.match(/<script>([\s\S]*?canvas\.move[\s\S]*?)<\/script>/)?.[1];
     expect(bridge).toBeTruthy();
+    expect(bridge).toContain("cheers.request");
     expect(() => new Function(bridge ?? "")).not.toThrow();
   });
 });

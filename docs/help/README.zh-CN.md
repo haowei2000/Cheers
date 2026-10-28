@@ -36,3 +36,5 @@
 - [使用说明书](使用说明书.md)：帮助文档总索引
 - [文档索引](../INDEX.zh-CN.md)：帮助文档与架构文档总入口
 - [发布说明](../release_note/README.zh-CN.md)：封版与版本变更记录
+
+- [模型生成的交互资源](INTERACTIVE_RESOURCES.zh-CN.md)：Workbench 卡片、MCP 发现、ACP 请求与 Mac 文件打开。

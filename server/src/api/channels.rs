@@ -289,7 +289,7 @@ pub async fn list_channels(
 /// channel (audit/W7 — blocks cold-DM-to-strangers spam). Bot DMs aren't gated.
 async fn users_can_dm(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bool, AppError> {
     // A block in either direction overrides everything — no DM.
-    if crate::api::friends::is_blocked(db, a, b).await? {
+    if crate::domain::dms::is_blocked(db, a, b).await? {
         return Ok(false);
     }
     let ok: bool = sqlx::query!(
@@ -525,21 +525,6 @@ pub async fn create_channel(
     if body.name.trim().is_empty() {
         return Err(AppError::BadRequest("name is required".into()));
     }
-    let workspace_role: Option<String> = sqlx::query_scalar!(
-        "SELECT role FROM workspace_memberships
-         WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'",
-        &body.workspace_id,
-        &claims.sub,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    let platform_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
-    if !can_create_channel(workspace_role.as_deref(), platform_admin) {
-        return Err(AppError::Forbidden("workspace member required".into()));
-    }
-    let activate_creator_membership = workspace_role.is_none() && platform_admin;
-    let creator_is_workspace_admin =
-        matches!(workspace_role.as_deref(), Some("owner" | "admin")) || platform_admin;
     let channel_id = Uuid::new_v4().to_string();
     let channel_type = body.channel_type.unwrap_or_else(|| "public".into());
     if !matches!(channel_type.as_str(), "public" | "private") {
@@ -571,6 +556,33 @@ pub async fn create_channel(
             "conversation mode must be chat or discuss".into(),
         ));
     }
+    let mut tx = state.db.begin().await?;
+    // Personal ownership is authoritative even for an old cached workspace ID
+    // whose membership was never provisioned. Lock the actual workspace and
+    // repair only its owner's membership atomically with channel creation.
+    // Other workspaces still require an existing active membership or the
+    // established platform-administrator exception.
+    crate::domain::workspaces::ensure_personal_owner_membership_tx(
+        &mut tx,
+        &body.workspace_id,
+        &claims.sub,
+    )
+    .await?;
+    let workspace_role: Option<String> = sqlx::query_scalar!(
+        "SELECT role FROM workspace_memberships
+         WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'",
+        &body.workspace_id,
+        &claims.sub,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let platform_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
+    if !can_create_channel(workspace_role.as_deref(), platform_admin) {
+        return Err(AppError::Forbidden("workspace member required".into()));
+    }
+    let activate_creator_membership = workspace_role.is_none() && platform_admin;
+    let creator_is_workspace_admin =
+        matches!(workspace_role.as_deref(), Some("owner" | "admin")) || platform_admin;
     // Validate initial bots before writing the channel so a bad/unauthorized bot
     // cannot leave behind a partially-created channel. A newly-created channel
     // cannot already carry a channel-scoped session_create grant, so the only
@@ -583,7 +595,7 @@ pub async fn create_channel(
             "SELECT created_by, is_disabled FROM bot_accounts WHERE bot_id = $1",
             bot_id,
         )
-        .fetch_optional(&state.db)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or(AppError::NotFound)?;
         if bot.is_disabled.clone() {
@@ -601,7 +613,6 @@ pub async fn create_channel(
         }
         initial_bots.push((bot_id.clone(), owner_id));
     }
-    let mut tx = state.db.begin().await?;
     let row = sqlx::query!(
         "INSERT INTO channels
             (channel_id, workspace_id, name, type, kind, conversation_mode, purpose,
@@ -1582,6 +1593,7 @@ pub async fn accept_channel_invite(
     Path(channel_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let mut tx = state.db.begin().await?;
+    crate::domain::channel_memberships::lock_channel(&mut tx, &channel_id).await?;
     // Row-returning delete → 404 if there's no pending invite (or it was already answered).
     let invite = sqlx::query!(
         "DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2
@@ -1823,6 +1835,18 @@ pub async fn accept_bot_channel_invite(
             .unwrap_or_else(|_| bot_id.clone());
 
     let mut tx = state.db.begin().await?;
+    // Workspace detach locks its parent before channel membership guards. The
+    // workspace-bot INSERT below needs this FK parent too; retain that order.
+    sqlx::query!(
+        "SELECT w.workspace_id FROM workspaces w
+         JOIN channels c ON c.workspace_id=w.workspace_id
+         WHERE c.channel_id=$1 FOR KEY SHARE OF w",
+        &channel_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    crate::domain::channel_memberships::lock_channel(&mut tx, &channel_id).await?;
     let locked = sqlx::query!(
         "SELECT bci.role, bci.invited_by, bci.cwd, bci.additional_dirs,
                 b.is_disabled
@@ -1977,32 +2001,39 @@ mod tests {
     }
 }
 
-/// Revoke a user's channel-scoped ACP approval authority when they leave / are
-/// removed: their approver delegations (`approval_delegations`) and any per-user
-/// RESPOND overrides (`bot_event_access`) for this channel. Parameterized;
-/// harmless no-op when `user_id` is a bot (neither table holds bot user rows).
-async fn purge_channel_approval_authority(
+fn membership_actor(claims: &Claims) -> crate::domain::channel_memberships::Actor<'_> {
+    crate::domain::channel_memberships::Actor {
+        user_id: &claims.sub,
+        platform_admin: matches!(claims.role.as_str(), "system_admin" | "admin"),
+    }
+}
+
+/// Realtime revocation is the first postcommit effect. Notification delivery must
+/// not delay cutting a detached member's existing subscriptions.
+async fn finish_channel_detach(
     state: &AppState,
     channel_id: &str,
-    user_id: &str,
-) -> Result<(), AppError> {
-    sqlx::query!(
-        "DELETE FROM approval_delegations WHERE channel_id = $1 AND user_id = $2",
-        channel_id,
-        user_id,
-    )
-    .execute(&state.db)
-    .await?;
-    sqlx::query!(
-        "DELETE FROM bot_event_access
-         WHERE channel_id = $1 AND subject_kind = 'user' AND subject_id = $2
-        ",
-        channel_id,
-        user_id,
-    )
-    .execute(&state.db)
-    .await?;
-    Ok(())
+    member_id: &str,
+    outcome: crate::domain::channel_memberships::DetachOutcome,
+) {
+    let channel = Uuid::parse_str(channel_id).ok();
+    if let (Some(channel), Ok(user)) = (channel, Uuid::parse_str(member_id)) {
+        state
+            .conn_manager
+            .revoke_channel_subscriptions(user, channel)
+            .await;
+    }
+    for notification in outcome.notifications {
+        crate::api::notifications::resolve_notification(
+            state,
+            &notification.user_id,
+            &notification.dedupe_key,
+        )
+        .await;
+    }
+    if let Some(channel) = channel {
+        crate::gateway::presence::broadcast_presence(state, channel).await;
+    }
 }
 
 pub async fn remove_channel_member(
@@ -2010,102 +2041,14 @@ pub async fn remove_channel_member(
     Extension(claims): Extension<Claims>,
     Path((channel_id, member_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
-    ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
-    let removing_last_owner: bool = sqlx::query_scalar!(
-        r#"SELECT EXISTS(
-            SELECT 1 AS present FROM channel_memberships removing
-            JOIN channels c ON c.channel_id = removing.channel_id
-            WHERE removing.channel_id = $1 AND removing.member_id = $2
-              AND removing.member_type = 'user' AND removing.role = 'owner'
-              AND c.type <> 'dm' AND c.archived_at IS NULL
-              AND NOT EXISTS (
-                SELECT 1 AS present FROM channel_memberships other
-                WHERE other.channel_id = removing.channel_id
-                  AND other.member_type = 'user' AND other.role = 'owner'
-                  AND other.member_id <> removing.member_id
-              )
-        ) AS "value!" "#,
+    let outcome = crate::domain::channel_memberships::remove_member(
+        &state.db,
         &channel_id,
         &member_id,
+        membership_actor(&claims),
     )
-    .fetch_one(&state.db)
     .await?;
-    if removing_last_owner {
-        return Err(AppError::BadRequest(
-            "transfer channel ownership or delete the channel first".into(),
-        ));
-    }
-    let pending_user: bool = sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT 1 AS present FROM channel_invites WHERE channel_id = $1 AND user_id = $2) AS "value!" "#,
-        &channel_id,
-        &member_id,
-    )
-    .fetch_one(&state.db)
-    .await?;
-    let pending_bot_owner: Option<String> = sqlx::query_scalar!(
-        "SELECT owner_user_id FROM bot_channel_invites WHERE channel_id = $1 AND bot_id = $2",
-        &channel_id,
-        &member_id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    sqlx::query!(
-        "DELETE FROM channel_memberships WHERE channel_id = $1 AND member_id = $2",
-        &channel_id,
-        &member_id,
-    )
-    .execute(&state.db)
-    .await?;
-    // Also rescind a still-pending invite (removing = "not in this channel", whether
-    // they'd accepted yet or not). Harmless no-op for active members / bots.
-    sqlx::query!(
-        "DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2",
-        &channel_id,
-        &member_id,
-    )
-    .execute(&state.db)
-    .await?;
-    sqlx::query!(
-        "DELETE FROM bot_channel_invites WHERE channel_id = $1 AND bot_id = $2",
-        &channel_id,
-        &member_id,
-    )
-    .execute(&state.db)
-    .await?;
-    if let Some(owner_id) = pending_bot_owner {
-        crate::api::notifications::resolve_notification(
-            &state,
-            &owner_id,
-            &format!("bot-channel:{channel_id}:{member_id}"),
-        )
-        .await;
-    }
-    if pending_user {
-        crate::api::notifications::resolve_notification(
-            &state,
-            &member_id,
-            &format!("channel:{channel_id}"),
-        )
-        .await;
-    }
-    // A removed member must not retain approval authority in this channel: drop any
-    // approver delegations they held (approval_delegations) and any per-user RESPOND
-    // overrides (bot_event_access) — otherwise a stale row would still let them
-    // resolve this channel's ACP permission requests. No-op for bots.
-    purge_channel_approval_authority(&state, &channel_id, &member_id).await?;
-    if let Ok(cid) = Uuid::parse_str(&channel_id) {
-        // Membership checks happen at subscribe time, so removal must cut any
-        // LIVE subscriptions too — otherwise the removed member keeps receiving
-        // every new message until their socket happens to close. (No-op for
-        // bots: they have no browser connections.)
-        if let Ok(uid) = Uuid::parse_str(&member_id) {
-            state
-                .conn_manager
-                .revoke_channel_subscriptions(uid, cid)
-                .await;
-        }
-        crate::gateway::presence::broadcast_presence(&state, cid).await;
-    }
+    finish_channel_detach(&state, &channel_id, &member_id, outcome).await;
     Ok(Json(json!({"removed": true})))
 }
 
@@ -2157,73 +2100,13 @@ pub async fn leave_channel(
     Extension(claims): Extension<Claims>,
     Path(channel_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let role: Option<String> = sqlx::query_scalar!(
-        "SELECT role FROM channel_memberships
-         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    let outcome = crate::domain::channel_memberships::leave(
+        &state.db,
         &channel_id,
-        &claims.sub,
+        membership_actor(&claims),
     )
-    .fetch_optional(&state.db)
     .await?;
-    let role = role.ok_or(AppError::NotFound)?;
-
-    let channel_type: Option<String> = sqlx::query_scalar!(
-        "SELECT type FROM channels WHERE channel_id = $1",
-        &channel_id,
-    )
-    .fetch_optional(&state.db)
-    .await?;
-    if channel_type.as_deref() == Some("dm") {
-        return Err(AppError::BadRequest("cannot leave a direct message".into()));
-    }
-
-    if role == "owner" {
-        // Owner leaving reduces the owner count, so serialize against concurrent
-        // owner leaves/demotes: lock the owner rows, re-count, delete, all in one tx.
-        let mut tx = state.db.begin().await?;
-        let owners = sqlx::query!(
-            "SELECT 1 AS present FROM channel_memberships
-             WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner' FOR UPDATE",
-            &channel_id,
-        )
-        .fetch_all(&mut *tx)
-        .await?;
-        if owners.len() <= 1 {
-            return Err(AppError::Forbidden(
-                "you are the last owner — transfer ownership or delete the channel first".into(),
-            ));
-        }
-        sqlx::query!(
-            "DELETE FROM channel_memberships
-             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
-            &channel_id,
-            &claims.sub,
-        )
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-    } else {
-        sqlx::query!(
-            "DELETE FROM channel_memberships
-             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
-            &channel_id,
-            &claims.sub,
-        )
-        .execute(&state.db)
-        .await?;
-    }
-    // Same authority purge as remove_channel_member: a member who leaves must not
-    // keep approver delegations or per-user RESPOND overrides in this channel.
-    purge_channel_approval_authority(&state, &channel_id, &claims.sub).await?;
-    // Same reverse edge as remove_channel_member: cut the leaver's live
-    // subscriptions so they stop receiving new frames immediately.
-    if let (Ok(cid), Ok(uid)) = (Uuid::parse_str(&channel_id), Uuid::parse_str(&claims.sub)) {
-        state
-            .conn_manager
-            .revoke_channel_subscriptions(uid, cid)
-            .await;
-        crate::gateway::presence::broadcast_presence(&state, cid).await;
-    }
+    finish_channel_detach(&state, &channel_id, &claims.sub, outcome).await;
     Ok(Json(json!({ "left": true })))
 }
 
@@ -2246,87 +2129,15 @@ pub async fn set_channel_member_role(
     Path((channel_id, member_id)): Path<(String, String)>,
     Json(body): Json<MemberRoleRequest>,
 ) -> Result<Json<Value>, AppError> {
-    ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
-    if member_id == claims.sub {
-        return Err(AppError::BadRequest(
-            "use leave or transfer ownership to change your own role".into(),
-        ));
-    }
-    let role = body.role;
-    if !matches!(role.as_str(), "owner" | "admin" | "member" | "readonly") {
-        return Err(AppError::BadRequest(
-            "role must be owner, admin, member, or readonly".into(),
-        ));
-    }
-    let row = sqlx::query!(
-        "SELECT role, member_type FROM channel_memberships
-         WHERE channel_id = $1 AND member_id = $2",
+    crate::domain::channel_memberships::set_role(
+        &state.db,
         &channel_id,
         &member_id,
+        &body.role,
+        membership_actor(&claims),
     )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    let current: String = row.role.clone();
-    let member_type: String = row.member_type.clone();
-
-    if member_type == "bot" {
-        if !matches!(role.as_str(), "member" | "readonly") {
-            return Err(AppError::BadRequest(
-                "a bot's channel role must be member or readonly".into(),
-            ));
-        }
-        sqlx::query!(
-            "UPDATE channel_memberships SET role = $3
-             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot'",
-            &channel_id,
-            &member_id,
-            &role,
-        )
-        .execute(&state.db)
-        .await?;
-        return Ok(Json(json!({ "member_id": member_id, "role": role })));
-    }
-
-    // Privilege guard: granting 'owner' or modifying an existing owner requires the
-    // caller to be an owner (or global admin) — a plain 'admin' can't mint/seize owner.
-    if (role == "owner" || current == "owner")
-        && !caller_channel_is_owner(&state, &channel_id, &claims).await?
-    {
-        return Err(AppError::Forbidden(
-            "only an owner or a system admin can grant or change the owner role".into(),
-        ));
-    }
-
-    if current == "owner" && role != "owner" {
-        // Demoting an owner reduces the owner count — serialize like leave.
-        let mut tx = state.db.begin().await?;
-        let owners = sqlx::query!(
-            "SELECT 1 AS present FROM channel_memberships
-             WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner' FOR UPDATE",
-            &channel_id,
-        )
-        .fetch_all(&mut *tx)
-        .await?;
-        if owners.len() <= 1 {
-            return Err(AppError::Forbidden(
-                "can't demote the last owner — promote another owner first".into(),
-            ));
-        }
-        sqlx::Executor::execute(
-            &mut *tx,
-            sqlx::query_file!("queries/set_human_role.sql", &channel_id, &member_id, &role,),
-        )
-        .await?;
-        tx.commit().await?;
-    } else {
-        sqlx::Executor::execute(
-            &state.db,
-            sqlx::query_file!("queries/set_human_role.sql", &channel_id, &member_id, &role,),
-        )
-        .await?;
-    }
-    Ok(Json(json!({ "member_id": member_id, "role": role })))
+    .await?;
+    Ok(Json(json!({ "member_id": member_id, "role": body.role })))
 }
 
 /// POST /api/v1/channels/{channel_id}/read — mark the channel read for the caller

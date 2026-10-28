@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { SPAWN_KINDS, type Rect, type SpawnKind } from "@/features/chat/workbench/laneSnap";
-import { makeFsClient, type FsClient, type SendResourceReq } from "@/features/chat/workbench/fsClient";
-import { WORKBENCH_CONFIG_PATH } from "@/features/chat/workbench/environmentRegistry";
-import { ResourceError } from "@/features/chat/hooks/useChatRealtime";
+import { type FsClient, type SendResourceReq } from "@/features/chat/workbench/fsClient";
+import { channelFileClient } from "@/features/chat/workbench/channelFileClient";
+import { mutateWorkbenchConfiguration, useWorkbenchConfiguration } from "@/features/chat/workbench/workbenchConfiguration";
 import {
   hasLocalOverride,
   mergeLayout,
@@ -22,9 +22,8 @@ import {
 // ordinary channel file, so a bot with channel-role write access could always edit it —
 // what was missing is that the client kept geometry in localStorage and never looked.
 //
-// This hook touches ONLY the `layout` key of that file. It reads and writes the raw
-// document rather than going through `parseCfg`, whose known-keys parse would drop
-// everything the Workbench drawer owns.
+// This hook touches ONLY the `layout` key. Layout and drawer mutations share the
+// same raw-document CAS transaction, so every owner preserves the other fields.
 
 export interface ChannelLayout {
   /** This window's shared placement in lane pixels, or null when there is none. */
@@ -67,28 +66,12 @@ export async function commitSharedLayout(
   fs: Pick<FsClient, "read" | "write">,
   ours: SharedLayout,
 ): Promise<SharedLayout> {
-  const attempt = async () => {
-    let document: Record<string, unknown> = {};
-    let version = 0;
-    try {
-      const file = await fs.read(WORKBENCH_CONFIG_PATH);
-      document = JSON.parse(file.content) as Record<string, unknown>;
-      version = file.version;
-    } catch {
-      /* no config yet — if_version 0 creates it */
-    }
-    const merged = mergeLayout(parseLayout(document.layout), ours);
+  let merged = ours;
+  await mutateWorkbenchConfiguration(fs, (document) => {
+    merged = mergeLayout(parseLayout(document.layout), ours);
     document.layout = merged;
-    await fs.write(WORKBENCH_CONFIG_PATH, JSON.stringify(document, null, 2), version);
-    return merged;
-  };
-
-  try {
-    return await attempt();
-  } catch (error) {
-    if (!(error instanceof ResourceError && error.code === "VERSION_CONFLICT")) throw error;
-    return attempt();
-  }
+  });
+  return merged;
 }
 
 export function buildLayoutUpdate(
@@ -124,6 +107,7 @@ export function useChannelLayout({
   getLaneBounds,
   enabled,
   filesTick,
+  fileClient,
 }: {
   channelId: string;
   sendResourceReq: SendResourceReq;
@@ -132,42 +116,24 @@ export function useChannelLayout({
   enabled: boolean;
   /** Live push: a bot wrote to the channel workspace — re-read, in case it was this. */
   filesTick?: number;
+  fileClient?: FsClient;
 }): ChannelLayout {
-  const [sharedState, setSharedState] = useState<ChannelLayoutState>();
   const [saveStatus, setSaveStatus] = useState<{
     channelId: string;
     saving: boolean;
     error: string | null;
   }>();
   const overridden = useSyncExternalStore(subscribeLayoutOverride, hasLocalOverride, () => false);
-  const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
+  const fs = useMemo(() => fileClient ?? channelFileClient(sendResourceReq, channelId), [fileClient, sendResourceReq, channelId]);
+  const configuration = useWorkbenchConfiguration(fs, enabled, filesTick);
   const channelRef = useRef(channelId);
   channelRef.current = channelId;
   // Never expose the previous channel's value during the render before the new
   // channel's asynchronous read finishes.
-  const shared = layoutForChannel(sharedState, channelId, enabled);
+  const shared = useMemo(() => enabled ? parseLayout(configuration.document?.layout) : undefined, [configuration.document, enabled]);
   const currentSaveStatus = saveStatus?.channelId === channelId ? saveStatus : undefined;
   const saving = currentSaveStatus?.saving ?? false;
   const error = currentSaveStatus?.error ?? null;
-
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const file = await fs.read(WORKBENCH_CONFIG_PATH);
-        const raw = JSON.parse(file.content) as { layout?: unknown };
-        if (!cancelled) setSharedState({ channelId, layout: parseLayout(raw.layout) });
-      } catch {
-        // No config yet, or unreadable: the channel simply has no shared layout and
-        // every window falls back to its spawn placement.
-        if (!cancelled) setSharedState({ channelId, layout: undefined });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [channelId, enabled, filesTick, fs]);
 
   const geomFor = useCallback(
     (kind: SpawnKind): Rect | null => {
@@ -216,10 +182,7 @@ export function useChannelLayout({
       try {
         // One merge-and-retry is enough because a drag never writes here: the only
         // writers are an explicit human save and an agent write.
-        const merged = await commitSharedLayout(transactionFs, ours);
-        if (channelRef.current === transactionChannel) {
-          setSharedState({ channelId: transactionChannel, layout: merged });
-        }
+        await commitSharedLayout(transactionFs, ours);
         // The viewer is now following exactly what they published, so their overrides
         // would only be a way to drift back out of sync with themselves.
         if (channelRef.current === transactionChannel) requestLayoutReset();

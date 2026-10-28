@@ -22,7 +22,8 @@ import { Textarea as UiTextarea } from "@/components/ui/textarea";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
-import { Layers, CircleDot, X, Bot as BotIcon, Info, Folder, ArrowUp, Save } from "lucide-react";
+import { Layers, CircleDot, X, Info, Folder, ArrowUp, Save } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -219,7 +220,9 @@ function SessionCard({
           type="button"
           title={open ? "Hide details" : "Session details"}
           onClick={() => setOpen((v) => !v)}
-          className={`shrink-0 ${open ? "text-content-strong font-semibold": "text-content-primary hover:text-content-strong"}`}
+          aria-expanded={open}
+          selected={open}
+          className={open ? "shrink-0" : "shrink-0 text-content-primary hover:text-content-strong"}
         >
           <Info className="w-3.5 h-3.5" />
         </UiButton>
@@ -505,7 +508,7 @@ function BotGroup({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 px-1">
-        <BotIcon className="w-3.5 h-3.5 text-accent-400 shrink-0" />
+        <BotIcon contentSize="small" className="text-accent-400 shrink-0" />
         <span className="text-compact font-medium text-content-secondary truncate" title={botId}>
           {label}
         </span>

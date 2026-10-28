@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE channel_bot_monitoring SET next_eligible_at=clock_timestamp()+make_interval(secs=>$3::int4)\n         WHERE channel_id=$1 AND bot_id=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5ec067b520f72dbc6ee9c6587856c0096eb4be2c46112bb2c3b7e69c9e98154"
+}

@@ -36,6 +36,38 @@ pub const WS_CLOSE_BOT_UNAVAILABLE: u16 = 4403;
 /// retrying the same handshake can never succeed, the binary must be updated.
 pub const WS_CLOSE_UNSUPPORTED_PROTOCOL: u16 = 4400;
 
+/// A user-approved operation bound to the connector's authenticated host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteExecutionRequest {
+    /// Stable receipt identity, also the terminal session id.
+    pub execution_id: String,
+    /// Expected host from the gateway, checked again by the connector.
+    pub host_id: String,
+    /// User who owns the execution. Other users cannot attach to its terminal.
+    pub user_id: String,
+    /// terminal.start/input/resize/status/cancel or file.open.
+    pub action: String,
+    /// Explicit shell command; absent starts an interactive shell.
+    #[serde(default)]
+    pub command: Option<String>,
+    /// Approved registered opener for file.open.
+    #[serde(default)]
+    pub opener: Option<String>,
+    /// Input bytes encoded as UTF-8; only for terminal.input.
+    #[serde(default)]
+    pub input: Option<String>,
+    /// Output cursor in bytes.
+    #[serde(default)]
+    pub offset: u64,
+    /// PTY columns.
+    #[serde(default)]
+    pub cols: Option<u16>,
+    /// PTY rows.
+    #[serde(default)]
+    pub rows: Option<u16>,
+}
+
 /// Vendor-neutral, display-only fields decoded from optional Agent metadata.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizedPresentation {
@@ -252,6 +284,12 @@ pub struct ServerCapabilities {
     pub runtime_session_control: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<bool>,
+    /// Standard tasks require a committed gateway execution grant before ACP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_acceptance: Option<bool>,
+    /// Durable terminal receipts permit result delivery without executing again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_replay: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancel: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -278,6 +316,11 @@ pub struct ServerCapabilities {
     pub resume: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acp_security: Option<bool>,
+    /// `"first_per_stream"`: a signed connector signs only the first Delta of
+    /// each stream; later Delta on the same data connection omit the envelope.
+    /// Absent: every Delta must be signed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_capability: Option<String>,
     /// Version of the connector release this gateway serves via its download
     /// proxy — the self-updater's trigger signal (see `self_update`). Absent on
     /// gateways that pin no release version.
@@ -372,8 +415,23 @@ pub struct RuntimeSessionControlSession {
     /// The session's ACP `additionalDirectories`, re-validated against `allowed_roots`.
     #[serde(default)]
     pub additional_dirs: Vec<String>,
+    /// Persisted session overrides, replayed when the runtime session is created/loaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_config: Option<SessionConfigOverrides>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
+}
+
+/// Gateway-owned desired overrides for one Cheers session. The revision orders
+/// task snapshots and immediate updates so a queued task cannot restore stale values.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionConfigOverrides {
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub config_options: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -470,13 +528,46 @@ pub struct BridgeErrorFrame {
     pub request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_msg_id: Option<String>,
+    /// Stream the error concerns. A Delta capability rejection carries it so a
+    /// per-stream signer signs that stream's next Delta again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub msg_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retryable: Option<bool>,
+}
+
+/// A grant commits execution ownership; `owned` never authorizes another run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskAcceptanceStatus {
+    Granted,
+    Owned,
+    Rejected,
+}
+
+/// Immutable execution owner carried across result delivery connections.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskExecution {
+    pub task_id: String,
+    pub execution_id: String,
+    pub channel_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ControlInbound {
+    #[serde(rename = "task_acceptance")]
+    TaskAcceptance {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        task_id: String,
+        placeholder_msg_id: String,
+        channel_id: String,
+        execution_id: String,
+        status: TaskAcceptanceStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     #[serde(rename = "hello")]
     Hello {
         #[serde(default = "default_bridge_protocol_version")]
@@ -537,6 +628,8 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         trigger: Option<String>,
         placeholder_msg_id: String,
+        #[serde(default)]
+        acceptance_required: bool,
         provider_session_key: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session_id: Option<String>,
@@ -569,6 +662,8 @@ pub enum ControlInbound {
         /// out-of-policy entries are dropped.
         #[serde(default)]
         additional_dirs: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         binding_config: Option<Value>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -640,6 +735,8 @@ pub enum ControlInbound {
         config_id: String,
         value: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         updated_at: Option<String>,
     },
     // Session-targeted mode change (ACP session/set_mode). Distinct from the
@@ -656,6 +753,8 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_session_key: Option<String>,
         mode: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_config: Option<SessionConfigOverrides>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         updated_at: Option<String>,
     },
@@ -706,6 +805,15 @@ pub enum ControlInbound {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ControlOutbound {
+    #[serde(rename = "task_accept")]
+    TaskAccept {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        task_id: String,
+        placeholder_msg_id: String,
+        channel_id: String,
+        execution_id: String,
+    },
     #[serde(rename = "auth")]
     Auth {
         #[serde(default = "default_bridge_protocol_version")]
@@ -865,6 +973,8 @@ pub enum DataInbound {
         error: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retryable: Option<bool>,
     },
     #[serde(rename = "file_upload_ack")]
     FileUploadAck {
@@ -909,6 +1019,9 @@ pub enum DataInbound {
     WorkspaceReq {
         req_id: String,
         op: String,
+        /// Host-approved remote desktop/terminal operation; never an ACP agent tool.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        remote_execution: Option<RemoteExecutionRequest>,
         #[serde(default)]
         path: String,
         /// Which allowed root to resolve `path` against (absolute path string).
@@ -1023,6 +1136,8 @@ pub enum DataOutbound {
         v: u32,
         client_msg_id: String,
         msg_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution: Option<TaskExecution>,
         #[serde(default)]
         file_ids: Vec<String>,
         #[serde(default)]
@@ -1044,6 +1159,8 @@ pub enum DataOutbound {
         v: u32,
         client_msg_id: String,
         msg_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution: Option<TaskExecution>,
         message: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_session_key: Option<String>,

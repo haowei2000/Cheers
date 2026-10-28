@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT msg_id\n         FROM messages m\n         WHERE is_partial = TRUE\n           AND sender_type = 'bot'\n           AND channel_seq IS NULL\n           AND created_at < NOW() - make_interval(secs => $1)\n           AND NOT EXISTS (\n               SELECT 1 FROM bot_runs r WHERE r.placeholder_msg_id = m.msg_id\n                 AND r.dispatch_input IS NOT NULL\n                 AND r.status IN ('pending', 'prepared')\n                 AND r.execution_id IS NULL AND r.accepted_at IS NULL\n           )",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "msg_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "967afeb94f20dc86336208740c3034869091e20e9357af1a63a425a0bac48d12"
+}

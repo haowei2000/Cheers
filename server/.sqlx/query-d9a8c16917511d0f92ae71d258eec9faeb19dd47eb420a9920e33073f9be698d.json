@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT channel_id,bot_id\n        FROM channel_bot_monitoring\n        WHERE mode <> 'off' AND (next_eligible_at IS NULL OR next_eligible_at <= NOW())\n        ORDER BY COALESCE(next_eligible_at,created_at) LIMIT 20",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d9a8c16917511d0f92ae71d258eec9faeb19dd47eb420a9920e33073f9be698d"
+}

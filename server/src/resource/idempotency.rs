@@ -11,10 +11,7 @@
 //! refused. A concurrent duplicate blocks on the key row until the first transaction
 //! settles, so exactly one write lands even across gateway replicas.
 
-use std::io::Write;
-
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use super::{Principal, ResourceResult};
@@ -36,6 +33,22 @@ pub struct IdempotencyKey {
 }
 
 impl IdempotencyKey {
+    /// Stable identity for the process-local dispatch budget only. A retried
+    /// transaction keeps its admission slot without fixing new message/task IDs
+    /// across this receipt's retention period. The memo expires each minute.
+    pub(crate) fn admission_key(&self) -> String {
+        crate::infra::crypto::json_fingerprint(
+            &serde_json::json!({
+                "principal_type": self.principal_type,
+                "principal_id": self.principal_id,
+                "resource": self.resource,
+                "idempotency_key": self.key,
+                "request_hash": self.request_hash,
+            }),
+            &[],
+        )
+    }
+
     /// Reads the optional key from a write's params. The request hash covers every
     /// other param, so one key can never stand for two different writes.
     pub fn from_params(
@@ -176,55 +189,7 @@ pub async fn sweep_expired(db: &PgPool) -> Result<u64, sqlx::Error> {
 /// retry hashes equally whatever order its transport built the params in. Values are
 /// streamed into the hasher: `channel.files.create` carries up to 8 MB of base64.
 fn request_hash(params: &Value) -> String {
-    let mut hasher = HashWriter(Sha256::new());
-    write_canonical(&mut hasher, params, true);
-    hex::encode(hasher.0.finalize())
-}
-
-struct HashWriter(Sha256);
-
-impl Write for HashWriter {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-fn write_canonical(hasher: &mut HashWriter, value: &Value, top_level: bool) {
-    match value {
-        Value::Object(object) => {
-            let mut keys: Vec<&String> = object
-                .keys()
-                .filter(|key| !(top_level && key.as_str() == PARAM))
-                .collect();
-            keys.sort();
-            hasher.0.update(b"{");
-            for (index, key) in keys.into_iter().enumerate() {
-                if index > 0 {
-                    hasher.0.update(b",");
-                }
-                serde_json::to_writer(&mut *hasher, key).expect("hashing cannot fail");
-                hasher.0.update(b":");
-                write_canonical(hasher, &object[key], false);
-            }
-            hasher.0.update(b"}");
-        }
-        Value::Array(items) => {
-            hasher.0.update(b"[");
-            for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    hasher.0.update(b",");
-                }
-                write_canonical(hasher, item, false);
-            }
-            hasher.0.update(b"]");
-        }
-        scalar => serde_json::to_writer(&mut *hasher, scalar).expect("hashing cannot fail"),
-    }
+    crate::infra::crypto::json_fingerprint(params, &[PARAM])
 }
 
 #[cfg(test)]
@@ -239,6 +204,36 @@ mod tests {
             "channel.messages.create",
             &params,
         )
+    }
+
+    #[test]
+    fn admission_identity_is_stable_and_scoped_to_the_real_idempotent_request() {
+        let params =
+            serde_json::json!({"idempotency_key":"post-1","content":"work","channel_id":"c"});
+        let first = key_for(params.clone()).unwrap().unwrap();
+        let same = key_for(
+            serde_json::json!({"channel_id":"c","content":"work","idempotency_key":"post-1"}),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(first.admission_key(), same.admission_key());
+        let other_bot = IdempotencyKey::from_params(
+            &Principal::bot(Uuid::new_v4()),
+            "channel.messages.create",
+            &params,
+        )
+        .unwrap()
+        .unwrap();
+        assert_ne!(first.admission_key(), other_bot.admission_key());
+        for changed in [
+            serde_json::json!({"idempotency_key":"post-2","content":"work","channel_id":"c"}),
+            serde_json::json!({"idempotency_key":"post-1","content":"different","channel_id":"c"}),
+        ] {
+            assert_ne!(
+                first.admission_key(),
+                key_for(changed).unwrap().unwrap().admission_key()
+            );
+        }
     }
 
     #[test]

@@ -116,6 +116,21 @@ Selection is its own semantic layer: `bg-selected`, `hover:bg-selected-hover`,
 `active:bg-selected-active`, and `ring-selected-indicator`. A selected control
 combines the neutral fill with a persistent rail, underline, checkmark, or
 selected-state inset ring; focus retains the separate two-pixel focus ring.
+The recipe lives once in `src/components/ui/selection.ts`:
+
+| Surface | Selected look | Owner |
+|---|---|---|
+| Button, IconButton, ControlTrigger, ChoiceButton, MenuOption, FileTreeItem | fill + `text-content-strong font-semibold` + inset ring | `selectedClasses("ring")` |
+| ItemRow / NavigationItem rows | fill + strong semibold label + left rail | `selectedClasses("rail")` |
+| Tabs (`role="tab"` on Button/ControlTrigger, `TabOption`) | transparent + strong semibold label + underline | `tabClasses(selected)` |
+| Vertical tab lists (`<Button role="tab" tabOrientation="vertical">` in an `aria-orientation="vertical"` tablist) | same as list rows: fill + strong semibold label + left rail | `tabClasses(selected, "vertical")` |
+| Content containers (selected message, canvas node, choice card) | fill + inset ring; body copy keeps its weight | `selectedContainerClasses` |
+| Listbox keyboard/pointer highlight (active descendant) | hover fill only, never the selected look | `highlightedClasses` / `MenuOption highlighted` |
+
+Business code passes `selected` (or `highlighted`) to the primitive; it never
+re-adds fill, weight, ring, rail, or underline classes, and never overrides the
+selected foreground with a resting `text-*` class. `design-system:check`
+enforces this with the `localSelectionStyling` rule.
 Feature code must not recreate selection with `bg-zinc-*` or translucent
 `bg-indigo-*/15` recipes. `prefers-contrast: more` strengthens these shared
 tokens without adding another appearance option.
@@ -207,7 +222,7 @@ as field boundaries and **states**: neutral (`ring-zinc-600`), focus
 
 - **Substrates & carbon ink**: Light mode uses warm uncoated bond paper (`#FAF8F4` canvas, `#FFFEFC` panel, `#F3F0E8` rail/substrate); dark mode uses carbon slate stone (`#161719` canvas, `#1E1F23` panel). Foreground copy uses the four-tier carbon ink ladder (`#0F1012` dense carbon ink, `#1C1D20` primary, `#403F3C` secondary, `#686660` muted) exceeding WCAG AAA standards.
 - **De-glassification (Solid Paper Stacking)**: Floating windows (`FloatingPanel`), diff headers, and floating action layers rely on physical paper stacking (`.floating-panel-surface`, `.elevation-raised`, `.elevation-overlay`), using opaque paper fills, 1px hairline perimeter rules, and controlled elevation shadows. Translucent glassmorphism (`backdrop-blur`) is avoided across all interactive surfaces.
-- **Dispatch chrome & typewriter cursor**: Channel headers feature an uppercase tracking `DISPATCH` label. Active message streaming renders a mechanical typewriter block cursor (`w-2 h-4 bg-content-strong animate-blink`).
+- **Typewriter cursor**: Active message streaming renders a mechanical typewriter block cursor (`w-2 h-4 bg-content-strong animate-blink`).
 - **Seal stamp authorizations**: Bot trace cards and permission requests render sign-off states as uppercase monospace seal stamps (`[✓ Approved]`, `[✕ Denied]`, `[Needs approval]`) using vermilion (`--tone-danger`) and seal wax amber (`--tone-warning`).
 - **Dispatch send action**: Primary message dispatch uses solid carbon ink (`bg-content-strong text-content-on-light`) with tactile active scale response.
 
@@ -418,11 +433,13 @@ chip passes `selected` to the shared Button or ControlTrigger primitive.
 controls row) use `<ComposerToolbarButton>`. Both consume the same regular
 36px height and 96px width slot; the label is a flexible single line that
 truncates inside the slot, so content length never changes the button size.
-Use a leading semantic icon and a trailing `ChevronDown` that rotates 180°
-while open. Three states: resting (soft zinc),
-open/targeted (shared selected surface and marker),
-mobile touch target via the regular ControlSize mapping. Focus comes from the
-shared Button primitive. The composer card itself
+Use the current bot/model value and a trailing `ChevronDown` that rotates 180°
+while open. Closed selectors are quiet; open selectors use the shared selected
+surface and marker. A pinned target keeps a visible “Direct · mentions off”
+status beside it. Full names and workspace paths remain in accessible names
+and tooltips. The group wraps at narrow widths; the primary send action remains
+visible. Semantic selection and focus come from the shared `ControlTrigger`
+primitive, with mobile touch targets from the regular ControlSize mapping. The composer card itself
 is the canonical borderless field with the shared 10px Web radius and
 `bg-zinc-800/80` plus
 `focus-within:ring-2 focus-within:ring-indigo-500/50` — no resting border.
@@ -477,17 +494,10 @@ cut-out mask, not a decorative border.)
 
 ### 2.8 Tabs — two styles only
 
-- **Underline tabs** (page & detail navigation — FriendsPage, BotDetailPanel):
-  container `flex gap-1 border-b border-zinc-800`; item
-  `px-3 py-2 text-regular border-b-2 -mb-px transition-colors` with active
-  `border-indigo-500 text-content-primary`, inactive
-  `border-transparent text-content-muted hover:text-content-secondary`.
-- **Pill tabs** (dense panel toolbars — ViewBoard):
-  `rounded-md px-2 py-1 text-compact` with active `bg-zinc-800 text-content-primary`,
-  inactive `text-content-muted hover:bg-zinc-800/60 hover:text-content-secondary`.
-
-Don't introduce a third style; segmented controls reuse the pill recipe
-inside a `bg-zinc-800` container.
+- **Underline tabs** are the only tab style. Use `<TabOption>` or pass
+  `role="tab"` plus `selected` to `<Button>` / `<ControlTrigger>`; the primitive
+  draws the underline (`tabClasses`). Call sites add only layout such as `-mb-px`.
+- Segmented single-choice controls are not tabs: use `<ChoiceGroup>`.
 
 Mutually exclusive form choices use `<ChoiceGroup>` and its registered
 `<ChoiceButton>` anatomy, not tabs or feature-owned buttons. The group exposes
@@ -526,10 +536,11 @@ floating panels may add `rounded p-0.5 hover:bg-zinc-800`. Hover target is
 
 ### 2.12 List rows
 
-Selectable rows use the shared Item geometry and hover fill. Selected
-NavigationItems use `bg-zinc-800 text-content-primary` plus `aria-current="page"`;
-the fill remains visible even when a borderless placement suppresses the
-ordinary left marker. Every interactive row needs a hover state.
+Selectable rows use the shared Item geometry and hover fill. Pass `selected`;
+the row draws `selectedClasses("rail")` and NavigationItems expose
+`aria-current="page"`. Never suppress the rail with `border-0` (use
+`border-b-0` to drop only the divider). Every interactive row needs a hover
+state.
 
 Use `<DataTable>` only for genuine two-dimensional data whose columns need a
 shared scan order. It owns caption, column scopes, keyboard sorting, loading
@@ -551,6 +562,22 @@ form-label recipe; the control is any shared field (`Input`/`Textarea`/
 </Field>
 ```
 
+`hint` and `tip` are supplementary help on the label itself. Use `error` for visible
+validation failures and `status` for visible current values or required confirmation
+instructions. `<HelpLabel>` (`src/components/ui/help-text.tsx`)
+uses the existing section title or label as its trigger, with no additional icon or
+help button. Standalone notes attach to their corresponding title, field or action.
+Settings-card
+descriptions and empty-state hints follow this contract. Labels, live status,
+errors, irreversible consequences, and screen-reader instructions remain directly
+available. Text inside an already-open help panel stays readable in that panel.
+Resource enclosure descriptions use the existing info control for hover/focus help
+and remain readable inside its expanded Details on touch devices. Keep navigation
+links separate from help triggers. Empty states retain a short visible diagnosis;
+move optional recovery guidance to that diagnosis, not the status itself. Pairing
+expiry, current host identity, granted scopes, and activation consequences remain
+visible whenever they affect the next decision.
+
 `<SectionHead>` (same file) is the in-card divider heading —
 `text-compact font-semibold text-content-muted uppercase tracking-section`, optional
 leading icon. Don't repeat a heading the surrounding chrome already says (a
@@ -571,12 +598,14 @@ A bubble answers a question, and the pointer only asks one by **coming to rest**
 every hover-opened tip waits out `TOOLTIP_REST_MS` (`src/lib/hoverIntent.ts`) of
 stillness on the trigger, and neither a cursor that content arrived under nor one
 crossing a toolbar on its way elsewhere opens anything. A press cancels the wait,
-so clicking a control never leaves its tooltip standing open. Keyboard focus asks
+so clicking an action control never leaves its tooltip standing open. The existing
+text toggles and pins its explanation on click or tap; Escape, blur, or an
+outside press dismisses it. Keyboard focus asks
 outright and is answered at once. Never start a private `setTimeout` for a tip —
 use `whenPointerRests`, so every bubble in the app answers at the same speed.
 
 ```tsx
-<Tip content="Asks the bot on a schedule and writes the answer back." />   {/* default ⓘ trigger */}
+<HelpLabel help="Asks the bot on a schedule and writes the answer back.">Schedule</HelpLabel>
 <Tip content={`Current prompt: "${p}". Click to edit.`}>                    {/* wrap any control */}
   <Button size="sm" variant="secondary">Edit prompt</Button>
 </Tip>
@@ -822,6 +851,31 @@ and CollectionManager group collection-level controls next to the heading and
 count. Search retains the content width below; Add is rendered exactly once.
 Groups may wrap on narrow screens. Item-specific operations remain with their
 items, and surfaces outside this scope retain their existing action placement.
+
+### Message resource enclosures
+
+Reply resource cards use `ResourceEnclosure`, a specialized message attachment.
+The shared paper surface, structural top rule, and desktop inset distinguish it
+from the letter body. This is not a management collection item. The resource
+title is a navigation link; preview controls remain outside that link.
+
+Use reading typography for descriptions and document previews, utility typography
+for titles and controls. Minimal previews retain the existing Workbench renderer
+and interaction dispatcher. Details progressively disclose the full URI, source
+version, copy link, and refresh. Preview expands in place. Compact controls retain
+the shared 44px touch targets on narrow screens; the desktop inset disappears.
+
+Routine draft loading and successful sync stay quiet. Offline recovery, conflicts,
+request results, and remote-execution approval remain visible and actionable.
+The local fixture `/dev/enclosures.html` covers documents, A2UI forms, terminal
+drafts, TSX, loading failure, and draft conflict at 390/768/1280px in both themes.
+Its actions create local previews only and do not execute device commands.
+
+Standard resource actions use the shared `ActionButton` `resourceCard` context:
+request (send), copy, open, refresh, and retry are quiet icon buttons, with a
+contextual accessible name and tooltip. Info and preview disclosures use square
+`ControlTrigger` controls. Keep the authored action description visible beside
+the action icon; approval and draft-conflict choices retain explicit text.
 
 ### Tailwind 4 build contract
 

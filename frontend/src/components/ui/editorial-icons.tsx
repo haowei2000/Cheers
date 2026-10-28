@@ -16,6 +16,8 @@ export const editorialIconNames = [
   "dispatch",
   "archive",
   "agentMark",
+  "bot",
+  "fleet",
   "session",
   "taskDocket",
   "diffProof",
@@ -109,6 +111,27 @@ const iconArtwork: Record<EditorialIconName, ReactNode> = {
       <path d="M12 3v6M12 15v6M3 12h6M15 12h6M5.75 5.75 10 10M14 14l4.25 4.25M18.25 5.75 14 10M10 14l-4.25 4.25" />
     </>
   ),
+  bot: (
+    <>
+      {/* A bot is a correspondent: the product's speech-bubble silhouette
+          given an antenna and two eyes, so it reads as "an agent that writes"
+          rather than a generic robot head. */}
+      <circle cx="12" cy="3.5" r="1.25" />
+      <path d="M12 4.75V7M4 7h16v10H10l-4 3v-3H4z" />
+      <path d="M9 11.25v1.5M15 11.25v1.5" />
+    </>
+  ),
+  fleet: (
+    <>
+      {/* The bot glyph in front of a second card: the same antenna keeps the
+          family resemblance, the offset card says "several". Eyes stay on the
+          front card only — a second pair turns to noise at 14px. */}
+      <circle cx="9.75" cy="3.75" r="1.25" />
+      <path d="M9.75 5v3M13 8V4.5h8V13h-3" />
+      <path d="M3 8h15v9H9l-3.5 2.5V17H3z" />
+      <path d="M7.5 11.75v1.5M13.5 11.75v1.5" />
+    </>
+  ),
   session: (
     <>
       <path d="M7 4h10M7 20h10M8 4c0 4 1.5 6.25 4 8-2.5 1.75-4 4-4 8M16 4c0 4-1.5 6.25-4 8 2.5 1.75 4 4 4 8" />
@@ -192,4 +215,12 @@ export function AddContextIcon({ contentSize, className, ...props }: Omit<Editor
 
 export function AnnotationIcon({ contentSize, className, ...props }: Omit<EditorialIconProps, "name">) {
   return <EditorialIcon name="annotation" contentSize={contentSize} className={className} {...props} />;
+}
+
+export function BotIcon({ contentSize, className, ...props }: Omit<EditorialIconProps, "name">) {
+  return <EditorialIcon name="bot" contentSize={contentSize} className={className} {...props} />;
+}
+
+export function FleetIcon({ contentSize, className, ...props }: Omit<EditorialIconProps, "name">) {
+  return <EditorialIcon name="fleet" contentSize={contentSize} className={className} {...props} />;
 }

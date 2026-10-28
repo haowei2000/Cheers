@@ -60,11 +60,28 @@ pub async fn handle_ls(db: &PgPool, principal: &Principal, params: &Value) -> Re
 
 /// `fs.read` — read one file.
 pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    if let Some(uri) = params.get("uri").and_then(Value::as_str) {
+        let source = crate::api::resources::desk_resource(db, principal, uri, None)
+            .await
+            .map_err(|e| super::resource_error("RESOURCE_ERROR", e.to_string()))?;
+        if params["channel_id"].as_str() != Some(source.channel_id.as_str()) {
+            return Err(super::resource_error(
+                "PERMISSION_DENIED",
+                "Resource belongs to another channel; use its original channel scope.",
+            ));
+        }
+        let data = parse_structured(&source.path, &source.content);
+        let mut value = serde_json::to_value(source)
+            .map_err(|e| super::resource_error("RESOURCE_ERROR", e.to_string()))?;
+        value["data"] = data.unwrap_or(Value::Null);
+        return Ok(value);
+    }
+
     let (channel_id, path) = extract_channel_path(params, false)?;
     authorize_channel_read(db, principal, channel_id).await?;
 
     let row = sqlx::query!(
-        "SELECT path, content, version, is_dir, created_at, updated_at
+        "SELECT file_id, path, content, version, is_dir, created_at, updated_at
          FROM context_files
          WHERE channel_id = $1 AND path = $2",
         channel_id.to_string(),
@@ -97,7 +114,12 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         None
     };
 
+    let service = crate::api::resources::service_id(db)
+        .await
+        .map_err(|e| super::resource_error("RESOURCE_ERROR", e.to_string()))?;
     Ok(json!({
+        "uri": cheers_interactive_core::global_uri::format(&service,"desk",&row.file_id,None),
+        "resource_id":row.file_id,
         "channel_id": channel_id,
         "path": row.path.clone(),
         "content": content,
@@ -674,6 +696,7 @@ pub async fn handle_patch(db: &PgPool, principal: &Principal, params: &Value) ->
     let content = row.content.clone();
     let next = apply_structured_ops(&path, &content, ops)?;
     enforce_file_size(&next)?;
+    validate_interactive_content(&path, &next)?;
     let version = sqlx::query!(
         "UPDATE context_files SET content = $3, version = version + 1, updated_at = NOW() WHERE channel_id = $1 AND path = $2 RETURNING version",
         channel_id.to_string(),
@@ -719,6 +742,9 @@ pub(super) async fn write_with_idempotency(
         .unwrap_or(false);
     let if_version = params.get("if_version").and_then(|v| v.as_i64());
     enforce_file_size(content)?;
+    if !is_dir {
+        validate_interactive_content(&path, content)?;
+    }
 
     // Authorization above applies to replays too. Claim and response belong to
     // the same transaction as the source write and artifact catalog trigger.
@@ -823,6 +849,17 @@ pub(super) async fn write_with_idempotency(
         json!({"path": path, "version": version, "is_dir": is_dir}),
     )
     .await?;
+    let identity = sqlx::query!(
+        "SELECT file_id FROM context_files WHERE channel_id=$1 AND path=$2",
+        channel_id.to_string(),
+        path
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(super::db_err("fs.write: resource identity"))?;
+    let service = crate::api::resources::service_id(db)
+        .await
+        .map_err(|e| super::resource_error("INTERNAL", e.to_string()))?;
     let artifact = if is_dir {
         Value::Null
     } else {
@@ -831,10 +868,13 @@ pub(super) async fn write_with_idempotency(
     let response = json!({
         "channel_id": channel_id, "path": path, "version": version,
         "channel_seq": seq, "artifact": artifact,
+        "uri":cheers_interactive_core::global_uri::format(&service,"desk",&identity.file_id,None),
+        "resource_id":identity.file_id,
     });
     if let Some(key) = &idempotency {
         key.complete(&mut tx, &response).await?;
     }
+
     tx.commit()
         .await
         .map_err(super::db_err("fs.write: commit tx"))?;
@@ -971,6 +1011,7 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
     } else {
         enforce_channel_file_count(&mut tx, channel_id).await?;
         enforce_file_size(append)?;
+        validate_interactive_content(&path, append)?;
         sqlx::query!(
             "INSERT INTO context_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
@@ -1147,6 +1188,22 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
         ));
     }
 
+    // Validate destination types while holding each source row. Renaming an
+    // untyped file must not bypass the same contract checked by writes/patches.
+    let source_files = sqlx::query!(
+        "SELECT path, content FROM context_files WHERE channel_id=$1 AND is_dir=FALSE
+         AND (path=$2 OR left(path, char_length($2)+1)=$2 || '/') FOR UPDATE",
+        channel_id.to_string(),
+        &from,
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(super::db_err("fs.mv: validate destination"))?;
+    for source in source_files {
+        let destination = format!("{}{}", to, &source.path[from.len()..]);
+        validate_interactive_content(&destination, &source.content)?;
+    }
+
     let moved = sqlx::query!(
         "UPDATE context_files
          SET path = CASE
@@ -1251,6 +1308,7 @@ async fn update_content(
     content: &str,
 ) -> Result<i64, (String, String)> {
     enforce_file_size(content)?;
+    validate_interactive_content(path, content)?;
     Ok(sqlx::query!(
         "UPDATE context_files
          SET content = $3,
@@ -1392,6 +1450,23 @@ pub(crate) fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (St
         ));
     }
     Ok(path)
+}
+
+fn validate_interactive_content(path: &str, content: &str) -> Result<(), (String, String)> {
+    let typed =
+        path.ends_with(".a2ui.json") || path.ends_with(".a2ui.yaml") || path.ends_with(".a2ui.yml");
+    let data = parse_structured(path, content);
+    if typed || data.as_ref().is_some_and(|v| v.get("a2ui").is_some()) {
+        let data = data.ok_or_else(|| {
+            super::resource_error(
+                "INVALID_UI",
+                "interactive resource must be valid JSON or YAML",
+            )
+        })?;
+        cheers_mcp_server::interactive::validate_document(&data)
+            .map_err(|error| super::resource_error("INVALID_UI", error))?;
+    }
+    Ok(())
 }
 
 fn version_conflict(current: i64) -> (String, String) {

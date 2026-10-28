@@ -23,6 +23,7 @@ jobs:
       gateway: ${{ steps.plan.outputs.gateway }}
       frontend: ${{ steps.plan.outputs.frontend }}
       release_version: ${{ steps.version.outputs.value }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
 
     steps:
       - uses: actions/checkout@v5
@@ -37,6 +38,11 @@ jobs:
           python3 scripts/version_control.py check
           python3 scripts/version_control.py verify-tag "$REF_NAME"
           echo "value=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$REF_NAME" == *-rc.* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Plan changed images
         id: plan
@@ -64,6 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: |
+      needs.changes.outputs.prerelease == 'false' &&
       vars.DEPLOY_ENABLED == 'true' &&
       (needs.changes.outputs.gateway == 'true' || needs.changes.outputs.frontend == 'true')
     environment: production
@@ -88,7 +95,7 @@ jobs:
     if: |
       always() &&
       needs.changes.result == 'success' &&
-      (vars.DEPLOY_ENABLED != 'true' || needs.deploy-contract.result == 'success') &&
+      (needs.changes.outputs.prerelease == 'true' || vars.DEPLOY_ENABLED != 'true' || needs.deploy-contract.result == 'success') &&
       needs.changes.outputs.gateway == 'true'
     permissions:
       contents: read
@@ -116,10 +123,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_GATEWAY }}
+          flavor: latest=${{ needs.changes.outputs.prerelease == 'false' }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.changes.outputs.prerelease == 'false' }}
             type=sha,prefix=sha-,format=short
 
       - name: Build and push gateway
@@ -143,7 +151,7 @@ jobs:
     if: |
       always() &&
       needs.changes.result == 'success' &&
-      (vars.DEPLOY_ENABLED != 'true' || needs.deploy-contract.result == 'success') &&
+      (needs.changes.outputs.prerelease == 'true' || vars.DEPLOY_ENABLED != 'true' || needs.deploy-contract.result == 'success') &&
       needs.changes.outputs.frontend == 'true'
     permissions:
       contents: read
@@ -171,10 +179,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_FRONTEND }}
+          flavor: latest=${{ needs.changes.outputs.prerelease == 'false' }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.changes.outputs.prerelease == 'false' }}
             type=sha,prefix=sha-,format=short
 
       - name: Build and push frontend
@@ -189,8 +198,53 @@ jobs:
           cache-from: type=gha,scope=frontend-image
           cache-to: type=gha,mode=max,scope=frontend-image
 
+  publish-rc:
+    name: Publish Gateway / Web RC
+    needs: [changes, build-gateway, build-frontend]
+    if: |
+      always() &&
+      needs.changes.outputs.prerelease == 'true' &&
+      needs.build-gateway.result == 'success' &&
+      needs.build-frontend.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Record immutable images
+        env:
+          RELEASE_VERSION: ${{ needs.changes.outputs.release_version }}
+          GATEWAY_DIGEST: ${{ needs.build-gateway.outputs.digest }}
+          FRONTEND_DIGEST: ${{ needs.build-frontend.outputs.digest }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          owner = os.environ["GITHUB_REPOSITORY_OWNER"].lower()
+          images = {
+              component: f"ghcr.io/{owner}/cheers-{component}@{os.environ[f'{component.upper()}_DIGEST']}"
+              for component in ("gateway", "frontend")
+          }
+          pathlib.Path("rc-images.json").write_text(json.dumps({
+              "version": os.environ["RELEASE_VERSION"],
+              "commit": os.environ["GITHUB_SHA"],
+              "images": images,
+          }, indent=2) + "\n")
+          PY
+      - name: Publish prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Cheers Gateway / Web ${{ needs.changes.outputs.release_version }}
+          prerelease: true
+          make_latest: false
+          files: rc-images.json
+          fail_on_unmatched_files: true
+          body: |
+            Gateway / Web release candidate built from `${{ github.sha }}`.
+            Use the immutable image references in `rc-images.json` for an isolated test stack.
+            This candidate requires the matching connector grant and terminal-replay protocol.
+            Production deployment and stable image aliases are disabled for RC tags.
+
   # ─────────────────────────────────────────────
-  # Deploy to the production server (Hetzner) via SSH.
+  # Deploy stable tags to the production server (Hetzner) via SSH.
   # The deploy key is a forced-command key on the server: any connection with it
   # runs /opt/cheers/deploy.sh (sync the allowlisted auth environment from
   # stdin, pull immutable versioned images, recreate gateway+frontend, then wait
@@ -205,6 +259,7 @@ jobs:
     needs: [changes, deploy-contract, build-gateway, build-frontend]
     if: |
       always() &&
+      needs.changes.outputs.prerelease == 'false' &&
       vars.DEPLOY_ENABLED == 'true' &&
       needs.deploy-contract.result == 'success' &&
       (needs.build-gateway.result == 'success' || needs.build-frontend.result == 'success') &&

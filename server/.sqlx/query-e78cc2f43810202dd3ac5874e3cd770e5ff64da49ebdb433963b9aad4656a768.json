@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT task_id,bot_id,channel_id,binding_type,status,execution_id,\n                terminal_client_msg_id,terminal_fingerprint,terminal_committed_at\n         FROM bot_runs WHERE placeholder_msg_id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "task_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "binding_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "execution_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "terminal_client_msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "terminal_fingerprint",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "terminal_committed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e78cc2f43810202dd3ac5874e3cd770e5ff64da49ebdb433963b9aad4656a768"
+}

@@ -7,7 +7,7 @@ members = [".", "bridge-protocol"]
 
 [package]
 name = "cce-acp-connector"
-version = "0.1.50"
+version = "0.1.57"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
@@ -16,6 +16,7 @@ name = "cce-acp-connector"
 path = "src/main.rs"
 
 [dependencies]
+portable-pty = "0.9"
 # Official ACP runtime and protocol types, consumed through the main crate's
 # schema re-export. The connector remains on stable wire protocol
 # v1; only the SDK's v1 `unstable_elicitation` API surface is enabled so Cheers
@@ -65,6 +66,7 @@ similar = { version = "3.1.1", default-features = false, features = ["text"] }
 
 [dev-dependencies]
 tempfile = "3"
+toml_edit = "0.22"
 # `test-util` (not part of tokio's "full") gives tests a paused clock, so a
 # concurrency test proves a task parked on a semaphore instead of sleeping long
 # enough to make the scheduler probably do the right thing.

@@ -128,7 +128,11 @@ def verify_tag(tag: str, versions: dict[str, str]) -> str:
             continue
         expected = versions[component]
         suffix = tag[len(prefix):]
-        if component == "ios":
+        if component in ("platform", "connector"):
+            valid = suffix == expected or re.fullmatch(
+                rf"{re.escape(expected)}-rc\.[1-9][0-9]*", suffix
+            ) is not None
+        elif component == "ios":
             valid = suffix == expected or re.fullmatch(
                 rf"{re.escape(expected)}-build\.[1-9]\d*", suffix
             ) is not None

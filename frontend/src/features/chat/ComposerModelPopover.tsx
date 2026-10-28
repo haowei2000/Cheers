@@ -1,10 +1,22 @@
 import { ComposerToolbarButton } from "@/components/ui/composer-toolbar-button";
-import { useEffect, useRef, useState } from "react";
-import { SlidersHorizontal, ChevronDown } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { ComposerBotSettings, type MentionedBot } from "./ComposerBotSettings";
-import { readBotControls } from "./sessionControlsCache";
+import { useBotControls, resolveTargetSession, type BotControlsEntry } from "./sessionControlsCache";
+import { controlIconClasses } from "@/components/ui/control-size";
+
+export function effectiveModelLabel(data: BotControlsEntry | undefined, selectedSessionId: string) {
+  const option = data?.controls.config_options.find((opt) => opt.id === "model") ??
+    data?.controls.config_options.find((opt) => opt.category === "model") ??
+    data?.controls.config_options.find((opt) => /model/i.test(opt.name));
+  if (!option) return null;
+  const session = resolveTargetSession(data?.sessions ?? [], selectedSessionId);
+  if (selectedSessionId && !session) return null;
+  const value = session?.session_config?.config_options?.[option.id] ?? option.currentValue;
+  return option.options.find((opt) => opt.value === value)?.name ?? value ?? null;
+}
 
 /**
  * Collapsed entry point for the composer's bot model/mode + config controls.
@@ -16,7 +28,8 @@ import { readBotControls } from "./sessionControlsCache";
  *
  * Opens upward (`bottom-full`) because the composer sits at the bottom of the
  * viewport. `ComposerBotSettings` (and its per-bot fetches) only mount while
- * the popover is open, so a closed composer costs one cached label read.
+ * the popover is open. The label and settings share the account-owned query
+ * cache, with bounded retries while discovery is empty.
  */
 export function ComposerModelPopover({
   channelId,
@@ -29,81 +42,48 @@ export function ComposerModelPopover({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  usePopoverDismiss(open, () => setOpen(false), rootRef);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => {
+    setOpen(false);
+  }, []);
+  usePopoverDismiss(open, close, rootRef, triggerRef);
 
-  // The effective model label for the single target bot (null → generic "Model").
-  const [modelLabel, setModelLabel] = useState<string | null>(null);
-  // Bumped by onApplied after a settings change (cache already busted).
-  const [tick, setTick] = useState(0);
   const target = bots.length === 1 ? bots[0] : null;
   const targetBotId = target?.botId ?? null;
-
-  useEffect(() => {
-    setModelLabel(null);
-    if (!targetBotId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { controls, sessions } = await readBotControls(channelId, targetBotId);
-        // The agent's model knob: the option literally named "model" wins, else
-        // anything model-ish (e.g. "Model preset"); none advertised → no label.
-        const opt =
-          controls.config_options.find((o) => o.id === "model") ??
-          controls.config_options.find((o) => /model/i.test(o.name));
-        if (!opt) return;
-        // The session this message will hit: selected if it's this bot's, else primary.
-        const targetSession =
-          sessions.find((s) => s.session_id === selectedSessionId) ??
-          sessions.find((s) => s.is_primary) ??
-          sessions[0];
-        const cur =
-          targetSession?.session_config?.config_options?.[opt.id] ??
-          opt.currentValue ??
-          "";
-        if (!cur) return;
-        const human = opt.options.find((v) => v.value === cur)?.name ?? cur;
-        if (!cancelled) setModelLabel(human);
-      } catch {
-        /* keep the generic label */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [channelId, targetBotId, selectedSessionId, tick]);
+  const { data, refresh } = useBotControls(channelId, targetBotId, selectedSessionId);
+  const modelLabel = effectiveModelLabel(data, selectedSessionId);
 
   // No candidate bot → nothing to configure; hide the chip entirely.
   if (bots.length === 0) return null;
 
   const currentValue =
-    bots.length > 1 ? `${bots.length} bots` : modelLabel ?? "Default model";
+    bots.length > 1 ? `${bots.length} bots` : modelLabel || "Model";
 
   return (
-    <div className="relative inline-flex min-w-0" ref={rootRef}>
+    <div className="relative inline-flex shrink-0" ref={rootRef}>
       <ComposerToolbarButton
+        ref={triggerRef}
         type="button"
         selected={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { if (!open) refresh(); setOpen((o) => !o); }}
         title={`Model & bot settings · ${currentValue}`}
         aria-label={`Model and bot settings: ${currentValue}`}
         aria-expanded={open}
         aria-haspopup="dialog"
       >
-        <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-        <span>Model</span>
+        <span className="min-w-0 flex-1 truncate">{currentValue}</span>
         <ChevronDown
-          className={cn("w-3.5 h-3.5 shrink-0 transition-transform", open && "rotate-180")}
+          className={cn(controlIconClasses.regular, "shrink-0 transition-transform", open && "rotate-180")}
         />
       </ComposerToolbarButton>
 
       {open && (
-        <PopoverPanel className="min-w-[240px] max-w-[calc(100vw-2rem)] md:max-w-[420px] p-2">
-          <div className="flex flex-wrap items-center gap-2">
+        <PopoverPanel align="end" className="w-80 max-w-[calc(100vw-2rem)] max-h-[min(70vh,28rem)] overflow-y-auto p-3">
+          <div className="flex flex-col gap-4" role="dialog" aria-label="Model and bot settings">
             <ComposerBotSettings
               channelId={channelId}
               bots={bots}
               selectedSessionId={selectedSessionId}
-              onApplied={() => setTick((t) => t + 1)}
             />
           </div>
         </PopoverPanel>

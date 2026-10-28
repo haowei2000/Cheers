@@ -1,4 +1,5 @@
 import { useAnnotationSurface } from "@/features/annotations/AnnotationProvider";
+import { selectedContainerClasses } from "@/components/ui/selection";
 import { Button as UiButton } from "@/components/ui/button";
 import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
@@ -72,6 +73,7 @@ export interface MessageActionHandlers {
   onRetry?: (m: Message) => void;
   onUseSuggestedQuestion?: (question: SuggestedQuestion) => void;
   onSuggestionsLoaded?: (msgId: string, questions: SuggestedQuestion[]) => void;
+  onContentDataUpdated?: (msgId: string, data: Message["content_data"]) => void;
 }
 
 interface Props {
@@ -937,7 +939,7 @@ function RegularMessageItem({
             : "mx-2 px-3 py-1 hover:bg-zinc-900/45 md:mx-4 md:px-4",
           isOwnAlignedRight && "flex-row-reverse",
           selectable && "cursor-pointer",
-          selected && "bg-selected ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover",
+          selected && selectedContainerClasses,
         )}
         {...rowSelectProps}
         ref={rowRef}
@@ -979,6 +981,7 @@ function RegularMessageItem({
               message={message}
               channelId={channelId}
               currentUserId={currentUserId}
+              onContentDataUpdated={actions?.onContentDataUpdated}
             />
           )}
           {message._status && (
@@ -1014,7 +1017,7 @@ function RegularMessageItem({
         "group relative mx-2 flex items-start gap-3 rounded-sm px-3 py-2 transition-colors hover:z-20 hover:bg-zinc-900/45 focus-within:z-20 md:mx-4 md:px-4",
         isOwnAlignedRight && "flex-row-reverse",
         selectable && "cursor-pointer",
-        selected && "bg-selected ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover",
+        selected && selectedContainerClasses,
       )}
       {...rowSelectProps}
       ref={rowRef}
@@ -1054,6 +1057,7 @@ function RegularMessageItem({
             message={message}
             channelId={channelId}
             currentUserId={currentUserId}
+            onContentDataUpdated={actions?.onContentDataUpdated}
           />
         )}
         {message._status && (

@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 /** @file Discussion-mode channel UI for browsing topics and their reply threads. */
 
 import { Button as UiButton } from "@/components/ui/button";
@@ -33,10 +34,13 @@ import { ErrorState } from "@/components/ui/error-state";
 import { ItemList, ItemRow } from "@/components/ui/item";
 import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { cn } from "@/lib/cn";
+import { clientSessionGeneration } from "@/lib/clientSession";
 import type { Message } from "@/types";
 import { MessageList } from "./MessageList";
 import { type MessageActionHandlers } from "./MessageItem";
 import { mergeDiscussionMessages } from "./discussionThread";
+import { upsertMessage } from "./messageCollection";
+import { mergeMessageContentData } from "./taskClaimProjection";
 import { TopicPaneResizer } from "./TopicPaneResizer";
 
 interface Props {
@@ -51,6 +55,7 @@ interface Props {
   liveMessages?: Message[];
   /** Lets the composer find bot children that live in this topic, not the chat window. */
   discussionThreadRef?: MutableRefObject<Message[]>;
+  messageUpdatedRef?: MutableRefObject<((update: Partial<Message> & { msg_id: string }) => void) | null>;
   footer?: ReactNode;
   onComposerContextChange: (root: Message | null, creating: boolean) => void;
 }
@@ -151,9 +156,7 @@ function DiscussionTopicRow({
         )}
         className={cn(
           "rounded-none border-b border-b-control/40 transition-colors",
-          selected
-            ? "border-l-content-strong bg-selected/50 font-medium text-content-strong"
-            : "border-l-transparent bg-transparent hover:bg-control/30 text-content-primary"
+          !selected && "bg-transparent hover:bg-control/30"
         )}
       />
     </div>
@@ -171,6 +174,7 @@ export function DiscussionView({
   openDiscussionId,
   liveMessages = [],
   discussionThreadRef,
+  messageUpdatedRef,
   footer,
   onComposerContextChange,
 }: Props) {
@@ -197,6 +201,30 @@ export function DiscussionView({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const storageKey = `cheers:last-discussion:${channelId}`;
   const onComposerContextChangeRef = useRef(onComposerContextChange);
+  const scope = `${channelId}:${selectedId}`;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  useEffect(() => { setLoadingOlder(false); }, [scope]);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  useEffect(() => {
+    if (!messageUpdatedRef) return;
+    const update = (message: Partial<Message> & { msg_id: string }) => {
+      setDetail((current) => current ? {
+        ...current,
+        root: current.root.msg_id === message.msg_id ? upsertMessage([current.root], message)[0] : current.root,
+        replies: current.replies.some((row) => row.msg_id === message.msg_id) ? upsertMessage(current.replies, message) : current.replies,
+      } : current);
+    };
+    messageUpdatedRef.current = update;
+    return () => {
+      if (messageUpdatedRef.current === update) messageUpdatedRef.current = null;
+      if (discussionThreadRef) discussionThreadRef.current = [];
+    };
+  }, [discussionThreadRef, messageUpdatedRef]);
 
   useEffect(() => {
     onComposerContextChangeRef.current = onComposerContextChange;
@@ -285,6 +313,7 @@ export function DiscussionView({
   }, [creating, debouncedQuery, isWide, selectDiscussion, selectedId, storageKey, topics]);
 
   const refreshDetail = useCallback(async (showSpinner = true) => {
+    const generation = clientSessionGeneration();
     if (!selectedId) {
       setDetail(null);
       onComposerContextChangeRef.current(null, creating);
@@ -294,16 +323,22 @@ export function DiscussionView({
     try {
       setDetailError(null);
       const response = await getDiscussion(channelId, selectedId, { limit: 50 });
-      setDetail(response);
+      if (!mountedRef.current || scopeRef.current !== scope || generation !== clientSessionGeneration()) return;
+      setDetail((current) => {
+        const previous = new Map([...(current ? [current.root, ...current.replies] : [])].map((message) => [message.msg_id, message]));
+        const preserve = (message: Message) => ({ ...message, content_data: mergeMessageContentData(previous.get(message.msg_id)?.content_data, message.content_data) });
+        return { ...response, root: preserve(response.root), replies: response.replies.map(preserve) };
+      });
       onComposerContextChangeRef.current(response.root, false);
     } catch (error) {
+      if (!mountedRef.current || scopeRef.current !== scope || generation !== clientSessionGeneration()) return;
       setDetail(null);
       setDetailError(error instanceof Error ? error.message : "Couldn't load this discussion");
       onComposerContextChangeRef.current(null, false);
     } finally {
-      setLoadingDetail(false);
+      if (mountedRef.current && scopeRef.current === scope && generation === clientSessionGeneration()) setLoadingDetail(false);
     }
-  }, [channelId, creating, selectedId]);
+  }, [channelId, creating, selectedId, scope]);
 
   useEffect(() => {
     void refreshDetail();
@@ -359,19 +394,22 @@ export function DiscussionView({
   const loadOlderReplies = async () => {
     const first = detail?.replies[0];
     if (!selectedId || !first || !detail.meta.has_more_before || loadingOlder) return;
+    const generation = clientSessionGeneration();
+    const current = () => mountedRef.current && scopeRef.current === scope && generation === clientSessionGeneration();
     setLoadingOlder(true);
     try {
       const response = await getDiscussion(channelId, selectedId, {
         before: first.msg_id,
         limit: 50,
       });
+      if (!current()) return;
       setDetail((current) => current ? {
         ...current,
         replies: [...response.replies, ...current.replies],
         meta: response.meta,
       } : response);
     } finally {
-      setLoadingOlder(false);
+      if (current()) setLoadingOlder(false);
     }
   };
 
@@ -425,7 +463,7 @@ export function DiscussionView({
         ) : topics.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <MessageCircle className="h-5 w-5 text-content-muted" />
-            <div><p className="text-regular font-medium text-content-secondary">No discussions yet</p><p className="mt-1 text-compact text-content-muted">Start a topic for the channel.</p></div>
+            <div><p className="text-regular font-medium text-content-secondary"><HelpLabel help={<>Start a topic for the channel.</>}>No discussions yet</HelpLabel></p></div>
             <UiButton action="start" variant="plain" type="button" onClick={startDiscussion} className="font-medium text-accent-300 hover:text-accent-200">Start the first discussion</UiButton>
           </div>
         ) : (
@@ -462,7 +500,7 @@ export function DiscussionView({
       <div className="flex min-h-0 flex-1 flex-col">
       {creating ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center">
-          <div className="max-w-sm"><MessageCircle className="mx-auto h-5 w-5 text-accent-400" /><h2 className="mt-4 text-comfortable font-semibold text-content-primary">Start a new discussion</h2><p className="mt-2 text-regular leading-6 text-content-muted">Write the topic in the composer below. The first non-empty line becomes its title.</p></div>
+          <div className="max-w-sm"><MessageCircle className="mx-auto h-5 w-5 text-accent-400" /><h2 className="mt-4 text-comfortable font-semibold text-content-primary"><HelpLabel help={<>Write the topic in the composer below. The first non-empty line becomes its title.</>}>Start a new discussion</HelpLabel></h2></div>
         </div>
       ) : loadingDetail ? (
         <div className="flex flex-1 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-content-muted" /></div>
@@ -520,7 +558,7 @@ export function DiscussionView({
           </div>
         </>
       ) : (
-        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-content-muted" /><p className="mt-3 text-regular font-medium text-content-secondary">Select a discussion</p><p className="mt-1 text-compact text-content-muted">Open a topic to read and reply.</p></div></div>
+        <div className="flex flex-1 items-center justify-center px-6 text-center"><div><MessageCircle className="mx-auto h-5 w-5 text-content-muted" /><p className="mt-3 text-regular font-medium text-content-secondary"><HelpLabel help={<>Open a topic to read and reply.</>}>Select a discussion</HelpLabel></p></div></div>
       )}
       </div>
       {(selectedId || creating) && footer}

@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::{
-    fanout::{CloseReason, Fanout, InProcessFanout, WireFrame},
+    fanout::{CloseReason, Fanout, InProcessFanout, SharedFrame, WireFrame},
     manager::LocalRegistry,
 };
 
@@ -69,13 +69,20 @@ impl RedisFanout {
     pub fn register_user(
         &self,
         user_id: Uuid,
+        session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     ) {
-        self.local.register_user(user_id, conn_id, tx, close_tx);
+        self.local
+            .register_user(user_id, session_id, conn_id, tx, close_tx);
     }
-    pub fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+    pub fn subscribe_channel(
+        &self,
+        channel_id: Uuid,
+        conn_id: Uuid,
+        tx: mpsc::Sender<SharedFrame>,
+    ) {
         self.local.subscribe_channel(channel_id, conn_id, tx);
     }
     pub fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
@@ -90,13 +97,18 @@ impl LocalRegistry for RedisFanout {
     fn register_user(
         &self,
         user_id: Uuid,
+        session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     ) {
-        self.local.register_user(user_id, conn_id, tx, close_tx);
+        self.local
+            .register_user(user_id, session_id, conn_id, tx, close_tx);
     }
-    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+    fn rebind_session(&self, user_id: Uuid, conn_id: Uuid, session_id: &str) -> bool {
+        self.local.rebind_session(user_id, conn_id, session_id)
+    }
+    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<SharedFrame>) {
         self.local.subscribe_channel(channel_id, conn_id, tx);
     }
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
@@ -162,6 +174,11 @@ impl Fanout for RedisFanout {
         // work) — until then, a multi-instance rollout leaves the user's
         // sockets on OTHER instances open until they disconnect or re-auth.
         self.local.kick_user(user_id);
+    }
+
+    fn kick_session(&self, user_id: Uuid, session_id: &str) {
+        // Like account-wide kicks, this targets local browser registrations.
+        self.local.kick_session(user_id, session_id);
     }
 }
 

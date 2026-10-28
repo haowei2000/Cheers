@@ -339,47 +339,37 @@ async fn advertised_config_options(state: &AppState, bot_id: Uuid) -> Vec<Value>
             .cloned()
     })
     .unwrap_or_else(|| json!({}));
-    let options = snapshot
-        .get("configOptions")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let options = connector_config::overlay_model_state(&snapshot, options);
     let agent_type = bot_agent_type(state, bot_id).await;
-    connector_config::dedup_mode_config_options(&agent_type, options)
+    connector_config::advertised_config_options(&agent_type, &snapshot).unwrap_or_default()
 }
 
-/// Merge a `session_config` override onto a session's metadata (read-merge-write).
+/// Merge one desired-state patch atomically. A monotonic revision lets the
+/// connector reject old snapshots from tasks queued before an immediate change.
 async fn persist_session_override(
     state: &AppState,
     session_id: Uuid,
-    set: impl FnOnce(&mut serde_json::Map<String, Value>),
-) -> Result<(), AppError> {
-    let meta = sqlx::query!(
-        "SELECT metadata FROM cheers_sessions WHERE session_id = $1",
+    patch: Value,
+) -> Result<cheers_bridge_protocol::SessionConfigOverrides, AppError> {
+    let value = sqlx::query_scalar!(
+        "UPDATE cheers_sessions
+         SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{session_config}',
+             COALESCE(metadata->'session_config', '{}'::jsonb) || $2::jsonb ||
+             jsonb_build_object(
+                 'revision', COALESCE((metadata #>> '{session_config,revision}')::bigint, 0) + 1,
+                 'config_options', COALESCE(metadata #> '{session_config,config_options}', '{}'::jsonb)
+                     || COALESCE($2::jsonb->'config_options', '{}'::jsonb))),
+             updated_at = NOW()
+         WHERE session_id = $1
+         RETURNING metadata->'session_config'",
         session_id.to_string(),
+        patch,
     )
     .fetch_optional(&state.db)
     .await?
-    .and_then(|r| r.metadata.clone())
-    .unwrap_or_else(|| json!({}));
-    let mut sc = meta
-        .get("session_config")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    set(&mut sc);
-    sqlx::query!(
-        "UPDATE cheers_sessions
-         SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('session_config', $2::jsonb),
-             updated_at = NOW()
-         WHERE session_id = $1",
-        session_id.to_string(),
-        Value::Object(sc),
-    )
-    .execute(&state.db)
-    .await?;
-    Ok(())
+    .flatten()
+    .ok_or(AppError::NotFound)?;
+    serde_json::from_value(value)
+        .map_err(|error| AppError::Internal(format!("invalid persisted session config: {error}")))
 }
 
 #[derive(Deserialize)]
@@ -428,13 +418,15 @@ pub async fn set_session_mode(
         ));
     }
 
-    persist_session_override(&state, session_id, |sc| {
-        sc.insert("permission_mode".into(), Value::String(mode.clone()));
-    })
-    .await?;
+    let desired =
+        persist_session_override(&state, session_id, json!({"permission_mode": mode})).await?;
 
-    let frame =
-        crate::gateway::bridge_frames::mode_set_frame(&Uuid::new_v4().to_string(), &key, &mode);
+    let frame = crate::gateway::bridge_frames::mode_set_frame(
+        &Uuid::new_v4().to_string(),
+        &key,
+        &mode,
+        Some(desired),
+    );
     let delivered = state.bot_locator.dispatch_task(bot_id, frame).await;
     Ok(Json(
         json!({ "ok": true, "mode": mode, "delivered": delivered }),
@@ -504,22 +496,16 @@ pub async fn set_session_config_option(
         ));
     }
 
-    persist_session_override(&state, session_id, |sc| {
-        let mut opts = sc
-            .get("config_options")
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-        opts.insert(config_id.clone(), Value::String(value.clone()));
-        sc.insert("config_options".into(), Value::Object(opts));
-    })
-    .await?;
+    let desired = persist_session_override(
+        &state, session_id, json!({"config_options": std::collections::BTreeMap::from([(config_id.clone(), value.clone())])}),
+    ).await?;
 
     let frame = crate::gateway::bridge_frames::config_option_set_frame(
         &Uuid::new_v4().to_string(),
         &key,
         &config_id,
         &value,
+        Some(desired),
     );
     let delivered = state.bot_locator.dispatch_task(bot_id, frame).await;
     Ok(Json(

@@ -1,4 +1,6 @@
-import { Laptop } from "lucide-react";
+import { HelpLabel } from "@/components/ui/help-text";
+import { Button } from "@/components/ui/button";
+import { Laptop, Plus } from "lucide-react";
 
 import { isTauri } from "@/lib/serverConfig";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -10,9 +12,11 @@ import { ConnectorManager } from "@/features/desktop/ConnectorManager";
 export function FleetHosts({
   items,
   refresh,
+  onAddHost,
 }: {
   items: FleetHost[];
   refresh: () => Promise<void>;
+  onAddHost: () => void;
 }) {
   return (
     <div className="space-y-7">
@@ -23,7 +27,12 @@ export function FleetHosts({
         controlSize="regular"
       >
         {items.length === 0 ? (
-          <EmptyState icon={Laptop} title="No hosts yet" hint="Use Add host to choose a bot and connect a device." />
+          <EmptyState
+            icon={Laptop}
+            title="No hosts yet"
+            hint="Choose a bot and connect the device that will run it."
+            action={<Button action="add" content="iconText" variant="secondary" onClick={onAddHost}><Plus /></Button>}
+          />
         ) : (
           items.map((item) => <HostItem key={item.host_id} item={item} onChanged={refresh} />)
         )}
@@ -31,8 +40,8 @@ export function FleetHosts({
       {isTauri() && (
         <section className="space-y-3">
           <div>
-            <h2 className="font-utility text-compact font-semibold uppercase tracking-overline text-content-muted">This Mac</h2>
-            <p className="mt-1 text-compact text-content-muted">Local connector processes, logs, workspaces, and runtime health.</p>
+            <h2 className="font-utility text-compact font-semibold uppercase tracking-overline text-content-muted"><HelpLabel help={<>Local connector processes, logs, workspaces, and runtime health.</>}>This Mac</HelpLabel></h2>
+
           </div>
           <ConnectorManager />
         </section>

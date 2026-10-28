@@ -44,6 +44,9 @@ cd server && cargo build && cargo test
 前端推送前需要跑的命令（含 typecheck/test/lint 覆盖不到的 CI 门禁）见
 [CLAUDE.md](CLAUDE.md) 的 Commands 一节。
 
+`frontend/` 使用 pnpm 作为首选包管理器，以 `frontend/pnpm-lock.yaml` 为准；安装和运行脚本使用
+`pnpm install`、`pnpm <脚本>`。CI、Docker、Tauri 前端钩子和 Make 目标也统一使用 pnpm。
+
 ### 本地运行：Kubernetes（规范路径）
 
 本地服务栈通过 `deploy/helm/cheers` 的 **Helm chart** 运行在 **kind** 集群上 ——
@@ -88,7 +91,7 @@ kubectl -n cheers logs deploy/cheers-gateway -f
 helm uninstall cheers -n cheers           # 移除 release（保留 kind 集群）
 ```
 
-> 前端专用的快速内循环：可以让 Vite（`npm --prefix frontend run dev`）指向集群内的
+> 前端专用的快速内循环：可以让 Vite（`pnpm --dir frontend dev`）指向集群内的
 > 网关，但规范、可复现的服务栈是上面的 Helm/kind 路径 —— 用 k8s 启动。
 
 > 针对运行中服务栈的集成测试正在 Rust 网关上重建（旧的 `pytest -m integration` 套件

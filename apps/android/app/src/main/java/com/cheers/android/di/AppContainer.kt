@@ -4,8 +4,10 @@ import android.content.Context
 import com.cheers.android.data.Session
 import com.cheers.android.data.SessionStore
 import com.cheers.android.data.api.CheersApi
+import com.cheers.android.data.auth.SessionAuthInterceptor
+import com.cheers.android.data.auth.SessionIdentity
+import com.cheers.android.data.auth.WriteOnceInterceptor
 import com.cheers.android.data.repo.AuthRepository
-import com.cheers.android.data.repo.ChatRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,10 +15,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -51,33 +51,21 @@ class AppContainer(context: Context) {
         }
         .stateIn(appScope, SharingStarted.Eagerly, SessionState.Loading)
 
-    // Bearer token for the interceptor, kept hot off the session flow.
-    @Volatile
-    private var bearerToken: String? = null
+    /** Raw transport for login, refresh, explicit old-session logout, and WS. */
+    val httpClient: OkHttpClient = newTransport()
 
-    init {
-        appScope.launch {
-            sessionStore.sessionFlow.collect { bearerToken = it?.token }
-        }
-    }
+    // Refresh requests have their own dispatcher: protected calls waiting for
+    // rotation cannot exhaust the threads needed to complete that rotation.
+    private val protectedTransport: OkHttpClient = newTransport()
 
-    private val authInterceptor = Interceptor { chain ->
-        val token = bearerToken
-        val request = chain.request()
-        if (token.isNullOrBlank() || request.header("Authorization") != null) {
-            chain.proceed(request)
-        } else {
-            chain.proceed(
-                request.newBuilder().header("Authorization", "Bearer $token").build(),
-            )
-        }
-    }
-
-    val httpClient: OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor(authInterceptor)
+    private fun newTransport(): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(WriteOnceInterceptor())
         .addInterceptor(
             HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC },
         )
+        .retryOnConnectionFailure(false)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -89,6 +77,9 @@ class AppContainer(context: Context) {
 
     @Volatile
     private var cachedApi: Pair<String, CheersApi>? = null
+
+    @Volatile
+    private var cachedProtectedApi: Pair<SessionIdentity, CheersApi>? = null
 
     /** [baseUrl] must be normalized (Format.normalizeBaseUrl) — ends with "/". */
     fun api(baseUrl: String): CheersApi {
@@ -106,15 +97,28 @@ class AppContainer(context: Context) {
         }
     }
 
+    /** Refresh may change the token, while this client's login identity is fixed. */
+    fun apiFor(session: Session): CheersApi {
+        cachedProtectedApi?.let { (identity, api) -> if (identity == session.identity) return api }
+        synchronized(apiLock) {
+            cachedProtectedApi?.let { (identity, api) -> if (identity == session.identity) return api }
+            val api = Retrofit.Builder()
+                .baseUrl(session.serverUrl)
+                .client(
+                    protectedTransport.newBuilder()
+                        .addInterceptor(SessionAuthInterceptor(session, sessionStore, authRepository))
+                        .build(),
+                )
+                .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+                .build()
+                .create(CheersApi::class.java)
+            cachedProtectedApi = session.identity to api
+            return api
+        }
+    }
+
     fun currentSessionOrNull(): Session? =
         (sessionState.value as? SessionState.LoggedIn)?.session
-
-    /** API bound to the signed-in server; throws when logged out. */
-    fun currentApi(): CheersApi {
-        val session = currentSessionOrNull()
-            ?: throw IllegalStateException("not signed in")
-        return api(session.serverUrl)
-    }
 
     /** ws endpoint lives at the SERVER ROOT (…/ws), not under /api/v1. */
     fun wsUrl(serverUrl: String): String {
@@ -126,6 +130,5 @@ class AppContainer(context: Context) {
             .toString()
     }
 
-    val authRepository = AuthRepository(this)
-    val chatRepository = ChatRepository(this)
+    val authRepository = AuthRepository(sessionStore, ::api, appScope)
 }

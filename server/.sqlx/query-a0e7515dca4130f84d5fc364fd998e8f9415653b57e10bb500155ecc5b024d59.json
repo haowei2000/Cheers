@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT claim_id FROM task_claim_requests\n         WHERE status IN ('pending','executing') AND expires_at IS NOT NULL AND expires_at<=clock_timestamp()\n         ORDER BY claim_id LIMIT 100 FOR UPDATE SKIP LOCKED",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claim_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a0e7515dca4130f84d5fc364fd998e8f9415653b57e10bb500155ecc5b024d59"
+}

@@ -128,4 +128,28 @@ describe("shared control geometry", () => {
     expect(compactContent).toContain("text-compact");
     expect(compactContent).not.toContain("w-24");
   });
+
+  it("keeps a transparent icon+text label beside its icon", () => {
+    // Nothing outlines a transparent slot, so a centred label drifts away from its
+    // icon and the pair reads as two controls. Surfaced and fill-width buttons keep
+    // the centred label: their surface or row already binds the pair.
+    const label = (markup: string) => markup.match(/data-button-slot="label" class="([^"]+)"/)?.[1] ?? "";
+    for (const variant of ["plain", "ghost", "danger"] as const) {
+      const markup = renderToStaticMarkup(<Button variant={variant} content="iconText" action="revoke"><span /></Button>);
+      expect(label(markup)).toContain("justify-start");
+    }
+    for (const variant of ["secondary", "destructive"] as const) {
+      const surfaced = renderToStaticMarkup(<Button variant={variant} content="iconText" action="revoke"><span /></Button>);
+      expect(label(surfaced)).toContain("justify-center");
+    }
+    const fill = renderToStaticMarkup(<Button variant="plain" content="iconText" controlWidth="fill" label="Row"><span /></Button>);
+    expect(label(fill)).toContain("justify-center");
+  });
+
+  it("outlines the destructive variant but keeps row-level danger quiet", () => {
+    const destructive = renderToStaticMarkup(<Button variant="destructive" content="iconText" action="delete"><span /></Button>);
+    expect(destructive).toContain("ring-danger-400/60");
+    const danger = renderToStaticMarkup(<Button variant="danger" content="iconText" action="revoke"><span /></Button>);
+    expect(danger).not.toContain("ring-danger-400/60");
+  });
 });

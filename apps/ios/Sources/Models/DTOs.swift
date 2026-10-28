@@ -1019,6 +1019,123 @@ struct TaskClaimDto: Decodable, Identifiable, Hashable {
 
 struct TaskClaimsResponse: Decodable { let claims: [TaskClaimDto] }
 
+/// The same committed projection is returned by claim commands and realtime.
+/// A confirmation is a metadata patch, not a second timeline message.
+struct TaskClaimUpdate: Decodable, Equatable {
+    struct Confirmation: Decodable, Equatable {
+        let msgId: String
+        let contentData: JSONValue
+
+        enum CodingKeys: String, CodingKey {
+            case msgId = "msg_id"
+            case contentData = "content_data"
+        }
+    }
+
+    let claimId: String
+    let channelId: String
+    let status: String
+    let executionMsgId: String?
+    let confirmationMessage: Confirmation?
+
+    enum CodingKeys: String, CodingKey {
+        case claimId = "claim_id"
+        case channelId = "channel_id"
+        case status
+        case executionMsgId = "execution_msg_id"
+        case confirmationMessage = "confirmation_message"
+    }
+}
+
+enum TaskClaimProjection {
+    static func isUnresolved(_ message: MessageDto) -> Bool {
+        let status = message.contentData?["claim_status"]?.stringValue
+        return message.isDeleted != true && message.contentData?["resolved"]?.boolValue != true
+            && (status == nil || status == "pending")
+    }
+
+    static func revision(_ data: JSONValue?) -> Double? {
+        guard let value = data?["claim_revision"]?.numberValue,
+              value.isFinite, value > 0, value <= 9_007_199_254_740_991,
+              value.rounded(.down) == value
+        else { return nil }
+        return value
+    }
+
+    static func needsRevalidation(_ message: MessageDto) -> Bool {
+        guard message.msgType == "task_claim_confirmation",
+              message.isDeleted != true, message.isPartial != true,
+              message.contentData?["claim_id"]?.stringValue != nil,
+              (message.channelSeq ?? 0) > 0
+        else { return false }
+        switch message.contentData?["claim_status"]?.stringValue {
+        case "completed", "failed", "rejected", "cancelled": return false
+        default: return true
+        }
+    }
+
+    static func applying(_ update: TaskClaimUpdate, to message: MessageDto) -> MessageDto {
+        guard let confirmation = update.confirmationMessage,
+              message.channelId == update.channelId,
+              message.msgId == confirmation.msgId,
+              message.msgType == "task_claim_confirmation", message.isBot,
+              message.isDeleted != true, message.isPartial != true,
+              message.contentData?["claim_id"]?.stringValue == update.claimId,
+              confirmation.contentData["claim_id"]?.stringValue == update.claimId,
+              confirmation.contentData["claim_status"]?.stringValue == update.status,
+              let next = revision(confirmation.contentData),
+              next > (revision(message.contentData) ?? 0)
+        else { return message }
+        var patched = message
+        patched.contentData = confirmation.contentData
+        return patched
+    }
+
+    /// A history/thread read can finish after a newer WS or HTTP projection.
+    /// Keep that projection while accepting the rest of the real message DTO.
+    static func preservingNewerMetadata(in incoming: MessageDto, previous: MessageDto) -> MessageDto {
+        guard incoming.msgId == previous.msgId, incoming.channelId == previous.channelId,
+              incoming.msgType == "task_claim_confirmation",
+              previous.msgType == "task_claim_confirmation",
+              let claimId = previous.contentData?["claim_id"]?.stringValue,
+              incoming.contentData?["claim_id"]?.stringValue == claimId
+        else { return incoming }
+        let current = revision(previous.contentData)
+        let next = revision(incoming.contentData)
+        let keepVersioned = current.map { $0 >= (next ?? 0) } ?? false
+        let keepLegacyClosed = current == nil && next == nil
+            && previous.contentData?["resolved"]?.boolValue == true
+            && incoming.contentData?["resolved"]?.boolValue != true
+        var merged = incoming
+        if previous.isDeleted == true {
+            merged.isDeleted = true
+            merged.content = ""
+        }
+        guard keepVersioned || keepLegacyClosed else { return merged }
+        merged.contentData = previous.contentData
+        return merged
+    }
+
+    static func applyingSnapshot(_ snapshot: MessageDto, to message: MessageDto) -> MessageDto {
+        guard snapshot.msgId == message.msgId, snapshot.channelId == message.channelId,
+              snapshot.senderId == message.senderId, snapshot.isBot, message.isBot,
+              snapshot.msgType == "task_claim_confirmation",
+              message.msgType == "task_claim_confirmation",
+              snapshot.isPartial != true,
+              message.isDeleted != true, message.isPartial != true,
+              let claimId = message.contentData?["claim_id"]?.stringValue,
+              snapshot.contentData?["claim_id"]?.stringValue == claimId
+        else { return message }
+        var patched = message
+        patched.contentData = snapshot.contentData
+        if snapshot.isDeleted == true {
+            patched.isDeleted = true
+            patched.content = ""
+        }
+        return preservingNewerMetadata(in: patched, previous: message)
+    }
+}
+
 struct BotMonitoringDto: Codable, Hashable {
     var channelId: String
     var botId: String
@@ -1371,7 +1488,7 @@ struct DiscussionParticipantDto: Codable, Identifiable, Hashable {
 }
 
 struct DiscussionSummaryDto: Codable, Identifiable, Hashable {
-    let root: MessageDto
+    var root: MessageDto
     let replyCount: Int
     let lastActivityAt: String
     let lastReply: DiscussionReplyPreviewDto?

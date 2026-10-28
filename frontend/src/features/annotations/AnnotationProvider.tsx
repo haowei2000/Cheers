@@ -417,7 +417,7 @@ export function AnnotationProvider({
                             <Button
                               action="send"
                               aria-label="Add annotation and source to message draft"
-                              title="Add to message draft"
+                              title="Send adds the note and its source to your message draft for review."
                               onClick={() => {
                                 onCompose(annotationFeedback(item), item);
                                 setSelection(null);
@@ -445,10 +445,7 @@ export function AnnotationProvider({
                               </>
                             )}
                           </div>
-                          <p className="text-compact text-content-muted">
-                            Send adds the note and its source to your message
-                            draft for review.
-                          </p>
+
                         </div>
                       ))}
                   </ItemGroup>

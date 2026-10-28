@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { EmptyState } from "./empty-state";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "./button";
 import { ButtonGroup } from "./button-group";
@@ -8,7 +9,7 @@ import { SearchInput } from "./search-input";
 import { ItemList, OperationsItem } from "./item";
 import type { PresentationLevel } from "./presentation";
 import type { ControlSize } from "./control-size";
-import { Tip } from "./tip";
+import { HelpLabel } from "./help-text";
 import { cn } from "@/lib/cn";
 
 export type CollectionMode =
@@ -127,15 +128,7 @@ export function CollectionManager({
           )}
         >
           <div className="flex min-w-0 items-center gap-2">
-            {tip ? (
-              <Tip content={tip} align="start">
-                <span className="min-w-0 truncate cursor-help transition-colors hover:text-content-strong">
-                  {label}
-                </span>
-              </Tip>
-            ) : (
-              <span className="min-w-0 truncate">{label}</span>
-            )}
+            <HelpLabel help={tip}><span className="min-w-0 truncate">{label}</span></HelpLabel>
             {typeof count === "number" && (
               <span className="font-normal tabular-nums text-content-muted">{count}</span>
             )}
@@ -334,12 +327,13 @@ export function CollectionEmptyItem({
   onClear?: () => void;
 }) {
   const searching = Boolean(query?.trim());
+  // The shared compact empty state, not a row: a fake row with a divider reads
+  // as one real (blank) item in the list.
   return (
-    <OperationsItem
-      presentationLevel="medium"
-      controlSize="regular"
+    <EmptyState
       title={searching ? "No matching items" : "No items yet"}
-      actions={searching && onClear ? (
+      className="py-4"
+      action={searching && onClear ? (
           <Button action="clear" type="button" variant="ghost" controlSize="compact" onClick={onClear} />
         ) : undefined}
     />

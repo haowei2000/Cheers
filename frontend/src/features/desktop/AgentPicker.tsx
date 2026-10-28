@@ -7,6 +7,7 @@ import { invokeDesktop } from "@/lib/desktop";
 import { avatarSizeClasses } from "@/components/ui/content-size";
 import { ItemList, OperationsItem } from "@/components/ui/item";
 import { SearchInput } from "@/components/ui/search-input";
+import { HelpLabel } from "@/components/ui/help-text";
 
 /** Mirror of the Rust `DetectedAgent` (connector.rs). */
 export interface DetectedAgent {
@@ -29,8 +30,10 @@ export interface DetectedAgent {
 export function AgentPicker({
   value,
   onPick,
+  allowCustom = true,
 }: {
   value: string;
+  allowCustom?: boolean;
   onPick: (key: string, commandPath: string | null) => void;
 }) {
   const [agents, setAgents] = useState<DetectedAgent[]>([]);
@@ -101,7 +104,11 @@ export function AgentPicker({
         <>
           {installedAgents.length === 0 && (
             <p className="text-compact text-content-muted">
-              No ACP agents detected on this Mac. Choose an agent from the registry below to install, or use a custom command.
+              <HelpLabel help={allowCustom
+                ? "Choose an agent from the registry below to install, or use a custom command."
+                : "Choose an agent from the registry below to install."}>
+                No ACP agents detected on this Mac.
+              </HelpLabel>
             </p>
           )}
 
@@ -146,8 +153,8 @@ export function AgentPicker({
               );
             })}
 
-            {/* Custom command option. */}
-            <OperationsItem
+            {/* Custom commands need the advanced configuration form. */}
+            {allowCustom && <OperationsItem
               title="Custom command"
               subtitle="Specify a custom command path and arguments"
               leading={
@@ -165,7 +172,7 @@ export function AgentPicker({
                 ) : null
               }
               onClick={() => onPick("custom", null)}
-            />
+            />}
           </ItemList>
 
           {availableAgents.length > 0 && (

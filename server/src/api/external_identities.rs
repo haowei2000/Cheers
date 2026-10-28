@@ -103,10 +103,11 @@ pub async fn unlink(
 ) -> Result<Json<Value>, AppError> {
     let provider = checked_provider(&provider)?;
     let mut tx = state.db.begin().await?;
-    // Serialize identity removal per user. Otherwise simultaneous Apple and
-    // Google requests could each observe the other as the remaining method.
+    // Serialize identity removal per user. Keep FK KEY SHARE compatible: session
+    // security events can already hold a session row before referencing this
+    // user, while this command revokes existing sessions under the user lock.
     let active_user = sqlx::query!(
-        "SELECT 1 AS present FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR UPDATE",
+        "SELECT 1 AS present FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR NO KEY UPDATE",
         &claims.sub,
     )
     .fetch_optional(&mut *tx)
@@ -159,8 +160,13 @@ pub async fn unlink(
     )
     .execute(&mut *tx)
     .await?;
+    let revoked = auth_sessions::revoke_other_sessions_and_trusted_devices_tx(
+        &mut tx,
+        &claims.sub,
+        &claims.sid,
+    )
+    .await?;
     tx.commit().await?;
-    auth_sessions::revoke_other_sessions_and_trusted_devices(&state.db, &claims.sub, &claims.sid)
-        .await?;
+    crate::api::auth::apply_session_revocations(&state, &revoked);
     Ok(Json(json!({"provider": provider, "linked": false})))
 }

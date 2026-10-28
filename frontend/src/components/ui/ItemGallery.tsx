@@ -26,6 +26,8 @@ import { ButtonGroup } from "@/components/ui/button-group";
 import { AdaptiveControlGroup } from "@/components/ui/adaptive-control-group";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
+import { HelpLabel } from "@/components/ui/help-text";
 import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { MenuOption } from "@/components/ui/menu-option";
@@ -46,10 +48,20 @@ import { ErrorState } from "@/components/ui/error-state";
 import { MetricCard } from "@/components/ui/metric-card";
 import { SettingsCard, SettingsCardSection } from "@/components/ui/settings-card";
 import { BotTracePanel } from "@/features/chat/BotTracePanel";
+import { TaskClaimConfirmationFooter } from "@/features/chat/TaskClaimConfirmationCard";
 import type { TraceEvent } from "@/types";
 
 const levels: PresentationLevel[] = ["max", "medium", "minimal"];
 const controlSizes: ControlSize[] = ["comfortable", "regular", "compact"];
+
+function ClaimFooterPreview({ status, busy = false, error }: { status: string; busy?: boolean; error?: string }) {
+  const [current, setCurrent] = useState(status);
+  return <TaskClaimConfirmationFooter
+    data={{ claim_status: current === "expired" ? "failed" : current, resolved: current !== "pending", resolution_note: current === "expired" ? "expired" : null }}
+    actionable busy={busy} error={error}
+    onResolve={(decision) => setCurrent(decision === "accept" ? "executing" : "rejected")}
+  />;
+}
 
 const adaptivePreviewItems = [
   { id: "plan", label: "Plan", icon: ClipboardList },
@@ -91,7 +103,7 @@ const traceGalleryEvents: TraceEvent[] = [
     v: 1, id: "gallery-shell", event_id: "gallery-shell", msg_id: "gallery-message", channel_id: "gallery-channel",
     trace_seq: 2, kind: "trace", phase: "tool_call", status: "in_progress", is_terminal: false,
     created_at: "2026-08-12T07:44:01Z",
-    data: { presentation: { v: 2, event_type: "shell_command", family: "shell", operation: "run", confidence: "explicit", matched_by: "gallery", command: "npm run typecheck" } },
+    data: { presentation: { v: 2, event_type: "shell_command", family: "shell", operation: "run", confidence: "explicit", matched_by: "gallery", command: "pnpm typecheck" } },
   },
 ];
 
@@ -111,6 +123,8 @@ const iconLabels: Record<EditorialIconName, string> = {
   dispatch: "Dispatch / notice",
   archive: "Archive",
   agentMark: "Agent mark",
+  bot: "Bot",
+  fleet: "Fleet",
   session: "Session",
   taskDocket: "Task docket",
   diffProof: "Diff proof",
@@ -236,6 +250,18 @@ export function ItemGallery() {
         </LocatorOpenContext.Provider>
       </section>
 
+      <section id="task-claim-preview" aria-labelledby="task-claim-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="task-claim-register" className="font-display text-comfortable font-semibold tracking-display">Task claim confirmation</h2>
+        <div className="mt-2 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {["pending", "executing", "rejected", "cancelled", "expired", "failed", "completed", "busy", "error"].map((status) =>
+            <div key={status} className="min-w-0">
+              <p className="text-section-label">{status}</p>
+              <ClaimFooterPreview status={status === "busy" || status === "error" ? "pending" : status} busy={status === "busy"} error={status === "error" ? "Could not resolve task claim. Try again." : undefined} />
+            </div>,
+          )}
+        </div>
+      </section>
+
       <section aria-labelledby="trace-disclosure-register" className="mb-4 border-y border-zinc-700 py-3">
         <h2 id="trace-disclosure-register" className="font-display text-comfortable font-semibold tracking-display">
           Trace Disclosure
@@ -354,6 +380,23 @@ export function ItemGallery() {
             <MetricCard label="Online" value={4} tone="success" />
             <MetricCard label="Waiting" value={2} tone="warning" />
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="help-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="help-register" className="mb-2 text-section-label">Supplementary help</h2>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {controlSizes.map((size) => <div key={size} className="space-y-4">
+            <HelpLabel help="Hover or focus this text; tap to keep its explanation open. Escape dismisses it.">{size}</HelpLabel>
+            <Field label="Project folder" htmlFor={`help-project-${size}`} hint="This directory scopes the agent's file access." error="Choose an existing folder.">
+              <Input id={`help-project-${size}`} controlSize={size} aria-invalid="true" />
+            </Field>
+            <CheckboxField label="Trust this device" hint="Your device credential can be revoked." error="Verification is required." controlSize={size} />
+            <CheckboxField label="Include resolved items" controlSize={size} checked readOnly />
+            <CheckboxField label="Select all projects" controlSize={size} indeterminate readOnly />
+            <CheckboxField label="Use owner defaults" controlSize={size} disabled checked readOnly />
+            <CheckboxField label="Allow access to the selected project folder and all of its nested working directories" controlSize={size} />
+          </div>)}
         </div>
       </section>
 
@@ -589,9 +632,9 @@ export function ItemGallery() {
         <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
           <h2 id="specialized-register" className="mb-1 font-utility text-compact font-semibold uppercase tracking-overline text-content-muted">Specialized diff</h2>
           <ItemList className="overflow-x-auto bg-zinc-950">
-            <DiffLineItem controlSize="compact" tone="remove" lineNumber="18" marker="−" content="border-radius: 12px;" />
-            <DiffLineItem controlSize="regular" tone="add" lineNumber="18" marker="+" content="border-radius: 10px;" />
-            <DiffLineItem controlSize="comfortable" lineNumber="19" marker=" " content="font-family: var(--font-utility);" />
+            <DiffLineItem tone="remove" lineNumber="18" marker="−" content="border-radius: 12px;" />
+            <DiffLineItem tone="add" lineNumber="18" marker="+" content="border-radius: 10px;" />
+            <DiffLineItem lineNumber="19" marker=" " content="font-family: var(--font-utility);" />
           </ItemList>
         </div>
       </section>

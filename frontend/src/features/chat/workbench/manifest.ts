@@ -1,4 +1,4 @@
-import { ResourceError } from "../hooks/useChatRealtime";
+import { ResourceError } from "@/lib/realtimeTransport";
 import { AUTO_VIEW } from "./manifestConstants";
 import type { FsClient } from "./fsClient";
 import { formatFor, isStructuredPath } from "./jsonFile";

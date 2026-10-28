@@ -1,4 +1,6 @@
 import type { Message, MemberItem } from "@/types";
+import { clientSessionGeneration } from "@/lib/clientSession";
+import { upsertMessage } from "./messageCollection";
 
 /** Per-channel in-memory cache (Discord/Telegram-style): re-entering a channel
  *  renders the cached window instantly, then a `since_seq` catch-up merges
@@ -21,8 +23,15 @@ const MAX_CHANNELS = 30;
 const MAX_SEED_MESSAGES = 100;
 
 const cache = new Map<string, ChannelCacheEntry>();
+let sessionGeneration = clientSessionGeneration();
+function currentSession() {
+  if (sessionGeneration === clientSessionGeneration()) return;
+  cache.clear();
+  sessionGeneration = clientSessionGeneration();
+}
 
 export function getChannelCache(channelId: string): ChannelCacheEntry | null {
+  currentSession();
   const entry = cache.get(channelId);
   if (!entry) return null;
   // LRU touch: re-insert so iteration order stays least-recent-first.
@@ -35,6 +44,7 @@ export function setChannelCache(
   channelId: string,
   patch: Partial<ChannelCacheEntry>
 ): void {
+  currentSession();
   const prev = cache.get(channelId);
   if (prev) cache.delete(channelId);
   cache.set(channelId, {
@@ -42,12 +52,26 @@ export function setChannelCache(
     hasMore: prev?.hasMore ?? false,
     members: prev?.members ?? null,
     ...patch,
+    ...(patch.messages ? { messages: patch.messages.map((message) => {
+      const previous = prev?.messages.find((item) => item.msg_id === message.msg_id);
+      return previous ? upsertMessage([previous], message)[0] : message;
+    }) } : {}),
   });
   while (cache.size > MAX_CHANNELS) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
     cache.delete(oldest);
   }
+}
+
+export function patchCachedMessageContentData(channelId: string, msgId: string, data: Message["content_data"]): void {
+  patchCachedMessage(channelId, { msg_id: msgId, content_data: data });
+}
+
+export function patchCachedMessage(channelId: string, update: Partial<Message> & { msg_id: string }): void {
+  currentSession();
+  const entry = cache.get(channelId);
+  if (entry?.messages.some((message) => message.msg_id === update.msg_id)) entry.messages = upsertMessage(entry.messages, update);
 }
 
 /** The message window to seed a re-entered channel with: trimmed to the newest

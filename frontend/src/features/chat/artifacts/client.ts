@@ -20,6 +20,7 @@ export interface Artifact {
 
 export interface ArtifactPage { artifacts: Artifact[]; next_cursor: string | null }
 export interface ArtifactContent {
+  uri?: string;
   artifact: Artifact;
   content?: string | null;
   kind: "text" | "binary" | "pending" | "unavailable";
@@ -53,7 +54,7 @@ export function artifactEditorClient(base: FsClient, send: SendResourceReq, chan
   const params = { channel_id: channelId, artifact_id: artifact.artifact_id };
   const mutation = async (verb: string, input: Record<string, unknown>) => {
     const result = await send(verb, { ...params, ...input }) as { artifact: Artifact };
-    return { path: result.artifact.path ?? artifact.path!, version: result.artifact.version };
+    return { path: result.artifact.path ?? artifact.path!, version: result.artifact.version, source_version: result.artifact.source_version };
   };
   return {
     ...base,
@@ -61,7 +62,7 @@ export function artifactEditorClient(base: FsClient, send: SendResourceReq, chan
       if (path !== artifact.path) return base.read(path);
       const result = await send("channel.artifacts.read", params) as ArtifactContent;
       if (result.kind !== "text" || result.truncated || typeof result.content !== "string") throw new Error("Full artifact source is unavailable");
-      return { path: result.artifact.path ?? path, content: result.content, version: result.artifact.version, is_dir: false };
+      return { path: result.artifact.path ?? path, content: result.content, version: result.artifact.version, source_version: result.artifact.source_version, uri: result.uri, resource_id: result.artifact.source_id, is_dir: false };
     },
     write: (path, content, version) => path !== artifact.path ? base.write(path, content, version)
       : mutation("channel.artifacts.update", { content, if_version: version }),

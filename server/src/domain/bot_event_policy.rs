@@ -17,7 +17,8 @@
 //! `request_permission` per `operation_kind`); the two compose.
 
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::{Executor, PgConnection, PgPool, Postgres};
+use std::collections::HashMap;
 
 use crate::errors::AppError;
 
@@ -147,7 +148,7 @@ pub fn default_access_for(event_class: &str, capability: Capability) -> bool {
 }
 
 /// One stored access rule.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct Rule {
     pub channel_id: String,
     pub subject_kind: String,
@@ -155,6 +156,214 @@ pub struct Rule {
     pub event_class: String,
     pub capability: String,
     pub allow: bool,
+}
+
+/// Live fan-out loads membership and the relevant SEE rules in one round trip.
+/// Only group rules require a second, set-based lookup for all viewers. Keep
+/// resolution shared with HTTP readers and reload authority on every frame;
+/// a TTL allow-cache would delay revocations and grant expiry.
+pub(crate) async fn live_seers(
+    db: &PgPool,
+    bot_id: &str,
+    channel_id: &str,
+    online_ids: &[String],
+    event_class: &str,
+) -> Result<Vec<String>, AppError> {
+    let members = sqlx::query!(
+        "SELECT cm.member_id, cm.role AS crole, u.role AS prole,
+           (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                'channel_id', channel_id, 'subject_kind', subject_kind,
+                'subject_id', subject_id, 'event_class', event_class,
+                'capability', capability, 'allow', decision = 'allow')), '[]'::jsonb)
+            FROM bot_event_access
+            WHERE bot_id = $1 AND channel_id IN ('', $2)
+              AND capability = 'see' AND event_class = $4
+              AND (expires_at IS NULL OR expires_at > clock_timestamp())) AS \"rules!\"
+         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id
+         WHERE cm.channel_id = $2 AND cm.member_type = 'user' AND cm.member_id = ANY($3)",
+        bot_id,
+        channel_id,
+        online_ids,
+        event_class,
+    )
+    .fetch_all(db)
+    .await?;
+    let Some(first) = members.first() else {
+        return Ok(Vec::new());
+    };
+    let rules: Vec<Rule> = serde_json::from_value(first.rules.clone())
+        .map_err(|error| AppError::Internal(format!("invalid live SEE rules: {error}")))?;
+    let group_refs: Vec<String> = rules
+        .iter()
+        .filter(|rule| rule.subject_kind == SUBJECT_GROUP)
+        .map(|rule| rule.subject_id.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let viewers: Vec<String> = members
+        .iter()
+        .filter(|member| !matches!(member.prole.as_str(), "system_admin" | "admin"))
+        .map(|member| member.member_id.clone())
+        .collect();
+    let mut groups = HashMap::new();
+    if !group_refs.is_empty() && !viewers.is_empty() {
+        let rows = sqlx::query!(
+            "SELECT viewer.user_id AS \"user_id!\", ARRAY(
+                SELECT subject_id FROM unnest($3::text[]) refs(subject_id)
+                WHERE CASE
+                    WHEN subject_id = 'friends' THEN EXISTS(
+                        SELECT 1 FROM bot_accounts owner JOIN friendships f
+                          ON f.pair_key = CASE WHEN owner.created_by < viewer.user_id
+                              THEN owner.created_by || ':' || viewer.user_id
+                              ELSE viewer.user_id || ':' || owner.created_by END
+                        WHERE owner.bot_id = $1 AND owner.created_by <> viewer.user_id
+                          AND f.status = 'accepted')
+                    WHEN starts_with(subject_id, 'channel:') THEN EXISTS(
+                        SELECT 1 FROM channel_memberships cm
+                        WHERE cm.channel_id = substring(subject_id FROM 9)
+                          AND cm.member_id = viewer.user_id AND cm.member_type = 'user')
+                    WHEN starts_with(subject_id, 'workspace:') THEN EXISTS(
+                        SELECT 1 FROM workspace_memberships wm
+                        WHERE wm.workspace_id = substring(subject_id FROM 11)
+                          AND wm.user_id = viewer.user_id AND wm.status = 'active')
+                    ELSE FALSE
+                END) AS \"groups!\"
+             FROM unnest($2::text[]) viewer(user_id)",
+            bot_id,
+            &viewers,
+            &group_refs,
+        )
+        .fetch_all(db)
+        .await?;
+        groups.extend(rows.into_iter().map(|row| (row.user_id, row.groups)));
+    }
+    Ok(members
+        .into_iter()
+        .filter(|member| {
+            matches!(member.prole.as_str(), "system_admin" | "admin")
+                || resolve_access(
+                    &rules,
+                    channel_id,
+                    &member.member_id,
+                    &member.crole,
+                    groups.get(&member.member_id).map_or(&[], Vec::as_slice),
+                    event_class,
+                    Capability::See,
+                )
+        })
+        .map(|member| member.member_id)
+        .collect())
+}
+
+/// Policy reads shared by one request or broadcast. Repeated rows/viewers reuse
+/// the same bot rules and (bot, user) group result, including failed lookups.
+/// A new operation always reloads current rules, expiry and group membership.
+pub(crate) struct AccessBatch<'a> {
+    db: &'a PgPool,
+    // None records an unavailable policy, not an empty/default-allow rule set.
+    bots: HashMap<String, Option<BotAccess>>,
+}
+
+struct BotAccess {
+    rules: Vec<Rule>,
+    groups: HashMap<String, Option<Vec<String>>>,
+}
+
+impl<'a> AccessBatch<'a> {
+    pub(crate) fn new(db: &'a PgPool) -> Self {
+        Self {
+            db,
+            bots: HashMap::new(),
+        }
+    }
+
+    /// The caller proves channel access and supplies its actual channel role.
+    /// Keep the complete rule set: one subject can resolve multiple capabilities
+    /// and event classes within this operation.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn allows(
+        &mut self,
+        bot_id: &str,
+        channel_id: &str,
+        user_id: &str,
+        role: &str,
+        event_class: &str,
+        capability: Capability,
+    ) -> Result<bool, AppError> {
+        if !self.bots.contains_key(bot_id) {
+            match load_rules(self.db, bot_id).await {
+                Ok(rules) => {
+                    self.bots.insert(
+                        bot_id.to_owned(),
+                        Some(BotAccess {
+                            rules,
+                            groups: HashMap::new(),
+                        }),
+                    );
+                }
+                Err(error) => {
+                    self.bots.insert(bot_id.to_owned(), None);
+                    return Err(error);
+                }
+            }
+        }
+        let policy = self
+            .bots
+            .get_mut(bot_id)
+            .and_then(Option::as_mut)
+            .ok_or_else(|| AppError::Internal("bot event policy is unavailable".into()))?;
+        if !policy.groups.contains_key(user_id) {
+            match matched_groups(self.db, bot_id, user_id, &policy.rules).await {
+                Ok(groups) => {
+                    policy.groups.insert(user_id.to_owned(), Some(groups));
+                }
+                Err(error) => {
+                    policy.groups.insert(user_id.to_owned(), None);
+                    return Err(error);
+                }
+            }
+        }
+        let groups = policy
+            .groups
+            .get(user_id)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| AppError::Internal("bot policy groups are unavailable".into()))?;
+        Ok(resolve_access(
+            &policy.rules,
+            channel_id,
+            user_id,
+            role,
+            groups,
+            event_class,
+            capability,
+        ))
+    }
+
+    /// Platform administration bypasses visibility rules, never RESPOND. Each
+    /// adapter must establish its own channel/subscription scope before calling.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn may_see(
+        &mut self,
+        bot_id: &str,
+        channel_id: &str,
+        user_id: &str,
+        role: &str,
+        is_platform_admin: bool,
+        event_class: &str,
+    ) -> Result<bool, AppError> {
+        if is_platform_admin {
+            return Ok(true);
+        }
+        self.allows(
+            bot_id,
+            channel_id,
+            user_id,
+            role,
+            event_class,
+            Capability::See,
+        )
+        .await
+    }
 }
 
 /// Pure resolution. Most-specific-wins; within each scope the precedence is
@@ -311,23 +520,24 @@ pub async fn can_bot_read_workspace(
 pub struct DispatchDecision {
     pub allow: bool,
     /// `"rule"` (a stored bot rule decided it), `"default_allow"` (no rule → the
-    /// backward-compatible default), or `"policy_unavailable"` (the rule store
-    /// couldn't be read → fail-closed deny).
+    /// backward-compatible default). Storage failures propagate to the caller.
     pub reason: &'static str,
 }
 
-/// Load + resolve a bot-to-bot dispatch gate, **fail-closed**: unlike the human
-/// INITIATE gate (which fails open so a message still posts), a dispatch whose
-/// policy can't be evaluated is denied — a governance gate must not silently open
-/// when its own store is unreachable. "No rule" still means allow (the default).
-pub async fn resolve_dispatch_decision(
-    db: &PgPool,
+/// Load and resolve DISPATCH without suppressing storage failures. Admission
+/// uses the source transaction; retries use the pool without auditing again.
+pub(crate) async fn resolve_dispatch_decision_checked<'a, E>(
+    executor: E,
     target_bot_id: &str,
     channel_id: &str,
     initiator_bot_id: &str,
-) -> DispatchDecision {
-    match load_rules(db, target_bot_id).await {
-        Ok(rules) => match resolve_dispatch_opt(&rules, channel_id, initiator_bot_id) {
+) -> Result<DispatchDecision, sqlx::Error>
+where
+    E: Executor<'a, Database = Postgres>,
+{
+    let rules = load_rules_with_executor(executor, target_bot_id).await?;
+    Ok(
+        match resolve_dispatch_opt(&rules, channel_id, initiator_bot_id) {
             Some(allow) => DispatchDecision {
                 allow,
                 reason: "rule",
@@ -337,19 +547,7 @@ pub async fn resolve_dispatch_decision(
                 reason: "default_allow",
             },
         },
-        Err(err) => {
-            tracing::warn!(
-                target_bot = %target_bot_id,
-                initiator_bot = %initiator_bot_id,
-                %err,
-                "dispatch policy load failed; fail-closed deny"
-            );
-            DispatchDecision {
-                allow: false,
-                reason: "policy_unavailable",
-            }
-        }
-    }
+    )
 }
 
 // ── Dynamic group membership (friends | channel:<id> | workspace:<id>) ──────
@@ -362,7 +560,20 @@ pub async fn matched_groups(
     bot_id: &str,
     user_id: &str,
     rules: &[Rule],
-) -> Vec<String> {
+) -> Result<Vec<String>, AppError> {
+    if !rules.iter().any(|r| r.subject_kind == SUBJECT_GROUP) {
+        return Ok(Vec::new());
+    }
+    let mut connection = db.acquire().await?;
+    matched_groups_with_connection(&mut connection, bot_id, user_id, rules).await
+}
+
+pub(crate) async fn matched_groups_with_connection(
+    connection: &mut PgConnection,
+    bot_id: &str,
+    user_id: &str,
+    rules: &[Rule],
+) -> Result<Vec<String>, AppError> {
     use std::collections::HashSet;
     let refs: HashSet<&str> = rules
         .iter()
@@ -370,28 +581,19 @@ pub async fn matched_groups(
         .map(|r| r.subject_id.as_str())
         .collect();
     if refs.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let mut owner: Option<Option<String>> = None;
     let mut out = Vec::new();
     for g in refs {
         let belongs = if g == "friends" {
-            let oid = match &owner {
-                Some(o) => o.clone(),
-                None => {
-                    let v = bot_owner_id(db, bot_id).await;
-                    owner = Some(v.clone());
-                    v
-                }
-            };
-            match oid {
-                Some(o) => is_friend(db, &o, user_id).await,
+            match bot_owner_id(&mut *connection, bot_id).await? {
+                Some(o) => is_friend(connection, &o, user_id).await?,
                 None => false,
             }
         } else if let Some(cid) = g.strip_prefix("channel:") {
-            is_channel_member(db, cid, user_id).await
+            is_channel_member(connection, cid, user_id).await?
         } else if let Some(wid) = g.strip_prefix("workspace:") {
-            is_workspace_member(db, wid, user_id).await
+            is_workspace_member(connection, wid, user_id).await?
         } else {
             false
         };
@@ -399,68 +601,68 @@ pub async fn matched_groups(
             out.push(g.to_string());
         }
     }
-    out
+    Ok(out)
 }
 
 /// The bot's owning user (`bot_accounts.created_by`), if any. Public so the
 /// owner API can label the effective-matrix "you (bot owner)" column.
-pub async fn bot_owner_id(db: &PgPool, bot_id: &str) -> Option<String> {
-    sqlx::query!(
+pub async fn bot_owner_id<'a, E>(executor: E, bot_id: &str) -> Result<Option<String>, AppError>
+where
+    E: Executor<'a, Database = Postgres>,
+{
+    Ok(sqlx::query!(
         "SELECT created_by FROM bot_accounts WHERE bot_id = $1",
         bot_id,
     )
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .and_then(|r| r.created_by.clone())
+    .fetch_optional(executor)
+    .await?
+    .and_then(|r| r.created_by))
 }
 
-async fn is_friend(db: &PgPool, a: &str, b: &str) -> bool {
+async fn is_friend(connection: &mut PgConnection, a: &str, b: &str) -> Result<bool, sqlx::Error> {
     if a == b {
-        return false;
+        return Ok(false);
     }
     let pair = if a <= b {
         format!("{a}:{b}")
     } else {
         format!("{b}:{a}")
     };
-    sqlx::query!(
-        "SELECT EXISTS(SELECT 1 AS present FROM friendships WHERE pair_key = $1 AND status = 'accepted') AS ok",
+    sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 AS present FROM friendships WHERE pair_key = $1 AND status = 'accepted') AS \"ok!\"",
         pair,
-    ).fetch_one(db)
+    ).fetch_one(connection)
     .await
-    .ok()
-    .and_then(|r| r.ok.clone())
-    .unwrap_or(false)
 }
 
-async fn is_channel_member(db: &PgPool, channel_id: &str, user_id: &str) -> bool {
-    sqlx::query!(
+async fn is_channel_member(
+    connection: &mut PgConnection,
+    channel_id: &str,
+    user_id: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 AS present FROM channel_memberships
-            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user') AS ok",
+            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user') AS \"ok!\"",
         channel_id,
         user_id,
     )
-    .fetch_one(db)
+    .fetch_one(connection)
     .await
-    .ok()
-    .and_then(|r| r.ok.clone())
-    .unwrap_or(false)
 }
 
-async fn is_workspace_member(db: &PgPool, workspace_id: &str, user_id: &str) -> bool {
-    sqlx::query!(
+async fn is_workspace_member(
+    connection: &mut PgConnection,
+    workspace_id: &str,
+    user_id: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
         "SELECT EXISTS(SELECT 1 AS present FROM workspace_memberships
-            WHERE workspace_id = $1 AND user_id = $2 AND status = 'active') AS ok",
+            WHERE workspace_id = $1 AND user_id = $2 AND status = 'active') AS \"ok!\"",
         workspace_id,
         user_id,
     )
-    .fetch_one(db)
+    .fetch_one(connection)
     .await
-    .ok()
-    .and_then(|r| r.ok.clone())
-    .unwrap_or(false)
 }
 
 /// Load all access rules for a bot (cheap; a bot has few rules). Time-boxed rules
@@ -468,13 +670,23 @@ async fn is_workspace_member(db: &PgPool, workspace_id: &str, user_id: &str) -> 
 /// enforcement path (resolve / effective_matrix / gates) goes through — so an
 /// expired grant simply stops matching and the membership default takes over.
 pub async fn load_rules(db: &PgPool, bot_id: &str) -> Result<Vec<Rule>, AppError> {
+    Ok(load_rules_with_executor(db, bot_id).await?)
+}
+
+pub(crate) async fn load_rules_with_executor<'a, E>(
+    executor: E,
+    bot_id: &str,
+) -> Result<Vec<Rule>, sqlx::Error>
+where
+    E: Executor<'a, Database = Postgres>,
+{
     let rows = sqlx::query!(
         "SELECT channel_id, subject_kind, subject_id, event_class, capability, decision
          FROM bot_event_access
-         WHERE bot_id = $1 AND (expires_at IS NULL OR expires_at > NOW())",
+         WHERE bot_id = $1 AND (expires_at IS NULL OR expires_at > clock_timestamp())",
         bot_id,
     )
-    .fetch_all(db)
+    .fetch_all(executor)
     .await?;
     Ok(rows
         .into_iter()
@@ -489,29 +701,6 @@ pub async fn load_rules(db: &PgPool, bot_id: &str) -> Result<Vec<Rule>, AppError
                 .unwrap_or(false),
         })
         .collect())
-}
-
-/// Convenience: load + resolve one `(subject, event_class, capability)` query.
-pub async fn resolve(
-    db: &PgPool,
-    bot_id: &str,
-    channel_id: &str,
-    user_id: &str,
-    role: &str,
-    event_class: &str,
-    capability: Capability,
-) -> Result<bool, AppError> {
-    let rules = load_rules(db, bot_id).await?;
-    let groups = matched_groups(db, bot_id, user_id, &rules).await;
-    Ok(resolve_access(
-        &rules,
-        channel_id,
-        user_id,
-        role,
-        &groups,
-        event_class,
-        capability,
-    ))
 }
 
 /// Channel roles surfaced in the owner UI's effective-defaults matrix. `*` is a
@@ -712,6 +901,80 @@ mod tests {
     /// Test helper: resolve with no group memberships.
     fn allows(rules: &[Rule], ch: &str, user: &str, role: &str, ec: &str, cap: Capability) -> bool {
         resolve_access(rules, ch, user, role, &[], ec, cap)
+    }
+
+    #[tokio::test]
+    async fn unavailable_group_lookup_does_not_discard_a_deny() {
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused_policy_test")
+            .unwrap();
+        db.close().await;
+        assert!(matched_groups(&db, "bot", "user", &[])
+            .await
+            .unwrap()
+            .is_empty());
+        for group in ["friends", "channel:channel", "workspace:workspace"] {
+            let rules = [rule(
+                "channel",
+                SUBJECT_GROUP,
+                group,
+                EV_PROMPT,
+                Capability::Initiate,
+                false,
+            )];
+            // Losing the group would otherwise fall through to the default allow.
+            assert!(allows(
+                &rules,
+                "channel",
+                "user",
+                "member",
+                EV_PROMPT,
+                Capability::Initiate,
+            ));
+            assert!(matches!(
+                matched_groups(&db, "bot", "user", &rules).await,
+                Err(AppError::Db(sqlx::Error::PoolClosed))
+            ));
+        }
+    }
+
+    #[cfg(feature = "integration")]
+    #[sqlx::test]
+    async fn dynamic_group_query_faults_propagate_on_the_callers_connection(db: PgPool) {
+        for group in ["friends", "channel:channel", "workspace:workspace"] {
+            let mut tx = db.begin().await.unwrap();
+            // Simulate a relation lookup failure after the connection was acquired.
+            sqlx::query!("SET LOCAL search_path = pg_catalog")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            let rules = [rule(
+                "channel",
+                SUBJECT_GROUP,
+                group,
+                EV_PROMPT,
+                Capability::Initiate,
+                false,
+            )];
+            let error = matched_groups_with_connection(&mut tx, "bot", "user", &rules)
+                .await
+                .unwrap_err();
+            assert!(matches!(error, AppError::Db(sqlx::Error::Database(_))));
+            tx.rollback().await.unwrap();
+        }
+
+        // Friends has a second query after the owner's identity is found; its
+        // storage failure must not be mistaken for "not friends" either.
+        let mut tx = db.begin().await.unwrap();
+        sqlx::query!("SET LOCAL search_path = pg_catalog")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(matches!(
+            is_friend(&mut tx, "owner", "user").await,
+            Err(sqlx::Error::Database(_))
+        ));
+        tx.rollback().await.unwrap();
     }
 
     #[test]

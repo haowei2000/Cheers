@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.workspace_id FROM workspaces w\n         JOIN channels c ON c.workspace_id=w.workspace_id\n         WHERE c.channel_id=$1 FOR KEY SHARE OF w",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d5cfb04f9377650bde037baf314f4018dac5f44e3a8b1d91038ddb0b54e7c9bd"
+}

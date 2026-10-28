@@ -117,6 +117,40 @@ pub(crate) fn session_response(
     })
 }
 
+/// Every completed login uses the same browser/native response contract.
+pub(crate) fn completed_login_response(
+    completed: auth_sessions::CompletedLogin,
+) -> Result<Response, AppError> {
+    let auth_sessions::CompletedLogin {
+        user,
+        session,
+        client,
+        trusted_device,
+    } = completed;
+    let refresh = session.refresh_token.clone();
+    let csrf = session.csrf_token.clone();
+    let mut body = session_response(&user, session, client)?;
+    if client != auth_sessions::ClientType::Web {
+        body.trusted_device = trusted_device.clone();
+    }
+    let mut response = if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(body).into_response()
+    };
+    if client == auth_sessions::ClientType::Web {
+        if let Some(trusted) = trusted_device {
+            response.headers_mut().append(
+                axum::http::header::SET_COOKIE,
+                auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
+                    .parse()
+                    .expect("valid cookie header"),
+            );
+        }
+    }
+    Ok(response)
+}
+
 /// POST /api/v1/auth/login
 pub async fn login(
     State(state): State<AppState>,
@@ -155,7 +189,7 @@ pub async fn login(
     if tf_status.enabled && !trusted {
         let transaction = auth_sessions::create_factor_transaction(
             &state.db,
-            &user.id,
+            &user,
             client,
             body.device_name.as_deref(),
             "password",
@@ -187,48 +221,16 @@ pub async fn login(
         })
         .into_response());
     }
-    let session = auth_sessions::finalize_login(
+    let completed = auth_sessions::complete_direct_login(
         &state.db,
         &state.config,
         &user,
         client,
         body.device_name.as_deref(),
+        remember_device,
     )
     .await?;
-    let session_id = session.session_id.clone();
-    let refresh = session.refresh_token.clone();
-    let csrf = session.csrf_token.clone();
-    let device_name = body.device_name.clone();
-    let mut login_body = session_response(&user, session, client)?;
-    if remember_device {
-        let trusted = auth_sessions::issue_trusted_device(
-            &state.db,
-            &user.id,
-            &session_id,
-            device_name.as_deref(),
-        )
-        .await?;
-        if client != auth_sessions::ClientType::Web {
-            login_body.trusted_device = Some(trusted.clone());
-        }
-        let mut response = if client == auth_sessions::ClientType::Web {
-            response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-        } else {
-            Json(login_body).into_response()
-        };
-        response.headers_mut().append(
-            axum::http::header::SET_COOKIE,
-            auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
-                .parse()
-                .expect("valid cookie header"),
-        );
-        return Ok(response);
-    }
-    Ok(if client == auth_sessions::ClientType::Web {
-        response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(login_body).into_response()
-    })
+    completed_login_response(completed)
 }
 
 pub(crate) fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -254,7 +256,7 @@ pub(crate) fn presented_trusted_device(
     parse_cookie(headers, "cheers_trusted_device")
 }
 
-fn auth_cookie(name: &str, value: &str, http_only: bool, max_age: i64) -> String {
+pub(crate) fn auth_cookie(name: &str, value: &str, http_only: bool, max_age: i64) -> String {
     let http_only = if http_only { "; HttpOnly" } else { "" };
     format!("{name}={value}; Max-Age={max_age}; Path=/; Secure{http_only}; SameSite=Lax")
 }
@@ -921,13 +923,22 @@ pub async fn refresh(
                 .map(str::to_owned)
         })
         .or_else(|| parse_cookie(&headers, "cheers_csrf"));
-    let rotated = auth_sessions::rotate_refresh_token(
+    let outcome = auth_sessions::rotate_refresh_token(
         &state.db,
         &state.config,
         &refresh_token,
         csrf.as_deref(),
     )
     .await?;
+    let rotated = match outcome {
+        auth_sessions::RefreshOutcome::Rotated(rotated) => rotated,
+        auth_sessions::RefreshOutcome::ReuseRevoked(revoked) => {
+            apply_session_revocations(&state, &revoked);
+            return Err(AppError::Unauthorized(
+                "refresh token reuse detected; session revoked".into(),
+            ));
+        }
+    };
     let client = sqlx::query_scalar!(
         "SELECT client_type FROM auth_sessions WHERE session_id = $1",
         &rotated.session_id,
@@ -963,13 +974,24 @@ pub async fn refresh(
     })
 }
 
+/// Apply only the exact sessions returned by a committed domain command.
+pub(crate) fn apply_session_revocations(
+    state: &AppState,
+    revoked: &auth_sessions::RevokedSessions,
+) {
+    for session_id in &revoked.session_ids {
+        state.fanout.kick_session(revoked.user_id, session_id);
+    }
+}
+
 pub async fn logout_current(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
-    auth_sessions::revoke_session(&state.db, &claims.sub, &claims.sid).await?;
-    if let Ok(uid) = claims.sub.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
+    if let Some(revoked) =
+        auth_sessions::revoke_session(&state.db, &claims.sub, &claims.sid).await?
+    {
+        apply_session_revocations(&state, &revoked);
     }
     Ok(Json(json!({ "ok": true })))
 }
@@ -1001,9 +1023,10 @@ pub async fn revoke_session(
     Extension(claims): Extension<Claims>,
     axum::extract::Path(session_id): axum::extract::Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    if !auth_sessions::revoke_session(&state.db, &claims.sub, &session_id).await? {
-        return Err(AppError::NotFound);
-    }
+    let revoked = auth_sessions::revoke_session(&state.db, &claims.sub, &session_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    apply_session_revocations(&state, &revoked);
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -1081,12 +1104,12 @@ pub async fn forgot_password(
     let email = body.email.trim().to_lowercase();
     if !email.is_empty() {
         let found = sqlx::query!(
-            "SELECT user_id FROM users WHERE lower(email) = $1 AND is_deleted = FALSE LIMIT 1",
+            "SELECT user_id FROM users WHERE lower(email) = $1 AND is_deleted = FALSE",
             &email,
         )
-        .fetch_optional(&state.db)
+        .fetch_all(&state.db)
         .await?;
-        if found.is_some() {
+        if let [owner] = found.as_slice() {
             let code = crate::infra::crypto::generate_email_code();
             let code_hash = crate::infra::crypto::hash_email_code(
                 state.config.secret_store_key.as_deref(),
@@ -1097,11 +1120,12 @@ pub async fn forgot_password(
             );
             let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
             sqlx::query!(
-                "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at)
-                 VALUES ($1, NULL, $2, 'password_reset', $3)",
+                "INSERT INTO email_codes (email, code, code_hash, purpose, expires_at, user_id)
+                 VALUES ($1, NULL, $2, 'password_reset', $3, $4)",
                 &email,
                 code_hash,
                 expires,
+                &owner.user_id,
             )
             .execute(&state.db)
             .await?;
@@ -1156,7 +1180,7 @@ pub async fn reset_password(
            AND used = FALSE AND expires_at > NOW()
          LIMIT 1",
         &email,
-        code_hash,
+        &code_hash,
     )
     .fetch_optional(&state.db)
     .await?;
@@ -1165,43 +1189,24 @@ pub async fn reset_password(
         return Err(AppError::BadRequest("invalid or expired code".into()));
     }
 
-    let user = sqlx::query!(
-        "SELECT user_id FROM users WHERE lower(email) = $1 AND is_deleted = FALSE LIMIT 1",
-        &email,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    let user_id: String = user.user_id.clone();
-
     let hash = crate::infra::crypto::hash_password(body.new_password.clone())
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
-    sqlx::query!(
-        "UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE user_id = $1",
-        &user_id,
-        &hash,
-    )
-    .execute(&state.db)
-    .await?;
-    // Revocation must reach live sockets too (a reset usually means the old
-    // credential is considered compromised).
-    if let Ok(uid) = user_id.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
-    }
+    let revoked = match auth::reset_password_with_code(&state.db, &email, &code_hash, &hash).await {
+        Ok(revoked) => revoked,
+        Err(error) => {
+            if matches!(&error, AppError::BadRequest(_)) {
+                limiter.record_failure(&key);
+            }
+            return Err(error);
+        }
+    };
+    apply_session_revocations(&state, &revoked);
+    let user_id = revoked.user_id.to_string();
     // …and push subscriptions: a compromised-credential reset must silence
     // every previously-enrolled device.
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &user_id).await;
     crate::notify::revoke_user_devices(&state.db, &user_id).await;
-    // Burn this + any other live reset codes for the email.
-    sqlx::query!(
-        "UPDATE email_codes SET used = TRUE
-         WHERE email = $1 AND purpose = 'password_reset' AND used = FALSE",
-        &email,
-    )
-    .execute(&state.db)
-    .await?;
-
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -1386,9 +1391,14 @@ pub async fn verify_two_factor_login(
         .transaction_id
         .as_deref()
         .ok_or_else(|| AppError::Unauthorized("authentication transaction is required".into()))?;
-    let (user_id, client, device_name, primary_factor) =
+    let (user_id, primary_factor) =
         auth_sessions::factor_transaction_user(&state.db, transaction_id).await?;
     let remember_device = body.remember_device;
+    let mut factor = if body.method.as_deref() == Some("password") {
+        "password"
+    } else {
+        "totp_or_recovery"
+    };
     let master_key = two_factor::master_key(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
@@ -1401,8 +1411,7 @@ pub async fn verify_two_factor_login(
         )
         .fetch_optional(&state.db)
         .await?;
-        primary_factor.as_deref() != Some("password")
-            && primary_factor.is_some()
+        primary_factor != "password"
             && methods.password
             && match hash.flatten() {
                 Some(hash) => crate::infra::crypto::verify_password(body.code.clone(), hash)
@@ -1416,54 +1425,24 @@ pub async fn verify_two_factor_login(
     if body.method.as_deref() != Some("password") && !verified && methods.email {
         verified =
             two_factor::verify_email_code(&state.db, &state.config, &user_id, &body.code).await?;
+        if verified {
+            factor = "email";
+        }
     }
     if !verified {
         auth_sessions::record_factor_failure(&state.db, transaction_id).await?;
         return Err(AppError::Unauthorized("invalid 2FA code".into()));
     }
-    auth_sessions::consume_factor_transaction(&state.db, transaction_id).await?;
-    let user = auth::load_auth_user(&state.db, &user_id).await?;
-    let session = auth_sessions::finalize_login(
+    let completed = auth_sessions::complete_transaction_login(
         &state.db,
         &state.config,
-        &user,
-        client,
-        device_name.as_deref(),
+        transaction_id,
+        &user_id,
+        auth_sessions::LoginProof::StoredPrimary { factor },
+        remember_device,
     )
     .await?;
-    let session_id = session.session_id.clone();
-    let refresh = session.refresh_token.clone();
-    let csrf = session.csrf_token.clone();
-    let mut login_body = session_response(&user, session, client)?;
-    if remember_device {
-        let trusted = auth_sessions::issue_trusted_device(
-            &state.db,
-            &user.id,
-            &session_id,
-            device_name.as_deref(),
-        )
-        .await?;
-        if client != auth_sessions::ClientType::Web {
-            login_body.trusted_device = Some(trusted.clone());
-        }
-        let mut response = if client == auth_sessions::ClientType::Web {
-            response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-        } else {
-            Json(login_body).into_response()
-        };
-        response.headers_mut().append(
-            axum::http::header::SET_COOKIE,
-            auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
-                .parse()
-                .expect("valid cookie header"),
-        );
-        return Ok(response);
-    }
-    Ok(if client == auth_sessions::ClientType::Web {
-        response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(login_body).into_response()
-    })
+    completed_login_response(completed)
 }
 
 #[derive(Deserialize)]
@@ -1491,7 +1470,7 @@ pub async fn send_two_factor_email(
     }
     limiter.record_failure(&key);
 
-    let (user_id, _client, _device_name, _primary_factor) =
+    let (user_id, _) =
         auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
     if !two_factor::methods(&state.db, &user_id).await?.email {
         return Err(AppError::BadRequest(

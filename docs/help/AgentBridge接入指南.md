@@ -15,7 +15,13 @@ Agent Bridge lets external providers such as local ACP agents appear as Cheers B
 | Agent Bridge Bot | A Bot account with `binding_type=agent_bridge`. |
 | Bot token | One-time plaintext token with prefix `agb_...`, used by the provider. |
 | control WebSocket | `/ws/agent-bridge/control`, used for handshake, membership snapshots, join/leave events, heartbeat. |
-| data WebSocket | `/ws/agent-bridge/data`, used for inbound messages, `delta`, `reply`, `done`, `error`, and file events. |
+| data WebSocket | `/ws/agent-bridge/data`, used for `send`, `delta`, `done`, `error`, and file events. |
+
+Tasks arrive on the control connection and require a committed execution grant
+before the provider runs them. Every `done` or task `error` must carry the granted
+`execution` tuple and a stable UUID `client_msg_id`; `reply` and results without
+an execution identity are rejected. Use `send` or MCP to publish a proactive
+message. See [Task delivery](../arch/TASK_DELIVERY.md) for the complete contract.
 
 Default local variables:
 

@@ -2,10 +2,12 @@ use cheers_mcp_server::locator::{self, Locator};
 use chrono::Utc;
 use serde_json::Value;
 use sqlx::PgPool;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
-    domain::{channel_seq, mentions, messages as domain_messages},
+    domain::{chains, channel_seq, mentions, messages as domain_messages},
+    gateway::registry::BotLocator,
     infra::db::models::{MessageDto, MessageFileRef, MessageMention, MESSAGE_SCHEMA_VERSION},
 };
 
@@ -90,11 +92,17 @@ pub async fn handle_cards_write(
     let cards = validate_cards_json(cards_json)
         .map_err(|error| super::resource_error("INVALID_PARAMS", error))?;
     authorize_channel_write(db, principal, channel_id).await?;
-    let content_data: Option<Value> = sqlx::query_scalar!(
-        r#"UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb) || jsonb_build_object('cards', $1::jsonb)
+    // Legacy replies persisted with the baseline `normal` default are also text.
+    // New dispatcher placeholders explicitly use `text`.
+    // The row lock acquired by UPDATE serializes staging with stream finalization.
+    // Partial metadata is not published; handle_done promotes it in its transaction.
+    let updated = sqlx::query!(
+        r#"UPDATE messages SET content_data = COALESCE(content_data, '{}'::jsonb)
+            || jsonb_build_object(CASE WHEN is_partial THEN 'pending_cards' ELSE 'cards' END, $1::jsonb)
          WHERE msg_id = $2 AND channel_id = $3 AND sender_type = 'bot' AND sender_id = $4
-           AND is_partial = FALSE AND is_deleted = FALSE AND NULLIF(BTRIM(content), '') IS NOT NULL
-         RETURNING content_data AS "value!""#,
+           AND msg_type IN ('text', 'normal') AND is_deleted = FALSE
+           AND (is_partial = TRUE OR NULLIF(BTRIM(content), '') IS NOT NULL)
+         RETURNING content_data AS "content_data!", is_partial"#,
         cards,
         msg_id.to_string(),
         channel_id.to_string(),
@@ -103,8 +111,23 @@ pub async fn handle_cards_write(
     .fetch_optional(db)
     .await
     .map_err(super::db_err("messages.cards.write"))?;
-    let content_data = content_data.ok_or_else(|| super::not_found("own completed bot reply"))?;
-    Ok(serde_json::json!({"channel_id":channel_id,"msg_id":msg_id,"content_data":content_data}))
+    let row = updated.ok_or_else(|| super::not_found("own bot reply"))?;
+    let content_data = row.content_data;
+    let staged = row.is_partial;
+    Ok(
+        serde_json::json!({"channel_id":channel_id,"msg_id":msg_id,"content_data":content_data,"staged":staged}),
+    )
+}
+
+pub fn finalize_card_metadata(mut data: Value, has_text: bool) -> Value {
+    if let Some(object) = data.as_object_mut() {
+        if let Some(cards) = object.remove("pending_cards") {
+            if has_text && cards.is_array() {
+                object.insert("cards".into(), cards);
+            }
+        }
+    }
+    data
 }
 
 pub async fn handle_suggestions_write(
@@ -328,10 +351,20 @@ fn fallback_message_value(channel_id: Uuid) -> Value {
     })
 }
 
-pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    // Perf instrumentation: total time spent in the DB-only create handler (authz +
-    // mention resolution + tx). Broadcast/bot-trigger happen at the WS boundary and
-    // are timed separately in agent_bridge — see docs on the post_message hot path.
+pub async fn handle_create(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+    bot_locator: &Arc<dyn BotLocator>,
+) -> ResourceResult {
+    if principal.principal_type != PrincipalType::Bot {
+        return Err(super::permission_denied(
+            "channel.messages.create is a bot resource; send human messages through the messages API",
+        ));
+    }
+    // Both resource posts and proactive bridge sends use this creator. Readiness
+    // is captured before the transaction; source/mentions/children/receipt then
+    // commit together. Browser fanout remains a postcommit effect.
     let started = std::time::Instant::now();
     let channel_id: Uuid = params
         .get("channel_id")
@@ -341,6 +374,16 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     let idempotency = IdempotencyKey::from_params(principal, "channel.messages.create", params)?;
 
     authorize_channel_write(db, principal, channel_id).await?;
+    let author = sqlx::query!(
+        "SELECT is_disabled FROM bot_accounts WHERE bot_id=$1",
+        principal.principal_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(super::db_err("messages.create: read author"))?;
+    if !author.is_some_and(|author| !author.is_disabled) {
+        return Err(super::permission_denied("message author is not active"));
+    }
     if let Some(key) = &idempotency {
         if let Some(replayed) = key.replay(db).await? {
             return Ok(replayed);
@@ -426,9 +469,21 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
             mentions.push(m);
         }
     }
+    let mut ready_targets = Vec::new();
+    for mention in &mentions {
+        if mention.member_type == mentions::MemberType::Bot
+            && mention.member_id != principal.principal_id
+            && bot_locator.is_online(mention.member_id).await
+            && bot_locator
+                .supports_task_acceptance(mention.member_id)
+                .await
+        {
+            ready_targets.push(mention.member_id);
+        }
+    }
 
     // Loaded before the transaction so the channel_seq row lock is not held for it.
-    let files = load_message_file_refs(db, &file_ids)
+    let files = load_message_file_refs(db, channel_id, &file_ids)
         .await
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     let files_len = files.len();
@@ -444,9 +499,24 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
             return key.replay_claimed(db).await;
         }
     }
+    // Match terminal creation's lock order: channel sequence, then authority.
+    // A denied commit rolls the provisional sequence allocation back as well.
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
         .map_err(super::db_err("messages.create: allocate channel_seq"))?;
+    if !crate::gateway::task_acceptance::may_execute(
+        &mut tx,
+        principal.principal_id,
+        channel_id,
+        None,
+    )
+    .await
+    .map_err(super::db_err("messages.create: authorize source commit"))?
+    {
+        return Err(super::permission_denied(
+            "message author may no longer post here",
+        ));
+    }
     let thread_root_msg_id: Option<String> = sqlx::query_scalar!(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -473,6 +543,19 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(super::db_err("messages.create: insert mentions"))?;
+    let admission_key = idempotency.as_ref().map(IdempotencyKey::admission_key);
+    chains::enqueue_message_children(
+        &mut tx,
+        channel_id,
+        msg_id,
+        channel_seq,
+        principal.principal_id,
+        &mentions,
+        &ready_targets,
+        admission_key.as_deref(),
+    )
+    .await
+    .map_err(super::db_err("messages.create: admit child dispatches"))?;
 
     let mention_dtos = mention_dtos(&mentions);
     let dto = MessageDto {
@@ -500,24 +583,8 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         trace_has_failure: Some(false),
     };
 
-    let data = serde_json::to_value(dto).unwrap_or_else(|_| {
-        serde_json::json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": msg_id.to_string(),
-            "channel_id": channel_id.to_string(),
-            "channel_seq": channel_seq,
-            "sender_type": principal.sender_type(),
-            "sender_id": principal.principal_id.to_string(),
-            "content": "",
-            "msg_type": "text",
-            "is_partial": false,
-            "reply_to_msg_id": null,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "created_at": now,
-        })
-    });
+    let data = serde_json::to_value(dto)
+        .map_err(super::db_err("messages.create: encode committed message"))?;
     if let Some(key) = &idempotency {
         key.complete(&mut tx, &data).await?;
     }
@@ -586,6 +653,7 @@ fn parse_file_ids(value: Option<&Value>) -> Vec<String> {
 
 async fn load_message_file_refs(
     db: &PgPool,
+    channel_id: Uuid,
     file_ids: &[String],
 ) -> Result<Vec<MessageFileRef>, ()> {
     if file_ids.is_empty() {
@@ -596,8 +664,9 @@ async fn load_message_file_refs(
         "SELECT file_id, original_filename, content_type, size_bytes, status, expires_at,
                 summary_3lines
          FROM file_records
-         WHERE file_id = ANY($1)",
+         WHERE file_id = ANY($1) AND channel_id = $2",
         file_ids,
+        channel_id.to_string(),
     ).fetch_all(db)
     .await
     .map_err(|e| {
@@ -656,6 +725,20 @@ mod card_tests {
         )
         .unwrap();
         assert_eq!(cards[0]["uri"], "cheers:desk/notes.md#L3");
+    }
+
+    #[test]
+    fn staged_cards_publish_only_with_text_and_preserve_session_metadata() {
+        let cards = serde_json::json!([{"v":1,"kind":"resource_ref","uri":"cheers:plan"}]);
+        let data = serde_json::json!({"session_id":"session-1","pending_cards":cards});
+        let published = super::finalize_card_metadata(data.clone(), true);
+        assert_eq!(published["cards"], cards);
+        assert_eq!(published["session_id"], "session-1");
+        assert!(published.get("pending_cards").is_none());
+        let empty = super::finalize_card_metadata(data, false);
+        assert!(empty.get("pending_cards").is_none());
+        assert!(empty.get("cards").is_none());
+        assert_eq!(empty["session_id"], "session-1");
     }
 
     #[test]

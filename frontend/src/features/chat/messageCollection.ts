@@ -1,4 +1,5 @@
 import type { Message } from "@/types";
+import { mergeMessageContentData } from "./taskClaimProjection";
 
 // In-flight bot placeholders have no channel sequence and remain newest until finalized.
 const SEQ_MAX = Number.MAX_SAFE_INTEGER;
@@ -19,9 +20,19 @@ export function upsertMessage(
     incoming.channel_seq !== undefined &&
     messages[index].channel_seq !== incoming.channel_seq;
   const next = messages.map((message, currentIndex) =>
-    currentIndex === index ? { ...message, ...incoming } : message,
+    currentIndex === index ? {
+      ...message, ...incoming,
+      content_data: mergeMessageContentData(message.content_data, incoming.content_data),
+      ...(message.is_deleted ? { is_deleted: true, content: "" } : {}),
+    } : message,
   );
   return reorder ? sortMessages(next) : next;
+}
+
+export function patchMessageContentData(messages: Message[], msgId: string, contentData: Message["content_data"]): Message[] {
+  return messages.map((message) => message.msg_id === msgId
+    ? { ...message, content_data: mergeMessageContentData(message.content_data, contentData) }
+    : message);
 }
 
 export function mergeMessages(messages: Message[], incoming: Message[]): Message[] {

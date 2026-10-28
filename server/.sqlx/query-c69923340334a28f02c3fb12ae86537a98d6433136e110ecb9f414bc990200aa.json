@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 AS present FROM users WHERE user_id = $1 AND is_deleted = FALSE FOR NO KEY UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "present",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c69923340334a28f02c3fb12ae86537a98d6433136e110ecb9f414bc990200aa"
+}

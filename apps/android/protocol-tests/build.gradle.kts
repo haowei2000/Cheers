@@ -10,9 +10,12 @@ kotlin { jvmToolchain(17) }
 sourceSets {
     main {
         kotlin.srcDir("../app/src/main/java")
-        kotlin.include("**/ResourceRequests.kt", "**/ChatSocket.kt", "**/Dtos.kt", "**/Artifacts.kt", "**/ArtifactController.kt")
+        kotlin.include("**/ResourceRequests.kt", "**/Dtos.kt", "**/Artifacts.kt", "**/ArtifactController.kt")
     }
-    test { kotlin.srcDir("../app/src/test/java") }
+    test {
+        kotlin.srcDir("../app/src/test/java")
+        kotlin.include("**/ResourceRequestsTest.kt", "**/ArtifactControllerTest.kt")
+    }
 }
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

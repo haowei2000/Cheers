@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests SET status=$2,resolved_by=$3,resolution_note=$4,\n             resolved_at=NOW(),updated_at=NOW(),execution_msg_id=$5\n         WHERE claim_id=$1 AND status='pending' AND superseded_at IS NULL\n           AND (expires_at IS NULL OR expires_at>clock_timestamp())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ef027e4680ca338c78385604d965c2754a2f4129f0f3056bed580c9472d92b6e"
+}

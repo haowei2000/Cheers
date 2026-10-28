@@ -1,5 +1,8 @@
 package com.cheers.android
 
+import com.cheers.android.data.AuthTestHarness
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 import com.cheers.android.data.ws.ChatSocket
 import com.cheers.android.data.ws.ConnectionStatus
 import com.cheers.android.data.ws.ResourceException
@@ -15,10 +18,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ChatSocketResourceTest {
+    @get:Rule val temporary = TemporaryFolder()
     @Test fun socketPinsScopeAndStopsRequestsOnClose() = runBlocking {
-        val server = MockWebServer()
+        AuthTestHarness(temporary.root).use { h ->
+        val initial = h.login()
+        val server = h.server
         val received = CompletableDeferred<JsonObject>()
-        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+        h.route = { MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(code, reason)
             }
@@ -36,11 +42,10 @@ class ChatSocketResourceTest {
                     }
                 }
             }
-        }))
-        server.start()
+        }) }
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val http = OkHttpClient()
-        val socket = ChatSocket(http, Json { ignoreUnknownKeys = true }, server.url("/ws").toString(), "test-token", "current", scope)
+        val socket = ChatSocket(http, h.json, server.url("/ws").toString(), initial.identity, h.auth, "current", scope)
         try {
             socket.start()
             withTimeout(5_000) { socket.status.first { it == ConnectionStatus.ONLINE } }
@@ -51,8 +56,9 @@ class ChatSocketResourceTest {
             val failure = runCatching { socket.request("channel.artifacts.list", JsonObject(emptyMap())) }.exceptionOrNull()
             assertEquals("OFFLINE", (failure as ResourceException).code)
         } finally {
-            socket.stop(); scope.cancel(); server.shutdown()
+            socket.stop(); scope.cancel()
             http.dispatcher.executorService.shutdownNow(); http.connectionPool.evictAll()
+        }
         }
     }
 }

@@ -47,17 +47,48 @@ cargo test <name>                  # single test filter
 cargo clippy --all-targets         # lint (also: make lint from repo root)
 cargo fmt                          # format — run `cargo fmt --check` per-crate before pushing; CI's fmt gate fails PRs that cargo check/test won't catch
 
-# Frontend (run from frontend/)
-npm run dev                        # Vite dev server
-npm run typecheck                  # tsc --noEmit
-npm run test                       # vitest run
-npm run build
-npm run design-system:check        # DESIGN.md conformance — CI gate; typecheck/test/lint do NOT catch it
-npm run design-system:test         # the checker's own tests
-npm run security:check             # frontend security rules + npm audit — CI gate
+# Frontend (run from frontend/, managed with pnpm)
+pnpm dev                           # Vite dev server
+pnpm typecheck                     # tsc --noEmit
+pnpm test                          # vitest run
+pnpm build
+pnpm design-system:check           # DESIGN.md conformance — CI gate; typecheck/test/lint do NOT catch it
+pnpm design-system:test            # the checker's own tests
+pnpm security:check                # frontend security rules + pnpm audit — CI gate
 
 # Connector / MCP crates: cargo fmt --check, cargo test, cargo check inside each package dir
 ```
+
+Use **pnpm** as the preferred package manager for `frontend/`: run `pnpm install` and
+`pnpm <script>`, and keep `frontend/pnpm-lock.yaml` authoritative. CI, Docker builds,
+Tauri frontend hooks, Make targets, and frontend setup docs should use pnpm. Other
+independent Node packages may continue using their own package manager and lockfile.
+
+## Rust Build Cache and Worktree Maintenance
+
+On macOS, use a separate Cargo `target/` per worktree, one global `sccache` cache, and
+Worktrunk's APFS copy-on-write (CoW) copy to warm up new worktrees. Do not set a shared
+`CARGO_TARGET_DIR` for concurrently active worktrees; Cargo locks target directories.
+
+- `.cargo/config.toml` disables incremental compilation and sets line-table debug info
+  for dev/test profiles to limit local target growth. Full LLDB variable/type debugging
+  may need a temporary profile override.
+- `.worktreeinclude` selects ignored `target/` files and `.config/wt.toml` copies them
+  during Worktrunk's `pre-start` hook. Build in the primary worktree first and avoid
+  copying while Cargo is rewriting its artifacts. CoW shares unchanged blocks; later
+  writes allocate private blocks.
+- Set `RUSTC_WRAPPER=sccache`, `CARGO_INCREMENTAL=0`,
+  `SCCACHE_DIR=$HOME/Library/Caches/sccache`, and `SCCACHE_CACHE_SIZE=100G` in the local
+  shell configuration. Check `sccache --show-stats`; do not commit local paths or
+  credentials.
+- Build focused crates (`cargo check -p server`, `cargo test -p server`) during module
+  development and run workspace-wide commands for integration validation. Independent
+  Rust packages can have separate target directories.
+- Before cleanup, confirm no Cargo build is active. Preview with
+  `cargo clean-all --dry-run --keep-days 21 --keep-size 2GiB <directory>` and review
+  candidates. Keep the primary target warm. `du` over CoW clones is not physical disk
+  usage; check `df -h /` instead. Preview merged worktree removal with
+  `wt step prune --dry-run`.
 
 ## Local Run: Kubernetes (canonical)
 
@@ -102,7 +133,7 @@ helm uninstall cheers -n cheers           # remove the release (keeps the kind c
 ```
 
 > Fast frontend-only inner loop: you can still run Vite
-> (`npm --prefix frontend run dev`) pointed at the in-cluster gateway, but the
+> (`pnpm --dir frontend dev`) pointed at the in-cluster gateway, but the
 > canonical, reproducible stack is the Helm/kind path above — start it with k8s.
 
 > Integration tests against the running stack are being re-established on the Rust
@@ -110,6 +141,46 @@ helm uninstall cheers -n cheers           # remove the release (keeps the kind c
 > When added, they must read the target URL from `INTEGRATION_BASE_URL` (never hard-code
 > a port) so multiple stacks can run in parallel via a unique `COMPOSE_PROJECT_NAME` +
 > distinct host ports.
+
+## Parallel Worktree Runtime Services
+
+For concurrent local worktrees, use the opt-in `docker-compose.dev-infra.yml` to share
+PostgreSQL, Redis, and RustFS processes while isolating mutable data and app processes.
+Start the shared services once with `make dev-infra-up`; `make dev-infra-down` stops
+them but retains their named volumes. Defaults bind only to localhost: PostgreSQL
+`15432`, Redis `16379`, RustFS S3 `19000`, and RustFS console `19001`.
+
+- Use one PostgreSQL database per worktree (`db_main`, `db_auth`, etc.). Set that
+  worktree's `DATABASE_URL` to its database. Gateway startup applies sqlx migrations,
+  so never point parallel branches at the same database.
+- Use one RustFS bucket per worktree via `S3_BUCKET` / `STORAGE_S3_BUCKET`; the gateway
+  bootstraps its configured bucket.
+- Run one gateway and one Vite dev server per active worktree, each on unique host
+  ports. The repo `.envrc` sets deterministic `GATEWAY_PORT` and `VITE_PORT` values and
+  points Vite at that worktree's gateway. Use `make dev-worktree-gateway` and
+  `make dev-worktree-frontend` to launch them.
+- Redis is shared at `redis://127.0.0.1:16379/0`. The current single-instance gateway
+  uses in-process realtime fan-out and does not wire its Redis fan-out/registry code
+  into startup. If Redis-backed multi-instance support is enabled later, isolate key
+  and pub/sub channel names with a unique per-worktree prefix.
+- Keep the existing Helm/kind deployment as the canonical reproducible full-stack
+  setup. The legacy full Compose template starts its own dependencies and is not the
+  shared-services path for parallel worktrees.
+
+```bash
+# Install direnv once (`brew install direnv`) and add
+# `eval "$(direnv hook zsh)"` to ~/.zshrc, then open a new shell.
+direnv allow
+make dev-infra-up
+make dev-worktree-db        # create db_<worktree> once in shared PostgreSQL
+make dev-worktree-gateway  # Infisical injects JWT and other secrets
+make dev-worktree-frontend
+```
+
+direnv loads settings when entering a worktree and unloads them on exit. Run
+`direnv allow` once per new worktree. Ports derive from the checkout directory name;
+if one collides, set `GATEWAY_PORT` or `VITE_PORT` in that worktree's ignored `.env`
+file and re-allow it.
 
 ## sqlx Migration Discipline (Mandatory)
 

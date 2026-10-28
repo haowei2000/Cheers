@@ -12,6 +12,7 @@ import type { LensContextTarget } from "./registry";
 import { getLens } from "./registry";
 import { inspectableIdLineRange, sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
 import { LensAnnotationOverlay } from "./LensAnnotationOverlay";
+import type { InteractionDispatcher } from "../interaction";
 
 // One built-in lens over one file SESSION. The session is owned by the host, because the
 // host is what shows the file's other view: Raw and Preview must be the same buffer, the
@@ -31,6 +32,8 @@ export function LensView({
   inspectorActive,
   onFormSubmit,
   artifactId,
+  onInteraction,
+
 }: {
   session: FileSession;
   lensId: string;
@@ -54,6 +57,7 @@ export function LensView({
   inspectorActive?: boolean;
   artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
+  onInteraction?: InteractionDispatcher;
 }) {
   const lens = getLens(lensId);
   const { open } = useContextActions();
@@ -167,6 +171,9 @@ export function LensView({
             data,
             path,
             artifactId,
+            sourceVersion: session.sourceVersion ?? session.version ?? undefined,
+            resourceUri:session.resourceUri,
+
             config,
             onChange: session.setData,
             onOps,
@@ -175,6 +182,7 @@ export function LensView({
             openLocator,
             inspectorActive,
             onFormSubmit,
+            onInteraction,
           })
         ) : (
           <div className="p-3 text-warning-400">Unknown lens: {lensId}</div>
@@ -219,6 +227,8 @@ export function LensPanel({
   inspectorActive,
   onFormSubmit,
   artifactId,
+  onInteraction,
+
 }: {
   fs: FsClient;
   path: string;
@@ -230,6 +240,7 @@ export function LensPanel({
   inspectorActive?: boolean;
   artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
+  onInteraction?: InteractionDispatcher;
 }) {
   const session = useFileSession(fs, path);
   // Live-push: the Desk changed on the server (a bot finished writing) — re-pull so the
@@ -254,6 +265,8 @@ export function LensPanel({
       inspectorActive={inspectorActive}
       onFormSubmit={onFormSubmit}
       artifactId={artifactId}
+      onInteraction={onInteraction}
+
     />
   );
 }

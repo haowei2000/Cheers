@@ -759,7 +759,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Attach one to three read-only Cheers resource cards to your own completed reply. Pass cards_json as a JSON array of {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?}. Replaces any previous cards on that reply.",
+    "description": "Attach one to three read-only Cheers resource cards to your own reply. During streaming, validated cards are staged and published when the reply completes. Pass cards_json as a JSON array of {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?}. Replaces previous cards; do not post a duplicate reply.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1163,5 +1163,25 @@
     },
     "name": "list_task_claims",
     "title": "List task claims"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read the supported Cheers A2UI version, component catalog, example, and authoring/action guide before creating an interactive Desk resource.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "read_ui_contract",
+    "title": "Read interactive UI contract"
   }
 ]

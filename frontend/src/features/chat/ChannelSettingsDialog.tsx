@@ -1,4 +1,5 @@
 import { Input as UiInput } from "@/components/ui/input";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -683,10 +684,10 @@ export function ChannelSettingsDialog({
                   disabled={deleting}
                   onClick={() => setConfirmingDelete(false)}
                 />
-                <Button action="delete" aria-label="Delete channel" variant="danger" controlSize="compact" loading={deleting} onClick={() => void doDelete()} />
+                <Button action="delete" aria-label="Delete channel" variant="destructive" controlSize="compact" loading={deleting} onClick={() => void doDelete()} />
               </div>
             ) : (
-              <Button content="iconText" action="delete" aria-label="Delete channel" variant="danger" controlSize="compact" className="shrink-0" onClick={() => setConfirmingDelete(true)}>
+              <Button content="iconText" action="delete" aria-label="Delete channel" variant="destructive" controlSize="compact" className="shrink-0" onClick={() => setConfirmingDelete(true)}>
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
             )}
@@ -698,8 +699,7 @@ export function ChannelSettingsDialog({
         {myRole && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-regular font-medium text-content-secondary">Leave channel</p>
-              <p className="text-compact text-content-muted mt-1">Remove yourself from this channel.</p>
+              <p className="text-regular font-medium text-content-secondary"><HelpLabel help="Remove yourself from this channel.">Leave channel</HelpLabel></p>
             </div>
             {confirmingLeave ? (
               <div className="flex items-center gap-2 shrink-0">

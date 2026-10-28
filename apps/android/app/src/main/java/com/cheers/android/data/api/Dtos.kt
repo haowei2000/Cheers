@@ -15,15 +15,25 @@ import kotlinx.serialization.json.JsonObject
 data class LoginRequest(
     val login: String,
     val password: String,
+    val client: String,
 )
 
 @Serializable
 data class LoginResponse(
-    @SerialName("access_token") val accessToken: String,
+    val status: String? = null,
+    @SerialName("requires_2fa") val requires2fa: Boolean = false,
+    @SerialName("access_token") val accessToken: String? = null,
     @SerialName("token_type") val tokenType: String = "bearer",
-    @SerialName("user_id") val userId: String,
+    @SerialName("user_id") val userId: String? = null,
     @SerialName("display_name") val displayName: String? = null,
-    val role: String = "member",
+    val role: String? = null,
+    @SerialName("refresh_token") val refreshToken: String? = null,
+    @SerialName("expires_in") val expiresIn: Long? = null,
+)
+
+@Serializable
+data class RefreshRequest(
+    @SerialName("refresh_token") val refreshToken: String,
 )
 
 /** Generic `{ "ok": true }` acknowledgement. */

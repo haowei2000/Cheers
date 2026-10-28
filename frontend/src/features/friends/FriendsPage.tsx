@@ -1,3 +1,7 @@
+import { Tip } from "@/components/ui/tip";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SectionNav } from "@/components/ui/section-nav";
+import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -14,7 +18,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Avatar } from "@/components/ui/avatar";
-import { ItemList, ItemRow, ItemSection, NavigationItem } from "@/components/ui/item";
+import { ItemList, ItemRow, ItemSection } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
@@ -85,49 +89,28 @@ export default function FriendsPage() {
           </IconButton>
           <Users className="h-4 w-4 text-accent-400" aria-hidden="true" />
           <div>
-            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none">
-              Friends
-            </h1>
-            <p className="mt-1 hidden text-minimal text-content-muted sm:block">
+            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>
               Direct connections and member requests
-            </p>
+            </>}>
+              Friends
+            </HelpLabel></h1>
+
           </div>
         </header>
       </RouteChromeHeader>
 
       <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
-        {/* Nav rail */}
-        <nav aria-label="Friends sections" className="sm:w-48 sm:shrink-0">
-          <ItemList
-            presentationLevel="minimal"
-            controlSize="regular"
-            className="flex gap-1 overflow-x-auto sm:flex-col"
-          >
-            {TABS.map((item) => {
-              const Icon = item.icon;
-              const active = tab === item.id;
-              return (
-                <NavigationItem
-                  key={item.id}
-                  title={item.label}
-                  leading={<Icon className="h-4 w-4" aria-hidden="true" />}
-                  selected={active}
-                  criticalStatus={
-                    item.id === "requests" && incomingCount > 0 ? (
-                      <UnreadBadge tone="mention" contentSize="small">
-                        {incomingCount}
-                      </UnreadBadge>
-                    ) : undefined
-                  }
-                  onClick={() =>
-                    navigate(item.id === "friends" ? "/friends" : `/friends/${item.id}`)
-                  }
-                  className="shrink-0 max-sm:w-auto"
-                />
-              );
-            })}
-          </ItemList>
-        </nav>
+        <SectionNav
+          ariaLabel="Friends sections"
+          items={TABS.map((item) => ({
+            ...item,
+            badge: item.id === "requests" && incomingCount > 0 ? (
+              <UnreadBadge tone="mention" contentSize="small">{incomingCount}</UnreadBadge>
+            ) : undefined,
+          }))}
+          selected={tab}
+          onSelect={(id) => navigate(id === "friends" ? "/friends" : `/friends/${id}`)}
+        />
 
         {/* Active section */}
         <main className="min-w-0 flex-1">
@@ -197,7 +180,11 @@ function FriendsTab() {
 
   if (loading) return <SurfaceSpinner />;
   if (!friends.length)
-    return <Empty>No friends yet. Use the Add tab to find people.</Empty>;
+    return (
+      <Empty action={<Button action="add" content="iconText" variant="secondary" onClick={() => navigate("/friends/add")}><UserPlus /></Button>}>
+        No friends yet
+      </Empty>
+    );
 
   return (
     <>
@@ -460,13 +447,11 @@ function AddTab() {
 
   return (
     <div>
-      <p className="text-compact text-content-muted mb-2 leading-reading">
-        Find people by <span className="text-content-secondary">username</span>,{" "}
-        <span className="text-content-secondary">display name</span>, or exact{" "}
-        <span className="text-content-secondary">user ID</span>.
-      </p>
+
       <div className="mb-4">
-        <InputWithLeadingIcon
+        <Tip className="w-full" content={<>Find people by <span className="text-content-secondary">username</span>,{" "}
+        <span className="text-content-secondary">display name</span>, or exact{" "}
+        <span className="text-content-secondary">user ID</span>.</>}><InputWithLeadingIcon
           leading={<Search className="h-4 w-4" />}
           containerClassName="w-full"
           aria-label="Search users"
@@ -475,7 +460,7 @@ function AddTab() {
           placeholder="Search people..."
           controlSize="regular"
           className="bg-zinc-900"
-        />
+        /></Tip>
       </div>
 
       {busy && <SurfaceSpinner />}
@@ -709,10 +694,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Empty({ children }: { children: ReactNode }) {
-  return (
-    <div className="text-regular text-content-muted py-10 text-center">
-      {children}
-    </div>
-  );
+function Empty({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return <EmptyState title={children} action={action} />;
 }

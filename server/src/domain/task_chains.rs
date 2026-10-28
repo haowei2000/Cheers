@@ -8,7 +8,7 @@
 //!   （不建占位、不派发）——这是权威停止点，即使取消广播漏掉了离线 bot 也成立。
 //!
 //! chain 状态机：`active → cancelled`（或 `done`/`paused`，本期只用 active/cancelled）。
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 /// 开启一条新链，根于 `root_msg_id`（触发级联的那条消息）。返回 `chain_id`。
@@ -19,6 +19,28 @@ pub async fn start_chain(
     root_task_id: Uuid,
     root_msg_id: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
+    start_chain_with_executor(db, channel_id, root_task_id, root_msg_id).await
+}
+
+/// Root a human dispatch chain atomically with its trigger and pending bot runs.
+pub async fn start_chain_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    channel_id: Uuid,
+    root_task_id: Uuid,
+    root_msg_id: Uuid,
+) -> Result<Uuid, sqlx::Error> {
+    start_chain_with_executor(&mut **tx, channel_id, root_task_id, root_msg_id).await
+}
+
+async fn start_chain_with_executor<'a, E>(
+    executor: E,
+    channel_id: Uuid,
+    root_task_id: Uuid,
+    root_msg_id: Uuid,
+) -> Result<Uuid, sqlx::Error>
+where
+    E: Executor<'a, Database = Postgres>,
+{
     let chain_id = Uuid::new_v4();
     sqlx::query!(
         "INSERT INTO task_chains (chain_id, channel_id, root_task_id, root_msg_id, status)
@@ -28,7 +50,7 @@ pub async fn start_chain(
         root_task_id.to_string(),
         root_msg_id.to_string(),
     )
-    .execute(db)
+    .execute(executor)
     .await?;
     Ok(chain_id)
 }
@@ -71,6 +93,25 @@ pub async fn chain_of_active_bot_task(
     channel_id: Uuid,
     bot_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
+    chain_of_active_bot_task_with_executor(db, channel_id, bot_id).await
+}
+
+pub(crate) async fn chain_of_active_bot_task_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    chain_of_active_bot_task_with_executor(&mut **tx, channel_id, bot_id).await
+}
+
+async fn chain_of_active_bot_task_with_executor<'a, E>(
+    executor: E,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> Result<Option<String>, sqlx::Error>
+where
+    E: Executor<'a, Database = Postgres>,
+{
     let row = sqlx::query!(
         "SELECT chain_id FROM messages
          WHERE channel_id = $1 AND sender_id = $2 AND sender_type = 'bot'
@@ -80,7 +121,7 @@ pub async fn chain_of_active_bot_task(
         channel_id.to_string(),
         bot_id.to_string(),
     )
-    .fetch_optional(db)
+    .fetch_optional(executor)
     .await?;
     Ok(row.and_then(|r| r.chain_id.clone()))
 }

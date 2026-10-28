@@ -34,6 +34,12 @@ pub struct Claims {
     pub token_version: u64,
 }
 
+/// An authenticated token and the earliest deadline imposed by its exact session.
+pub(crate) struct VerifiedSession {
+    pub claims: Claims,
+    pub valid_until: chrono::DateTime<chrono::Utc>,
+}
+
 /// 从 Authorization: Bearer <token> 提取 user_id，注入请求扩展。
 /// 验签失败返回 401。
 pub async fn jwt_auth(
@@ -46,9 +52,10 @@ pub async fn jwt_auth(
     let claims =
         verify_rs256(&token, &state.config.jwt.decoding).map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    if is_revoked(&state.db, &claims)
+    if session_valid_until(&state.db, &claims)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .is_none()
     {
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -70,9 +77,10 @@ pub async fn optional_jwt_auth(
     };
     let claims =
         verify_rs256(&token, &state.config.jwt.decoding).map_err(|_| StatusCode::UNAUTHORIZED)?;
-    if is_revoked(&state.db, &claims)
+    if session_valid_until(&state.db, &claims)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .is_none()
     {
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -80,8 +88,21 @@ pub async fn optional_jwt_auth(
     Ok(next.run(req).await)
 }
 
-/// A user token is valid only while both its account and exact session are active.
-async fn is_revoked(db: &sqlx::PgPool, claims: &Claims) -> Result<bool, sqlx::Error> {
+/// Shared HTTP/WS authority check, also used after registering or rebinding a
+/// socket. A deadline never extends beyond either the JWT or its exact session.
+pub(crate) async fn session_valid_until(
+    db: &sqlx::PgPool,
+    claims: &Claims,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, sqlx::Error> {
+    let Some(token_expiry) = i64::try_from(claims.exp)
+        .ok()
+        .and_then(|seconds| chrono::DateTime::from_timestamp(seconds, 0))
+    else {
+        return Ok(None);
+    };
+    if token_expiry <= chrono::Utc::now() {
+        return Ok(None);
+    }
     let row = sqlx::query!(
         "SELECT u.token_version, u.is_suspended, u.is_deleted,
                 s.revoked_at, s.absolute_expires_at
@@ -94,18 +115,17 @@ async fn is_revoked(db: &sqlx::PgPool, claims: &Claims) -> Result<bool, sqlx::Er
     .fetch_optional(db)
     .await?;
     let Some(row) = row else {
-        return Ok(true); // unknown user_id → treat as revoked
+        return Ok(None);
     };
-    let db_version: i32 = row.token_version.clone();
-    let suspended: bool = row.is_suspended.clone();
-    let deleted: bool = row.is_deleted.clone();
-    let session_revoked: Option<chrono::DateTime<chrono::Utc>> = row.revoked_at.clone();
-    let session_expiry: chrono::DateTime<chrono::Utc> = row.absolute_expires_at.clone();
-    Ok(deleted
-        || suspended
-        || session_revoked.is_some()
-        || session_expiry <= chrono::Utc::now()
-        || (claims.token_version as i64) < db_version as i64)
+    if row.is_deleted
+        || row.is_suspended
+        || row.revoked_at.is_some()
+        || i128::from(claims.token_version) < i128::from(row.token_version)
+    {
+        return Ok(None);
+    }
+    let valid_until = std::cmp::min(token_expiry, row.absolute_expires_at);
+    Ok((valid_until > chrono::Utc::now()).then_some(valid_until))
 }
 
 fn extract_bearer(headers: &axum::http::HeaderMap) -> Option<String> {
@@ -116,23 +136,20 @@ fn extract_bearer(headers: &axum::http::HeaderMap) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-/// WS handler 直接调用（不经过 axum middleware）。Performs the SAME DB-backed
-/// revocation checks (token_version / is_suspended / is_deleted) as the HTTP
-/// middleware, at connection time and on every in-connection re-auth — a
-/// logged-out/banned user must not be able to open (or renew) a live socket
-/// with a stale JWT. NOTE: an ALREADY-OPEN socket is only torn down when a
-/// revocation path calls `Fanout::kick_user` (logout / password change+reset /
-/// suspend / delete all do); sockets of users revoked by any other means
-/// survive until they disconnect.
-pub async fn verify_token(
+/// WS signature verification uses the same account/session check as HTTP and
+/// returns the deadline that the socket must enforce without client traffic.
+pub(crate) async fn verify_token(
     token: &str,
     state: &crate::app_state::AppState,
-) -> Result<Claims, &'static str> {
+) -> Result<VerifiedSession, &'static str> {
     let claims =
         verify_rs256(token, &state.config.jwt.decoding).map_err(|_| "invalid or expired token")?;
-    match is_revoked(&state.db, &claims).await {
-        Ok(false) => Ok(claims),
-        Ok(true) => Err("token revoked or account unavailable"),
+    match session_valid_until(&state.db, &claims).await {
+        Ok(Some(valid_until)) => Ok(VerifiedSession {
+            claims,
+            valid_until,
+        }),
+        Ok(None) => Err("token revoked or account unavailable"),
         Err(_) => Err("auth check failed"),
     }
 }

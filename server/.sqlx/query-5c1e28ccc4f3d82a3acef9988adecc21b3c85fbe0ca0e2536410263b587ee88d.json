@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_runs SET chain_id=$4 WHERE task_id=$1 AND execution_id=$2\n                     AND placeholder_msg_id=$3 AND bot_id=$5 AND channel_id=$6\n                     AND chain_id IS NULL AND status='completed' AND last_event_type='done'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Varchar",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c1e28ccc4f3d82a3acef9988adecc21b3c85fbe0ca0e2536410263b587ee88d"
+}

@@ -9,7 +9,7 @@ use sqlx::PgPool;
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
-use super::fanout::{CloseReason, WireFrame};
+use super::fanout::{CloseReason, SharedFrame};
 
 // ── 连接注册接口（让 ConnectionManager 不直接依赖 InProcessFanout）────────────
 
@@ -19,11 +19,13 @@ pub trait LocalRegistry: Send + Sync {
     fn register_user(
         &self,
         user_id: Uuid,
+        session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     );
-    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>);
+    fn rebind_session(&self, user_id: Uuid, conn_id: Uuid, session_id: &str) -> bool;
+    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<SharedFrame>);
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid);
     /// 成员资格被服务器撤销：移除该用户在该频道的所有连接订阅（subscribe 的反向边）。
     fn unsubscribe_user_channel(&self, channel_id: Uuid, user_id: Uuid);
@@ -40,13 +42,17 @@ impl LocalRegistry for InProcessFanout {
     fn register_user(
         &self,
         user_id: Uuid,
+        session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     ) {
-        InProcessFanout::register_user(self, user_id, conn_id, tx, close_tx);
+        InProcessFanout::register_user(self, user_id, session_id, conn_id, tx, close_tx);
     }
-    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+    fn rebind_session(&self, user_id: Uuid, conn_id: Uuid, session_id: &str) -> bool {
+        InProcessFanout::rebind_session(self, user_id, conn_id, session_id)
+    }
+    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<SharedFrame>) {
         InProcessFanout::subscribe_channel(self, channel_id, conn_id, tx);
     }
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
@@ -130,6 +136,24 @@ pub struct ConnectionManager {
     db: PgPool,
 }
 
+/// Registration happens before an async authority recheck. A closing socket may
+/// cancel that wait before its local subscription list learns about the entry.
+struct PendingSubscription {
+    registry: Arc<dyn LocalRegistry>,
+    channel_id: Uuid,
+    conn_id: Uuid,
+    confirmed: bool,
+}
+
+impl Drop for PendingSubscription {
+    fn drop(&mut self) {
+        if !self.confirmed {
+            self.registry
+                .unsubscribe_channel(self.channel_id, self.conn_id);
+        }
+    }
+}
+
 impl ConnectionManager {
     /// 单实例：直接用 InProcessFanout。
     pub fn new(fanout: Arc<InProcessFanout>, db: PgPool) -> Arc<Self> {
@@ -157,11 +181,17 @@ impl ConnectionManager {
     pub fn on_connect(
         &self,
         user_id: Uuid,
+        session_id: &str,
         conn_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
         close_tx: mpsc::Sender<CloseReason>,
     ) {
-        self.registry.register_user(user_id, conn_id, tx, close_tx);
+        self.registry
+            .register_user(user_id, session_id, conn_id, tx, close_tx);
+    }
+
+    pub fn rebind_session(&self, user_id: Uuid, conn_id: Uuid, session_id: &str) -> bool {
+        self.registry.rebind_session(user_id, conn_id, session_id)
     }
 
     pub fn on_disconnect(&self, user_id: Uuid, conn_id: Uuid, subscribed: &[Uuid]) {
@@ -176,7 +206,7 @@ impl ConnectionManager {
         user_id: Uuid,
         conn_id: Uuid,
         channel_id: Uuid,
-        tx: mpsc::Sender<WireFrame>,
+        tx: mpsc::Sender<SharedFrame>,
     ) -> Result<(), &'static str> {
         // Pre-check (cache-assisted): keeps obvious non-members from ever
         // entering the fan-out list. NOT authoritative — see below.
@@ -189,6 +219,12 @@ impl ConnectionManager {
             return Err("not a channel member");
         }
 
+        let mut registration = PendingSubscription {
+            registry: self.registry.clone(),
+            channel_id,
+            conn_id,
+            confirmed: false,
+        };
         self.registry.subscribe_channel(channel_id, conn_id, tx);
 
         // Authoritative post-insert re-check (uncached), closing the TOCTOU
@@ -208,6 +244,7 @@ impl ConnectionManager {
                 Err(_) => "internal error",
             });
         }
+        registration.confirmed = true;
         Ok(())
     }
 

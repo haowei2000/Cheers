@@ -1,3 +1,5 @@
+use crate::domain::dms::is_blocked;
+
 #[derive(Debug)]
 struct FriendRequestRow {
     friendship_id: String,
@@ -802,24 +804,6 @@ pub struct BlockRequest {
 
 /// Whether a block exists in either direction between two users. Used to gate
 /// friend requests and DMs (a block is mutual in effect).
-pub(crate) async fn is_blocked(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bool, AppError> {
-    let ok: bool = sqlx::query!(
-        "SELECT EXISTS(
-            SELECT 1 AS present FROM user_blocks
-            WHERE (blocker_id = $1 AND blocked_id = $2)
-               OR (blocker_id = $2 AND blocked_id = $1)
-         ) AS ok",
-        a,
-        b,
-    )
-    .fetch_one(db)
-    .await?
-    .ok
-    .clone()
-    .unwrap_or(false);
-    Ok(ok)
-}
-
 /// POST /api/v1/friends/block — block a user; also drops any existing
 /// friendship / pending request between the two.
 pub async fn block_user(

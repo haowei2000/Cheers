@@ -153,8 +153,6 @@ pub(crate) struct PermissionRow {
 
 #[derive(Debug, Clone)]
 pub(crate) struct MonitoringRow {
-    pub(crate) channel_id: String,
-    pub(crate) bot_id: String,
     pub(crate) mode: String,
     pub(crate) scope: String,
     pub(crate) debounce_seconds: i32,

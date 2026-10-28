@@ -1,3 +1,4 @@
+import { HelpLabel } from "@/components/ui/help-text";
 import {
   useLayoutEffect,
   useRef,
@@ -76,10 +77,7 @@ export function SceneTab({
       onClick={onSelect}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
-        selected
-          ? "border-content-strong text-content-strong font-semibold"
-          : "border-transparent text-content-primary hover:text-content-strong",
+        "shrink-0 gap-1 -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60",
       )}
       {...contextHandlers}
     >
@@ -131,11 +129,9 @@ export function NewCollectionDialog({
   if (!isOpen) return null;
 
   return (
-    <Dialog title="New Collection" onClose={onClose} maxWidth="max-w-lg">
+    <Dialog title={<HelpLabel help={<>Select a template group to add to this workspace.</>}>{"New Collection"}</HelpLabel>} onClose={onClose} maxWidth="max-w-lg">
       <div className="flex flex-col gap-4">
-        <p className="text-compact text-content-secondary">
-          Select a template group to add to this workspace.
-        </p>
+
         <div
           role="listbox"
           aria-label="Available templates"
@@ -373,10 +369,7 @@ export function ItemTab({
       aria-current={selected ? "page" : undefined}
       controlSize={workbenchControlSize.tab}
       className={cn(
-        "shrink-0 gap-1 rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 hover:bg-transparent",
-        selected
-          ? "border-content-strong text-content-strong font-semibold"
-          : "border-transparent text-content-primary hover:text-content-strong",
+        "shrink-0 gap-1 -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60",
       )}
       onContextMenu={contextSurface.onContextMenu}
       onKeyDown={contextSurface.onKeyDown}

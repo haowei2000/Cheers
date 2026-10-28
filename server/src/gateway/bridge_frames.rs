@@ -167,10 +167,16 @@ pub(crate) fn terminal_ack_ok(client_msg_id: &str, msg_id: Uuid) -> Value {
         job_id: None,
         error: None,
         code: None,
+        retryable: None,
     })
 }
 
-pub(crate) fn terminal_ack_err(client_msg_id: &str, code: &str, error: &str) -> Value {
+pub(crate) fn terminal_ack_err(
+    client_msg_id: &str,
+    code: &str,
+    error: &str,
+    retryable: bool,
+) -> Value {
     frame_value(&proto::DataInbound::TerminalAck {
         v: BRIDGE_PROTOCOL_VERSION,
         client_msg_id: client_msg_id.to_string(),
@@ -180,6 +186,7 @@ pub(crate) fn terminal_ack_err(client_msg_id: &str, code: &str, error: &str) -> 
         job_id: None,
         error: Some(error.to_string()),
         code: Some(code.to_string()),
+        retryable: Some(retryable),
     })
 }
 
@@ -191,7 +198,24 @@ pub(crate) fn bridge_error(code: &str, detail: &str) -> Value {
             detail: Some(detail.to_string()),
             request_id: None,
             client_msg_id: None,
+            msg_id: None,
             retryable: None,
+        },
+    })
+}
+
+/// Delta capability rejection naming the stream, so a per-stream signer signs
+/// that stream's next Delta again instead of losing the rest of the stream.
+pub(crate) fn delta_capability_error(code: &str, detail: &str, msg_id: Uuid) -> Value {
+    frame_value(&proto::DataInbound::Error {
+        error: proto::BridgeErrorFrame {
+            v: BRIDGE_PROTOCOL_VERSION,
+            code: code.to_string(),
+            detail: Some(detail.to_string()),
+            request_id: None,
+            client_msg_id: None,
+            msg_id: Some(msg_id.to_string()),
+            retryable: Some(true),
         },
     })
 }
@@ -206,13 +230,19 @@ pub(crate) fn cancel_frame(placeholder_msg_id: Uuid, reason: &str) -> Value {
 
 /// Session-targeted ACP `session/set_mode` (value-gated by the connector's L0
 /// allowed_modes envelope).
-pub(crate) fn mode_set_frame(request_id: &str, provider_session_key: &str, mode: &str) -> Value {
+pub(crate) fn mode_set_frame(
+    request_id: &str,
+    provider_session_key: &str,
+    mode: &str,
+    session_config: Option<proto::SessionConfigOverrides>,
+) -> Value {
     frame_value(&proto::ControlInbound::ModeSet {
         v: BRIDGE_PROTOCOL_VERSION,
         request_id: request_id.to_string(),
         session_id: None,
         provider_session_key: Some(provider_session_key.to_string()),
         mode: mode.to_string(),
+        session_config,
         updated_at: None,
     })
 }
@@ -223,6 +253,7 @@ pub(crate) fn config_option_set_frame(
     provider_session_key: &str,
     config_id: &str,
     value: &str,
+    session_config: Option<proto::SessionConfigOverrides>,
 ) -> Value {
     frame_value(&proto::ControlInbound::ConfigOptionSet {
         v: BRIDGE_PROTOCOL_VERSION,
@@ -231,6 +262,7 @@ pub(crate) fn config_option_set_frame(
         provider_session_key: Some(provider_session_key.to_string()),
         config_id: config_id.to_string(),
         value: value.to_string(),
+        session_config,
         updated_at: None,
     })
 }
@@ -308,6 +340,7 @@ pub(crate) fn auth_acknowledged_frame(
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WorkspaceReqExtra {
+    remote_execution: Option<proto::RemoteExecutionRequest>,
     content_b64: Option<String>,
     staged: Option<bool>,
     limit: Option<u32>,
@@ -340,6 +373,7 @@ pub(crate) fn workspace_req_frame(
     extra: WorkspaceReqExtra,
 ) -> Value {
     frame_value(&proto::DataInbound::WorkspaceReq {
+        remote_execution: extra.remote_execution,
         req_id: req_id.to_string(),
         op: op.to_string(),
         path: path.to_string(),
@@ -532,6 +566,32 @@ mod tests {
     }
 
     #[test]
+    fn task_accept_matches_fixture() {
+        let frame = frame_value(&proto::ControlOutbound::TaskAccept {
+            v: BRIDGE_PROTOCOL_VERSION,
+            task_id: "99999999-aaaa-4bbb-8ccc-dddddddddddd".into(),
+            placeholder_msg_id: "33333333-4444-4555-8666-777777777777".into(),
+            channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+            execution_id: "11111111-2222-4333-8444-555555555555".into(),
+        });
+        assert_matches_fixture(&frame, "control/to_gateway/task_accept.json", &[]);
+    }
+
+    #[test]
+    fn task_acceptance_matches_fixture() {
+        let frame = frame_value(&proto::ControlInbound::TaskAcceptance {
+            v: BRIDGE_PROTOCOL_VERSION,
+            task_id: "99999999-aaaa-4bbb-8ccc-dddddddddddd".into(),
+            placeholder_msg_id: "33333333-4444-4555-8666-777777777777".into(),
+            channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+            execution_id: "11111111-2222-4333-8444-555555555555".into(),
+            status: proto::TaskAcceptanceStatus::Granted,
+            error: None,
+        });
+        assert_matches_fixture(&frame, "control/to_connector/task_acceptance.json", &[]);
+    }
+
+    #[test]
     fn pong_matches_fixture() {
         assert_matches_fixture(&pong_frame(), "data/to_connector/pong.json", &[]);
     }
@@ -559,13 +619,18 @@ mod tests {
 
     #[test]
     fn terminal_ack_ok_matches_fixture() {
-        let frame = terminal_ack_ok("client-msg-2", bot_id());
+        let frame = terminal_ack_ok("22222222-3333-4444-8555-666666666666", bot_id());
         assert_matches_fixture(&frame, "data/to_connector/terminal_ack_ok.json", &[]);
     }
 
     #[test]
     fn terminal_ack_err_matches_fixture() {
-        let frame = terminal_ack_err("client-msg-2", "TERMINAL_REJECTED", "not the owner of msg");
+        let frame = terminal_ack_err(
+            "22222222-3333-4444-8555-666666666666",
+            "TERMINAL_REJECTED",
+            "not the owner of msg",
+            false,
+        );
         assert_matches_fixture(&frame, "data/to_connector/terminal_ack_err.json", &[]);
     }
 
@@ -587,6 +652,7 @@ mod tests {
             "99999999-aaaa-4bbb-8ccc-dddddddddddd",
             "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
             "acceptEdits",
+            None,
         );
         assert_matches_fixture(&frame, "control/to_connector/mode_set.json", &[]);
     }
@@ -598,6 +664,7 @@ mod tests {
             "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
             "model",
             "claude-sonnet-5",
+            None,
         );
         assert_matches_fixture(&frame, "control/to_connector/config_option_set.json", &[]);
     }

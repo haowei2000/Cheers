@@ -8,6 +8,28 @@
 
 - 在 ACP data WS 上，对 `send/delta/done/resource_req/session_update/permission_request` 做能力级鉴权（需签名 envelope）。
 - `require_capability=true` 时强制执行；否则保持向后兼容（网关放行，不做能力签名校验）。
+- `delta` 按流签名（网关 hello `server_capabilities.delta_capability = "first_per_stream"`）：
+  connector 只签每个流（`msg_id`）的首个 delta；网关校验通过后把该流的 delta 授权绑定到
+  当前 data 连接，同一连接上的后续未签名 delta 沿用授权。带签名的 delta 始终逐帧校验；
+  重连后新连接须重新签首个 delta；`done/error` 仍逐帧签名校验。未声明该能力的网关上，
+  connector 照旧逐帧签名。
+  - 作用域：绑定记录签名首帧的作用域字段（session_id、provider_session_key、
+    provider_session_id、channel_id、resource）；未签名 delta 必须与之一致，否则须重新签名，
+    签名仍钉住该流全部作用域相关字段。
+  - 计数：每个未签名 delta 仍计一次 `use_count`。网关在 PG 原子预付（≤64，设有
+    `max_uses` 时每次至多剩余额度的 1/8），不超过 `max_uses`；预付耗尽即拒绝。流以任何方式
+    结束（done/error、取消、回收、断线）都会退还未用预付；网关进程崩溃时未用预付不退还，
+    偏多计数以单次预付为上限。
+  - 撤销/过期/会话关闭：绑定至少每 1 秒在 PG 完整复核一次 delegation 状态与作用域，
+    失效后下一个 delta 即被拒绝；窗口内预付耗尽只补充预付。
+  - 重放：未签名 delta 只在出示签名的那条已认证 data 连接上被接受，连接外无从重放；
+    签名帧仍逐帧消费 nonce。
+  - 恢复：拒绝 delta 的错误帧带 `msg_id`（`DELTA_CAPABILITY_REQUIRED` /
+    `CAPABILITY_DENIED`），每次失效只点名一次；connector 收到后对该流的下一个 delta 重新
+    签名。PG 不可用时返回不带 `msg_id` 的 `CAPABILITY_UNAVAILABLE`（终态帧为可重试的
+    terminal_ack），不拆除绑定、不记拒绝审计、不触发重签。
+  - 顺序：终态帧被路由后，该流的后续 delta 一律拒绝，`message_stream` 不会晚于
+    `message_done`。
 - 鉴权目标是：
   - `谁`（delegation 的绑定对象）
   - `可做什么`（action）

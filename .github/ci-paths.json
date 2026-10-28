@@ -17,10 +17,15 @@
           "scripts/check-sqlx-queries.py",
           "scripts/tests/test_sqlx_queries.py",
           "server/**",
-          ".cargo/config.toml",
           "scripts/sqlx-offline.sh",
+          "design-system/a2ui-catalog.json",
+          "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
+          "fixtures/locator/**",
+          "fixtures/desktop-onboarding/**",
           "fixtures/workbench/**",
-          "packages/cheers-acp-connector-rs/bridge-protocol/**"
+          "packages/cheers-acp-connector-rs/bridge-protocol/**",
+          "packages/cheers-interactive-core/**",
+          "packages/cheers-mcp-server/**"
         ],
         "frontend": [
           "frontend/**",
@@ -28,6 +33,7 @@
           "extensions/**",
           "fixtures/workbench/**",
           "server/src/resource/mod.rs",
+          "packages/cheers-canvas-runtime/**",
           "packages/cheers-workbench-sdk/**",
           "scripts/build-extension-catalog.mjs",
           "scripts/check-design-system.mjs",
@@ -35,11 +41,18 @@
           "website/**"
         ],
         "plugin": [
+          "apps/macos/src-tauri/src/host_config.rs",
           "packages/cheers-acp-connector-rs/**",
-          "packages/cheers-mcp-server/**"
+          "packages/cheers-mcp-server/**",
+          "packages/cheers-interactive-core/**",
+          "design-system/a2ui-catalog.json",
+          "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
+          "fixtures/locator/**",
+          "fixtures/desktop-onboarding/**"
         ],
         "desktop": [
-          "apps/macos/**"
+          "apps/macos/**",
+          "fixtures/desktop-onboarding/**"
         ],
         "ios": [
           "apps/ios/**",
@@ -65,11 +78,19 @@
         "gateway": [
           "server/**",
           ".cargo/config.toml",
-          "packages/cheers-acp-connector-rs/bridge-protocol/**"
+          "packages/cheers-acp-connector-rs/bridge-protocol/**",
+          "packages/cheers-interactive-core/**",
+          "packages/cheers-mcp-server/**",
+          "design-system/a2ui-catalog.json",
+          "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
+          "fixtures/locator/**",
+          "fixtures/workbench/**"
         ],
         "frontend": [
           "frontend/**",
+          "design-system/**",
           "extensions/**",
+          "packages/cheers-canvas-runtime/**",
           "packages/cheers-workbench-sdk/**",
           "scripts/build-extension-catalog.mjs",
           "scripts/lib/extension-catalog.test.mjs",

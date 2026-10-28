@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bot_id,requester_id,status,summary,proposed_action,source_message_id,confirmation_message_id,\n                superseded_at,expires_at\n         FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "requester_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "summary",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "proposed_action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "source_message_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "confirmation_message_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "superseded_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c42b1f3c6412d4cbcb6b318dda2525c4b5b07fdadc22c832dfac3f382892a445"
+}

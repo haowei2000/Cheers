@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.session_id FROM cheers_sessions s\n             WHERE s.session_id=$1 AND s.bot_id=$2 AND (\n                 (s.current_scope_type='channel' AND s.current_scope_id=$3)\n                 OR EXISTS (SELECT 1 FROM cheers_session_bindings b\n                     WHERE b.session_id=s.session_id AND b.bot_id=$2 AND b.channel_id=$3)\n             ) FOR UPDATE OF s",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ff7b0aa7f43a2c42107674f7a584d7cd39c47fa0e374e8b9f6d6a3600d27b398"
+}

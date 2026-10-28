@@ -710,12 +710,6 @@ export function PanelWorkspace({
             remember(requestedWidth, split, ratio, panel.id);
           }}
           role="tab"
-          className={cn(
-            "rounded-none border-b-2 bg-transparent shadow-none ring-0",
-            effectiveActive === panel.id
-              ? "border-content-strong text-content-strong font-semibold"
-              : "border-transparent text-content-primary hover:text-content-strong hover:bg-transparent"
-          )}
         >
           {panel.label}
         </ControlTrigger>
@@ -723,7 +717,7 @@ export function PanelWorkspace({
       {canSplitWorkspace(stageHeight, docked.length) && (
         <IconButton
           label={split ? "Use panel tabs" : "Split panels vertically"}
-          aria-pressed={split}
+          selected={split}
           onClick={() => {
             setSplit(!split);
             remember(requestedWidth, !split);
@@ -759,10 +753,7 @@ export function PanelWorkspace({
               selected={!showWork}
               onClick={showMessages}
               className={cn(
-                "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
-                !showWork
-                  ? "border-content-strong text-content-strong font-semibold"
-                  : "border-transparent text-content-primary hover:text-content-strong",
+                "-mb-px",
               )}
             >
               Messages
@@ -772,10 +763,7 @@ export function PanelWorkspace({
               selected={showWork}
               onClick={() => setShowWork(true)}
               className={cn(
-                "rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
-                showWork
-                  ? "border-content-strong text-content-strong font-semibold"
-                  : "border-transparent text-content-primary hover:text-content-strong",
+                "-mb-px",
               )}
             >
               Workspace

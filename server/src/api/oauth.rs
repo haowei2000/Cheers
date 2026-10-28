@@ -187,9 +187,9 @@ fn return_uri(state: &AppState, client: auth_sessions::ClientType) -> Result<Str
             .oauth_web_return_url
             .clone()
             .ok_or_else(|| AppError::ServiceUnavailable("web OAuth is not configured".into())),
-        auth_sessions::ClientType::Macos | auth_sessions::ClientType::Ios => {
-            Ok("cheers://auth/callback".into())
-        }
+        auth_sessions::ClientType::Macos
+        | auth_sessions::ClientType::Ios
+        | auth_sessions::ClientType::Android => Ok("cheers://auth/callback".into()),
     }
 }
 
@@ -1189,7 +1189,7 @@ pub async fn handoff(
     if two_factor::status(&state.db, &user_id).await?.enabled && !trusted {
         let factor = auth_sessions::create_factor_transaction(
             &state.db,
-            &user_id,
+            &user,
             client,
             context["device_name"].as_str(),
             "oauth",

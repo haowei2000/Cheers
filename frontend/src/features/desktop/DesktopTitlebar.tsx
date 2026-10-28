@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode, type RefCallback } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefCallback, type SVGProps } from "react";
+import { FleetIcon } from "@/components/ui/editorial-icons";
 import {
   ArrowLeft,
   Bell,
@@ -7,11 +8,10 @@ import {
   Mail,
   PanelLeftClose,
   PanelLeftOpen,
-  Radar,
+  Search,
   Settings,
   Shield,
   Users,
-  type LucideIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog } from "@/components/ui/dialog";
@@ -104,17 +104,22 @@ export function resolveDesktopParentPath(pathname: string): string | null {
   return null;
 }
 
+/** Lucide glyphs and editorial product icons both render as an <svg>. */
+type TitlebarIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
 type SearchEntry = {
   id: string;
   label: string;
   detail: string;
   path: string;
-  Icon: LucideIcon;
+  Icon: TitlebarIcon;
 };
 
 function DesktopSearch({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => searchRef.current?.focus(), []);
   const { workspaces, personalWorkspace, channels, selectedWorkspaceId } = useChatStore(
     useShallow((state) => ({
       workspaces: state.workspaces,
@@ -127,7 +132,7 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
   const entries = useMemo<SearchEntry[]>(() => {
     const destinations: SearchEntry[] = [
       { id: "activity", label: "Activity", detail: "Approvals and invitations", path: "/activity", Icon: Bell },
-      { id: "fleet", label: "Fleet", detail: "Bots, hosts, and audit", path: "/fleet", Icon: Radar },
+      { id: "fleet", label: "Fleet", detail: "Bots, hosts, and audit", path: "/fleet", Icon: FleetIcon },
       { id: "friends", label: "Friends", detail: "Friends and requests", path: "/friends", Icon: Users },
       { id: "permissions", label: "Permissions", detail: "Bot social and operational permissions", path: "/permissions", Icon: Shield },
       { id: "settings", label: "Settings", detail: "Account and application settings", path: "/settings", Icon: Settings },
@@ -169,6 +174,7 @@ function DesktopSearch({ onClose }: { onClose: () => void }) {
     <Dialog title="Search Cheers" onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-3">
         <SearchInput
+          ref={searchRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search pages, workspaces, and channels…"
@@ -230,9 +236,9 @@ export function DesktopTitlebar({
   const channel = channels.find((candidate) => candidate.channel_id === selectedChannelId);
   const context = resolveDesktopTitlebarContext(location.pathname, { workspace, channel });
   const section = location.pathname.split("/").filter(Boolean)[0] ?? "chat";
-  const contextIcons: Record<string, LucideIcon> = {
+  const contextIcons: Record<string, TitlebarIcon> = {
     activity: Bell,
-    fleet: Radar,
+    fleet: FleetIcon,
     friends: Users,
     settings: Settings,
   };
@@ -272,6 +278,7 @@ export function DesktopTitlebar({
         windowState={windowState}
         panes={panes}
         onToggleSidebar={onToggleSidebar}
+        onSearch={() => setSearchOpen(true)}
         onNavigateUp={() => {
           if (parentPath) navigate(parentPath);
         }}
@@ -294,11 +301,12 @@ export function DesktopTitlebarChrome({
   panes,
   sidebarOpen,
   onToggleSidebar,
+  onSearch,
   onNavigateUp,
   actionsRef,
 }: {
   context: TitlebarContext;
-  contextIcon: LucideIcon;
+  contextIcon: TitlebarIcon;
   authenticated: boolean;
   activePath: string;
   canNavigateUp: boolean;
@@ -309,6 +317,7 @@ export function DesktopTitlebarChrome({
   /** Compatibility input for focused renderer tests; frames pass `panes`. */
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  onSearch?: () => void;
   onNavigateUp: () => void;
   actionsRef?: RefCallback<HTMLElement>;
 }) {
@@ -366,6 +375,15 @@ export function DesktopTitlebarChrome({
         <IconButton label="Up one level" controlSize="regular" disabled={!canNavigateUp} onClick={onNavigateUp}>
           <ArrowLeft className={controlIconClasses.regular} aria-hidden="true" />
         </IconButton>
+        {authenticated && (
+          <IconButton
+            label={`Search Cheers (${platform === "macos" ? "Command" : "Control"}+K)`}
+            controlSize="regular"
+            onClick={onSearch ?? (() => undefined)}
+          >
+            <Search className={controlIconClasses.regular} aria-hidden="true" />
+          </IconButton>
+        )}
       </nav>
       <div {...dragRegion} className="relative z-10 flex h-full min-w-0 flex-1 items-center justify-center px-3">
         <div {...dragRegion} className="flex min-w-0 items-center gap-2 text-regular">

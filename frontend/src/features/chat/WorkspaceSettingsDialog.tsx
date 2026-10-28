@@ -1,8 +1,10 @@
 import { Input as UiInput } from "@/components/ui/input";
+import { HelpLabel } from "@/components/ui/help-text";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Bot, Trash2, LogOut } from "lucide-react";
+import { Trash2, LogOut } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -308,7 +310,7 @@ export function WorkspaceSettingsDialog({
                       onClick={() => void invite(candidate)}
                       title={candidate.display_name || candidate.username}
                       leading={candidate.member_type === "bot"
-                        ? <Bot className="h-4 w-4 text-accent-300" aria-hidden="true" />
+                        ? <BotIcon className="text-accent-300" />
                         : <Avatar name={candidate.display_name || candidate.username} id={candidate.member_id} size="regular" />}
                       status={candidate.membership ? (
                         <span className="font-utility text-compact uppercase text-content-muted">
@@ -343,7 +345,7 @@ export function WorkspaceSettingsDialog({
                     key={`${member.member_type}:${member.member_id}`}
                     title={member.display_name || member.username}
                     leading={member.member_type === "bot"
-                      ? <Bot className="h-4 w-4 text-accent-300" aria-hidden="true" />
+                      ? <BotIcon className="text-accent-300" />
                       : <Avatar name={member.display_name || member.username} id={member.member_id} size="regular" />}
                     status={isSelf ? <span className="font-utility text-compact uppercase text-content-muted">{member.role}</span> : undefined}
                     criticalStatus={member.status === "pending" ? <span className="font-utility text-compact uppercase text-warning-400">Pending</span> : undefined}
@@ -412,8 +414,7 @@ export function WorkspaceSettingsDialog({
         {(!canManage || members.some((m) => m.member_type === "user" && m.member_id === me?.user_id)) && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
-              <p className="text-regular font-medium text-content-secondary">Leave workspace</p>
-              <p className="text-compact text-content-muted mt-1">Remove yourself from this workspace.</p>
+              <p className="text-regular font-medium text-content-secondary"><HelpLabel help="Remove yourself from this workspace.">Leave workspace</HelpLabel></p>
             </div>
             <Button action="leave" content="iconText"
               variant="secondary"

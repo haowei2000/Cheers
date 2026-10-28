@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, username, password_hash, display_name, role, token_version,\n                is_suspended, is_deleted FROM users WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "password_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "token_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_suspended",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_deleted",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5c8d116e700ec876c4a553ee15908bda76cd0b290578aff79bacb2a617f59496"
+}

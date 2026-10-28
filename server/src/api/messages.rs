@@ -244,63 +244,26 @@ pub async fn send_message(
         "send_message request validated"
     );
 
-    if body.content.trim().is_empty() {
-        return Err(AppError::BadRequest("content cannot be empty".into()));
-    }
-
-    // Block enforcement on an *existing* DM: create_dm gates opening a DM, but a
-    // block placed afterwards must also stop further sends. If this is a 1:1 DM
-    // and either side has blocked the other, refuse before persisting.
-    if let Some(peer_id) = dm_peer(&state, channel_id, user_id).await? {
-        if crate::api::friends::is_blocked(&state.db, &user_id.to_string(), &peer_id).await? {
-            return Err(AppError::Forbidden(
-                "you can't message a user you've blocked or who has blocked you".into(),
-            ));
-        }
-    }
-
-    crate::api::compliance::ensure_message_consents(
-        &state,
-        &claims.sub,
-        channel_id,
-        &body.mention_ids,
-        &body.mention_names,
-        body.session_id,
-    )
-    .await?;
-
-    // Harden the human-attached context bundle before it is persisted / delivered
-    // (docs/design/RESOURCE_CONTEXT.md, no-permission-bypass): read verbs only,
-    // origin stamped server-side, caps — then re-verify `workspace/read` on every
-    // `workspace.file` snapshot so a pick can't reference (or fabricate) a bot
-    // workspace the caller isn't granted. See sanitize_human_bundle.
-    let context_bundle = match body.context_bundle {
-        Some(raw) => {
-            let sanitized = crate::domain::context_bundle::sanitize_human_bundle(&raw);
-            authorize_workspace_items(&state, &claims, channel_id, sanitized).await
-        }
-        None => None,
-    };
-
     let mention_ids_for_push = body.mention_ids.clone();
+    let params = CreateMessageParams {
+        user_id,
+        channel_id,
+        content: body.content,
+        msg_type: body.msg_type,
+        reply_to_msg_id: body.reply_to_msg_id,
+        file_ids: body.file_ids,
+        mention_ids: body.mention_ids,
+        mention_names: body.mention_names,
+        session_id: body.session_id,
+        context_bundle: body.context_bundle,
+        msg_id: None,
+    };
     let dto = messages::create_message(
         &state.db,
         &state.fanout,
         &state.stream_registry,
         &state.bot_locator,
-        CreateMessageParams {
-            user_id,
-            channel_id,
-            content: body.content,
-            msg_type: body.msg_type,
-            reply_to_msg_id: body.reply_to_msg_id,
-            file_ids: body.file_ids,
-            mention_ids: body.mention_ids,
-            mention_names: body.mention_names,
-            session_id: body.session_id,
-            context_bundle,
-            msg_id: None,
-        },
+        params,
     )
     .await?;
 
@@ -338,47 +301,6 @@ pub async fn send_message(
     crate::infra::web_push::spawn_push_to_users(&state, mention_targets, nudge);
 
     Ok((StatusCode::CREATED, Json(dto)))
-}
-
-/// Drop every `workspace.file` item whose owning bot the caller isn't granted
-/// `workspace/read` on — the same gate that guarded browsing it. A snapshot the
-/// caller couldn't read (or fabricated) never rides along. Non-workspace items
-/// pass through untouched. Returns `None` when nothing survives.
-async fn authorize_workspace_items(
-    state: &AppState,
-    claims: &Claims,
-    channel_id: Uuid,
-    bundle: Option<serde_json::Value>,
-) -> Option<serde_json::Value> {
-    let mut bundle = bundle?;
-    let items = bundle.get("items").and_then(|v| v.as_array())?.clone();
-    let mut kept: Vec<serde_json::Value> = Vec::with_capacity(items.len());
-    for item in items {
-        let is_ws = item.get("verb").and_then(|v| v.as_str()) == Some("workspace.file");
-        if is_ws {
-            let owner = item
-                .get("params")
-                .and_then(|p| p.get("bot_id"))
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<Uuid>().ok());
-            match owner {
-                Some(bot_id)
-                    if crate::api::workspace::resolve_can_read(
-                        state, claims, channel_id, bot_id,
-                    )
-                    .await => {}
-                _ => continue, // no grant (or unparseable owner) → drop the snapshot
-            }
-        }
-        kept.push(item);
-    }
-    if kept.is_empty() {
-        return None;
-    }
-    bundle
-        .as_object_mut()
-        .map(|o| o.insert("items".into(), serde_json::Value::Array(kept)));
-    Some(bundle)
 }
 
 // ── GET /api/v1/channels/{channel_id}/messages ─────────────────────────────
@@ -571,29 +493,6 @@ pub async fn cancel_message(
         msg_id: msg_id.to_string(),
         delivered,
     }))
-}
-
-/// For a 1:1 DM channel, the *other* user member's id (None for non-DM channels
-/// or self-DMs/bot-DMs). Used to enforce blocking on ongoing DM sends.
-async fn dm_peer(
-    state: &AppState,
-    channel_id: Uuid,
-    user_id: Uuid,
-) -> Result<Option<String>, AppError> {
-    let peer = sqlx::query!(
-        "SELECT cm.member_id
-         FROM channels c
-         JOIN channel_memberships cm ON cm.channel_id = c.channel_id
-        WHERE c.channel_id = $1 AND c.type = 'dm'
-          AND cm.member_type = 'user' AND cm.member_id <> $2
-        LIMIT 1",
-        channel_id.to_string(),
-        user_id.to_string(),
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .and_then(|row| Some(row.member_id.clone()));
-    Ok(peer)
 }
 
 async fn ensure_channel_member(

@@ -1,7 +1,9 @@
+import { HelpLabel } from "./help-text";
 import { useNearbyContentActions } from "./content-action-scope";
 import { ButtonGroup } from "./button-group";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { selectedClasses } from "./selection";
 import {
   PresentationProvider,
   usePresentationLevel,
@@ -120,7 +122,7 @@ export function ItemRow({
     controlMinHeightClasses[size],
     size === "compact" ? "py-1" : size === "regular" ? "py-1" : "py-2",
     selected
-      ? "border-l-selected-indicator bg-selected text-content-primary"
+      ? selectedClasses("rail")
       : "border-l-transparent text-content-primary hover:bg-control hover:text-content-strong",
     disabled && "pointer-events-none opacity-50",
     className
@@ -245,12 +247,9 @@ export function ItemSection({
       className={cn("min-w-0 space-y-1", className)}
     >
       <header className={cn("flex items-center gap-2 px-1 text-section-label", controlMinHeightClasses[headerControlSize], nearbyActions && "flex-wrap")}>
-        <span className={cn("min-w-0 truncate", !nearbyActions && "flex-1")}>{label}</span>
+        <HelpLabel className={cn("min-w-0", !nearbyActions && "flex-1")} help={description}><span className="truncate">{label}</span></HelpLabel>
         {nearbyActions && action ? <ButtonGroup label="Section actions" controlSize={headerControlSize}>{action}</ButtonGroup> : action}
       </header>
-      {description && (
-        <p className="px-1 text-caption">{description}</p>
-      )}
       <ItemList presentationLevel={level} controlSize={size}>{children}</ItemList>
     </section>
   );
@@ -287,7 +286,7 @@ export function FileTreeItem({
       className={cn(
         "group/item flex min-w-0 items-center gap-1 rounded-sm pr-2 font-utility text-regular text-content-primary hover:bg-control hover:text-content-strong",
         controlMinHeightClasses[size],
-        selected && "bg-selected text-content-primary ring-1 ring-inset ring-selected-indicator/70"
+        selected && selectedClasses("ring")
       )}
       style={{ paddingLeft: depth * 12 + 8 }}
     >
@@ -307,28 +306,25 @@ export function FileTreeItem({
   );
 }
 
+/** One line of a diff. Read-only text, not a control: it keeps the code's line
+ *  rhythm instead of the 28/36/44px touch-target rows. */
 export function DiffLineItem({
   marker,
   content,
   tone = "context",
   lineNumber,
-  controlSize,
 }: {
   marker?: ReactNode;
   content: ReactNode;
   tone?: "add" | "remove" | "context";
   lineNumber?: ReactNode;
-  controlSize?: ControlSize;
 }) {
-  const size = useControlSize(controlSize);
   return (
     <div
       role="listitem"
       data-diff-tone={tone}
-      data-control-size={size}
       className={cn(
-        "flex whitespace-pre px-2 font-code text-compact",
-        controlMinHeightClasses[size],
+        "flex whitespace-pre px-2 font-code text-compact leading-regular",
         tone === "add" && "bg-emerald-950/30 text-success-200",
         tone === "remove" && "bg-rose-950/30 text-removed-200",
         tone === "context" && "text-content-muted"

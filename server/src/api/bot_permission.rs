@@ -84,12 +84,10 @@ pub async fn list_permissions(
     let (default_mode, allowed) = connector_config::posture_preset(&agent_type);
     let permission_mode = current.or(default_mode);
     let cc = load_connector_control(&state, &bot_id).await?;
-    // Mode is a first-class posture control for preset-backed agents, so drop the
-    // duplicate `mode` config option the agent also advertises (see connector_config).
-    let advertised = advertised_options(&cc)
-        .map(|opts| connector_config::dedup_mode_config_options(&agent_type, opts))
-        .map(Value::Array)
-        .unwrap_or_else(|| json!([]));
+    let advertised = cc
+        .pointer("/options/options")
+        .and_then(|snapshot| connector_config::advertised_config_options(&agent_type, snapshot))
+        .unwrap_or_default();
     Ok(Json(json!({
         // Posture: the agent's session mode + the L0-allowed choices.
         "posture": {
@@ -121,28 +119,6 @@ async fn load_connector_control(state: &AppState, bot_id: &str) -> Result<Value,
         .clone()
         .and_then(|b| b.get("connector_control").cloned())
         .unwrap_or_else(|| json!({})))
-}
-
-/// The agent's advertised ACP config options array, as last reported by the
-/// connector. The connector stores a composite session snapshot at
-/// `connector_control.options.options`; the ACP `configOptions` array lives inside
-/// it (sibling to `modes`/`models`/`availableCommands`). Agents that expose models
-/// only via the native model-state API (`models` + `session/set_model`, e.g. older
-/// codex-acp) get a synthesized "model" select option overlaid. `None` if the agent
-/// advertises nothing at all — callers then skip the friendly pre-validation (the
-/// connector re-validates regardless).
-fn advertised_options(cc: &Value) -> Option<Vec<Value>> {
-    let snapshot = cc.get("options").and_then(|o| o.get("options"))?;
-    let base = snapshot
-        .get("configOptions")
-        .and_then(Value::as_array)
-        .cloned();
-    let had_config_options = base.is_some();
-    let merged = connector_config::overlay_model_state(snapshot, base.unwrap_or_default());
-    if merged.is_empty() && !had_config_options {
-        return None;
-    }
-    Some(merged)
 }
 
 // ── PUT /bots/:bot_id/permissions/posture ───────────────────────────────────
@@ -242,9 +218,13 @@ pub async fn set_config_option(
     }
 
     let cc = load_connector_control(&state, &bot_id).await?;
+    let (agent_type, _) = load_posture(&state, &bot_id).await?;
     // Friendly early validation against the agent's advertised options (the
     // connector + agent re-validate on apply — this is a nicer 400, not the gate).
-    if let Some(adv) = advertised_options(&cc) {
+    if let Some(adv) = cc
+        .pointer("/options/options")
+        .and_then(|snapshot| connector_config::advertised_config_options(&agent_type, snapshot))
+    {
         match adv
             .iter()
             .find(|o| o.get("id").and_then(Value::as_str) == Some(config_id.as_str()))
@@ -388,7 +368,7 @@ pub async fn list_event_access(
     let rules = bot_event_policy::list_rules_json(&state.db, &bot_id).await?;
     // Same rules, typed, to compute the effective bot-wide baseline matrix.
     let rule_set = bot_event_policy::load_rules(&state.db, &bot_id).await?;
-    let owner_id = bot_event_policy::bot_owner_id(&state.db, &bot_id).await;
+    let owner_id = bot_event_policy::bot_owner_id(&state.db, &bot_id).await?;
     let groups = group_catalog(&state, &bot_id).await;
     Ok(Json(json!({
         "rules": rules,

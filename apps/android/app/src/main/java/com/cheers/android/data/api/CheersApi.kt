@@ -2,6 +2,7 @@ package com.cheers.android.data.api
 
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -21,8 +22,11 @@ interface CheersApi {
     @POST("auth/login")
     suspend fun login(@Body body: LoginRequest): LoginResponse
 
-    @POST("auth/logout")
-    suspend fun logout(): OkResponse
+    @POST("auth/refresh")
+    suspend fun refresh(@Body body: RefreshRequest): LoginResponse
+
+    @POST("auth/logout-current")
+    suspend fun logout(@Header("Authorization") authorization: String): OkResponse
 
     // ── Workspaces ──
     @GET("workspaces")

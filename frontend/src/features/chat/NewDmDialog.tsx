@@ -1,7 +1,8 @@
 import { Button as UiButton } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
 import { useEffect, useRef, useState } from "react";
-import { Bot, User, X } from "lucide-react";
+import { User, X } from "lucide-react";
+import { BotIcon } from "@/components/ui/editorial-icons";
 import toast from "react-hot-toast";
 import { createDm } from "@/api/channels";
 import { searchUsers, type UserSearchResult } from "@/api/users";
@@ -124,7 +125,7 @@ export function NewDmDialog({
               disabled={busy}
               onClick={() => void open({ target_bot_id: b.bot_id }, b.display_name || b.username)}
               title={b.display_name || b.username}
-              leading={<Bot className="w-3.5 h-3.5 text-accent-400 shrink-0" />}
+              leading={<BotIcon contentSize="small" className="text-accent-400 shrink-0" />}
               status={<span className="text-minimal text-accent-300">BOT</span>}
               className="border-0"
             />

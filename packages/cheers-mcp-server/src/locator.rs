@@ -18,7 +18,11 @@
 //! hand-maintained list, so [`tests::every_resolvable_locator_names_a_catalog_resource`]
 //! makes that impossible.
 //!
-//! **Channel scope is deliberately not in the URI.** Locators are channel-implicit —
+//! Global resource names use `cheers:resource/<service>/<kind>/<id>` and resolve
+//! through `resource.resolve`, with both target authorization and the bridge channel
+//! restriction. The path forms below are legacy channel-relative aliases.
+//!
+//! **Channel scope is deliberately not in a relative URI.** Locators are channel-implicit —
 //! always the current channel — which is how the shipped, agent-writable format already
 //! works and how the Gateway pins scope everywhere else. [`Locator::resolve`] takes the
 //! channel and puts it in the params.
@@ -64,6 +68,8 @@ pub enum Locator {
         artifact_id: String,
         inspectable_id: Option<String>,
     },
+    Global(cheers_interactive_core::global_uri::GlobalResourceUri),
+
     Desk {
         path: String,
         line: Option<u32>,
@@ -132,6 +138,9 @@ fn valid_inspectable_id(id: &str) -> bool {
 ///
 /// Strict on shape, tolerant on intent, mirroring the client parser exactly.
 pub fn parse(uri: &str) -> Option<Locator> {
+    if uri.starts_with("cheers:resource/") {
+        return cheers_interactive_core::global_uri::parse(uri).map(Locator::Global);
+    }
     if uri.len() > MAX_LOCATOR_LENGTH {
         return None;
     }
@@ -275,6 +284,18 @@ pub fn format(locator: &Locator) -> String {
                 .map(|id| format!("#^{id}"))
                 .unwrap_or_default()
         ),
+        Locator::Global(uri) => format!(
+            "{}{}",
+            cheers_interactive_core::global_uri::format(
+                &uri.service_id,
+                &uri.kind,
+                &uri.resource_id,
+                uri.version
+            ),
+            uri.fragment
+                .as_ref()
+                .map_or(String::new(), |f| format!("#{f}"))
+        ),
         Locator::Desk {
             path,
             line,
@@ -365,6 +386,10 @@ pub fn resolve(locator: &Locator, channel_id: &str) -> Result<(&'static str, Val
                     .map(|id| json!({"inspectable_id":id}))
                     .unwrap_or(json!({})),
             ),
+        ),
+        Locator::Global(uri) => (
+            "resource.resolve",
+            json!({"channel_id":channel_id,"uri":format(&Locator::Global(uri.clone()))}),
         ),
         Locator::Desk {
             path,

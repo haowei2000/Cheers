@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT task_id,bot_id,channel_id,execution_id,status,last_event_type,terminal_client_msg_id,terminal_fingerprint,terminal_committed_at\n                 FROM bot_runs WHERE placeholder_msg_id=$1 FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "task_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "bot_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "execution_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_event_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "terminal_client_msg_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "terminal_fingerprint",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "terminal_committed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "f6ad007dfc058788af4597a7fbe8e471a9c64febddbaf607cf1458787668a9cc"
+}

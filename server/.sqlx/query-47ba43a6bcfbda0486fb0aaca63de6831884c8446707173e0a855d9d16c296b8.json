@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE task_claim_requests SET status='failed',\n             resolution_note=COALESCE(resolution_note,$2),updated_at=NOW()\n         WHERE claim_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "47ba43a6bcfbda0486fb0aaca63de6831884c8446707173e0a855d9d16c296b8"
+}
