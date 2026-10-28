@@ -2,6 +2,182 @@ import SwiftUI
 import Charts
 import QuickLook
 
+
+// MARK: - Unified channel artifacts
+
+struct WorkbenchSheet: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    let channelId: String
+    var initialReference: String? = nil
+    var onAddContext: (ResourceContextItem) -> Void = { _ in }
+    var onAttach: ((MessageFileRef) -> Void)? = nil
+
+    @State private var items: [ChannelArtifact] = []
+    @State private var nextCursor: String?
+    @State private var selection: ChannelArtifact?
+    @State private var loading = false
+    @State private var errorText: String?
+    @State private var showCollections = false
+    @State private var listenerId: UUID?
+    @State private var requestGeneration = 0
+
+    var body: some View {
+        if showCollections {
+            ArtifactCollectionsSheet(channelId: channelId, onAddContext: onAddContext,
+                onBack: { showCollections = false })
+        } else { library }
+    }
+
+    private var library: some View {
+        NavigationStack {
+            List {
+                if let errorText {
+                    Text(errorText).foregroundStyle(Theme.danger)
+                    CheersContentActionButton(action: .retry) { Task { await load() } }
+                }
+                if loading && items.isEmpty { ProgressView("Loading artifacts…") }
+                if !loading && items.isEmpty && errorText == nil {
+                    ContentUnavailableView("No artifacts yet", systemImage: "doc",
+                        description: Text("Upload a file or ask a Bot to create a document or page."))
+                }
+                ForEach(items) { item in
+                    CheersItemButton(row: CheersItemRow(
+                        title: item.title,
+                        leading: AnyView(Image(systemName: item.isInteractive ? "curlybraces" : "doc")),
+                        criticalStatus: item.isReady ? nil : AnyView(Text(item.availability.capitalized)),
+                        status: item.isReady ? AnyView(Text(item.isInteractive ? "Interactive page" : "")) : nil
+                    )) { selection = item }
+                }
+                if let nextCursor {
+                    CheersContentActionButton(action: .loadMore) { Task { await load(before: nextCursor) } }.disabled(loading)
+                }
+            }
+            .presentationLevel(.medium)
+            .listStyle(.plain)
+            .navigationTitle("Artifacts")
+            .navigationBarTitleDisplayMode(.inline)
+            .refreshable { await load() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { CheersContentActionButton(action: .done) { dismiss() } }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Collections", systemImage: "square.grid.2x2") { showCollections = true }
+                }
+            }
+            .navigationDestination(item: $selection) { artifact in
+                ArtifactDetailView(channelId: channelId, artifactId: artifact.id,
+                    onAddContext: { onAddContext($0); dismiss() },
+                    onAttach: onAttach.map { attach in { file in attach(file); dismiss() } })
+            }
+        }
+        .task(id: channelId) {
+            await load()
+            if let initialReference {
+                do {
+                    let raw = try await app.socket.request(resource: "channel.artifacts.resolve",
+                        params: ["channel_id": channelId, "uri": initialReference])
+                    selection = try raw.decode(as: ChannelArtifact.self)
+                } catch { errorText = error.localizedDescription }
+            }
+            listenerId = app.addSocketListener { event in
+                switch event {
+                case .boardSignal(let id, let board) where id == channelId && board == "files":
+                    Task { await load() }
+                case .subscribed(let id) where id == channelId:
+                    Task { await load() }
+                default: break
+                }
+            }
+        }
+        .onDisappear {
+            requestGeneration += 1
+            if let listenerId { app.removeSocketListener(listenerId); self.listenerId = nil }
+        }
+    }
+
+    private func load(before: String? = nil) async {
+        requestGeneration += 1
+        let generation = requestGeneration
+        loading = true
+        defer { if generation == requestGeneration { loading = false } }
+        do {
+            var params: [String: Any] = ["channel_id": channelId, "limit": 50]
+            if let before { params["before"] = before }
+            let raw = try await app.socket.request(resource: "channel.artifacts.list", params: params)
+            let page = try raw.decode(as: ChannelArtifactPage.self)
+            guard generation == requestGeneration else { return }
+            if before == nil { items = page.artifacts }
+            else {
+                let known = Set(items.map(\.id))
+                items += page.artifacts.filter { !known.contains($0.id) }
+            }
+            nextCursor = page.nextCursor
+            errorText = nil
+        } catch {
+            if generation == requestGeneration { errorText = error.localizedDescription }
+        }
+    }
+}
+
+private struct ArtifactDetailView: View {
+    @Environment(AppModel.self) private var app
+    let channelId: String
+    let artifactId: String
+    let onAddContext: (ResourceContextItem) -> Void
+    var onAttach: ((MessageFileRef) -> Void)?
+    @State private var artifact: ChannelArtifact?
+    @State private var errorText: String?
+
+    var body: some View {
+        Group {
+            if let errorText {
+                ContentUnavailableView("Couldn’t open artifact", systemImage: "exclamationmark.triangle",
+                                       description: Text(errorText))
+            } else if let artifact {
+                if !artifact.isReady {
+                    ContentUnavailableView(artifact.availability.capitalized, systemImage: "doc.badge.clock",
+                        description: Text(artifact.availability == "expired"
+                            ? "Ask the author to deliver a new copy." : "This artifact is not available to open."))
+                } else if let path = artifact.path, artifact.sourceKind == "text" {
+                    VStack(spacing: Theme.space2) {
+                        if artifact.isInteractive {
+                            Text("Source view. Interactive previews are available in Cheers Web and macOS.")
+                                .foregroundStyle(Theme.textSecondary).padding(Theme.space2)
+                        }
+                        FileContentView(channelId: channelId,
+                            node: TreeNode(name: artifact.title, path: path, isDir: false,
+                                           sizeBytes: Int(artifact.sizeBytes), children: []),
+                            preferredLens: nil, artifactId: artifactId)
+                    }
+                } else if let file = artifact.attachment {
+                    FilePreviewSheet(file: file)
+                }
+            } else { ProgressView("Opening artifact…") }
+        }
+        .navigationTitle(artifact?.title ?? "Artifact")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let artifact {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    ShareLink(item: artifact.uri) { Label("Share link", systemImage: "square.and.arrow.up") }
+                    CheersContentActionButton(action: .addContext) { onAddContext(artifact.contextItem) }
+                        .disabled(!artifact.isReady)
+                    if let onAttach, let file = artifact.attachment {
+                        CheersContentActionButton(action: .attach) { onAttach(file) }
+                    }
+                }
+            }
+        }
+        .task(id: artifactId) {
+            do {
+                let raw = try await app.socket.request(resource: "channel.artifacts.get",
+                    params: ["channel_id": channelId, "artifact_id": artifactId])
+                artifact = try raw.decode(as: ChannelArtifact.self)
+            } catch { errorText = error.localizedDescription }
+        }
+    }
+}
+
 // MARK: - Native multi-scene workbench
 
 struct WorkbenchSceneState: Equatable {
@@ -48,12 +224,13 @@ private struct WorkbenchSceneStyle {
 
 /// The default Workbench surface is content-first. File paths remain the storage and
 /// agent contract, but only files accepted by a compiled native renderer become items.
-struct WorkbenchSheet: View {
+private struct ArtifactCollectionsSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let channelId: String
     var onAddContext: (ResourceContextItem) -> Void = { _ in }
+    var onBack: () -> Void = {}
 
     @State private var entries: [FsEntry] = []
     @State private var root: [TreeNode] = []
@@ -109,11 +286,11 @@ struct WorkbenchSheet: View {
         NavigationStack {
             Group {
                 if isLoading {
-                    ProgressView("Preparing workbench…")
+                    ProgressView("Loading collections…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let errorText, entries.isEmpty {
                     ContentUnavailableView {
-                        Label("Couldn’t open Workbench", systemImage: "exclamationmark.triangle")
+                        Label("Couldn’t open collections", systemImage: "exclamationmark.triangle")
                     } description: {
                         Text(errorText)
                     } actions: {
@@ -121,10 +298,12 @@ struct WorkbenchSheet: View {
                     }
                 } else if sceneIds.isEmpty {
                     ContentUnavailableView {
-                        Label("Choose a scene", systemImage: "square.grid.2x2")
-                            .helpExplanation("Activate a scene to turn workspace data into native pages. Other files remain available in Raw.")
-                } actions: {
-                        Button("Browse scenes") { showSceneManager = true }
+                        Label("Choose a collection", systemImage: "square.grid.2x2")
+                    } description: {
+                        Text("Choose a collection to organize artifacts. All files remain available in Source files.")
+                    } actions: {
+                        Button("Browse collections") { showSceneManager = true }
+
                     }
                 } else if horizontalSizeClass == .regular {
                     regularLayout
@@ -135,22 +314,22 @@ struct WorkbenchSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Artifacts", systemImage: "chevron.left") { onBack() }
                 }
                 ToolbarItem(placement: .principal) {
                     if sceneIds.isEmpty {
-                        Text("Workbench").font(.headline)
+                        Text("Collections").font(.headline)
                     } else {
                         sceneTitlePicker
                     }
                 }
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button { showRaw = true } label: {
-                        Label("Raw", systemImage: "folder")
+                        Label("Source files", systemImage: "folder")
                     }
                     .accessibilityHint("Opens every workspace file in a file tree")
                     Button { showSceneManager = true } label: {
-                        Label("Scenes", systemImage: "square.grid.2x2")
+                        Label("Collections", systemImage: "square.grid.2x2")
                     }
                     Button { Task { await load(showSpinner: false) } } label: {
                         if isRefreshing { ProgressView() } else { Label("Refresh", systemImage: "arrow.clockwise") }
@@ -1149,6 +1328,7 @@ private struct FileContentView: View {
     let node: TreeNode
     let preferredLens: String?
     var lensConfig: JSONValue? = nil
+    var artifactId: String? = nil
 
     @State private var file: FsFile?
     @State private var errorText: String?
@@ -1207,15 +1387,26 @@ private struct FileContentView: View {
     }
 
     private func activeLens(_ file: FsFile) -> String {
-        preferredLens ?? inferNativeLens(path: node.path, data: file.data) ?? "raw"
+        preferredLens ?? inferNativeLens(path: file.path, data: file.data) ?? "raw"
     }
 
     private func load() async {
         isLoading = true
         do {
-            let raw = try await app.socket.request(
-                resource: "fs.read", params: ["channel_id": channelId, "path": node.path])
-            file = try raw.decode(as: FsFile.self)
+            if let artifactId {
+                let raw = try await app.socket.request(resource: "channel.artifacts.read",
+                    params: ["channel_id": channelId, "artifact_id": artifactId])
+                let value = try raw.decode(as: ChannelArtifactContent.self)
+                guard let content = value.content, !value.truncated else {
+                    throw ResourceError.server(code: "PREVIEW_UNAVAILABLE", message: "The full source is unavailable.")
+                }
+                file = FsFile(path: value.artifact.path ?? node.path, content: content,
+                              data: value.data, version: value.artifact.version, isDir: false)
+            } else {
+                let raw = try await app.socket.request(
+                    resource: "fs.read", params: ["channel_id": channelId, "path": node.path])
+                file = try raw.decode(as: FsFile.self)
+            }
             errorText = nil
         } catch {
             errorText = (error as? ResourceError)?.errorDescription ?? error.localizedDescription
@@ -1228,9 +1419,9 @@ private struct FileContentView: View {
         isSaving = true
         defer { isSaving = false }
         do {
-            _ = try await app.socket.request(resource: "fs.patch", params: [
-                "channel_id": channelId, "path": node.path, "if_version": version, "ops": ops,
-            ])
+            var params: [String: Any] = ["channel_id": channelId, "if_version": version, "ops": ops]
+            if let artifactId { params["artifact_id"] = artifactId } else { params["path"] = node.path }
+            _ = try await app.socket.request(resource: artifactId == nil ? "fs.patch" : "channel.artifacts.patch", params: params)
             statusText = "Saved"
             await load()
             return true
@@ -1246,9 +1437,9 @@ private struct FileContentView: View {
         isSaving = true
         defer { isSaving = false }
         do {
-            _ = try await app.socket.request(resource: "fs.write", params: [
-                "channel_id": channelId, "path": node.path, "content": next, "if_version": version,
-            ])
+            var params: [String: Any] = ["channel_id": channelId, "content": next, "if_version": version]
+            if let artifactId { params["artifact_id"] = artifactId } else { params["path"] = node.path }
+            _ = try await app.socket.request(resource: artifactId == nil ? "fs.write" : "channel.artifacts.update", params: params)
             statusText = "Saved"
             await load()
             return true

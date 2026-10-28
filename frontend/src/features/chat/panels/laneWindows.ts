@@ -1,4 +1,4 @@
-import { FolderTree, LayoutDashboard, PanelRight, Paperclip, type LucideIcon } from "lucide-react";
+import { FolderTree, LayoutDashboard, PanelRight, type LucideIcon } from "lucide-react";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 
 // The four windows the work lane can host.
@@ -23,9 +23,8 @@ export interface LaneWindowDescriptor {
 }
 
 export const LANE_WINDOWS: readonly LaneWindowDescriptor[] = [
-  { id: "files", title: "Channel files", icon: Paperclip, description: "Attachments" },
   { id: "workspace", title: "Remote workspace", icon: FolderTree, description: "Host filesystem" },
   { id: "viewboard", title: "ViewBoard", icon: LayoutDashboard, description: "Plan & metrics" },
-  { id: "workbench", title: "Workbench", icon: PanelRight, description: "Editor & canvas" },
+  { id: "workbench", title: "Artifacts", icon: PanelRight, description: "Documents, pages & files" },
 ];
 

@@ -51,7 +51,7 @@ export function createFileSessionController(fs: FsClient, path: string, options?
   };
   const adopt = (file: FileContent) => {
     baseText = file.content;
-    update({ ...adoptText(path, state, file.content), resourceUri: file.uri, version: file.version, conflictNotice: null });
+    update({ ...adoptText(path, state, file.content), resourceUri: file.uri, sourceVersion: file.source_version ?? file.version, version: file.version, conflictNotice: null });
   };
   const synchronizeSnapshot = () => {
       const snapshot = resources.snapshot(path);
@@ -60,7 +60,7 @@ export function createFileSessionController(fs: FsClient, path: string, options?
       else if (snapshot.error) {
         if (snapshot.error instanceof ResourceError && snapshot.error.code === "NOT_FOUND") {
           baseText = "";
-          update({ ...adoptText(path, state, ""), version: null, resourceUri: undefined });
+          update({ ...adoptText(path, state, ""), version: null, resourceUri: undefined, sourceVersion: undefined });
         }
         update({ status: errMsg(snapshot.error) });
       }
@@ -98,7 +98,7 @@ export function createFileSessionController(fs: FsClient, path: string, options?
         } else {
           baseText = file.content;
           const buffer = editText(path, state, merged.merged);
-          update({ ...buffer, dirty: merged.merged !== file.content, resourceUri: file.uri,
+          update({ ...buffer, dirty: merged.merged !== file.content, resourceUri: file.uri, sourceVersion: file.source_version ?? file.version,
             version: file.version, conflictNotice: null, status: "Synced with collaborator" });
           if (state.dirty) scheduleAutoSave();
         }
@@ -107,14 +107,14 @@ export function createFileSessionController(fs: FsClient, path: string, options?
       if (error instanceof ResourceError && error.code === "NOT_FOUND") {
         if (state.dirty && (preserveDraft || generation !== editGeneration)) return;
         baseText = "";
-        update({ ...adoptText(path, state, ""), resourceUri: undefined, version: null, conflictNotice: null });
+        update({ ...adoptText(path, state, ""), resourceUri: undefined, sourceVersion: undefined, version: null, conflictNotice: null });
       } else update({ status: errMsg(error) });
     }
   };
 
-  const acknowledge = (text: string, version: number, authoredText: string, generation: number) => {
+  const acknowledge = (text: string, version: number, authoredText: string, generation: number, sourceVersion?: number) => {
     if (!isCurrent()) return;
-    const file = { path, content: text, version, is_dir: false, uri: state.resourceUri };
+    const file = { path, content: text, version, is_dir: false, uri: state.resourceUri, source_version: sourceVersion ?? version };
     if (generation === editGeneration) adopt(file);
     else {
       // A merge retry may add remote edits while the person continues typing.
@@ -122,11 +122,11 @@ export function createFileSessionController(fs: FsClient, path: string, options?
       const merged = merge3Way(authoredText, state.text, text);
       baseText = text;
       if (merged.hasConflict) {
-        update({ version, conflictNotice: {
+        update({ version, sourceVersion: sourceVersion ?? version, conflictNotice: {
           baseText: authoredText, localText: state.text, remoteText: text, conflictsCount: merged.conflictsCount,
         }, status: "Saved the earlier edit — review the newer conflicting changes" });
       } else update({ ...editText(path, state, merged.merged), dirty: merged.merged !== text,
-        version, conflictNotice: null });
+        version, sourceVersion: sourceVersion ?? version, conflictNotice: null });
     }
     resources.publish(path, file);
     update({ status: state.dirty ? state.status : "Saved" });
@@ -140,7 +140,7 @@ export function createFileSessionController(fs: FsClient, path: string, options?
     const generation = editGeneration;
     try {
       const receipt = await fs.write(path, text, state.version ?? 0);
-      acknowledge(text, receipt.version, text, generation);
+      acknowledge(text, receipt.version, text, generation, receipt.source_version);
     } catch (error) {
       if (error instanceof ResourceError && error.code === "VERSION_CONFLICT") {
         if (!isCurrent()) return;
@@ -155,7 +155,7 @@ export function createFileSessionController(fs: FsClient, path: string, options?
               conflictsCount: merged.conflictsCount }, status: "Conflict — remote changes conflict with local edits" });
           } else {
             const receipt = await fs.write(path, merged.merged, latest.version);
-            acknowledge(merged.merged, receipt.version, localText, retryGeneration);
+            acknowledge(merged.merged, receipt.version, localText, retryGeneration, receipt.source_version);
           }
         } catch (retryError) {
           // A failed retry must retain the draft; a reload here used to discard it.
@@ -243,7 +243,7 @@ export function createFileSessionController(fs: FsClient, path: string, options?
           const text = state.text;
           const generation = editGeneration;
           const receipt = await fs.write(path, text, latest.version);
-          acknowledge(text, receipt.version, text, generation);
+          acknowledge(text, receipt.version, text, generation, receipt.source_version);
         } catch (error) { update({ status: errMsg(error) }); }
         finally { update({ saving: false }); }
       } else {

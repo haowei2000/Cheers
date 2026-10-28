@@ -138,7 +138,9 @@ function basename(path: string) {
 // switcher appears when several match), RAW (plain <UiTextarea> editor, also the fallback
 // when nothing matches). Raw content is rendered ONLY inside a <UiTextarea> (inert text —
 // no HTML execution), so stored content cannot XSS co-channel users.
-export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
+export function FilePanel({ ctx, initialTreeOpen = true, onDirtyChange }: {
+  ctx: WorkbenchContext; initialTreeOpen?: boolean; onDirtyChange?: (dirty: boolean) => void;
+}) {
   const { fs, rendererExtensions, bindings, setBinding, configs, pinned, togglePin } = ctx;
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -173,7 +175,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   // The tree column is collapsible so a preview (table/chart/kanban) can take the
   // drawer's full width — the price of tree-flanks-everything is otherwise ~40%.
-  const [treeOpen, setTreeOpen] = useState(true);
+  const [treeOpen, setTreeOpen] = useState(initialTreeOpen);
   // Compact reading: observe the panel box (not the viewport) so a narrow float /
   // mid-width lane adapts even on a large display.
   const rootRef = useRef<HTMLDivElement>(null);
@@ -210,6 +212,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // See FileSession — Raw and Preview each owning a session is what used to make an
   // unsaved edit vanish on a mode switch.
   const session = useFileSession(fs, selected ?? "");
+  useEffect(() => { onDirtyChange?.(session.dirty); }, [session.dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   // File anchors adapt the shared channel annotation store without editing the source.
   const annotations = useAnnotations(selected ?? "", ctx.channelId);
   const [pendingNote, setPendingNote] = useState<PendingAnnotation | null>(null);
@@ -231,7 +235,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     const key = `${selected}#^${id}`;
     if (revealedCard.current === key) return;
     const range = inspectableIdLineRange(session.parsedText, id);
-    if (!range) return;
+    if (!range) {
+      setStatus(`Card "${id}" is not present in the current source.`);
+      return;
+    }
     revealedCard.current = key;
     showRaw(selected, true);
     setRevealLine(range.start);
@@ -291,9 +298,9 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           disabled: pinned.includes(selected),
           group: "secondary",
           run: () => addContext(ctx.channelId, {
-            id: `file:${selected}`,
-            verb: "fs.read",
-            params: { path: selected },
+            id: ctx.artifactId && selected === ctx.openTarget ? `artifact:${ctx.artifactId}` : `file:${selected}`,
+            verb: ctx.artifactId && selected === ctx.openTarget ? "channel.artifacts.read" : "fs.read",
+            params: ctx.artifactId && selected === ctx.openTarget ? { artifact_id: ctx.artifactId } : { path: selected },
             label: basename(selected),
             kind: "file",
           }),
@@ -307,7 +314,8 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           // named in text an agent wrote but never in text the UI produced. Paste this
           // into the composer and the agent resolves the same file.
           run: () => {
-            const uri = formatLocator({ kind: "desk", path: selected });
+            const uri = formatLocator(ctx.artifactId && selected === ctx.openTarget
+              ? { kind: "artifact", artifactId: ctx.artifactId } : { kind: "desk", path: selected });
             void navigator.clipboard?.writeText(uri);
             setStatus(`Copied ${uri}`);
           },

@@ -36,6 +36,7 @@ const READ_VERBS: &[&str] = &[
     "channel.activity.read",
     "channel.files",
     "channel.files.read",
+    "channel.artifacts.read",
     "channel.plan.read",
     "channel.usage.read",
     "channel.commands.read",

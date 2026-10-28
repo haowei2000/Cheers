@@ -22,7 +22,11 @@ pub struct ToolCallError {
 pub fn definitions() -> Vec<Value> {
     registry::catalog()
         .iter()
-        .filter_map(|spec| spec.tool.map(|tool| definition(&tool)))
+        .filter_map(|spec| {
+            spec.tool
+                .filter(|tool| tool.discoverable)
+                .map(|tool| definition(&tool))
+        })
         .collect()
 }
 
@@ -151,6 +155,51 @@ mod tests {
         required_scope_for_tool, SCOPE_FILES_WRITE, SCOPE_MEMBERSHIP_WRITE, SCOPE_MESSAGES_WRITE,
         SCOPE_PROFILE_WRITE, SCOPE_READ, SCOPE_TASK_CLAIMS_WRITE, SCOPE_WORKSPACE_WRITE,
     };
+
+    #[test]
+    fn artifact_discovery_replaces_inbox_without_breaking_existing_calls() {
+        let catalog = definitions();
+        for (legacy, canonical, resource, scope) in [
+            ("inbox_list", "artifact_list", "channel.files", SCOPE_READ),
+            (
+                "inbox_open",
+                "artifact_read",
+                "channel.files.read",
+                SCOPE_READ,
+            ),
+            (
+                "inbox_deliver",
+                "artifact_deliver",
+                "channel.files.create",
+                SCOPE_FILES_WRITE,
+            ),
+        ] {
+            assert!(!catalog.iter().any(|tool| tool["name"] == legacy));
+            assert!(catalog.iter().any(|tool| tool["name"] == canonical));
+            let args = json!({"channel_id":"c", "file_id":"f", "filename":"report.pdf", "data_b64":"eA==", "idempotency_key":"retry"});
+            let call = build_resource_call(legacy, args.as_object().unwrap()).unwrap();
+            assert_eq!(call.resource, resource);
+            assert_eq!(required_scope_for_tool(legacy), Some(scope));
+            assert_eq!(required_scope_for_tool(canonical), Some(scope));
+        }
+        let created = build_resource_call("artifact_create", json!({
+            "channel_id":"c", "path":"page.tsx", "content":"export default () => null", "idempotency_key":"retry"
+        }).as_object().unwrap()).unwrap();
+        assert_eq!(created.resource, "channel.artifacts.create");
+        assert_eq!(created.params["idempotency_key"], "retry");
+        let updated = build_resource_call(
+            "artifact_update",
+            json!({
+                "channel_id":"c", "artifact_id":"a", "if_version":3, "content":"new"
+            })
+            .as_object()
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(updated.resource, "channel.artifacts.update");
+        assert_eq!(updated.params["artifact_id"], "a");
+        assert_eq!(updated.params["if_version"], 3);
+    }
 
     #[test]
     fn every_remote_tool_has_exactly_one_frozen_scope() {

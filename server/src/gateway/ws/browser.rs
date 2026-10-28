@@ -570,6 +570,7 @@ async fn handle_client_frame(
                 &frame,
             )
             .await;
+
             if let Ok(json) = serde_json::to_string(&res) {
                 let _ = socket.send(Message::Text(json)).await;
             }

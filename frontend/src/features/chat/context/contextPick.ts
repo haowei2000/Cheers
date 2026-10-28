@@ -29,7 +29,11 @@ export function contextItemLocator(item: ContextItem): string | null {
     const uri = formatLocator(locator);
     return parseLocator(uri) ? uri : null;
   };
+  if (item.verb === "channel.artifacts.read" && typeof item.params.artifact_id === "string") {
+    return validLocator({ kind: "artifact", artifactId: item.params.artifact_id, inspectableId: typeof item.params.inspectable_id === "string" ? item.params.inspectable_id : undefined });
+  }
   if(item.verb==="resource.resolve"&&typeof item.params.uri==="string")return parseLocator(item.params.uri)?item.params.uri:null;
+
   const path = typeof item.params.path === "string" ? item.params.path : null;
   if (item.verb === "fs.read" && path) {
     const start = typeof item.params.start_line === "number" ? item.params.start_line : undefined;
@@ -61,7 +65,11 @@ export function locatorToContextItem(uri: string, customLabel?: string): Context
   const loc = parseLocator(uri);
   if (!loc) return null;
   switch (loc.kind) {
+    case "artifact":
+      return { id: `artifact:${loc.artifactId}${loc.inspectableId ? `#^${loc.inspectableId}` : ""}`, verb: "channel.artifacts.read",
+        params: { artifact_id: loc.artifactId, ...(loc.inspectableId ? { inspectable_id: loc.inspectableId } : {}) }, label: customLabel ?? "Artifact", kind: "file" };
     case "resource": return {id:`resource:${formatLocator(loc)}`,verb:"resource.resolve",params:{uri:formatLocator(loc)},label:customLabel??`${loc.resourceKind} ${loc.resourceId}`,kind:loc.resourceKind==="desk"||loc.resourceKind==="inbox"?"file":loc.resourceKind==="msg"?"message":loc.resourceKind};
+
     case "desk": {
       if (loc.line !== undefined) {
         const item = rangedFileContextItem(loc.path, loc.line, loc.lineEnd ?? loc.line);

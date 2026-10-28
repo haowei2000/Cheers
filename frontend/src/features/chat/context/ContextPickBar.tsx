@@ -142,7 +142,7 @@ const QUICK: ContextItem[] = [
  *  (`workspace.read`) opens the Remote workspace dialog at that path. Anything
  *  else (channel reads: plan/activity/sessions/cost) has no file to jump to. */
 export function jumpTargetOf(it: ContextItem): "workbench" | "workspace" | null {
-  if (it.verb === "fs.read") return "workbench";
+  if (["fs.read", "channel.artifacts.read", "channel.files.read"].includes(it.verb)) return "workbench";
   if (it.verb === "workspace.read") return "workspace";
   return null;
 }
@@ -277,8 +277,8 @@ export function ContextPickBar({
                 {jumpTo && (
                   <IconButton
                     onClick={() => onJumpToSource(it)}
-                    label={`Open ${it.label} in the ${jumpTo === "workbench" ? "Workbench" : "workspace"}`}
-                    title={`Open in ${jumpTo === "workbench" ? "Workbench" : "Remote workspace"}`}
+                    label={`Open ${it.label} in ${jumpTo === "workbench" ? "Artifacts" : "workspace"}`}
+                    title={`Open in ${jumpTo === "workbench" ? "Artifacts" : "Remote workspace"}`}
                     controlSize="compact"
                     className="text-content-primary hover:bg-control hover:text-accent-300"
                   >
@@ -372,9 +372,9 @@ export function ContextPickerButton({
                     setOpen(false);
                     onBrowseWorkbench();
                   }}
-                  title="Open the Workbench to pick a file to attach"
+                  title="Open Artifacts to pick an item for context"
                   controlSize="regular"
-                  label="Workbench files"
+                  label="Artifacts"
                   leading={<PanelRight className="w-3.5 h-3.5 text-content-muted" />}
                   trailing={<ArrowUpRight className="w-3.5 h-3.5 text-content-muted" />}
                 />

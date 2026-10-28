@@ -120,19 +120,24 @@ pub fn resource_template_definitions() -> Vec<Value> {
             "Token usage and cost totals.",
         ),
         (
-            "cheers://channel/{channel_id}/files",
-            "Channel attachments",
-            "Files uploaded to the channel.",
+            "cheers://channel/{channel_id}/artifacts{?limit,before,include_internal}",
+            "Channel artifacts",
+            "Documents, pages, canvases and delivered files with availability and stable IDs.",
         ),
         (
-            "cheers://channel/{channel_id}/files/{file_id}{?as_base64}",
-            "Channel attachment",
-            "One channel attachment, optionally returned as base64.",
+            "cheers://channel/{channel_id}/artifacts/{artifact_id}{?as_base64}",
+            "Artifact content",
+            "Read one available artifact, optionally returning binary content as base64.",
+        ),
+        (
+            "cheers://channel/{channel_id}/artifacts/{artifact_id}/metadata",
+            "Artifact metadata",
+            "Inspect identity, version and availability, including deleted or expired artifacts.",
         ),
         (
             "cheers://channel/{channel_id}/desk/{+path}",
-            "Desk file",
-            "One file from the channel's shared agent workspace.",
+            "Legacy source file",
+            "Path-based source/configuration access. Prefer artifact IDs for channel outputs.",
         ),
     ]
     .into_iter()
@@ -148,7 +153,7 @@ pub fn resource_template_definitions() -> Vec<Value> {
 }
 
 pub fn resource_help_text() -> &'static str {
-    "# Cheers MCP resources\n\nUse `resources/templates/list` to discover channel URI templates. Every channel resource is authorized by the gateway against the connected bot's channel membership and role. A URI never grants access by itself.\n"
+    "# Cheers MCP resources\n\nUse `resources/templates/list` to discover channel URI templates. Artifacts list documents, pages, canvases and delivered files together. Use `/artifacts/{artifact_id}/metadata` to inspect availability and version, and `/artifacts/{artifact_id}` to read content. These channel-qualified MCP resource URIs address the same artifact IDs as `cheers:artifact/<id>` links in channel messages. Legacy `/files` and `/desk` URIs remain readable for existing clients. Every channel resource is authorized by the gateway against the connected bot's channel membership and role. A URI never grants access by itself.\n"
 }
 
 pub fn build_uri_resource_call(uri: &str) -> Result<ResourceCall, ResourceUriError> {
@@ -199,6 +204,40 @@ pub fn build_uri_resource_call(uri: &str) -> Result<ResourceCall, ResourceUriErr
         "plan" if segments.len() == 2 => no_query(&parsed, "channel.plan.read")?,
         "sessions" if segments.len() == 2 => no_query(&parsed, "channel.sessions.read")?,
         "usage" if segments.len() == 2 => no_query(&parsed, "channel.usage.read")?,
+        "artifacts" if segments.len() == 2 => {
+            for (name, value) in parsed.query_pairs() {
+                reject_duplicate(&params, &name)?;
+                let value = match name.as_ref() {
+                    "limit" => {
+                        let limit = value
+                            .parse::<i64>()
+                            .map_err(|_| uri_error("limit must be an integer"))?;
+                        if !(1..=200).contains(&limit) {
+                            return Err(uri_error("limit must be between 1 and 200"));
+                        }
+                        json!(limit)
+                    }
+                    "before" => Value::String(value.into_owned()),
+                    "include_internal" => json!(value
+                        .parse::<bool>()
+                        .map_err(|_| uri_error("include_internal must be true or false"))?),
+                    _ => return Err(uri_error(format!("unknown query parameter: {name}"))),
+                };
+                params.insert(name.into_owned(), value);
+            }
+            "channel.artifacts.list"
+        }
+        "artifacts"
+            if segments.len() == 3 || (segments.len() == 4 && segments[3] == "metadata") =>
+        {
+            params.insert("artifact_id".into(), json!(segments[2]));
+            if segments.len() == 4 {
+                no_query(&parsed, "channel.artifacts.get")?
+            } else {
+                copy_file_query(&parsed, &mut params)?;
+                "channel.artifacts.read"
+            }
+        }
         "files" if segments.len() == 2 => no_query(&parsed, "channel.files")?,
         "files" if segments.len() == 3 => {
             params.insert(
@@ -342,6 +381,64 @@ fn safe_mime(supplied: &str, binary: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn artifact_resource_uris_use_canonical_contracts_and_strict_queries() {
+        let list = super::build_uri_resource_call(
+            "cheers://channel/c/artifacts?limit=50&before=cursor&include_internal=true",
+        )
+        .unwrap();
+        assert_eq!(list.resource, "channel.artifacts.list");
+        assert_eq!(list.params["channel_id"], "c");
+        assert_eq!(list.params["limit"], 50);
+        assert_eq!(list.params["before"], "cursor");
+        assert_eq!(list.params["include_internal"], true);
+        let read = super::build_uri_resource_call("cheers://channel/c/artifacts/a?as_base64=true")
+            .unwrap();
+        assert_eq!(read.resource, "channel.artifacts.read");
+        assert_eq!(read.params["artifact_id"], "a");
+        assert_eq!(read.params["as_base64"], true);
+        assert_eq!(
+            super::build_uri_resource_call("cheers://channel/c/artifacts/a/metadata")
+                .unwrap()
+                .resource,
+            "channel.artifacts.get"
+        );
+        for suffix in [
+            "?limit=0",
+            "?limit=201",
+            "?limit=x",
+            "?limit=1&limit=2",
+            "?channel_id=other",
+            "?include_internal=1",
+            "/a/metadata?as_base64=true",
+            "/a?as_base64=true&as_base64=false",
+            "/a/unknown",
+        ] {
+            assert!(
+                super::build_uri_resource_call(&format!("cheers://channel/c/artifacts{suffix}"))
+                    .is_err(),
+                "{suffix}"
+            );
+        }
+        // Already issued source URLs keep their original addressing semantics.
+        assert_eq!(
+            super::build_uri_resource_call("cheers://channel/c/files/f")
+                .unwrap()
+                .resource,
+            "channel.files.read"
+        );
+        assert_eq!(
+            super::build_uri_resource_call("cheers://channel/c/desk/a.md")
+                .unwrap()
+                .resource,
+            "fs.read"
+        );
+        let templates = super::resource_template_definitions();
+        assert!(!templates
+            .iter()
+            .any(|v| v["uriTemplate"].as_str().unwrap().contains("/files")));
+    }
+
     /// The scope table as it was hand-written before the registry, plus every tool added
     /// since. Kept as a test fixture so the registry migration is provably behaviour-
     /// preserving; it is not reachable from production code.
@@ -359,10 +456,11 @@ mod tests {
             // Resolves a cheers: URI. SCOPE_READ grants nothing the tools above did not
             // already: every resource a locator can name is one of them. Asserted by
             // locator::tests::the_locator_tool_grants_no_more_than_the_tools_it_stands_in_for.
-            | "read_locator" | "read_ui_contract" => Some(SCOPE_READ),
+            | "read_ui_contract" | "read_locator" | "artifact_list" | "artifact_get" | "artifact_read" => Some(SCOPE_READ),
+
             "post_message" | "set_suggested_questions" | "set_resource_cards" => Some(SCOPE_MESSAGES_WRITE),
-            "inbox_deliver" => Some(SCOPE_FILES_WRITE),
-            "desk_write"
+            "inbox_deliver" | "artifact_deliver" => Some(SCOPE_FILES_WRITE),
+            "artifact_create" | "artifact_update" | "desk_write"
             | "desk_edit"
             | "desk_append"
             | "desk_rm"

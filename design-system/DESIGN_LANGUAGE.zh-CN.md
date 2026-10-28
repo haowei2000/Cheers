@@ -147,9 +147,14 @@ Cheers 使用“编辑部、报纸、信件”的正式语义（Editorial Corres
 - 拖拽柄使用共享视觉 token；其可交互命中区域由所属面板保证。
 - Editor/Composer textarea、隐藏 file input 与响应式浮层宽度不是内容尺寸，不强套 ContentSize。
 
-### 4.4 Workbench 顶栏层级
+### 4.4 产物与 Collection 顶栏层级
 
-Workbench 顶栏固定表达 `Workbench → Collection → Tab`。左侧只放拖拽柄、Collection
+频道产物的主入口统一为 `Artifacts`，默认显示文档、交互页面、Canvas 和附件的同一列表。
+`Collections` 是组织这些产物的视图，`Source files` 是源码和配置文件浏览入口，二者不创建新的产物副本。
+产物详情、消息卡片与上下文优先使用稳定的 Artifact ID；旧路径引用只在兼容边界解析。
+iOS 使用同一 Sheet 内的原生列表与详情导航；附件选择复用此列表并按能力显示 Attach。
+
+Collection 视图顶栏表达 `Artifacts → Collection → Tab`。左侧只放拖拽柄、Collection
 选择/加载与 Tab 选择/打开；右侧只放当前内容操作、More、Expand/Restore、Dock/Float、Close。两侧为单行、
 不可换行的按钮岛，先实测右侧固定岛，再把剩余宽度交给左侧。空间不足时，先把新增入口收进
 对应选择器菜单，再把选择器收为具有 tooltip 与 accessible name 的图标。Raw workspace files

@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -40,6 +41,7 @@ enum class ConnectionStatus { CONNECTING, ONLINE, RECONNECTING, OFFLINE }
 
 sealed interface SocketEvent {
     /** (Re)subscribe ack — run REST since_seq catch-up to heal any gap. */
+    data object ArtifactsChanged : SocketEvent
     data object Subscribed : SocketEvent
     data class NewMessage(val message: MessageDto) : SocketEvent
     data class StreamDelta(val msgId: String, val delta: String) : SocketEvent
@@ -110,6 +112,14 @@ class ChatSocket(
     // refresh it again rather than reconnect with the same rejected credential.
     private var rejectedToken: String? = null
 
+    private val resources = ResourceRequests()
+    suspend fun request(resource: String, params: JsonObject): JsonElement = resources.request(
+        resource, buildJsonObject {
+            params.forEach { (key, value) -> put(key, value) }
+            put("channel_id", channelId)
+        },
+    ) { frame -> !stopped && _status.value == ConnectionStatus.ONLINE && activeAttempt?.socket?.send(frame) == true }
+
     fun start() {
         if (!stopped) return
         stopped = false
@@ -119,6 +129,7 @@ class ChatSocket(
 
     fun stop() {
         stopped = true
+        resources.disconnected()
         generation.incrementAndGet()
         reconnectJob?.cancel()
         activeAttempt?.socket?.cancel()
@@ -129,6 +140,8 @@ class ChatSocket(
     /** Same login, new access token. The channel/VM identity does not change. */
     fun credentialsChanged() {
         if (stopped) return
+        resources.disconnected()
+        _status.value = ConnectionStatus.RECONNECTING
         val currentGeneration = generation.incrementAndGet()
         reconnectJob?.cancel()
         activeAttempt?.socket?.cancel()
@@ -198,6 +211,7 @@ class ChatSocket(
 
     private fun scheduleReconnect(currentGeneration: Long) {
         if (!isCurrent(currentGeneration)) return
+        resources.disconnected()
         val attempt = backoffStep.getAndUpdate { min(it + 1, MAX_BACKOFF_STEP) }
         _status.value = ConnectionStatus.RECONNECTING
         val delayMs = min(BASE_DELAY_MS shl attempt, MAX_DELAY_MS)
@@ -258,6 +272,7 @@ class ChatSocket(
                                 _status.value = ConnectionStatus.ONLINE
                                 _events.tryEmit(SocketEvent.Subscribed)
                             }
+                            "resource_res" -> resources.receive(obj)
                             "unsubscribed", "pong", "error" -> Unit
                             else -> handleBroadcast(obj)
                         }
@@ -279,6 +294,8 @@ class ChatSocket(
                 scope.launch {
                     lifecycle.withLock {
                         if (!isCurrent(currentGeneration, attempt)) return@withLock
+                        resources.disconnected()
+                        _status.value = ConnectionStatus.OFFLINE
                         webSocket.close(code, null)
                     }
                 }
@@ -325,6 +342,7 @@ class ChatSocket(
         val type = obj.string("type") ?: return
         val data = obj["data"] as? JsonObject ?: return
         when (type) {
+            "board_signal" -> if (data.string("board") == "files") _events.tryEmit(SocketEvent.ArtifactsChanged)
             "message" -> decodeMessage(data)?.let { _events.tryEmit(SocketEvent.NewMessage(it)) }
             "message_stream" -> {
                 val msgId = data.string("msg_id") ?: return
