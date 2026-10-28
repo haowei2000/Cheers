@@ -212,11 +212,8 @@ export function LensAnnotationOverlay({
               e.stopPropagation();
               onSelectAnnotation?.(note.id);
             }}
-            className={
-              isActive
-                ? "bg-accent-600 text-content-strong ring-1 ring-accent-400 shadow-sm"
-                : "bg-panel text-content-primary hover:bg-control/20 hover:text-content-strong shadow-sm"
-            }
+            selected={isActive}
+            className={isActive ? "shadow-sm" : "bg-panel shadow-sm"}
           >
             <EditorialIcon name="annotation" contentSize="small" />
           </IconButton>

@@ -63,23 +63,44 @@ any power the bot's channel role does not already have.
 | `search_messages` | Case-insensitive substring search over message content |
 | `read_activity` | Unified `channel_seq` event stream (messages + channel ops) |
 | `get_context` | Condensed channel context bundle (topic / pinned / summary) |
-| `inbox_list` / `inbox_open` | List / open human-uploaded chat attachments by `file_id` |
-| `desk_list` / `desk_read` | List / read the bot's own workspace ("desk") files by path |
+| `artifact_list` / `artifact_get` / `artifact_read` | List all channel outputs, inspect availability and read by stable artifact ID |
+| `desk_list` / `desk_read` | Legacy source-path access, including configuration and directory browsing |
 
 **Write / role-gated**
 
 | Tool | Purpose |
 |---|---|
-| `post_message` | Send a message; supports `mention_ids` / `mention_names` to @-mention members |
-| `leave_channel` | Remove self from a channel (like a human leaving); not allowed in DMs |
-| `inbox_deliver` | Post a new file (base64, ≤ 8 MB) into the channel as an attachment |
-| `desk_write` / `desk_edit` / `desk_append` | Create / edit / append a desk file (optimistic lock via `if_version`) |
-| `desk_rm` / `desk_mv` | Remove / move a desk file or subtree |
+| `post_message` | Send a message; supports `mention_ids` / `mention_names` and reference cards |
+| `leave_channel` | Remove self from a channel; not allowed in DMs |
+| `artifact_create` | Create a document, HTML/TSX page or canvas; reuse `idempotency_key` for retries |
+| `artifact_update` | Edit text by artifact ID with the returned artifact `if_version` |
+| `artifact_deliver` | Deliver a binary file (base64, ≤ 8 MB); reuse `idempotency_key` for retries |
+| `desk_write` / `desk_edit` / `desk_append` | Legacy path-based operations; use artifact tools for new generated content |
+| `desk_rm` / `desk_mv` | Legacy removal / move of source files or subtrees |
 
-Two file spaces to keep straight (baked into the MCP initialize prompt):
+Documents, uploaded files, pages and canvases share the channel's **Artifacts**
+library. They are channel resources subject to membership and role checks, not a
+private Bot workspace. Host workspace files stay remote until explicitly delivered.
+Cards display references to artifacts; they do not create another content copy.
 
-- **INBOX** (`inbox_*`) — **read-only**, human-uploaded files, addressed by `file_id`.
-- **DESK** (`desk_*`) — the bot's **private, editable** workspace, addressed by `path`.
+Use the `artifact.uri` returned by creation or delivery in replies and
+`resource_ref` cards. For example, after creating `report.html`, send
+`{"v":1,"kind":"resource_ref","uri":"cheers:artifact/<returned-id>","title":"Report"}`
+inside `post_message.cards_json`. Use the actual returned ID, never the path or a
+made-up ID. For edits, read the current artifact version first; handle a version
+conflict by re-reading before applying changes. Check availability: metadata for
+an expired attachment does not restore its bytes.
+
+`inbox_list`, `inbox_open` and `inbox_deliver` remain callable for existing clients
+but are no longer advertised in `tools/list`. Legacy Desk/Inbox links still open;
+new replies should use canonical artifact links. Directory and source operations
+remain available until their consumers migrate.
+
+MCP resource templates follow the same model: `/artifacts` lists outputs,
+`/artifacts/{artifact_id}` reads content, and `/artifacts/{artifact_id}/metadata`
+checks availability and version. These paths follow `cheers://channel/{channel_id}`.
+The `review_artifact` prompt takes `channel_id` and `artifact_id`; existing
+`review_attachment` calls remain supported but are no longer advertised.
 
 ---
 

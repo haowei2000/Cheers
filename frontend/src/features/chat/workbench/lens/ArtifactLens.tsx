@@ -71,8 +71,10 @@ ${compiledCode ? `<script>${escapeScript(app)}</script>` : ""}</body></html>`;
 export function ArtifactLens({
   data,
   path,
+  artifactId,
   sourceVersion,
   resourceUri,
+
   mode,
   presentation,
   inspectorActive,
@@ -176,7 +178,7 @@ export function ArtifactLens({
           ? claimedId
           : undefined;
         const locator = inspectableId && path
-          ? formatLocator({ kind: "desk", path, inspectableId })
+          ? formatLocator(artifactId ? { kind: "artifact", artifactId, inspectableId } : { kind: "desk", path, inspectableId })
           : undefined;
 
         const fakeEvent = {
@@ -261,12 +263,14 @@ export function ArtifactLens({
         } else {
           setFeedback({ ok: false, text: "This view cannot prepare a message draft." });
         }
+
       }
     };
 
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [content, inspectorActive, onChange, onFormSubmit, onInteraction, openLocator, path, presentation, readOnly, requestContextPick, sourceVersion, resourceUri, requestGate]);
+  }, [artifactId, content, inspectorActive, onChange, onFormSubmit, onInteraction, openLocator, path, presentation, readOnly, requestContextPick, sourceVersion, resourceUri, requestGate]);
+
 
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- The titled iframe receives an onLoad synchronization callback for the isolated artifact editor. */
   return (

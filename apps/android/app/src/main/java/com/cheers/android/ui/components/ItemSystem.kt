@@ -13,10 +13,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Tag
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -33,6 +38,32 @@ import com.cheers.android.ui.theme.CheersTheme
 import com.cheers.android.ui.theme.LocalCheersColors
 
 private val EditorialCornerRadius = 4.dp
+
+enum class CheersContentAction(val title: String) {
+    CopyLink("Copy link"), SaveFile("Save file"), LoadMore("Load more"),
+}
+
+enum class CheersNavigationAction(val title: String) { Back("Back"), Refresh("Refresh"), Artifacts("Artifacts") }
+
+@Composable
+fun CheersNavigationButton(action: CheersNavigationAction, enabled: Boolean = true, onClick: () -> Unit) {
+    val icon = when (action) {
+        CheersNavigationAction.Back -> Icons.AutoMirrored.Filled.ArrowBack
+        CheersNavigationAction.Refresh -> Icons.Filled.Refresh
+        CheersNavigationAction.Artifacts -> Icons.Filled.Folder
+    }
+    IconButton(onClick = onClick, enabled = enabled) {
+        Icon(icon, contentDescription = action.title, tint = LocalCheersColors.current.textSecondary)
+    }
+}
+
+/** Native touch target and typography for shared content actions. */
+@Composable
+fun CheersContentActionButton(action: CheersContentAction, enabled: Boolean = true, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = enabled, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
+        Text(action.title, style = MaterialTheme.typography.labelLarge)
+    }
+}
 
 @Immutable
 enum class PresentationLevel {

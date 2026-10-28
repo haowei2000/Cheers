@@ -15,7 +15,7 @@ import type { ContextAction } from "@/components/ui/context-actions";
 import type { TemplateManifest } from "./manifest";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
 import type { WorkbenchContext } from "./context";
-import { getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
+import { canDiscover, getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
 import type { FsEntry } from "./fsClient";
 
 export const OTHER_SCENE = "__other__";
@@ -179,7 +179,7 @@ export async function readDiscoverableFiles(
   const candidates = entries.filter((entry) => {
     if (entry.is_dir || entry.path === ".workbench.json") return false;
     if (ctx.bindings[entry.path] && getRenderer(ctx.bindings[entry.path], ctx.rendererExtensions)) return false;
-    return /\.(md|markdown|json|ya?ml)$/i.test(entry.path);
+    return canDiscover(entry.path, ctx.rendererExtensions);
   });
   for (let start = 0; start < candidates.length; start += 4) {
     const batch = candidates.slice(start, start + 4);

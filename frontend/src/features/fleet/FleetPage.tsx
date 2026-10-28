@@ -1,4 +1,5 @@
 import { HelpLabel } from "@/components/ui/help-text";
+import { SectionNav } from "@/components/ui/section-nav";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
@@ -19,7 +20,7 @@ import { ActionButton } from "@/components/ui/action-button";
 import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { BotIcon, FleetIcon } from "@/components/ui/editorial-icons";
-import { ItemList, NavigationItem } from "@/components/ui/item";
+import { NavigationItem } from "@/components/ui/item";
 import { IconButton } from "@/components/ui/icon-button";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import { UnreadBadge } from "@/components/ui/unread-badge";
@@ -96,24 +97,40 @@ export default function FleetPage() {
   const [createBotOpen, setCreateBotOpen] = useState(false);
   const [hostBotId, setHostBotId] = useState<string | undefined>();
 
+  const applyFleet = useCallback((fleet: Awaited<ReturnType<typeof getAllFleet>>) => {
+    setApprovals(fleet.approvals);
+    setBots(fleet.bots);
+    setSummary(fleet.summary ?? {
+      online: fleet.bots.filter((bot) => bot.online && bot.busy_sessions === 0).length,
+      working: fleet.bots.filter((bot) => bot.online && bot.busy_sessions > 0).length,
+      offline: fleet.bots.filter((bot) => !bot.online).length,
+      waiting: fleet.approvals.filter((approval) => approval.actionable).length,
+    });
+  }, []);
+
   const refresh = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
+    // Roster and catalog gate the first paint; hosts and the audit feed fill in
+    // when they land instead of holding the whole page on the slowest request.
+    const extras = Promise.all([
+      getFleetHosts().catch(() => []).then(setHosts),
+      getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })).then((result) => setAudit(result.events)),
+    ]);
     try {
-      const [fleet, botCatalog, hostItems, auditResult] = await Promise.all([
-        getAllFleet(), listBots(), getFleetHosts().catch(() => []), getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })),
-      ]);
-      setApprovals(fleet.approvals);
-      setBots(fleet.bots);
-      setSummary(fleet.summary ?? {
-        online: fleet.bots.filter((bot) => bot.online && bot.busy_sessions === 0).length,
-        working: fleet.bots.filter((bot) => bot.online && bot.busy_sessions > 0).length,
-        offline: fleet.bots.filter((bot) => !bot.online).length,
-        waiting: fleet.approvals.filter((approval) => approval.actionable).length,
-      });
-      setCatalog(botCatalog); setHosts(hostItems); setAudit(auditResult.events);
+      const [fleet, botCatalog] = await Promise.all([getAllFleet(), listBots()]);
+      applyFleet(fleet);
+      setCatalog(botCatalog);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't load Fleet"); }
-    finally { setLoading(false); if (!quiet) setRefreshing(false); }
-  }, []);
+    finally { setLoading(false); }
+    await extras;
+    if (!quiet) setRefreshing(false);
+  }, [applyFleet]);
+
+  // Channel activity only moves approvals, liveness and sessions; the catalog,
+  // hosts and audit feed follow the slower poll.
+  const refreshLive = useCallback(async () => {
+    try { applyFleet(await getAllFleet()); } catch { /* the next poll retries */ }
+  }, [applyFleet]);
 
   useEffect(() => {
     void refresh();
@@ -122,7 +139,7 @@ export default function FleetPage() {
   }, [refresh]);
 
   const liveChannelIds = useMemo(() => [...new Set(bots.flatMap((bot) => bot.channels?.map((item) => item.channel_id) ?? (bot.channel_id ? [bot.channel_id] : [])))], [bots]);
-  useFleetLive(liveChannelIds, () => void refresh(true));
+  useFleetLive(liveChannelIds, () => void refreshLive());
   const selectedBot = catalog.find((bot) => bot.bot_id === route.botId);
   const actionableCount = approvals.filter((approval) => approval.actionable).length;
   const hostIssues = hosts.filter((item) => !item.revoked_at && (item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed")).length;
@@ -167,38 +184,17 @@ export default function FleetPage() {
       </header>
     </RouteChromeHeader>
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
-      {/* Section switching changes the URL, so these are navigation items, not
-          tabs: NavigationItem gives the left marker, the selected fill and
-          aria-current="page" without hand-rolling ARIA. */}
-      <nav aria-label="Fleet sections" className="sm:w-48 sm:shrink-0">
-        <ItemList
-          presentationLevel="minimal"
-          controlSize="regular"
-          className="flex gap-1 overflow-x-auto sm:flex-col"
-        >
-          {sections.map((item) => {
-            const Icon = item.icon;
-            const active = section === item.id;
-            return (
-              <NavigationItem
-                key={item.id}
-                title={item.label}
-                leading={<Icon className="h-4 w-4" aria-hidden="true" />}
-                selected={active}
-                criticalStatus={
-                  item.id === "overview" && actionableCount > 0 ? (
-                    <UnreadBadge tone="approval" contentSize="small">
-                      {actionableCount}
-                    </UnreadBadge>
-                  ) : undefined
-                }
-                onClick={() => navigate(item.id === "overview" ? "/fleet" : `/fleet/${item.id}`)}
-                className="shrink-0 max-sm:w-auto"
-              />
-            );
-          })}
-        </ItemList>
-      </nav>
+      <SectionNav
+        ariaLabel="Fleet sections"
+        items={sections.map((item) => ({
+          ...item,
+          badge: item.id === "overview" && actionableCount > 0 ? (
+            <UnreadBadge tone="approval" contentSize="small">{actionableCount}</UnreadBadge>
+          ) : undefined,
+        }))}
+        selected={section}
+        onSelect={(id) => navigate(id === "overview" ? "/fleet" : `/fleet/${id}`)}
+      />
       <main className="min-w-0 flex-1">
         <ContentActionScope>
         <div className="mb-4 flex flex-wrap items-center gap-3" data-content-toolbar="fleet">
@@ -217,11 +213,12 @@ export default function FleetPage() {
             onOpenAllBots={() => navigate("/fleet/bots")}
             onOpenActivity={() => navigate("/activity")}
             onOpenHosts={() => navigate("/fleet/hosts")}
-          />
+            onCreateBot={() => setCreateBotOpen(true)}
+            />
         ) : section === "bots" ? (
-          <FleetBots bots={bots} onOpenBot={openBot} />
+          <FleetBots bots={bots} onOpenBot={openBot} onCreateBot={() => setCreateBotOpen(true)} />
         ) : section === "hosts" ? (
-          <FleetHosts items={hosts} refresh={async () => { await refresh(true); }} />
+          <FleetHosts items={hosts} refresh={async () => { await refresh(true); }} onAddHost={() => openHost()} />
         ) : (
           <FleetAudit events={audit} bots={bots} />
         )}

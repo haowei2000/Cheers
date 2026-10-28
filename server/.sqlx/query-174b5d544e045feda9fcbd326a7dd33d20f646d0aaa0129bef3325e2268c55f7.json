@@ -1,0 +1,121 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.artifact_id, a.channel_id, a.source_kind, a.source_id, a.title, a.path, a.content_type, a.size_bytes, a.version, a.source_version, a.source_status, a.internal, a.created_by, a.created_at, a.updated_at, a.expires_at, a.deleted_at FROM artifacts a WHERE a.channel_id = $1 AND a.deleted_at IS NULL\n         AND ($2 OR NOT a.internal)\n         AND ($3::text IS NULL OR (a.created_at, a.artifact_id) <\n              (SELECT c.created_at, c.artifact_id FROM artifacts c WHERE c.channel_id = $1 AND c.artifact_id = $3))\n         ORDER BY a.created_at DESC, a.artifact_id DESC LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "artifact_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "source_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "content_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "size_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "source_version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "source_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "internal",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "174b5d544e045feda9fcbd326a7dd33d20f646d0aaa0129bef3325e2268c55f7"
+}

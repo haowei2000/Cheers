@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSections } from "./DiffView";
+import { parseDiff, parseSections } from "./DiffView";
 
 /**
  * These fixtures are REAL output from the ACP connector's
@@ -74,5 +74,39 @@ diff --git a//work/b.rs b//work/b.rs
     // The marker must not be miscounted as an addition or deletion.
     expect(section.dels).toBe(0);
     expect(section.lines.some((l) => l.text.includes("diff truncated"))).toBe(true);
+  });
+});
+
+describe("parseDiff on git show output", () => {
+  const SHOW = [
+    "commit 01da91149a52fad2775d3c1ba33f41c679f33f00",
+    "Author: A Person <a@example.com>",
+    "Date:   Fri Oct 23 06:19:33 2026 +0200",
+    "",
+    "    docs: record the first release",
+    "",
+    "diff --git a/docs/x.md b/docs/x.md",
+    "index 2c824af7..0b962764 100644",
+    "--- a/docs/x.md",
+    "+++ b/docs/x.md",
+    "@@ -7,2 +7,3 @@",
+    " fixture.",
+    "+added",
+    " end",
+  ].join("\n");
+
+  it("splits the commit header into a preamble instead of a numbered file", () => {
+    const { preamble, sections } = parseDiff(SHOW);
+    expect(preamble[0]).toMatch(/^commit /);
+    expect(sections).toHaveLength(1);
+    expect(sections[0].title).toBe("docs/x.md");
+    expect(sections[0].adds).toBe(1);
+  });
+
+  it("keeps a bare hunk diff as an untitled file section", () => {
+    const { preamble, sections } = parseDiff("@@ -1 +1 @@\n-a\n+b");
+    expect(preamble).toEqual([]);
+    expect(sections).toHaveLength(1);
+    expect(sections[0].title).toBe("(diff)");
   });
 });

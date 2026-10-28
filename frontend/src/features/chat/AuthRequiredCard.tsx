@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { selectedContainerClasses } from "@/components/ui/selection";
 import { useState } from "react";
 import { ExternalLink, KeyRound, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -116,10 +117,10 @@ export function AuthRequiredCard({ message, channelId, currentUserId }: Props) {
                 <div
                   data-design-system-exempt="form-field"
                   key={method.method_id}
-                  className={`flex items-center gap-3 rounded-sm px-3 py-2 ring-1 ring-inset ${
+                  className={`flex items-center gap-3 rounded-sm px-3 py-2 ${
                     selectedMethodId === method.method_id
-                      ? "bg-indigo-500/10 text-content-primary ring-indigo-400/60"
-                      : "bg-zinc-950/30 ring-zinc-700 hover:ring-zinc-600"
+                      ? selectedContainerClasses
+                      : "bg-zinc-950/30 ring-1 ring-inset ring-zinc-700 hover:ring-zinc-600"
                   }`}
                 >
                   <span className="min-w-0 flex-1">

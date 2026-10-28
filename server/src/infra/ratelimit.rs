@@ -227,6 +227,15 @@ pub fn bot_dispatch_limiter() -> &'static FixedWindowLimiter {
     LIMITER.get_or_init(|| FixedWindowLimiter::new(30, Duration::from_secs(60)))
 }
 
+/// Process-global MCP `completion/complete` limiter, keyed by connector host.
+/// The MCP spec requires completion to be rate limited; suggestions fire as a
+/// user types, so 120 per minute leaves room for fast typing while capping a
+/// runaway client's membership lookups. Per-process, like the others here.
+pub fn mcp_completion_limiter() -> &'static FixedWindowLimiter {
+    static LIMITER: OnceLock<FixedWindowLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| FixedWindowLimiter::new(120, Duration::from_secs(60)))
+}
+
 /// Process-global login limiter: at most 10 failed attempts per 5-minute window
 /// per client. Tuned so a human fumbling their password is never affected while
 /// scripted brute-force is throttled to ~120 guesses/hour per source.

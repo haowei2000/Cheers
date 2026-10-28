@@ -157,6 +157,41 @@ struct CheersConfirmationButton: View {
     }
 }
 
+/// Shared actions for native artifact lists and detail toolbars. Navigation and
+/// disclosure labels stay with their native controls rather than borrowing verbs.
+enum CheersContentAction {
+    case done, retry, loadMore, addContext, attach
+    var title: String {
+        switch self {
+        case .done: return "Done"
+        case .retry: return "Retry"
+        case .loadMore: return "Load more"
+        case .addContext: return "Add to context"
+        case .attach: return "Attach"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .done: return "checkmark"
+        case .retry: return "arrow.clockwise"
+        case .loadMore: return "ellipsis"
+        case .addContext: return "text.badge.plus"
+        case .attach: return "paperclip"
+        }
+    }
+}
+
+struct CheersContentActionButton: View {
+    let action: CheersContentAction
+    let perform: () -> Void
+    var body: some View {
+        Button(action: perform) { Label(action.title, systemImage: action.symbol) }
+            .font(Theme.utilityFont(for: action.title))
+            .frame(minWidth: Theme.hitMin, minHeight: Theme.hitMin)
+            .accessibilityLabel(action.title)
+    }
+}
+
 private struct CheersSemanticItem: View {
     let kind: CheersItemKind
     let row: CheersItemRow
@@ -257,6 +292,22 @@ struct CheersDiffLineItem: View {
         ))
     }
     .padding()
+}
+
+#Preview("Artifact availability and actions") {
+    List {
+        ForEach(["Ready", "Preparing", "Expired", "Deleted", "Failed"], id: \.self) { state in
+            CheersWorkbenchItem(row: CheersItemRow(
+                title: "Quarterly report.pdf",
+                leading: AnyView(Image(systemName: "doc")),
+                criticalStatus: state == "Ready" ? nil : AnyView(Text(state)),
+                status: state == "Ready" ? AnyView(Text("PDF")) : nil
+            ))
+        }
+        CheersContentActionButton(action: .addContext) {}
+        CheersContentActionButton(action: .attach) {}
+    }
+    .presentationLevel(.medium)
 }
 
 enum NativeFeedback {

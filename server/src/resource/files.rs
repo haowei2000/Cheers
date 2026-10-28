@@ -411,7 +411,11 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .await
     .map_err(super::db_err("files.create: insert file record"))?;
 
+    let artifact =
+        super::artifacts::for_source(&mut tx, channel_id, "attachment", &file_id).await?;
     let data = json!({
+        "artifact": artifact,
+        "channel_id": channel_id,
         "file_id": file_id,
         "filename": filename,
         "content_type": content_type,

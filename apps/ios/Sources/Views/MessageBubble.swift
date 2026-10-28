@@ -57,6 +57,7 @@ struct SystemMessageView: View {
 // MARK: - Chat bubble (Telegram-style, design map §5.2b)
 
 struct MessageBubbleView: View {
+    @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.presentationLevel) private var presentationLevel
     let message: MessageDto
@@ -202,6 +203,19 @@ struct MessageBubbleView: View {
                     .lineSpacing(3)
             } else {
                 MessageContentView(content: message.content, mentions: message.mentions ?? [], isOwn: isOwn)
+            }
+
+            if let cards = message.contentData?["cards"]?.arrayValue {
+                ForEach(Array(cards.enumerated()), id: \.offset) { _, card in
+                    if card.objectValue?["kind"]?.stringValue == "resource_ref",
+                       let uri = card.objectValue?["uri"]?.stringValue,
+                       isChannelArtifactReference(uri), let url = URL(string: uri) {
+                        CheersItemButton(row: CheersItemRow(
+                            title: card.objectValue?["title"]?.stringValue ?? "Artifact",
+                            leading: AnyView(Image(systemName: "doc"))
+                        )) { openURL(url) }
+                    }
+                }
             }
 
             if let files = message.files, !files.isEmpty {

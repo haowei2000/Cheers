@@ -76,7 +76,7 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
         onClick={onClick}
         selected={selected}
         title={
-          <span className={cn("truncate", channel.is_member === false && "opacity-50", selected && "font-semibold text-content-strong")}>
+          <span className={cn("truncate", channel.is_member === false && "opacity-50")}>
             {channel.name}
           </span>
         }
@@ -86,11 +86,11 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
           ) : channel.type === "dm" ? (
             <Avatar name={channel.name} id={channel.channel_id} size="small" />
           ) : channel.type === "private" ? (
-            <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
+            <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center transition-colors", !selected && "text-content-muted/70")}>
               <Lock className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
           ) : (
-            <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center transition-colors", selected ? "text-content-strong" : "text-content-muted/70")}>
+            <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center transition-colors", !selected && "text-content-muted/70")}>
               <Hash className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
           )
@@ -104,9 +104,7 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
         criticalStatus={unread}
         className={cn(
           "rounded-none border-b-0 transition-all duration-100",
-          selected
-            ? "border-l-content-strong bg-control/40 font-semibold text-content-strong"
-            : "border-l-transparent text-content-primary hover:bg-control/30 hover:text-content-strong"
+          !selected && "hover:bg-control/30"
         )}
       />
       {voiceEnabled && participants.length > 0 && (

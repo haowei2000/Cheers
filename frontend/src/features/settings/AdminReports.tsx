@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { EmptyState } from "@/components/ui/empty-state";
 import toast from "react-hot-toast";
 import { listReports, updateReport, type ContentReport } from "@/api/reports";
 import { ActionButton } from "@/components/ui/action-button";
@@ -33,7 +34,7 @@ export function AdminReports() {
       >
         <ItemList presentationLevel="medium" controlSize="regular">
           {loading && <OperationsItem title="Loading reports…" disabled />}
-          {!loading && reports.length === 0 && <OperationsItem title="No reports" />}
+          {!loading && reports.length === 0 && <EmptyState icon={ShieldAlert} title="No reports" className="py-4" />}
           {reports.map((report) => (
           <OperationsItem key={report.report_id}
           title={<span title={`${report.reason} · ${report.target_type} · ${report.target_id}${report.channel_id ? ` · Channel ${report.channel_id}` : ""}${report.details ? ` · ${report.details}` : ""}`}>

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE connector_hosts\n         SET mcp_connection_state = $2,\n             mcp_state_updated_at = CASE WHEN mcp_connection_state = 'connected'\n                                         THEN mcp_state_updated_at ELSE NOW() END,\n             mcp_connected_at = COALESCE(mcp_connected_at, NOW()),\n             mcp_last_seen_at = NOW(),\n             mcp_protocol_version = $3,\n             mcp_client_name = COALESCE($4, mcp_client_name),\n             mcp_client_version = COALESCE($5, mcp_client_version)\n         WHERE host_id = $1 AND status = 'active' AND revoked_at IS NULL\n           AND (mcp_last_seen_at IS NULL\n                OR mcp_last_seen_at < NOW() - INTERVAL '30 seconds'\n                OR mcp_rejected_at >= mcp_last_seen_at\n                OR mcp_connection_state IS DISTINCT FROM $2\n                OR mcp_protocol_version IS DISTINCT FROM $3\n                OR ($4::TEXT IS NOT NULL AND mcp_client_name IS DISTINCT FROM $4)\n                OR ($5::TEXT IS NOT NULL AND mcp_client_version IS DISTINCT FROM $5))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3bdc17ef4ddbe5ea5c3c06c0f4d4647f620d23bd14f7a2bda54b053661546a9"
+}

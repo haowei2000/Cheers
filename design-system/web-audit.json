@@ -47,7 +47,9 @@
     "nonStandardNeutralTextShade": 0,
     "nonStandardDisabledOpacity": 0,
     "nonPrimaryButtonNeutralText": 0,
-    "nonStandardNeutralForegroundLiteral": 0
+    "nonStandardNeutralForegroundLiteral": 0,
+    "localSelectionStyling": 0,
+    "sharedTabStyleOverride": 0
   },
   "allowedNativeReasons": [
     "checkbox",

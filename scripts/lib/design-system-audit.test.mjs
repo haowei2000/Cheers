@@ -40,6 +40,8 @@ const policy = {
     nonStandardDisabledOpacity: 0,
     nonPrimaryButtonNeutralText: 0,
     nonStandardNeutralForegroundLiteral: 0,
+    localSelectionStyling: 0,
+    sharedTabStyleOverride: 0,
   },
   allowedNativeReasons: ["checkbox"],
   allowedExemptReasons: ["presence"],
@@ -210,4 +212,26 @@ test("rejects fractional spacing and arbitrary spinner sizes", () => {
   const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
   assert.equal(result.violations.nonStandardSpacing, 2);
   assert.equal(result.violations.arbitrarySpinnerSize, 1);
+});
+
+test("rejects selected styling assembled outside the shared primitives", () => {
+  const source = `<><ItemRow selected={selected} className={cn("flex", selected ? "bg-zinc-800 font-semibold" : "text-content-primary")}/><div className={\`row \${isActive ? "border-l-content-strong bg-control/40" : ""}\`}/><Button className={cn(active && "ring-indigo-400/60")}/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.localSelectionStyling, 5);
+});
+
+test("accepts resting styles, shared selection helpers, and primitives", () => {
+  const source = `<><ItemRow selected={selected} className={cn("flex", !selected && "text-content-primary hover:bg-control")}/><div className={selected ? selectedContainerClasses : "bg-panel"}/><div className={i === activeIndex ? highlightedClasses : undefined}/></>`;
+  const primitive = `<button className={cn(selected && "bg-selected font-semibold")}/>`;
+  const result = auditSources([
+    { file: "/repo/frontend/src/features/Good.tsx", source },
+    { file: path.join("/repo/frontend/src/components/ui", "item.tsx"), source: primitive },
+  ], ts, policy);
+  assert.equal(result.violations.localSelectionStyling, 0);
+});
+
+test("rejects shape, colour, and type overrides on shared tabs", () => {
+  const source = `<><UiButton role="tab" className="rounded-sm font-code text-content-primary -mb-px"/><ControlTrigger role="tab" className="-mb-px gap-1"/><UiButton className="rounded-sm"/></>`;
+  const result = auditSources([{ file: "/repo/frontend/src/features/Bad.tsx", source }], ts, policy);
+  assert.equal(result.violations.sharedTabStyleOverride, 3);
 });

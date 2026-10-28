@@ -229,10 +229,7 @@ export function BotDetailPanel({
               onClick={() => setTab(id)}
               controlSize="regular"
               className={cn(
-                "inline-flex items-center gap-2 font-medium transition-colors rounded-none border-b-2 bg-transparent ring-0 shadow-none -mb-px hover:bg-transparent",
-                active
-                  ? "border-content-strong text-content-strong font-semibold"
-                  : "border-transparent text-content-primary hover:text-content-strong",
+                "inline-flex items-center gap-2 transition-colors -mb-px",
               )}
             >
               <Icon className="w-3.5 h-3.5" />

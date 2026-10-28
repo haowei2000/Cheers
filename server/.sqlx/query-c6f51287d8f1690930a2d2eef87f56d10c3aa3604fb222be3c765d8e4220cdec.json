@@ -1,0 +1,120 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT artifact_id, channel_id, source_kind, source_id, title, path, content_type, size_bytes, version, source_version, source_status, internal, created_by, created_at, updated_at, expires_at, deleted_at FROM artifacts WHERE channel_id = $1 AND source_kind = $2 AND source_id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "artifact_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "source_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "content_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "size_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "source_version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "source_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "internal",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c6f51287d8f1690930a2d2eef87f56d10c3aa3604fb222be3c765d8e4220cdec"
+}

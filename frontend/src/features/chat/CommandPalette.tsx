@@ -7,6 +7,7 @@ import { Button as UiButton } from "@/components/ui/button";
 import { Fragment } from "react";
 import { Terminal } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { highlightedClasses } from "@/components/ui/selection";
 
 export interface CommandCandidate {
   /** The command name as advertised, e.g. "review" — inserted as "/review ". */
@@ -44,14 +45,13 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
           )}
           <UiButton content="iconText" controlWidth="fill" variant="plain" role="option"
             aria-selected={i === activeIndex}
-            selected={i === activeIndex}
             onMouseDown={(e) => {
               e.preventDefault();
               onSelect(c);
             }}
             controlSize="regular" className={cn(
               "flex items-center gap-2 text-left text-content-primary",
-              i !== activeIndex && "hover:bg-zinc-800",
+              i === activeIndex && highlightedClasses,
             )}
           >
             <Terminal className="w-4 h-4 text-success-400 shrink-0" />

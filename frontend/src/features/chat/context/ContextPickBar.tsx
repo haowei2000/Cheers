@@ -25,6 +25,7 @@ import { MenuOption } from "@/components/ui/menu-option";
 import { OverflowText } from "@/components/ui/overflow-text";
 import {
   contextItemLocator,
+  messageContextItem,
   useContextPickStore,
   usePendingContext,
   useContextSuggestions,
@@ -141,7 +142,7 @@ const QUICK: ContextItem[] = [
  *  (`workspace.read`) opens the Remote workspace dialog at that path. Anything
  *  else (channel reads: plan/activity/sessions/cost) has no file to jump to. */
 export function jumpTargetOf(it: ContextItem): "workbench" | "workspace" | null {
-  if (it.verb === "fs.read") return "workbench";
+  if (["fs.read", "channel.artifacts.read", "channel.files.read"].includes(it.verb)) return "workbench";
   if (it.verb === "workspace.read") return "workspace";
   return null;
 }
@@ -185,6 +186,13 @@ export function AttachContextButton({
   );
 }
 
+/** Picks to list as chips: everything except the reply target, which the reply
+ *  banner already shows. It stays attached and is sent with the reply. */
+export function withoutReplyTarget(items: ContextItem[], replyTo?: ReplyTargetLike | null): ContextItem[] {
+  const replyItemId = replyTo ? messageContextItem(replyTo)?.id : undefined;
+  return replyItemId ? items.filter((item) => item.id !== replyItemId) : items;
+}
+
 export function ContextPickBar({
   channelId,
   replyTo,
@@ -199,8 +207,10 @@ export function ContextPickBar({
   /** Jump to a pending item's source (Workbench file / workspace file). */
   onJumpToSource?: (item: ContextItem) => void;
 }) {
-  const items = usePendingContext(channelId);
-  const suggestions = useContextSuggestions(channelId, { replyTo, draftText, files });
+  // The reply banner already shows the replied-to message, so it is never
+  // offered as a suggestion and its pick is not listed again as a chip.
+  const items = withoutReplyTarget(usePendingContext(channelId), replyTo);
+  const suggestions = useContextSuggestions(channelId, { draftText, files });
   const add = useContextPickStore((s) => s.add);
   const remove = useContextPickStore((s) => s.remove);
   const removePick = (id: string) => {
@@ -267,8 +277,8 @@ export function ContextPickBar({
                 {jumpTo && (
                   <IconButton
                     onClick={() => onJumpToSource(it)}
-                    label={`Open ${it.label} in the ${jumpTo === "workbench" ? "Workbench" : "workspace"}`}
-                    title={`Open in ${jumpTo === "workbench" ? "Workbench" : "Remote workspace"}`}
+                    label={`Open ${it.label} in ${jumpTo === "workbench" ? "Artifacts" : "workspace"}`}
+                    title={`Open in ${jumpTo === "workbench" ? "Artifacts" : "Remote workspace"}`}
                     controlSize="compact"
                     className="text-content-primary hover:bg-control hover:text-accent-300"
                   >
@@ -362,9 +372,9 @@ export function ContextPickerButton({
                     setOpen(false);
                     onBrowseWorkbench();
                   }}
-                  title="Open the Workbench to pick a file to attach"
+                  title="Open Artifacts to pick an item for context"
                   controlSize="regular"
-                  label="Workbench files"
+                  label="Artifacts"
                   leading={<PanelRight className="w-3.5 h-3.5 text-content-muted" />}
                   trailing={<ArrowUpRight className="w-3.5 h-3.5 text-content-muted" />}
                 />

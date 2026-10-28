@@ -142,6 +142,8 @@ export interface FileSessionOptions {
 
 export interface FileSession extends FileBuffer {
   resourceUri?:string;
+  /** Provider revision used by interactive execution; editor version may be a catalog version. */
+  sourceVersion?: number;
   path: string;
   /** null => the file does not exist yet (a write with if_version 0 creates it). */
   version: number | null;

@@ -8,12 +8,13 @@ import {
   useControlSize,
   type ControlSize,
 } from "./control-size";
+import { selectedClasses, tabClasses, type TabOrientation } from "./selection";
 
 // Vite injects import.meta.env; the repo casts rather than pulling in vite/client
 // types (same shape as lib/serverConfig.ts).
 const DEV = (import.meta as { env?: { DEV?: boolean } }).env?.DEV ?? false;
 
-type Variant = "primary" | "emphasis" | "ghost" | "danger" | "secondary" | "plain";
+type Variant = "primary" | "emphasis" | "ghost" | "danger" | "destructive" | "secondary" | "plain";
 export type ControlWidth = "slot" | "fill" | "content";
 export type ButtonContent = "icon" | "text" | "iconText";
 
@@ -31,6 +32,8 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   loading?: boolean;
   /** Toggle/selector state. Applies shared selected styling and button semantics. */
   selected?: boolean;
+  /** For role="tab": horizontal tabs underline, vertical tabs use the row rail. */
+  tabOrientation?: TabOrientation;
 }
 
 const variantCls: Record<Variant, string> = {
@@ -42,6 +45,11 @@ const variantCls: Record<Variant, string> = {
     "bg-transparent text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
   danger:
     "bg-transparent text-danger-400 hover:bg-red-950 hover:text-danger-300 active:bg-red-900 active:scale-[0.98]",
+  // The one destructive action of a section or dialog (delete a channel, revoke
+  // everything, confirm a delete). Outlined so it never reads weaker than the
+  // neutral secondary beside it; repeated per-row actions stay `danger`.
+  destructive:
+    "bg-transparent text-danger-400 ring-1 ring-inset ring-danger-400/60 hover:bg-red-950 hover:text-danger-300 active:bg-red-900 active:scale-[0.98]",
   secondary:
     "bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active active:scale-[0.98]",
   plain:
@@ -73,12 +81,19 @@ function LoadingIndicator() {
   );
 }
 
-function IconTextContent({ action, children, label, loading, size }: {
+/** Variants without a resting surface. Nothing outlines their slot, so a label
+ *  centred in the space left over drifts away from its icon and the pair reads
+ *  as two controls ("✕      Revoke"). */
+const TRANSPARENT_VARIANTS = new Set<Variant>(["plain", "ghost", "danger"]);
+
+function IconTextContent({ action, children, label, loading, size, grouped }: {
   action?: ActionKey;
   children: ReactNode;
   label?: ReactNode;
   loading?: boolean;
   size: ControlSize;
+  /** Keep the label beside the icon instead of centring it in the label slot. */
+  grouped: boolean;
 }) {
   const parts = Children.toArray(children);
   const leading = parts.shift();
@@ -109,7 +124,10 @@ function IconTextContent({ action, children, label, loading, size }: {
       </span>
       <span
         data-button-slot="label"
-        className="inline-flex min-w-0 flex-1 items-center justify-center self-stretch px-3"
+        className={cn(
+          "inline-flex min-w-0 flex-1 items-center self-stretch",
+          grouped ? "justify-start pl-1 pr-3" : "justify-center px-3",
+        )}
       >
         {action ? actionLabel(action) : label ?? parts}
       </span>
@@ -128,6 +146,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       label,
       loading,
       selected = false,
+      tabOrientation = "horizontal",
       disabled,
       className,
       children,
@@ -159,16 +178,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       className={cn(
         "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:shrink-0",
         variantCls[variant],
-        isTab
-          ? cn(
-              "rounded-none border-b-2 bg-transparent ring-0 shadow-none hover:bg-transparent",
-              selected
-                ? "border-content-strong text-content-strong font-semibold"
-                : "border-transparent text-content-primary hover:text-content-strong",
-            )
-          : cn(
-              selected && "bg-selected text-content-strong font-semibold ring-1 ring-inset ring-selected-indicator/70 hover:bg-selected-hover hover:text-content-strong active:bg-selected-active",
-            ),
+        isTab ? tabClasses(selected, tabOrientation) : selected && selectedClasses("ring"),
         content === "icon" ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
         controlTextClasses.regular,
         isTab
@@ -191,7 +201,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       {...props}
     >
       {content === "iconText" ? (
-        <IconTextContent action={action} label={label} loading={loading} size={resolvedSize}>{children}</IconTextContent>
+        <IconTextContent
+          action={action}
+          label={label}
+          loading={loading}
+          size={resolvedSize}
+          grouped={controlWidth !== "fill" && TRANSPARENT_VARIANTS.has(variant)}
+        >
+          {children}
+        </IconTextContent>
       ) : content === "icon" ? (
         loading ? <LoadingIndicator /> : children
       ) : (

@@ -189,7 +189,19 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
         // Live Desk: a mutating `fs.*` verb changed the channel's workspace files —
         // nudge any open Desk view to re-pull. Data-free: clients re-fetch through
         // their own authz'd fs.ls/fs.read. Board name "files" is a cross-slice contract.
-        Some("fs.write" | "fs.patch" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv") => {
+        Some(
+            "fs.write"
+            | "fs.patch"
+            | "fs.edit"
+            | "fs.append"
+            | "fs.rm"
+            | "fs.mv"
+            | "channel.artifacts.create"
+            | "channel.artifacts.update"
+            | "channel.artifacts.patch"
+            | "channel.artifacts.deliver"
+            | "channel.files.create",
+        ) => {
             if let Some(cid) = resp
                 .get("data")
                 .and_then(|d| d.get("channel_id"))

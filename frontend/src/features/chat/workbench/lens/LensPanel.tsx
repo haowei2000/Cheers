@@ -31,7 +31,9 @@ export function LensView({
   openLocator,
   inspectorActive,
   onFormSubmit,
+  artifactId,
   onInteraction,
+
 }: {
   session: FileSession;
   lensId: string;
@@ -53,6 +55,7 @@ export function LensView({
   standalone?: boolean;
   openLocator?: (uri: string) => void;
   inspectorActive?: boolean;
+  artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
   onInteraction?: InteractionDispatcher;
 }) {
@@ -91,6 +94,7 @@ export function LensView({
         }
       : null;
     const resolvedItem: ContextItem | null = target.contextItem
+      ?? (artifactId && target.locator?.startsWith("cheers:artifact/") ? locatorToContextItem(target.locator, target.label) : null)
       ?? (target.inspectableId && range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : null)
       ?? (target.locator ? locatorToContextItem(target.locator, target.label) : null)
       ?? (range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : fallbackFileItem);
@@ -166,8 +170,10 @@ export function LensView({
           lens.render({
             data,
             path,
-            sourceVersion: session.version ?? undefined,
+            artifactId,
+            sourceVersion: session.sourceVersion ?? session.version ?? undefined,
             resourceUri:session.resourceUri,
+
             config,
             onChange: session.setData,
             onOps,
@@ -220,7 +226,9 @@ export function LensPanel({
   openLocator,
   inspectorActive,
   onFormSubmit,
+  artifactId,
   onInteraction,
+
 }: {
   fs: FsClient;
   path: string;
@@ -230,6 +238,7 @@ export function LensPanel({
   reloadTick?: number;
   openLocator?: (uri: string) => void;
   inspectorActive?: boolean;
+  artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
   onInteraction?: InteractionDispatcher;
 }) {
@@ -255,7 +264,9 @@ export function LensPanel({
       openLocator={openLocator}
       inspectorActive={inspectorActive}
       onFormSubmit={onFormSubmit}
+      artifactId={artifactId}
       onInteraction={onInteraction}
+
     />
   );
 }

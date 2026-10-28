@@ -230,15 +230,20 @@ export function NewChannelDialog({
           controlSize="regular"
         />
 
-        <ChoiceGroup
-          ariaLabel="Channel visibility"
-          value={type}
-          onChange={setType}
-          options={[
-            { value: "public", label: "Public", leading: <Hash /> },
-            { value: "private", label: "Private", leading: <Lock /> },
-          ]}
-        />
+        <div className="space-y-2">
+          <p className="text-compact font-medium uppercase tracking-label text-content-muted">
+            Visibility
+          </p>
+          <ChoiceGroup
+            ariaLabel="Channel visibility"
+            value={type}
+            onChange={setType}
+            options={[
+              { value: "public", label: "Public", leading: <Hash /> },
+              { value: "private", label: "Private", leading: <Lock /> },
+            ]}
+          />
+        </div>
 
         <div className="space-y-2">
           <p className="text-compact font-medium uppercase tracking-label text-content-muted">

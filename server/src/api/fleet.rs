@@ -247,42 +247,76 @@ pub async fn list_audit_all(
     Query(query): Query<FleetAuditQuery>,
 ) -> Result<Json<Value>, AppError> {
     let limit = query.limit.unwrap_or(100).clamp(1, 250);
+    // Each source contributes at most its newest `limit + 1` matching rows, read
+    // in order from a (bot_id, created_at) index, and only then are the sources
+    // merged. Sorting the whole union instead scanned every logged event of every
+    // bot (acp_event_log grows with all agent activity) on each Fleet load.
+    // Every filter is applied inside each source so the per-source cap stays exact.
     let rows = sqlx::query!(
-        "SELECT source, event_id, event_type, bot_id, host_id, actor_id,
-                detail, created_at
+        r#"WITH visible AS (
+           SELECT bot_id FROM bot_accounts
+           WHERE ($1 OR created_by = $2) AND ($4::text IS NULL OR bot_id = $4)
+         )
+         SELECT source AS "source?", event_id AS "event_id?", event_type AS "event_type?",
+                bot_id AS "bot_id?", host_id AS "host_id?", actor_id AS "actor_id?",
+                detail AS "detail?", created_at AS "created_at?"
          FROM (
-           SELECT 'management'::text AS source, a.id AS event_id, a.event_type,
-                  a.bot_id, a.host_id, a.actor_id, a.detail, a.created_at
-           FROM bot_management_audit a
-           WHERE ($1 OR a.actor_id = $2 OR EXISTS (
-             SELECT 1 AS present FROM bot_accounts b WHERE b.bot_id = a.bot_id AND b.created_by = $2
-           ))
+           (SELECT 'management'::text AS source, a.id AS event_id, a.event_type,
+                   a.bot_id, a.host_id, a.actor_id, a.detail, a.created_at
+            FROM bot_management_audit a
+            WHERE ($1 OR a.actor_id = $2 OR EXISTS (
+                    SELECT 1 AS present FROM bot_accounts b
+                    WHERE b.bot_id = a.bot_id AND b.created_by = $2))
+              AND ($3::timestamptz IS NULL OR a.created_at < $3)
+              AND ($4::text IS NULL OR a.bot_id = $4)
+              AND ($5::text IS NULL OR a.host_id = $5)
+              AND ($6::text IS NULL OR a.event_type = $6)
+            ORDER BY a.created_at DESC, a.id DESC
+            LIMIT $7)
            UNION ALL
-           SELECT 'connection', e.id::text, 'connection.' || e.event, e.bot_id,
-                  NULL, NULL, jsonb_build_object('stream', e.stream, 'reason', e.reason,
-                  'connection_id', e.connection_id), e.created_at
-           FROM bot_connection_events e JOIN bot_accounts b ON b.bot_id = e.bot_id
-           WHERE $1 OR b.created_by = $2
+           (SELECT 'connection', e.event_id, e.event_type, e.bot_id, NULL, NULL,
+                   e.detail, e.created_at
+            FROM visible v CROSS JOIN LATERAL (
+              SELECT e.id::text AS event_id, 'connection.' || e.event AS event_type,
+                     e.bot_id, jsonb_build_object('stream', e.stream, 'reason', e.reason,
+                     'connection_id', e.connection_id) AS detail, e.created_at
+              FROM bot_connection_events e
+              WHERE e.bot_id = v.bot_id AND $5::text IS NULL
+                AND ($3::timestamptz IS NULL OR e.created_at < $3)
+                AND ($6::text IS NULL OR 'connection.' || e.event = $6)
+              ORDER BY e.created_at DESC, e.id::text DESC
+              LIMIT $7) e)
            UNION ALL
-           SELECT 'acp', l.id::text, l.name, l.bot_id, NULL, NULL,
-                  jsonb_build_object('home', l.home, 'channel_id', l.channel_id,
-                  'session_id', l.session_id, 'payload', l.payload), l.created_at
-           FROM acp_event_log l JOIN bot_accounts b ON b.bot_id = l.bot_id
-           WHERE $1 OR b.created_by = $2
+           (SELECT 'acp', l.event_id, l.event_type, l.bot_id, NULL, NULL,
+                   l.detail, l.created_at
+            FROM visible v CROSS JOIN LATERAL (
+              SELECT l.id::text AS event_id, l.name AS event_type, l.bot_id,
+                     jsonb_build_object('home', l.home, 'channel_id', l.channel_id,
+                     'session_id', l.session_id, 'payload', l.payload) AS detail,
+                     l.created_at
+              FROM acp_event_log l
+              WHERE l.bot_id = v.bot_id AND $5::text IS NULL
+                AND ($3::timestamptz IS NULL OR l.created_at < $3)
+                AND ($6::text IS NULL OR l.name = $6)
+              ORDER BY l.created_at DESC, l.id::text DESC
+              LIMIT $7) l)
            UNION ALL
-           SELECT 'approval', a.id, 'approval.' || a.event_type, a.bot_id, NULL,
-                  a.actor_id, jsonb_build_object('channel_id', a.channel_id,
-                  'request_id', a.request_id, 'decision', a.decision, 'detail', a.detail),
-                  a.created_at
-           FROM approval_audit a JOIN bot_accounts b ON b.bot_id = a.bot_id
-           WHERE $1 OR b.created_by = $2
+           (SELECT 'approval', a.event_id, a.event_type, a.bot_id, NULL, a.actor_id,
+                   a.detail, a.created_at
+            FROM visible v CROSS JOIN LATERAL (
+              SELECT a.id AS event_id, 'approval.' || a.event_type AS event_type,
+                     a.bot_id, a.actor_id, jsonb_build_object('channel_id', a.channel_id,
+                     'request_id', a.request_id, 'decision', a.decision,
+                     'detail', a.detail) AS detail, a.created_at
+              FROM approval_audit a
+              WHERE a.bot_id = v.bot_id AND $5::text IS NULL
+                AND ($3::timestamptz IS NULL OR a.created_at < $3)
+                AND ($6::text IS NULL OR 'approval.' || a.event_type = $6)
+              ORDER BY a.created_at DESC, a.id DESC
+              LIMIT $7) a)
          ) events
-         WHERE ($3::timestamptz IS NULL OR created_at < $3)
-           AND ($4::text IS NULL OR bot_id = $4)
-           AND ($5::text IS NULL OR host_id = $5)
-           AND ($6::text IS NULL OR event_type = $6)
          ORDER BY created_at DESC, event_id DESC
-         LIMIT $7",
+         LIMIT $7"#,
         is_admin(&claims),
         &claims.sub,
         query.cursor,

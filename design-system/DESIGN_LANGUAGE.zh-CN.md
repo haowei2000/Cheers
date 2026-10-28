@@ -14,7 +14,7 @@ Cheers 使用“编辑部、报纸、信件”的正式语义（Editorial Corres
 
 - **纸张与碳墨基质**：浅色采用无涂布道林纸基底（Bond Paper `#FAF8F4` 画布、`#FFFEFC` 面板、`#F3F0E8` 工作台），深色采用碳墨板岩（Slate `#161719` / `#1E1F23`）；前景遵循碳素墨阶（`#0F1012` 浓墨、`#1C1D20` 墨黑、`#403F3C` 暖炭灰、`#686660` 铅笔灰），确保文字对比度始终达到并超越 WCAG AAA（强对比 >= 12:1，正文 >= 7:1）。
 - **坚实物理层叠（Anti-Glassmorphism）**：浮动面板、工具栏、Diff 与弹窗使用物理纸张层叠（Solid Paper Stacking，实体纸面 + 1px 细发丝边界 + 压印阴影），彻底移除 `backdrop-blur` 电子毛玻璃效果。
-- **公文与信件印章**：流式生成使用机械打字机实心方块光标；频道顶部携带大写字距 `DISPATCH` 调度标识；权限与操作凭证使用等宽印章徽记（`[✓ Approved]`、`[✕ Denied]`、`[Needs approval]`），关键警示采用朱砂印泥色（Vermilion `--tone-danger`）与火漆金黄色（Wax Amber `--tone-warning`）。
+- **公文与信件印章**：流式生成使用机械打字机实心方块光标；权限与操作凭证使用等宽印章徽记（`[✓ Approved]`、`[✕ Denied]`、`[Needs approval]`），关键警示采用朱砂印泥色（Vermilion `--tone-danger`）与火漆金黄色（Wax Amber `--tone-warning`）。
 - **统一语义与跨端契约**：统一语义、信息层级、状态、Item anatomy、字体角色、尺寸等级和图标映射。
 - React、SwiftUI、Compose 分别保留平台原生导航、动效、焦点、菜单、Sheet 与辅助功能。
 - 三端追求相同的理解和操作结果，不追求逐像素相同。
@@ -147,9 +147,14 @@ Cheers 使用“编辑部、报纸、信件”的正式语义（Editorial Corres
 - 拖拽柄使用共享视觉 token；其可交互命中区域由所属面板保证。
 - Editor/Composer textarea、隐藏 file input 与响应式浮层宽度不是内容尺寸，不强套 ContentSize。
 
-### 4.4 Workbench 顶栏层级
+### 4.4 产物与 Collection 顶栏层级
 
-Workbench 顶栏固定表达 `Workbench → Collection → Tab`。左侧只放拖拽柄、Collection
+频道产物的主入口统一为 `Artifacts`，默认显示文档、交互页面、Canvas 和附件的同一列表。
+`Collections` 是组织这些产物的视图，`Source files` 是源码和配置文件浏览入口，二者不创建新的产物副本。
+产物详情、消息卡片与上下文优先使用稳定的 Artifact ID；旧路径引用只在兼容边界解析。
+iOS 使用同一 Sheet 内的原生列表与详情导航；附件选择复用此列表并按能力显示 Attach。
+
+Collection 视图顶栏表达 `Artifacts → Collection → Tab`。左侧只放拖拽柄、Collection
 选择/加载与 Tab 选择/打开；右侧只放当前内容操作、More、Expand/Restore、Dock/Float、Close。两侧为单行、
 不可换行的按钮岛，先实测右侧固定岛，再把剩余宽度交给左侧。空间不足时，先把新增入口收进
 对应选择器菜单，再把选择器收为具有 tooltip 与 accessible name 的图标。Raw workspace files

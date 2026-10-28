@@ -385,12 +385,21 @@
       "destructiveHint": false,
       "readOnlyHint": true
     },
-    "description": "List files uploaded to channel chat.",
+    "description": "List documents, interactive pages, canvases and delivered files together. Follow next_cursor with before. Internal configuration files are hidden by default.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "before": {
+          "type": "string"
+        },
         "channel_id": {
           "type": "string"
+        },
+        "include_internal": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer"
         }
       },
       "required": [
@@ -398,8 +407,123 @@
       ],
       "type": "object"
     },
-    "name": "inbox_list",
-    "title": "List channel attachments"
+    "name": "artifact_list",
+    "title": "List channel artifacts"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Create a channel document, HTML/React page or canvas. Supply path and content; reuse idempotency_key for retries. Existing paths are never overwritten; use artifact_update with the returned ID and version. Reference the returned artifact.uri in your reply.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "path",
+        "content"
+      ],
+      "type": "object"
+    },
+    "name": "artifact_create",
+    "title": "Create an artifact"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Update an available text artifact by stable ID. if_version is the artifact version returned by artifact_get/read. A stale version fails without overwriting concurrent edits.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "if_version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "channel_id",
+        "artifact_id",
+        "content",
+        "if_version"
+      ],
+      "type": "object"
+    },
+    "name": "artifact_update",
+    "title": "Update an artifact"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:files:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Deliver binary or exported content as a channel artifact. Supply base64 bytes and filename; reuse idempotency_key for retries. Reference the returned artifact.uri. The response includes the actual expiry policy.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "type": "string"
+        },
+        "content_type": {
+          "type": "string"
+        },
+        "data_b64": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "filename",
+        "data_b64"
+      ],
+      "type": "object"
+    },
+    "name": "artifact_deliver",
+    "title": "Deliver an artifact file"
   },
   {
     "_meta": {
@@ -411,28 +535,58 @@
       "destructiveHint": false,
       "readOnlyHint": true
     },
-    "description": "Read one channel attachment.",
+    "description": "Get canonical artifact metadata and availability by stable ID, including deleted or expired items.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "as_base64": {
-          "type": "boolean"
-        },
-        "channel_id": {
+        "artifact_id": {
           "type": "string"
         },
-        "file_id": {
+        "channel_id": {
           "type": "string"
         }
       },
       "required": [
         "channel_id",
-        "file_id"
+        "artifact_id"
       ],
       "type": "object"
     },
-    "name": "inbox_open",
-    "title": "Open a channel attachment"
+    "name": "artifact_get",
+    "title": "Inspect an artifact"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:read"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read a document or delivered file by stable artifact ID. Text returns content; binary bytes require as_base64. Use the returned cheers:artifact URI when referencing this output.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "as_base64": {
+          "type": "boolean"
+        },
+        "channel_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "artifact_id"
+      ],
+      "type": "object"
+    },
+    "name": "artifact_read",
+    "title": "Read an artifact"
   },
   {
     "_meta": {
@@ -518,6 +672,9 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "cards_json": {
+          "type": "string"
+        },
         "channel_id": {
           "type": "string"
         },
@@ -546,9 +703,6 @@
           "type": "string"
         },
         "text": {
-          "type": "string"
-        },
-        "cards_json": {
           "type": "string"
         }
       },
@@ -609,13 +763,13 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "cards_json": {
+          "type": "string"
+        },
         "channel_id": {
           "type": "string"
         },
         "msg_id": {
-          "type": "string"
-        },
-        "cards_json": {
           "type": "string"
         }
       },
@@ -700,46 +854,6 @@
   {
     "_meta": {
       "io.cheers/requiredScopes": [
-        "cheers:files:write"
-      ]
-    },
-    "annotations": {
-      "destructiveHint": false,
-      "readOnlyHint": false
-    },
-    "description": "Upload a base64-encoded attachment. Reuse one idempotency_key when retrying so it uploads once.",
-    "inputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "channel_id": {
-          "type": "string"
-        },
-        "content_type": {
-          "type": "string"
-        },
-        "data_b64": {
-          "type": "string"
-        },
-        "filename": {
-          "type": "string"
-        },
-        "idempotency_key": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "channel_id",
-        "filename",
-        "data_b64"
-      ],
-      "type": "object"
-    },
-    "name": "inbox_deliver",
-    "title": "Deliver a channel attachment"
-  },
-  {
-    "_meta": {
-      "io.cheers/requiredScopes": [
         "cheers:read"
       ]
     },
@@ -806,7 +920,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Create or overwrite a Cheers Desk file.",
+    "description": "Legacy path/directory operation. For generated documents and pages use artifact_create or artifact_update and return artifact.uri.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -846,7 +960,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Replace one exact string in a Desk file.",
+    "description": "Legacy path-based exact replacement. Prefer artifact_read then artifact_update using the artifact ID and version.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -887,7 +1001,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Append text to a Desk file. Reuse one idempotency_key when retrying so it appends once.",
+    "description": "Legacy path-based append. Prefer artifact_read then artifact_update for generated content. Reuse one idempotency_key when retrying this legacy operation.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1051,23 +1165,23 @@
     "title": "List task claims"
   },
   {
-    "name": "read_ui_contract",
-    "title": "Read interactive UI contract",
-    "description": "Read the supported Cheers A2UI version, component catalog, example, and authoring/action guide before creating an interactive Desk resource.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {},
-      "required": [],
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false
-    },
     "_meta": {
       "io.cheers/requiredScopes": [
         "cheers:read"
       ]
-    }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read the supported Cheers A2UI version, component catalog, example, and authoring/action guide before creating an interactive Desk resource.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "read_ui_contract",
+    "title": "Read interactive UI contract"
   }
 ]

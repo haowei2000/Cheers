@@ -14,6 +14,9 @@ import retrofit2.http.Query
  * that already carries the /api/v1/ prefix, e.g. "http://10.0.2.2:30080/api/v1/".
  */
 interface CheersApi {
+    @retrofit2.http.Streaming
+    @GET("files/{fileId}/download")
+    suspend fun downloadFile(@Path("fileId") fileId: String): okhttp3.ResponseBody
 
     // ── Auth ──
     @POST("auth/login")

@@ -1,5 +1,6 @@
-import { Inbox, ShieldAlert } from "lucide-react";
+import { Bot as BotIcon, Inbox, Plus, ShieldAlert } from "lucide-react";
 
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { ItemSection, OperationsItem } from "@/components/ui/item";
 import { MetricCard } from "@/components/ui/metric-card";
@@ -25,6 +26,7 @@ export function FleetOverview({
   onOpenAllBots,
   onOpenActivity,
   onOpenHosts,
+  onCreateBot,
 }: {
   summary: FleetSummary;
   actionableCount: number;
@@ -35,6 +37,7 @@ export function FleetOverview({
   onOpenAllBots: () => void;
   onOpenActivity: () => void;
   onOpenHosts: () => void;
+  onCreateBot: () => void;
 }) {
   return (
     <>
@@ -76,17 +79,24 @@ export function FleetOverview({
       )}
       <ItemSection
         label="Recent bots"
-        action={
+        action={bots.length > 0 ? (
           <Button action="open" variant="ghost" controlSize="compact" onClick={onOpenAllBots}>
             View all
           </Button>
-        }
+        ) : undefined}
         presentationLevel="medium"
         controlSize="regular"
       >
-        {bots.slice(0, 6).map((bot) => (
+        {bots.length > 0 ? bots.slice(0, 6).map((bot) => (
           <BotRow key={bot.bot_id} bot={bot} onSelect={() => onOpenBot(bot.bot_id)} />
-        ))}
+        )) : (
+          <EmptyState
+            icon={BotIcon}
+            title="No bots yet"
+            className="py-4"
+            action={<Button action="create" content="iconText" variant="secondary" onClick={onCreateBot}><Plus /></Button>}
+          />
+        )}
       </ItemSection>
       <FleetAudit events={audit.slice(0, 8)} bots={bots} />
     </>

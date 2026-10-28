@@ -357,6 +357,7 @@ export function RendererHost({
         <LensView
           key={`${renderer.id}:${path}:${retryKey}`}
           session={session}
+          artifactId={path === ctx.openTarget ? ctx.artifactId : undefined}
           lensId={lensId}
           config={config}
           channelId={ctx.channelId}
@@ -374,6 +375,7 @@ export function RendererHost({
           key={`${renderer.id}:${path}:${retryKey}`}
           fs={ctx.fs}
           path={path}
+          artifactId={path === ctx.openTarget ? ctx.artifactId : undefined}
           lensId={lensId}
           config={config}
           channelId={ctx.channelId}

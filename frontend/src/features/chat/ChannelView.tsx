@@ -29,6 +29,7 @@ import {
   toBundle,
   messageContextItem,
   workbenchFileContextItem,
+  contextItemLocator,
   type ContextItem,
 } from "./context/contextPick";
 import { ContextPickBar, ContextPickerButton } from "./context/ContextPickBar";
@@ -79,11 +80,7 @@ import { VoiceToolbarHostProvider } from "./VoiceRoomToolbar";
 import { quoteSelectedText } from "@/components/ui/context-actions";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
-const ChannelFilesDialog = lazy(() =>
-  import("./ChannelFilesDialog").then((m) => ({
-    default: m.ChannelFilesDialog,
-  })),
-);
+
 const ChannelSettingsDialog = lazy(() =>
   import("./ChannelSettingsDialog").then((m) => ({
     default: m.ChannelSettingsDialog,
@@ -556,6 +553,13 @@ export function ChannelView({
     setLaneEl,
     getLaneBounds,
   } = useChannelInstruments();
+  useEffect(() => {
+    if (!filesOpen) return;
+    setWbTarget(filesFocus ? `cheers:inbox/${filesFocus}` : undefined);
+    setWbOpen(true);
+    setFilesOpen(false);
+  }, [filesOpen, filesFocus, setFilesOpen, setWbOpen]);
+
   // The channel's shared window arrangement, from `.workbench.json`. Mobile renders
   // windows as full-screen sheets, so there is no geometry to share there.
   const isMobile = useIsMobile();
@@ -781,7 +785,19 @@ export function ChannelView({
   // workspace file (`workspace.read`) opens the Remote workspace at that path.
   const jumpToContextSource = useCallback(
     (item: ContextItem) => {
-      if (item.verb === "fs.read") {
+      if (item.verb === "channel.artifacts.read") {
+        const id = item.params.artifact_id;
+        if (typeof id === "string") {
+          setWbTarget(contextItemLocator(item) ?? `cheers:artifact/${id}`);
+          setWbOpen(true);
+        }
+      } else if (item.verb === "channel.files.read") {
+        const id = item.params.file_id;
+        if (typeof id === "string") {
+          setWbTarget(`cheers:inbox/${id}`);
+          setWbOpen(true);
+        }
+      } else if (item.verb === "fs.read") {
         const path = item.params.path;
         if (typeof path === "string") {
           setWbTarget(path);
@@ -981,8 +997,8 @@ export function ChannelView({
       const senderBotLabel =
         botLabels.get(senderBotId) || senderBotId.slice(0, 8);
       const openInbox = (fileId: string) => {
-        setFilesFocus(fileId);
-        setFilesOpen(true);
+        setWbTarget(`cheers:inbox/${fileId}`);
+        setWbOpen(true);
       };
       // 1) Strongest signal: a file THIS message attached (an inbox deliverable).
       const hit = (files || []).find(
@@ -1029,8 +1045,6 @@ export function ChannelView({
     [
       channel,
       botLabels,
-      setFilesFocus,
-      setFilesOpen,
       setWbOpen,
       setWsInit,
       setWsOpen,
@@ -1072,9 +1086,9 @@ export function ChannelView({
         setWbOpen(true);
         return;
       }
-      if (loc.kind === "inbox") {
-        setFilesFocus(loc.fileId);
-        setFilesOpen(true);
+      if (loc.kind === "inbox" || loc.kind === "artifact") {
+        setWbTarget(uri);
+        setWbOpen(true);
         return;
       }
       if (loc.kind === "msg") {
@@ -1153,8 +1167,6 @@ export function ChannelView({
       jumpToMessage,
       setWbTarget,
       openBoard,
-      setFilesFocus,
-      setFilesOpen,
       setWbOpen,
       setWsInit,
       setWsOpen,
@@ -1338,6 +1350,18 @@ export function ChannelView({
     [messages],
   );
 
+  // The reply target's context item, when the reply itself added it. The reply
+  // banner stands in for that item, so backing out of the reply takes it back out.
+  const replyContextRef = useRef<{ channelId: string; id: string } | null>(null);
+  const releaseReplyContext = useCallback(() => {
+    const added = replyContextRef.current;
+    replyContextRef.current = null;
+    if (added) useContextPickStore.getState().remove(added.channelId, added.id);
+  }, []);
+  useEffect(() => {
+    if (!replyTo) releaseReplyContext();
+  }, [replyTo, releaseReplyContext]);
+
   // Reply uses the same bottom composer as a normal send. The only difference is
   // defaults copied from the source turn: session target, @bot, and message context.
   // `reply_to_msg_id` still nests the outgoing message under the source.
@@ -1388,12 +1412,18 @@ export function ChannelView({
         }
       }
 
+      releaseReplyContext();
       if (channel?.channel_id) {
         const ctx = messageContextItem(m);
-        if (ctx) useContextPickStore.getState().add(channel.channel_id, ctx);
+        const store = useContextPickStore.getState();
+        const alreadyPicked = (store.byChannel[channel.channel_id] ?? []).some((item) => item.id === ctx?.id);
+        if (ctx && !alreadyPicked) {
+          store.add(channel.channel_id, ctx);
+          replyContextRef.current = { channelId: channel.channel_id, id: ctx.id };
+        }
       }
     },
-    [messages, mentionables, channel?.channel_id, setComposePrefill],
+    [messages, mentionables, channel?.channel_id, setComposePrefill, releaseReplyContext],
   );
 
   const mentionMember = useCallback(
@@ -1561,11 +1591,10 @@ export function ChannelView({
   const workspacePanels = useMemo(
     () => [
       ...(vbOpen ? [{ id: "viewboard" as const, label: "Viewboard" }] : []),
-      ...(wbOpen ? [{ id: "workbench" as const, label: "Workbench" }] : []),
+      ...(wbOpen ? [{ id: "workbench" as const, label: "Artifacts" }] : []),
       ...(wsOpen ? [{ id: "workspace" as const, label: "Workspace" }] : []),
-      ...(filesOpen ? [{ id: "files" as const, label: "Files" }] : []),
     ],
-    [filesOpen, vbOpen, wbOpen, wsOpen],
+    [vbOpen, wbOpen, wsOpen],
   );
   if (!channel) {
     return (
@@ -1742,16 +1771,6 @@ export function ChannelView({
                 memberNames={memberNames}
               />
 
-              {/* Files shares the same docking and tab lifecycle as other panels. */}
-              {filesOpen && (
-                <Suspense fallback={null}>
-                  <ChannelFilesDialog
-                    channelId={channel.channel_id}
-                    onClose={() => setFilesOpen(false)}
-                    focusFileId={filesFocus}
-                  />
-                </Suspense>
-              )}
               </SharedLayoutContext.Provider>
             </LaneBoundsContext.Provider>
           )}
