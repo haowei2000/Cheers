@@ -117,11 +117,61 @@ ACP offers exactly one channel for MCP configuration: `mcpServers` on
 | Agent runs MCP OAuth itself | Spike result: unreachable for most Agents (needs a public CIMD and a consent round-trip); also yields one bot-wide token, not one per channel |
 | URL-mode elicitation to authorize access to Cheers | The MCP spec forbids it ("MUST NOT rely on URL mode elicitation to authorize users for themselves"); the loopback `redirect_uri` on the host is unreachable from the user's browser; Agent support is sparse |
 | Token in prompt content | Leaks into LLM context |
-| Local MCP proxy that adds the header | Valid, keeps the token out of the Agent entirely; deferred — one extra hop and a proxy to maintain. Revisit if token exposure to the Agent process becomes unacceptable |
+| Custom local MCP proxy that adds the header | Superseded by MCP-over-ACP (§3.4), which gives the same property through a standard ACP binding instead of a Cheers-only proxy |
+| A Cheers-specific ACP extension for credential callbacks | Unnecessary once MCP-over-ACP lands; per-session `serverId` already scopes authority without new wire fields |
 
-Residual risk of the chosen path: the bearer is visible to the Agent process
+Residual risk of the current path: the bearer is visible to the Agent process
 (not the LLM context). It is short-lived, host-bound, scope-limited,
-channel-narrowed and revocable on the next request.
+channel-narrowed and revocable on the next request. §3.4 removes it.
+
+### 3.4 Target: client-held credentials via MCP-over-ACP
+
+General principle, not specific to Cheers: **the Agent decides what to call;
+the ACP client decides whether, and with which credential.** Credentials
+for tool execution live with the client; the Agent is an untrusted executor.
+
+Delivery strength, strongest first:
+
+| Level | Mechanism | Agent sees a credential? |
+|---|---|---|
+| L0 execute at client | Tool calls return to the client over ACP; the client attaches its credential and forwards, or executes locally | Never |
+| L1 sign at client | Client signs each request (e.g. DPoP) | One signed request at a time |
+| L2 lend short-lived | Agent asks the client for a short-lived token | Yes, briefly |
+| L3 static injection | `mcpServers[].headers` (today) | Yes, for the token lifetime |
+
+The ACP [MCP-over-ACP RFD](https://agentclientprotocol.com/rfds/mcp-over-acp)
+(Active since 2026-10) is the standard L0 binding:
+
+- The Agent advertises `agentCapabilities.mcpCapabilities.acp`; the client
+  declares `{ "type": "acp", "name": "cheers", "serverId": … }` in
+  `session/new`.
+- Calls arrive at the client as `mcp/message` (`serverId`, `requestId`, inner
+  MCP `method`/`params`), request-scoped and session-less like MCP 2026-07-28.
+- Agents without native support use the `agent-client-protocol-polyfill`
+  bridge, which presents a normal MCP server to the Agent and tunnels back over
+  ACP.
+
+Cheers design on top of it:
+
+- **One `serverId` per ACP session** (the RFD: "distinct offerings use distinct
+  server IDs"). The registration is bound to the session's channel, so the
+  connector knows which channel a call belongs to without any new wire field.
+- **Turn binding is Cheers-internal.** ACP runs one prompt per session at a
+  time, so the connector attributes a call to the session's active prompt
+  (task) and rejects calls that arrive after the turn ends. This is a Cheers
+  need — per-turn senders in multi-user channels — not a protocol gap.
+- The connector forwards to `POST /mcp` with a token it never hands out. That
+  allows a TTL of minutes instead of 24h, DPoP later, and approvals (§6) at the
+  connector.
+- Rollout is gated: header injection stays the default until the Agent matrix
+  passes, then it is removed in a release with a stated deprecation window.
+  The RFD schema is still unstable ("must be released … before publication").
+
+Upstream engagement:
+[discussion #2584](https://github.com/orgs/agentclientprotocol/discussions/2584)
+asks to confirm per-session `serverId` as the intended way to scope authority,
+and offers a non-normative "credential-holding providers" Security note, Rust
+SDK help and adapter support for `mcpCapabilities.acp`.
 
 ## 4. Channel isolation (cross-channel leakage)
 
@@ -211,6 +261,7 @@ user and task.
 | Channel-narrowed tokens, `enforce` default | ✅ |
 | ACP session per channel | ✅ |
 | Fresh token before every prompt via `session/load` | ✅ (per-Agent header refresh unverified) |
+| Client-held credentials via MCP-over-ACP | ❌ (upstream RFD Active; connector on ACP SDK 2.0, binding needs 3.x) |
 | Domain errors as `isError` tool results | ✅ (no next-step guidance) |
 | Per-channel host working directory | ❌ |
 | Channel-safe `set_status` | ❌ |
@@ -224,6 +275,7 @@ user and task.
 | Phase | Work | Touches |
 |---|---|---|
 | **P0 isolation** | Per-channel cwd and `allowed_roots`; make `set_status` channel-scoped or drop it from the default scope; refuse `MCP_CHANNEL_SCOPE=off\|warn` outside development | connector (release per AGENTS.md), server |
+| **P0.5 client-held credentials** | Upgrade `agent-client-protocol` 2.0 → 3.x (separate PR, no behaviour change); connector serves `cheers` as an MCP-over-ACP provider with one `serverId` per session, forwarding to `/mcp`; polyfill for Agents without `mcpCapabilities.acp`; Agent matrix; flag-gated switch, then remove header injection; shorten token TTL | connector (release per AGENTS.md), server |
 | **P1 guidance** | Actionable error shape (`code`, `retryable`, `next`); tool-error form of scope refusals for `client_credentials` tokens | server |
 | **P2 task binding** | `task_grant` on dispatch; `task` claim; per-request running-task check; connector token cache keyed by task; verify per-Agent header refresh on `session/load` | server, connector, migration |
 | **P3 delegation** | RFC 8693 exchange; `sub=U, act=bot`; delegated principal with role intersection; standing-delegation setting; "bot (for U)" audit display | server, frontend, migration |
