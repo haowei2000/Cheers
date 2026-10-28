@@ -257,6 +257,47 @@
       "uri": "cheers:sess-1:user-2:nonce-3",
       "why": "A LiveKit participant identity.",
       "parses": false
+    },
+    {
+      "uri": "cheers:artifact/49ca7c5f-37cb-4f02-831c-e36da3492361",
+      "why": "Stable artifact identity, independent of storage provider or path.",
+      "parses": true,
+      "resource": "channel.artifacts.read",
+      "params": {
+        "channel_id": "c-1",
+        "artifact_id": "49ca7c5f-37cb-4f02-831c-e36da3492361"
+      }
+    },
+    {
+      "uri": "cheers:artifact/../secret",
+      "why": "Artifact IDs cannot be paths.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:artifact/49ca7c5f-37cb-4f02-831c-e36da3492361#L2",
+      "why": "Artifact revision/anchor syntax must not silently imply current content.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:artifact/not-a-uuid",
+      "why": "Artifact identity is a UUID.",
+      "parses": false
+    },
+    {
+      "uri": "cheers:artifact/49ca7c5f-37cb-4f02-831c-e36da3492361#^revenue",
+      "why": "Canvas node identity survives artifact renames. Reading includes the source document.",
+      "parses": true,
+      "resource": "channel.artifacts.read",
+      "params": {
+        "channel_id": "c-1",
+        "artifact_id": "49ca7c5f-37cb-4f02-831c-e36da3492361",
+        "inspectable_id": "revenue"
+      }
+    },
+    {
+      "uri": "cheers:artifact/49ca7c5f-37cb-4f02-831c-e36da3492361#^../secret",
+      "why": "Canvas anchor cannot contain traversal.",
+      "parses": false
     }
   ]
 }

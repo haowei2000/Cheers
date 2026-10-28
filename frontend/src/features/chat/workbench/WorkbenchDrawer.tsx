@@ -1,6 +1,6 @@
 import { useManagedPanel } from "@/components/ui/managed-panel";
 import { ActionButton } from "@/components/ui/action-button";
-import { Fragment, memo, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CollectionIcon } from "@/components/ui/editorial-icons";
 import { Folder, Package } from "lucide-react";
@@ -11,6 +11,7 @@ import { makeFsClient, type SendResourceReq } from "./fsClient";
 import type { WorkbenchContext } from "./context";
 import type { PresenceFocus } from "../hooks/useChatRealtime";
 import { FilePanel } from "./panels/FilePanel";
+import { ArtifactLibrary } from "../artifacts/ArtifactLibrary";
 import { SceneWorkbench } from "./SceneWorkbench";
 import { useChannelProfile } from "@/hooks/useChannelProfile";
 import { panelsFor, type PanelContext } from "@/features/chat/panels/registry";
@@ -86,6 +87,12 @@ function WorkbenchDrawerImpl({
   });
 
   const isMobile = useIsMobile();
+  const [collectionsMode, setCollectionsMode] = useState(false);
+  const [artifactDirty, setArtifactDirty] = useState(false);
+  const setRawMode = drawerState.setRawMode;
+  useEffect(() => {
+    if (openFilePath && !artifactDirty) { setCollectionsMode(false); setRawMode(false); }
+  }, [openFilePath, setRawMode, artifactDirty]);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("cheers.float.workbench.min") === "1"
   );
@@ -168,9 +175,12 @@ function WorkbenchDrawerImpl({
 
   return (
     <FloatingPanel
-      title="Workbench"
+      title="Artifacts"
       icon={Package}
-      onClose={onClose}
+      onClose={() => {
+        if (artifactDirty) { drawerState.setNotice("Save or discard your changes before closing."); return; }
+        onClose();
+      }}
       storageKey="cheers.float.workbench"
       open={open}
       collapsed={minimized}
@@ -179,15 +189,16 @@ function WorkbenchDrawerImpl({
       className="w-[min(960px,calc(100vw-2rem))] h-[min(840px,88%)]"
       defaultPosClassName="top-2 left-2"
       bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
-      primaryNavigation={drawerState.rawMode ? {
-        ariaLabel: "Workbench Collections",
+      primaryNavigation={{
+        ariaLabel: "Artifacts navigation",
         presentationOrder: ["collapsed"],
         collapsedContent: "icon",
         items: [
-          { id: "collections", label: "Back to Collections", icon: CollectionIcon, onSelect: () => drawerState.setRawMode(false) },
-          { id: "raw-workspace-files", label: "Raw workspace files", icon: Folder, selected: true, onSelect: () => undefined },
+          { id: "artifacts", label: "All artifacts", icon: Package, selected: !drawerState.rawMode && !collectionsMode, onSelect: () => { if (artifactDirty) { drawerState.setNotice("Save or discard your changes first."); return; } drawerState.setRawMode(false); setCollectionsMode(false); } },
+          { id: "collections", label: "Collections", icon: CollectionIcon, selected: !drawerState.rawMode && collectionsMode, onSelect: () => { if (artifactDirty) { drawerState.setNotice("Save or discard your changes first."); return; } drawerState.setRawMode(false); setCollectionsMode(true); } },
+          { id: "raw-workspace-files", label: "Source files", icon: Folder, selected: drawerState.rawMode, onSelect: () => { if (artifactDirty) { drawerState.setNotice("Save or discard your changes first."); return; } drawerState.setRawMode(true); } },
         ],
-      } : undefined}
+      }}
       collapsedSummary={() => (
         <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
           <GlanceRow
@@ -195,7 +206,7 @@ function WorkbenchDrawerImpl({
             label="Collection"
             value={drawerState.allEnvs.find((e) => e.id === drawerState.selectedId)?.title ?? "General"}
             onClick={toggleCollapsed}
-            title="Open workbench"
+            title="Open artifacts"
           />
         </div>
       )}
@@ -219,8 +230,8 @@ function WorkbenchDrawerImpl({
         {open && profilePanels.map((panel) => <Fragment key={panel.id}>{panel.render(panelCtx)}</Fragment>)}
         <div className="min-h-0 flex-1 overflow-hidden">
           {open && (drawerState.rawMode ? (
-            <FilePanel ctx={ctx} />
-          ) : (
+            <FilePanel ctx={ctx} onDirtyChange={setArtifactDirty} />
+          ) : collectionsMode ? (
             <SceneWorkbench
               ctx={ctx}
               sceneState={drawerState.cfg.scene_state}
@@ -231,7 +242,7 @@ function WorkbenchDrawerImpl({
               onLoadCollection={() => navigate("/settings/workbench")}
               onShowRaw={() => drawerState.setRawMode(true)}
             />
-          ))}
+          ) : <ArtifactLibrary key={channelId} ctx={ctx} target={openFilePath} onDirtyChange={setArtifactDirty} />)}
         </div>
       </div>
     </FloatingPanel>

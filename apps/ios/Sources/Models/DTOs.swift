@@ -1472,6 +1472,62 @@ struct ResourceContextItem: Codable, Identifiable, Hashable {
     let kind: String
 }
 
+// One channel-scoped identity for documents and delivered attachments.
+struct ChannelArtifact: Decodable, Identifiable, Hashable {
+    let artifactId: String
+    let channelId: String
+    let uri: String
+    let title: String
+    let sourceKind: String
+    let sourceId: String
+    let path: String?
+    let contentType: String?
+    let sizeBytes: Int64
+    let version: Int
+    let availability: String
+    let expiresAt: String?
+    var id: String { artifactId }
+    var isReady: Bool { availability == "ready" }
+    var isInteractive: Bool {
+        ["html", "htm", "tsx", "jsx"].contains((title as NSString).pathExtension.lowercased())
+    }
+    var contextItem: ResourceContextItem {
+        .init(id: "artifact:\(id)", verb: "channel.artifacts.read",
+              params: ["artifact_id": .string(id)], label: title, kind: "file")
+    }
+    var attachment: MessageFileRef? {
+        guard sourceKind == "attachment", isReady else { return nil }
+        return .init(fileId: sourceId, originalFilename: title, contentType: contentType,
+                     sizeBytes: sizeBytes, status: "uploaded", expiresAt: expiresAt,
+                     previewUrl: nil, downloadUrl: nil, summary: nil)
+    }
+    enum CodingKeys: String, CodingKey {
+        case artifactId = "artifact_id", channelId = "channel_id", sourceKind = "source_kind"
+        case sourceId = "source_id", contentType = "content_type", sizeBytes = "size_bytes", expiresAt = "expires_at"
+        case uri, title, path, version, availability
+    }
+}
+
+struct ChannelArtifactPage: Decodable {
+    let artifacts: [ChannelArtifact]
+    let nextCursor: String?
+    enum CodingKeys: String, CodingKey { case artifacts; case nextCursor = "next_cursor" }
+}
+
+struct ChannelArtifactContent: Decodable {
+    let artifact: ChannelArtifact
+    let content: String?
+    let data: JSONValue?
+    let kind: String
+    let truncated: Bool
+}
+
+/// Only these references can be routed into a channel's artifact library.
+/// Actual parsing/authorization remains at the gateway boundary.
+func isChannelArtifactReference(_ uri: String) -> Bool {
+    uri.hasPrefix("cheers:artifact/") || uri.hasPrefix("cheers:desk/") || uri.hasPrefix("cheers:inbox/")
+}
+
 struct ResourceContextWireItem: Codable, Hashable {
     let verb: String
     let params: [String: JSONValue]

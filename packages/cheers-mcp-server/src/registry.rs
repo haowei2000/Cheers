@@ -114,6 +114,8 @@ pub enum Routing {
 /// reachable only over the browser WS path.
 #[derive(Debug, Clone, Copy)]
 pub struct ToolBinding {
+    /// False for callable compatibility aliases omitted from tools/list.
+    pub discoverable: bool,
     pub name: &'static str,
     pub title: &'static str,
     pub description: &'static str,
@@ -171,6 +173,7 @@ const fn read_tool(
     params: &'static [Param],
 ) -> Option<ToolBinding> {
     Some(ToolBinding {
+        discoverable: true,
         name,
         title,
         description,
@@ -191,6 +194,7 @@ const fn write_tool(
     params: &'static [Param],
 ) -> Option<ToolBinding> {
     Some(ToolBinding {
+        discoverable: true,
         name,
         title,
         description,
@@ -201,6 +205,17 @@ const fn write_tool(
         constants: &[],
         shaping: Shaping::None,
     })
+}
+
+/// Keep old clients callable without advertising a second product vocabulary.
+const fn compatibility_only(tool: Option<ToolBinding>) -> Option<ToolBinding> {
+    match tool {
+        Some(mut binding) => {
+            binding.discoverable = false;
+            Some(binding)
+        }
+        None => None,
+    }
 }
 
 const CHANNEL_ONLY: &[Param] = &[Param::req("channel_id", ParamKind::String)];
@@ -338,6 +353,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             // but it is not an fs mutation and is not owner/admin gated.
             destructive: false,
             tool: Some(ToolBinding {
+                discoverable: true,
                 name: "leave_channel",
                 title: "Leave a channel",
                 description: "Remove this Bot from a non-DM channel.",
@@ -361,16 +377,66 @@ pub fn catalog() -> &'static [ResourceSpec] {
         ),
         db(
             "channel.files",
-            read_tool(
+            compatibility_only(read_tool(
                 "inbox_list",
                 "List channel attachments",
                 "List files uploaded to channel chat.",
                 CHANNEL_ONLY,
-            ),
+            )),
+        ),
+        db("channel.artifacts.resolve", None),
+        db("channel.artifacts.patch", None),
+        db(
+            "channel.artifacts.list",
+            read_tool("artifact_list", "List channel artifacts",
+                "List documents, interactive pages, canvases and delivered files together. Follow next_cursor with before. Internal configuration files are hidden by default.",
+                &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::opt("limit", ParamKind::Integer),
+                    Param::opt("before", ParamKind::String),
+                    Param::opt("include_internal", ParamKind::Boolean),
+                ]),
+        ),
+        db(
+            "channel.artifacts.create",
+            write_tool("artifact_create", "Create an artifact",
+                "Create a channel document, HTML/React page or canvas. Supply path and content; reuse idempotency_key for retries. Existing paths are never overwritten; use artifact_update with the returned ID and version. Reference the returned artifact.uri in your reply.",
+                SCOPE_WORKSPACE_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("path", ParamKind::String), Param::req("content", ParamKind::String), Param::opt("idempotency_key", ParamKind::String)]),
+        ),
+        db(
+            "channel.artifacts.update",
+            write_tool("artifact_update", "Update an artifact",
+                "Update an available text artifact by stable ID. if_version is the artifact version returned by artifact_get/read. A stale version fails without overwriting concurrent edits.",
+                SCOPE_WORKSPACE_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("artifact_id", ParamKind::String), Param::req("content", ParamKind::String), Param::req("if_version", ParamKind::Integer)]),
+        ),
+        db(
+            "channel.artifacts.deliver",
+            write_tool("artifact_deliver", "Deliver an artifact file",
+                "Deliver binary or exported content as a channel artifact. Supply base64 bytes and filename; reuse idempotency_key for retries. Reference the returned artifact.uri. The response includes the actual expiry policy.",
+                SCOPE_FILES_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("data_b64", ParamKind::String), Param::opt("content_type", ParamKind::String), Param::opt("idempotency_key", ParamKind::String)]),
+        ),
+        db(
+            "channel.artifacts.get",
+            read_tool("artifact_get", "Inspect an artifact",
+                "Get canonical artifact metadata and availability by stable ID, including deleted or expired items.",
+                &[Param::req("channel_id", ParamKind::String), Param::req("artifact_id", ParamKind::String)]),
+        ),
+        db(
+            "channel.artifacts.read",
+            read_tool("artifact_read", "Read an artifact",
+                "Read a document or delivered file by stable artifact ID. Text returns content; binary bytes require as_base64. Use the returned cheers:artifact URI when referencing this output.",
+                &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::req("artifact_id", ParamKind::String),
+                    Param::opt("as_base64", ParamKind::Boolean),
+                ]),
         ),
         db(
             "channel.files.read",
-            read_tool(
+            compatibility_only(read_tool(
                 "inbox_open",
                 "Open a channel attachment",
                 "Read one channel attachment.",
@@ -379,7 +445,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("file_id", ParamKind::String),
                     Param::opt("as_base64", ParamKind::Boolean),
                 ],
-            ),
+            )),
         ),
         // Brokered through the owner Bot's live Connector, not the database.
         ResourceSpec {
@@ -426,6 +492,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
         db(
             "channel.messages.create",
             Some(ToolBinding {
+                discoverable: true,
                 name: "post_message",
                 title: "Post a message",
                 description: "Send or reply to a channel message. Optional cards_json is a JSON array of up to three read-only {v:1,kind:'resource_ref',uri:'cheers:...',title?,description?} cards; text remains the fallback. Reuse one idempotency_key when retrying so it posts once.",
@@ -506,7 +573,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
         ),
         db(
             "channel.files.create",
-            write_tool(
+            compatibility_only(write_tool(
                 "inbox_deliver",
                 "Deliver a channel attachment",
                 "Upload a base64-encoded attachment. Reuse one idempotency_key when retrying so it uploads once.",
@@ -518,7 +585,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::opt("content_type", ParamKind::String),
                     Param::opt("idempotency_key", ParamKind::String),
                 ],
-            ),
+            )),
         ),
         db(
             "fs.ls",
@@ -549,7 +616,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "desk_write",
                 "Write a Desk file",
-                "Create or overwrite a Cheers Desk file.",
+                "Legacy path/directory operation. For generated documents and pages use artifact_create or artifact_update and return artifact.uri.",
                 SCOPE_WORKSPACE_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
@@ -565,7 +632,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "desk_edit",
                 "Edit a Desk file",
-                "Replace one exact string in a Desk file.",
+                "Legacy path-based exact replacement. Prefer artifact_read then artifact_update using the artifact ID and version.",
                 SCOPE_WORKSPACE_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
@@ -581,7 +648,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "desk_append",
                 "Append to a Desk file",
-                "Append text to a Desk file. Reuse one idempotency_key when retrying so it appends once.",
+                "Legacy path-based append. Prefer artifact_read then artifact_update for generated content. Reuse one idempotency_key when retrying this legacy operation.",
                 SCOPE_WORKSPACE_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
@@ -594,6 +661,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
         destructive(
             "fs.rm",
             Some(ToolBinding {
+                discoverable: true,
                 name: "desk_rm",
                 title: "Remove a Desk path",
                 description: "Remove a Desk file or subtree.",

@@ -19,6 +19,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.cheers.android.data.ws.ResourceException
+import com.cheers.android.data.api.ChannelArtifact
+import java.io.OutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.put
+import com.cheers.android.data.api.ArtifactContent
 
 data class ChatUiState(
     val title: String,
@@ -33,6 +42,8 @@ data class ChatUiState(
     val memberCount: Int = 0,
     val connection: ConnectionStatus = ConnectionStatus.CONNECTING,
     val sending: Boolean = false,
+    val savingArtifact: Boolean = false,
+    val artifactSaveStatus: String? = null,
     /** Transient, surfaced as a snackbar then cleared. */
     val transientError: String? = null,
     /** Fatal (signed out / kicked from channel). */
@@ -68,6 +79,9 @@ class ChatViewModel(
     val draft = MutableStateFlow("")
 
     private var socket: ChatSocket? = null
+    val artifacts = ArtifactController(viewModelScope, json) { resource, params ->
+        socket?.request(resource, params) ?: throw ResourceException("OFFLINE", "Not connected")
+    }
     private var loadedOnce = false
     private var markReadJob: Job? = null
 
@@ -216,7 +230,9 @@ class ChatViewModel(
         when (event) {
             SocketEvent.Subscribed -> {
                 if (loadedOnce) viewModelScope.launch { catchUp() }
+                artifacts.refresh()
             }
+            SocketEvent.ArtifactsChanged -> artifacts.refresh()
             is SocketEvent.NewMessage -> {
                 _state.update { it.copy(messages = upsert(it.messages, event.message)) }
                 scheduleMarkRead()
@@ -288,6 +304,40 @@ class ChatViewModel(
 
     fun clearTransientError() {
         _state.update { it.copy(transientError = null) }
+    }
+
+    /** SAF owns the chosen destination; no storage permission or bearer URL is exposed. */
+    fun saveArtifact(artifact: ChannelArtifact, openOutput: () -> OutputStream?) {
+        if (_state.value.savingArtifact) return
+        _state.update { it.copy(savingArtifact = true, artifactSaveStatus = null) }
+        viewModelScope.launch {
+            try {
+                if (artifact.sourceKind == "attachment") {
+                    container.currentApi().downloadFile(artifact.sourceId).use { response ->
+                        withContext(Dispatchers.IO) {
+                            (openOutput() ?: error("Could not open the selected destination")).use { output ->
+                                response.byteStream().use { it.copyTo(output) }
+                            }
+                        }
+                    }
+                } else {
+                    val raw = socket?.request("channel.artifacts.read", buildJsonObject { put("artifact_id", artifact.artifactId) })
+                        ?: throw ResourceException("OFFLINE", "Not connected")
+                    val value = json.decodeFromJsonElement<ArtifactContent>(raw)
+                    val text = value.content
+                    check(text != null && !value.truncated) { "The full source is unavailable" }
+                    withContext(Dispatchers.IO) {
+                        (openOutput() ?: error("Could not open the selected destination")).use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                    }
+                }
+                _state.update { it.copy(artifactSaveStatus = "Saved ${artifact.title}") }
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                _state.update { it.copy(artifactSaveStatus = error.userMessage(json)) }
+            } finally {
+                _state.update { it.copy(savingArtifact = false) }
+            }
+        }
     }
 
     private fun scheduleMarkRead() {

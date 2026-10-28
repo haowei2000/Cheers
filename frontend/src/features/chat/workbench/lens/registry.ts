@@ -28,6 +28,7 @@ export interface LensProps {
   data: unknown;
   /** Channel file rendered by this lens, when there is one. */
   path?: string;
+  artifactId?: string;
   config: unknown;
   onChange: (next: unknown) => void;
   /** Structured edit, for a lens that knows WHICH part changed. Preferred over

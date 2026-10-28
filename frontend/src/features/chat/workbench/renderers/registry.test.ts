@@ -1,6 +1,22 @@
 import { describe, it, expect } from "vitest";
 import type { RendererExtension } from "../sandbox/rendererExtension";
-import { accepts, candidatesFor, formatOf, getRenderer, previewOptions, specificity } from "./registry";
+import { accepts, canDiscover, candidatesFor, formatOf, getRenderer, previewOptions, specificity } from "./registry";
+
+describe("discovery uses renderer acceptance", () => {
+  it.each(["report.md", "page.HTML", "page.htm", "cards/page.canvas.tsx", "page.jsx", "board.yaml", "data.json"])(
+    "discovers %s before content is loaded", (path) => expect(canDiscover(path, [])).toBe(true),
+  );
+  it("does not read arbitrary source files with no matching renderer", () => {
+    expect(canDiscover("server/main.rs", [])).toBe(false);
+  });
+  it("discovers an extension's custom format through its path gate", () => {
+    const extension: RendererExtension = { extensionId: "custom", title: "Custom",
+      manifest: { renderers: [{ id: "custom", title: "Custom", match: { format: "text", glob: "diagrams/*.dot", requireAll: ["digraph"] } }] } };
+    expect(canDiscover("diagrams/flow.dot", [extension])).toBe(true);
+    expect(canDiscover("src/main.rs", [extension])).toBe(false);
+    expect(candidatesFor("diagrams/flow.dot", "invalid", [extension])).toEqual([]);
+  });
+});
 
 // A renderer plugin that only accepts markdown containing task lines.
 const checklist: RendererExtension = {

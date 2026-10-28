@@ -117,7 +117,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
 /// ambiguity ONCE, server-side, instead of per client parser); `.json` parses as JSON.
 /// Everything else — and anything unparseable — is `None`, never an error: prose is
 /// not a board, and a half-written file must not break reading it.
-fn parse_structured(path: &str, content: &str) -> Option<Value> {
+pub(super) fn parse_structured(path: &str, content: &str) -> Option<Value> {
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     match ext.as_str() {
         "yaml" | "yml" => serde_yaml::from_str::<Value>(content).ok(),
@@ -647,13 +647,23 @@ pub async fn handle_patch(db: &PgPool, principal: &Principal, params: &Value) ->
         .await
         .map_err(super::db_err("fs.patch: begin tx"))?;
     let row = sqlx::query!(
-            "SELECT content, version, is_dir FROM context_files WHERE channel_id = $1 AND path = $2 FOR UPDATE",
+            "SELECT content, version, is_dir, file_id FROM context_files WHERE channel_id = $1 AND path = $2 FOR UPDATE",
             channel_id.to_string(),
             &path,
         ).fetch_optional(&mut *tx)
     .await
     .map_err(super::db_err("fs.patch: select file"))?
     .ok_or_else(|| super::not_found("file"))?;
+    if params
+        .get("expected_file_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| id != row.file_id)
+    {
+        return Err(super::resource_error(
+            "VERSION_CONFLICT",
+            "artifact moved or was replaced; reload before editing",
+        ));
+    }
     if row.is_dir.clone() {
         return Err(patch_error("path is a directory"));
     }
@@ -680,14 +690,26 @@ pub async fn handle_patch(db: &PgPool, principal: &Principal, params: &Value) ->
         json!({"path": path, "version": version, "ops": ops}),
     )
     .await?;
+    let artifact = super::artifacts::for_path(&mut tx, channel_id, &path).await?;
     tx.commit()
         .await
         .map_err(super::db_err("fs.patch: commit tx"))?;
-    Ok(json!({"channel_id": channel_id, "path": path, "version": version, "channel_seq": seq}))
+    Ok(
+        json!({"channel_id": channel_id, "path": path, "version": version, "channel_seq": seq, "artifact": artifact}),
+    )
 }
 
 /// `fs.write` — create or overwrite a file. `if_version=0` means create-only.
 pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    write_with_idempotency(db, principal, params, None).await
+}
+
+pub(super) async fn write_with_idempotency(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+    idempotency: Option<super::idempotency::IdempotencyKey>,
+) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
     check_fs_write(db, principal, channel_id).await?;
     let content = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
@@ -698,12 +720,26 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
     let if_version = params.get("if_version").and_then(|v| v.as_i64());
     enforce_file_size(content)?;
 
+    // Authorization above applies to replays too. Claim and response belong to
+    // the same transaction as the source write and artifact catalog trigger.
+    if let Some(key) = &idempotency {
+        if let Some(response) = key.replay(db).await? {
+            return Ok(response);
+        }
+    }
+
     let mut tx = db
         .begin()
         .await
         .map_err(super::db_err("fs.write: begin tx"))?;
+    if let Some(key) = &idempotency {
+        if !key.claim(&mut tx).await? {
+            drop(tx);
+            return key.replay_claimed(db).await;
+        }
+    }
     let existing = sqlx::query!(
-        "SELECT version
+        "SELECT version, file_id
          FROM context_files
          WHERE channel_id = $1 AND path = $2
          FOR UPDATE",
@@ -717,6 +753,16 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
     ))?;
 
     let version = if let Some(row) = existing {
+        if params
+            .get("expected_file_id")
+            .and_then(Value::as_str)
+            .is_some_and(|expected| expected != row.file_id)
+        {
+            return Err(super::resource_error(
+                "VERSION_CONFLICT",
+                "artifact moved or was replaced; reload before editing",
+            ));
+        }
         let current = row.version.clone();
         if let Some(expected) = if_version {
             if expected != current {
@@ -777,16 +823,23 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         json!({"path": path, "version": version, "is_dir": is_dir}),
     )
     .await?;
+    let artifact = if is_dir {
+        Value::Null
+    } else {
+        super::artifacts::for_path(&mut tx, channel_id, &path).await?
+    };
+    let response = json!({
+        "channel_id": channel_id, "path": path, "version": version,
+        "channel_seq": seq, "artifact": artifact,
+    });
+    if let Some(key) = &idempotency {
+        key.complete(&mut tx, &response).await?;
+    }
     tx.commit()
         .await
         .map_err(super::db_err("fs.write: commit tx"))?;
 
-    Ok(json!({
-        "channel_id": channel_id,
-        "path": path,
-        "version": version,
-        "channel_seq": seq,
-    }))
+    Ok(response)
 }
 
 /// `fs.edit` — replace exactly one string occurrence.

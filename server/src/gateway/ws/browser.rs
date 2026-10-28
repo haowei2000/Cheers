@@ -391,7 +391,19 @@ async fn handle_client_frame(
             // authz'd fs.ls/fs.read. board name "files" (cross-slice contract).
             if matches!(
                 frame.get("resource").and_then(serde_json::Value::as_str),
-                Some("fs.write" | "fs.patch" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv")
+                Some(
+                    "fs.write"
+                        | "fs.patch"
+                        | "fs.edit"
+                        | "fs.append"
+                        | "fs.rm"
+                        | "fs.mv"
+                        | "channel.artifacts.create"
+                        | "channel.artifacts.update"
+                        | "channel.artifacts.patch"
+                        | "channel.artifacts.deliver"
+                        | "channel.files.create"
+                )
             ) && res.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
             {
                 if let Some(cid) = res

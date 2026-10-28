@@ -60,6 +60,10 @@ pub const SCHEME: &str = "cheers:";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Locator {
+    Artifact {
+        artifact_id: String,
+        inspectable_id: Option<String>,
+    },
     Desk {
         path: String,
         line: Option<u32>,
@@ -149,7 +153,9 @@ pub fn parse(uri: &str) -> Option<Locator> {
     let inspectable_id = match frag {
         Some(f) if f.starts_with('^') => {
             let id = &f[1..];
-            if !body.starts_with("desk/") || !valid_inspectable_id(id) {
+            if !(body.starts_with("desk/") || body.starts_with("artifact/"))
+                || !valid_inspectable_id(id)
+            {
                 return None;
             }
             Some(id.to_owned())
@@ -206,6 +212,22 @@ pub fn parse(uri: &str) -> Option<Locator> {
                 message_id: tail.to_owned(),
             })
         }
+        "artifact"
+            if anchor.is_none()
+                && tail.len() == 36
+                && tail.bytes().enumerate().all(|(i, c)| {
+                    if matches!(i, 8 | 13 | 18 | 23) {
+                        c == b'-'
+                    } else {
+                        c.is_ascii_hexdigit()
+                    }
+                }) =>
+        {
+            Some(Locator::Artifact {
+                artifact_id: tail.to_owned(),
+                inspectable_id,
+            })
+        }
         "inbox"
             if !tail.is_empty()
                 && !tail.contains('/')
@@ -243,6 +265,16 @@ fn anchor_suffix(line: Option<u32>, line_end: Option<u32>) -> String {
 /// impossible.
 pub fn format(locator: &Locator) -> String {
     match locator {
+        Locator::Artifact {
+            artifact_id,
+            inspectable_id,
+        } => format!(
+            "{SCHEME}artifact/{artifact_id}{}",
+            inspectable_id
+                .as_ref()
+                .map(|id| format!("#^{id}"))
+                .unwrap_or_default()
+        ),
         Locator::Desk {
             path,
             line,
@@ -321,6 +353,19 @@ pub fn resolve(locator: &Locator, channel_id: &str) -> Result<(&'static str, Val
     };
 
     Ok(match locator {
+        Locator::Artifact {
+            artifact_id,
+            inspectable_id,
+        } => (
+            "channel.artifacts.read",
+            merge(
+                json!({"channel_id":channel_id, "artifact_id":artifact_id}),
+                inspectable_id
+                    .as_ref()
+                    .map(|id| json!({"inspectable_id":id}))
+                    .unwrap_or(json!({})),
+            ),
+        ),
         Locator::Desk {
             path,
             line,

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -40,6 +41,7 @@ sealed interface SocketEvent {
     data class MessageDeleted(val msgId: String) : SocketEvent
     data class Presence(val data: PresenceData) : SocketEvent
     data class AuthError(val reason: String) : SocketEvent
+    data object ArtifactsChanged : SocketEvent
 }
 
 /**
@@ -90,6 +92,16 @@ class ChatSocket(
 
     @Volatile private var stopped = false
     private var reconnectJob: Job? = null
+    private val resources = ResourceRequests()
+
+    suspend fun request(resource: String, params: JsonObject): JsonElement = resources.request(
+        resource,
+        buildJsonObject {
+            params.forEach { (key, value) -> put(key, value) }
+            // This socket may never be used to cross the active channel's scope.
+            put("channel_id", channelId)
+        },
+    ) { frame -> !stopped && _status.value == ConnectionStatus.ONLINE && webSocket?.send(frame) == true }
 
     fun start() {
         stopped = false
@@ -98,6 +110,7 @@ class ChatSocket(
 
     fun stop() {
         stopped = true
+        resources.disconnected()
         reconnectJob?.cancel()
         webSocket?.close(1000, null)
         webSocket = null
@@ -117,6 +130,9 @@ class ChatSocket(
 
     private fun scheduleReconnect() {
         if (stopped) return
+        _status.value = ConnectionStatus.RECONNECTING
+        resources.disconnected()
+        reconnectJob?.cancel()
         val attempt = retryCount.getAndIncrement()
         if (attempt >= MAX_RETRIES) {
             _status.value = ConnectionStatus.OFFLINE
@@ -142,6 +158,7 @@ class ChatSocket(
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
+        if (this.webSocket !== webSocket || stopped) return
         val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
         when (obj["type"]?.jsonPrimitive?.contentOrNull) {
             "auth_ok" -> {
@@ -155,6 +172,7 @@ class ChatSocket(
             }
             "auth_err" -> {
                 stopped = true
+                resources.disconnected()
                 val reason = obj["reason"]?.jsonPrimitive?.contentOrNull ?: "authentication failed"
                 _events.tryEmit(SocketEvent.AuthError(reason))
                 _status.value = ConnectionStatus.OFFLINE
@@ -164,6 +182,7 @@ class ChatSocket(
                 _status.value = ConnectionStatus.ONLINE
                 _events.tryEmit(SocketEvent.Subscribed)
             }
+            "resource_res" -> resources.receive(obj)
             "unsubscribed", "pong", "error" -> Unit
             else -> handleBroadcast(obj)
         }
@@ -176,6 +195,9 @@ class ChatSocket(
         val type = obj["type"]?.jsonPrimitive?.contentOrNull ?: return
         val data = obj["data"] as? JsonObject ?: return
         when (type) {
+            "board_signal" -> if (data["board"]?.jsonPrimitive?.contentOrNull == "files") {
+                _events.tryEmit(SocketEvent.ArtifactsChanged)
+            }
             "message" -> decodeMessage(data)?.let { _events.tryEmit(SocketEvent.NewMessage(it)) }
             "message_stream" -> {
                 val msgId = data["msg_id"]?.jsonPrimitive?.contentOrNull ?: return
@@ -208,6 +230,10 @@ class ChatSocket(
     }
 
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+        if (this.webSocket === webSocket) {
+            _status.value = ConnectionStatus.OFFLINE
+            resources.disconnected()
+        }
         webSocket.close(code, null)
     }
 
@@ -216,6 +242,7 @@ class ChatSocket(
         when (code) {
             CLOSE_AUTH, CLOSE_FORBIDDEN -> {
                 stopped = true
+                resources.disconnected()
                 _status.value = ConnectionStatus.OFFLINE
                 _events.tryEmit(
                     SocketEvent.AuthError(reason.ifBlank { "connection rejected ($code)" }),

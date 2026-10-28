@@ -13,6 +13,7 @@ realtime WebSocket.
 | Conversations | Workspace chips (personal "Home" + teams), channels + DMs with deterministic avatars, last-message preview, time stamp, indigo unread badge |
 | Chat | Telegram-style bubbles (own = indigo `#4F46E5`, other = zinc `#27272A`), day chips, sender names colored with the web app's avatar hash, BOT pills, streaming deltas, typing dots, scroll-up pagination, auto-scroll, growing composer |
 | Settings | Profile / server info, sign out (revokes server-side) |
+| Artifacts | One paginated library for authored documents and delivered files; message attachments, resource cards and Cheers links open the same detail; read-only source preview, availability, copy link and authenticated Save file through Android's system picker |
 
 Realtime follows the browser client's protocol exactly
 (`frontend/src/features/chat/hooks/useChatRealtime.ts`): `auth` → `auth_ok` →
@@ -20,6 +21,12 @@ Realtime follows the browser client's protocol exactly
 / `message_deleted` / `presence` frames; reconnect with exponential backoff
 1 s → 30 s (max 10 retries) and a REST `?since_seq=` catch-up after every
 (re)subscribe ack.
+
+The same socket correlates `resource_req`/`resource_res` with request IDs, limits
+pending requests, pins `channel_id` to the open conversation, and fails pending
+calls on disconnect. Artifacts refresh after reconnect and `board_signal(files)`.
+HTML/TSX is displayed as inert source; interactive rendering and editing remain
+Web/macOS capabilities rather than being simulated in a WebView.
 
 ## Requirements
 
@@ -52,6 +59,24 @@ gradle wrapper            # reads gradle/wrapper/gradle-wrapper.properties (8.11
 
 `sdk.dir` comes from `local.properties` (Android Studio writes it) or the
 `ANDROID_HOME` environment variable.
+
+The SDK package installation requires acceptance of Google's Android SDK license.
+AGP 8.7.3 selects Build-Tools 34.0.0 by default; the compile platform remains 35.
+Do not report APK or Compose validation as passed when the SDK is unavailable.
+
+### Protocol and state tests without an Android SDK
+
+With JDK 17 and Gradle 8.11.1 available:
+
+```bash
+gradle -p protocol-tests test
+```
+
+This standalone JVM target compiles the production socket, DTOs and artifact
+controller directly, then runs the same tests under `app/src/test/java`. It covers
+real WebSocket scope binding, request correlation, cancellation, timeout,
+disconnect, pagination, expiry, stale selection responses and malformed cards.
+It does not compile Compose or replace `:app:assembleDebug` / `:app:testDebugUnitTest`.
 
 ## Pointing it at a backend
 
@@ -107,7 +132,8 @@ platforms; the app icon is generated from `frontend/public/cheers-icon.svg`.
 
 ## Known gaps (v1)
 
-- Text + read-only attachment chips; no file upload/download yet.
+- No file upload yet. Existing attachments can be opened through Artifacts and saved with the system file picker.
+- Artifact previews are read-only; interactive HTML/TSX rendering, editing and composer resource-context selection are not yet available on Android.
 - Approval (permission) cards render as a system line pointing to the web app.
 - No message long-press actions (delete/reply), no @-mention picker, no
   slash-command palette.

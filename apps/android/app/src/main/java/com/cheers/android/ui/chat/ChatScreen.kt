@@ -1,5 +1,21 @@
 package com.cheers.android.ui.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.material.icons.filled.Folder
+import com.cheers.android.data.api.ChannelArtifact
+import com.cheers.android.data.api.artifactReferences
+import com.cheers.android.ui.components.CheersNavigationAction
+import com.cheers.android.ui.components.CheersNavigationButton
+import com.cheers.android.ui.components.CheersItemRow
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
@@ -30,14 +46,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -205,6 +219,32 @@ fun ChatScreen(
     )
     val state by vm.state.collectAsStateWithLifecycle()
     val draft by vm.draft.collectAsStateWithLifecycle()
+    val artifacts by vm.artifacts.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var exportTarget by remember { mutableStateOf<ChannelArtifact?>(null) }
+    val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val target = exportTarget
+        exportTarget = null
+        if (uri != null && target != null) vm.saveArtifact(target) { context.contentResolver.openOutputStream(uri) }
+    }
+    ArtifactLibrary(
+        state = artifacts,
+        saving = state.savingArtifact,
+        saveStatus = state.artifactSaveStatus,
+        onBack = {
+            if (artifacts.selected != null || artifacts.opening) { vm.artifacts.backToList(); vm.artifacts.refresh() }
+            else vm.artifacts.close()
+        },
+        onRefresh = vm.artifacts::refresh,
+        onMore = vm.artifacts::more,
+        onOpen = vm.artifacts::open,
+        onCopy = { clipboard.setText(AnnotatedString(it)) },
+        onSave = {
+            exportTarget = it
+            saveFile.launch(it.title.substringAfterLast('/').substringAfterLast('\\'))
+        },
+    )
     val cc = LocalCheersColors.current
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -220,15 +260,10 @@ fun ChatScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = cc.textSecondary,
-                        )
-                    }
+                    CheersNavigationButton(CheersNavigationAction.Back, onClick = onBack)
                 },
                 title = { ChatTitle(state = state, isDm = isDm, channelId = channelId) },
+                actions = { CheersNavigationButton(CheersNavigationAction.Artifacts, onClick = { vm.artifacts.show() }) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
@@ -278,6 +313,7 @@ fun ChatScreen(
                     MessageListPane(
                         state = state,
                         onLoadOlder = vm::loadOlder,
+                        onOpenArtifact = vm.artifacts::open,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -372,6 +408,7 @@ private fun ChatTitle(state: ChatUiState, isDm: Boolean, channelId: String) {
 private fun MessageListPane(
     state: ChatUiState,
     onLoadOlder: () -> Unit,
+    onOpenArtifact: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cc = LocalCheersColors.current
@@ -421,7 +458,7 @@ private fun MessageListPane(
             when (val item = reversed[i]) {
                 is ChatItem.DayMarker -> DayMarkerRow(item.label)
                 is ChatItem.SystemNote -> SystemNoteRow(item.text)
-                is ChatItem.Bubble -> BubbleRow(item, maxBubbleWidth)
+                is ChatItem.Bubble -> BubbleRow(item, maxBubbleWidth, onOpenArtifact)
             }
         }
         if (state.loadingOlder) {
@@ -479,7 +516,7 @@ private fun SystemNoteRow(text: String) {
 }
 
 @Composable
-private fun BubbleRow(item: ChatItem.Bubble, maxBubbleWidth: Dp) {
+private fun BubbleRow(item: ChatItem.Bubble, maxBubbleWidth: Dp, onOpenArtifact: (String) -> Unit) {
     val cc = LocalCheersColors.current
     val presentationLevel = LocalPresentationLevel.current
     val m = item.message
@@ -555,48 +592,31 @@ private fun BubbleRow(item: ChatItem.Bubble, maxBubbleWidth: Dp) {
                 else -> {
                     if (m.content.isNotEmpty()) {
                         Text(
-                            text = m.content,
+                            text = remember(m.content, onOpenArtifact) {
+                                buildAnnotatedString {
+                                    append(m.content)
+                                    Regex("""cheers:(?:artifact|desk|inbox)/[^\s<>()\[\]`]+""").findAll(m.content).forEach { match ->
+                                        addLink(LinkAnnotation.Clickable(
+                                            tag = match.value,
+                                            styles = TextLinkStyles(style = SpanStyle(textDecoration = TextDecoration.Underline)),
+                                            linkInteractionListener = { onOpenArtifact(match.value) },
+                                        ), match.range.first, match.range.last + 1)
+                                    }
+                                }
+                            },
                             style = cheersReadingStyle(m.content),
                             color = if (item.isOwn) cc.onBubbleOwn else cc.onBubbleOther,
                         )
                     }
-                    m.files.forEach { f ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (item.isOwn) {
-                                        Color(0x26FFFFFF)
-                                    } else {
-                                        cc.onBubbleOther.copy(alpha = 0.08f)
-                                    },
-                                )
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Icon(
-                                Icons.Filled.AttachFile,
-                                contentDescription = null,
-                                tint = if (item.isOwn) cc.timestampOnOwn else cc.textMuted,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Column {
-                                Text(
-                                    text = f.originalFilename.ifBlank { "file" },
-                                    fontSize = 12.sp,
-                                    color = if (item.isOwn) cc.onBubbleOwn else cc.onBubbleOther,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = Format.fileSize(f.sizeBytes),
-                                    fontSize = 10.sp,
-                                    color = if (item.isOwn) cc.timestampOnOwn else cc.textMuted,
-                                )
-                            }
-                        }
+                    m.files.forEach { file ->
+                        CheersItemRow(title = file.originalFilename.ifBlank { "File" },
+                            leading = { Icon(Icons.Filled.AttachFile, null) },
+                            onClick = { onOpenArtifact("cheers:inbox/${file.fileId}") })
+                    }
+                    artifactReferences(m.contentData).forEach { reference ->
+                        CheersItemRow(title = reference.title,
+                            leading = { Icon(Icons.Filled.Folder, null) },
+                            onClick = { onOpenArtifact(reference.uri) })
                     }
                 }
             }

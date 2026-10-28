@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod artifacts;
 pub mod bot_status;
 pub mod channel_info;
 pub mod channel_profile;
@@ -184,6 +185,14 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
         "channel.messages" => messages::handle_read(db, &principal, &params).await,
         "channel.files" => files::handle_list(db, &principal, &params).await,
         "channel.files.read" => files::handle_read(db, &principal, &params).await,
+        "channel.artifacts.list" => artifacts::handle_list(db, &principal, &params).await,
+        "channel.artifacts.get" => artifacts::handle_get(db, &principal, &params).await,
+        "channel.artifacts.resolve" => artifacts::handle_resolve(db, &principal, &params).await,
+        "channel.artifacts.read" => artifacts::handle_read(db, &principal, &params).await,
+        "channel.artifacts.create" => artifacts::handle_create(db, &principal, &params).await,
+        "channel.artifacts.update" => artifacts::handle_update(db, &principal, &params).await,
+        "channel.artifacts.patch" => artifacts::handle_patch(db, &principal, &params).await,
+        "channel.artifacts.deliver" => files::handle_create(db, &principal, &params).await,
         "channel.context" => context::handle(db, &principal, &params).await,
 
         // ── mesh step 6：新增读操作 ───────────────────────────────────────

@@ -44,7 +44,7 @@ enum AttachmentUploadError: LocalizedError, Equatable {
 enum ChannelPanel: String, Identifiable {
     case members = "Members"
     case viewboard = "ViewBoard"
-    case workbench = "Workbench"
+    case workbench = "Artifacts"
     case remoteWorkspace = "Remote workspace"
     case taskClaims = "Task claims"
     case settings = "Channel settings"
@@ -238,12 +238,13 @@ struct ChatView: View {
     @State private var model: ChatModel
     @State private var panel: ChannelPanel?
     @State private var forwardMessage: MessageDto?
-    @State private var previewFile: MessageFileRef?
     @State private var showSessionSheet = false
     @State private var showModelSheet = false
     @State private var showFileImporter = false
     @State private var showChannelFiles = false
+    @State private var artifactReference: String?
     @State private var showResourceContext = false
+    @State private var browseArtifactsAfterContext = false
     @State private var showMessageSearch = false
     @State private var isUploading = false
     @State private var uploadTask: Task<Void, Never>?
@@ -293,6 +294,13 @@ struct ChatView: View {
                 composerDock
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            let reference = url.absoluteString
+            guard isChannelArtifactReference(reference) else { return .systemAction }
+            artifactReference = reference
+            panel = .workbench
+            return .handled
+        })
         .background(Theme.bgApp)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
@@ -342,11 +350,6 @@ struct ChatView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(item: $previewFile) { file in
-            FilePreviewSheet(file: file)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
         .sheet(isPresented: $showSessionSheet) {
             SessionSheet(channelId: model.channel.channelId, bots: model.botMembers, selectedSessionId: $model.selectedSessionId)
                 .presentationDetents([.medium, .large])
@@ -358,16 +361,19 @@ struct ChatView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showChannelFiles) {
-            ChannelFilesSheet(
+            WorkbenchSheet(
                 channelId: model.channel.channelId,
-                onAttach: { model.addPendingFile($0) },
-                onContext: { model.addContext(Self.fileContext($0)) }
+                onAddContext: { model.addContext($0) },
+                onAttach: { model.addPendingFile($0) }
             )
         }
-        .sheet(isPresented: $showResourceContext) {
+        .sheet(isPresented: $showResourceContext, onDismiss: {
+            if browseArtifactsAfterContext { browseArtifactsAfterContext = false; showChannelFiles = true }
+        }) {
             ResourceContextSheet(
                 channelId: model.channel.channelId,
                 reply: model.replyTo,
+                onBrowseArtifacts: { browseArtifactsAfterContext = true; showResourceContext = false },
                 onAdd: { model.addContext($0) }
             )
         }
@@ -592,8 +598,8 @@ struct ChatView: View {
             Button { panel = .viewboard } label: {
                 Label("ViewBoard", systemImage: "rectangle.3.group")
             }
-            Button { panel = .workbench } label: {
-                Label("Workbench", systemImage: "sidebar.right")
+            Button { artifactReference = nil; panel = .workbench } label: {
+                Label("Artifacts", systemImage: "sidebar.right")
             }
             Button { panel = .remoteWorkspace } label: {
                 Label("Remote workspace", systemImage: "externaldrive.connected.to.line.below")
@@ -628,6 +634,7 @@ struct ChatView: View {
         case .workbench:
             WorkbenchSheet(
                 channelId: model.channel.channelId,
+                initialReference: artifactReference,
                 onAddContext: { model.addContext($0) }
             )
         case .remoteWorkspace:
@@ -667,7 +674,7 @@ struct ChatView: View {
             },
             onMention: { model.mentionSender(of: $0) },
             onForward: { forwardMessage = $0 },
-            onFile: { previewFile = $0 },
+            onFile: { artifactReference = "cheers:inbox/\($0.fileId)"; panel = .workbench },
             onReport: { reportTarget = $0 },
             onBlock: { blockTarget = $0 },
             onStop: { message in Task { await model.stopTurn(msgId: message.msgId) } }
@@ -1390,83 +1397,14 @@ private struct ForwardSheet: View {
 
 // MARK: - File preview sheet
 
-private struct ChannelFilesSheet: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
-    let channelId: String
-    let onAttach: (MessageFileRef) -> Void
-    let onContext: (MessageFileRef) -> Void
-
-    @State private var files: [MessageFileRef] = []
-    @State private var isLoading = true
-    @State private var errorText: String?
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView()
-                } else if let errorText {
-                    ContentUnavailableView("Could not load files", systemImage: "exclamationmark.triangle", description: Text(errorText))
-                } else if files.isEmpty {
-                    ContentUnavailableView("No channel files", systemImage: "folder", description: Text("Upload a file from the composer to start the library."))
-                } else {
-                    List(files) { file in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "doc")
-                                    .foregroundStyle(Theme.accent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(file.originalFilename ?? "File").lineLimit(1)
-                                    if let size = file.sizeBytes {
-                                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                                            .font(.caption).foregroundStyle(Theme.textSecondary)
-                                    }
-                                }
-                            }
-                            HStack {
-                                Button("Attach", systemImage: "paperclip") {
-                                    onAttach(file); dismiss()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                Button("Add to context", systemImage: "link") {
-                                    onContext(file); dismiss()
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                            .font(.caption)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .navigationTitle("Channel files")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
-        }
-        .task { await load() }
-    }
-
-    private func load() async {
-        guard let api = app.api else { isLoading = false; return }
-        do {
-            files = try await api.listChannelFiles(channelId: channelId)
-            errorText = nil
-        } catch {
-            errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
-        }
-        isLoading = false
-    }
-}
 
 private struct ResourceContextSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     let channelId: String
     let reply: MessageDto?
+    let onBrowseArtifacts: () -> Void
     let onAdd: (ResourceContextItem) -> Void
-
-    @State private var files: [MessageFileRef] = []
 
     private var quickItems: [ResourceContextItem] {
         var items = [
@@ -1495,31 +1433,15 @@ private struct ResourceContextSheet: View {
                         }
                     }
                 }
-                if !files.isEmpty {
-                    Section("Channel files") {
-                        ForEach(files) { file in
-                            Button {
-                                onAdd(ResourceContextItem(
-                                    id: "file:\(file.fileId)", verb: "channel.files.read",
-                                    params: ["file_id": .string(file.fileId)],
-                                    label: file.originalFilename ?? "File", kind: "file"
-                                ))
-                                dismiss()
-                            } label: {
-                                Label(file.originalFilename ?? "File", systemImage: "doc")
-                            }
-                        }
-                    }
+                Section {
+                    Button("Artifacts", systemImage: "doc") { onBrowseArtifacts() }
                 }
             }
             .navigationTitle("Add context")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }
-        .task {
-            guard let api = app.api else { return }
-            files = (try? await api.listChannelFiles(channelId: channelId)) ?? []
-        }
+
     }
 
     private func icon(_ kind: String) -> String {
@@ -1536,7 +1458,7 @@ private struct ResourceContextSheet: View {
 
 /// Attachment viewer: images render inline; everything else shows file info with
 /// a Share/Save action. Bytes are Bearer-fetched (the URLs can't carry a header).
-private struct FilePreviewSheet: View {
+struct FilePreviewSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     let file: MessageFileRef
@@ -1612,8 +1534,13 @@ private struct FilePreviewSheet: View {
             let data = try await api.fileData(fileId: file.fileId, download: true)
             if isImage { image = UIImage(data: data) }
             // Write to a temp file so ShareLink/Save works for any type.
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent(title)
-            try? data.write(to: url)
+            // Separate artifacts may have the same title. Keep each exported copy
+            // isolated, and surface write failures instead of offering a dead link.
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("cheers-preview-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent((title as NSString).lastPathComponent)
+            try data.write(to: url, options: .atomic)
             shareURL = url
             isLoading = false
         } catch {

@@ -59,23 +59,40 @@ Rust 网关（唯一后端）
 | `search_messages` | 对消息内容做大小写不敏感的子串搜索 |
 | `read_activity` | 统一的 `channel_seq` 事件流（消息 + 频道操作） |
 | `get_context` | 精简的频道上下文包（主题 / 置顶 / 摘要） |
-| `inbox_list` / `inbox_open` | 按 `file_id` 列出 / 打开人类上传的聊天附件 |
-| `desk_list` / `desk_read` | 按路径列出 / 读取 bot 自己的工作区（desk）文件 |
+| `artifact_list` / `artifact_get` / `artifact_read` | 统一列出频道产物，检查可用状态，按稳定产物 ID 读取 |
+| `desk_list` / `desk_read` | 旧版路径访问，用于配置文件和目录浏览 |
 
 **写 / 角色受限类**
 
 | 工具 | 用途 |
 |---|---|
-| `post_message` | 发消息；支持 `mention_ids` / `mention_names` 来 @ 提及成员 |
-| `leave_channel` | 把自己移出频道（等同于人退出）；DM 不允许 |
-| `inbox_deliver` | 以附件形式投递一个新文件（base64，≤ 8MB）到频道 |
-| `desk_write` / `desk_edit` / `desk_append` | 创建 / 编辑 / 追加 desk 文件（用 `if_version` 做乐观锁） |
-| `desk_rm` / `desk_mv` | 删除 / 移动 desk 文件或子树 |
+| `post_message` | 发送消息，支持成员提及和引用卡片 |
+| `leave_channel` | 退出频道；DM 不允许 |
+| `artifact_create` | 创建文档、HTML/TSX 页面或画布；重试复用 `idempotency_key` |
+| `artifact_update` | 按产物 ID 编辑文本，使用读取结果中的产物版本作为 `if_version` |
+| `artifact_deliver` | 投递二进制文件（base64，≤ 8 MB）；重试复用 `idempotency_key` |
+| `desk_write` / `desk_edit` / `desk_append` | 旧版路径操作；新生成内容使用产物工具 |
+| `desk_rm` / `desk_mv` | 旧版源文件或子树删除、移动操作 |
 
-要分清两个文件空间（已写进 MCP 的 initialize 提示里）：
+文档、上传文件、页面和画布统一进入频道的 **Artifacts（产物）** 库。
+它们受频道成员资格和角色权限控制，不是 Bot 的私有工作区。
+主机文件在明确投递前仍位于远端。卡片只展示产物引用，不另建内容副本。
 
-- **INBOX**（`inbox_*`）——**只读**，人类上传的文件，用 `file_id` 寻址。
-- **DESK**（`desk_*`）——bot **私有、可编辑**的工作区，用 `path` 寻址。
+回复及 `resource_ref` 卡片使用创建或投递结果中的 `artifact.uri`。
+例如创建 `report.html` 后，在 `post_message.cards_json` 中传入
+`{"v":1,"kind":"resource_ref","uri":"cheers:artifact/<返回的ID>","title":"报告"}`。
+必须使用真实返回的 ID，不要使用路径或编造 ID。编辑前先读取当前产物版本；
+版本冲突时重新读取后再应用修改。先检查可用状态：过期附件的元数据不能恢复文件内容。
+
+`inbox_list`、`inbox_open`、`inbox_deliver` 为旧客户端保留调用兼容，
+但不再出现在 `tools/list` 中。旧 Desk/Inbox 链接仍可打开，新回复使用统一产物链接。
+目录和源文件操作在调用方完成迁移前继续保留。
+
+MCP 资源模板也使用同一模型：`/artifacts` 列出产物，
+`/artifacts/{artifact_id}` 读取内容，`/artifacts/{artifact_id}/metadata` 检查状态和版本。
+这些路径位于 `cheers://channel/{channel_id}` 之后。
+`review_artifact` 提示接受 `channel_id` 和 `artifact_id`；旧 `review_attachment` 调用
+仍受支持，但不再出现在提示列表中。
 
 ---
 

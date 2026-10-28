@@ -214,6 +214,14 @@ function allRenderers(extensions: RendererExtension[]): RendererDesc[] {
   return [...BUILTINS, ...extensionRenderers(extensions)];
 }
 
+/** Discovery only knows the path. Use the same format/glob gates as rendering,
+ * then read content to evaluate structural predicates. Never duplicate suffix lists. */
+export function canDiscover(path: string, extensions: RendererExtension[]): boolean {
+  return allRenderers(extensions).some((renderer) => renderer.pickable !== false
+    && (renderer.format.includes("text") || renderer.format.includes(formatOf(path)))
+    && (!renderer.match.glob || globToRegExp(renderer.match.glob).test(path)));
+}
+
 // CSS-like specificity: the more (and stronger) constraints a renderer declares, the
 // more specific it is. Used to ORDER candidates so the most-specific match is offered
 // first when several renderers accept the same file. A user binding always overrides

@@ -2,6 +2,35 @@ import XCTest
 @testable import Cheers
 
 final class ReleaseReadinessTests: XCTestCase {
+    func testArtifactIdentityAndAttachmentAvailability() throws {
+        let raw = Data("""
+        {"artifact_id":"stable-id","channel_id":"channel","uri":"cheers:artifact/stable-id",
+         "title":"Report.pdf","source_kind":"attachment","source_id":"blob-id","path":null,
+         "content_type":"application/pdf","size_bytes":123,"version":7,"availability":"ready","expires_at":null}
+        """.utf8)
+        let artifact = try JSONDecoder().decode(ChannelArtifact.self, from: raw)
+        XCTAssertEqual(artifact.contextItem.verb, "channel.artifacts.read")
+        XCTAssertEqual(artifact.contextItem.params["artifact_id"], .string("stable-id"))
+        XCTAssertEqual(artifact.attachment?.fileId, "blob-id")
+        let expired = try JSONDecoder().decode(ChannelArtifact.self,
+            from: Data(String(decoding: raw, as: UTF8.self).replacingOccurrences(of: "\"ready\"", with: "\"expired\"").utf8))
+        XCTAssertNil(expired.attachment)
+        XCTAssertFalse(expired.isReady)
+    }
+
+    func testArtifactSnapshotUsesCanonicalVersionAndSourceData() throws {
+        let content = try JSONDecoder().decode(ChannelArtifactContent.self, from: Data("""
+        {"artifact":{"artifact_id":"stable-id","channel_id":"channel","uri":"cheers:artifact/stable-id",
+          "title":"Renamed.tsx","source_kind":"text","source_id":"source-id","path":"Renamed.tsx",
+          "content_type":null,"size_bytes":12,"version":9,"availability":"ready","expires_at":null},
+         "content":"export default function Page() {}","kind":"text","truncated":false}
+        """.utf8))
+        XCTAssertEqual(content.artifact.version, 9)
+        XCTAssertTrue(content.artifact.isInteractive)
+        XCTAssertTrue(isChannelArtifactReference(content.artifact.uri))
+        XCTAssertFalse(isChannelArtifactReference("cheers://auth/callback"))
+    }
+
     func testWorkbenchExtensionDTOsDecodeScenesAndIgnoreWebRendererDetails() throws {
         let summary = try JSONDecoder().decode(
             WorkbenchExtensionSummary.self,

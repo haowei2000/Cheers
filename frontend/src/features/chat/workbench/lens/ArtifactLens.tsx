@@ -359,6 +359,7 @@ function boundedPayload(value: unknown): Record<string, string | number | boolea
 export function ArtifactLens({
   data,
   path,
+  artifactId,
   mode,
   inspectorActive,
   requestContextPick,
@@ -433,7 +434,7 @@ export function ArtifactLens({
           ? claimedId
           : undefined;
         const locator = inspectableId && path
-          ? formatLocator({ kind: "desk", path, inspectableId })
+          ? formatLocator(artifactId ? { kind: "artifact", artifactId, inspectableId } : { kind: "desk", path, inspectableId })
           : undefined;
 
         const fakeEvent = {
@@ -476,14 +477,18 @@ export function ArtifactLens({
         const actionId = boundedText(params.actionId, 80) || "submit";
         const formData = boundedPayload(params.formData ?? params.payload ?? {});
         if (!formData) return;
-        toast.success(`Action submitted: ${actionId}`);
-        onFormSubmit?.({ actionId, formData });
+        if (!onFormSubmit) {
+          toast.error("Message drafting is unavailable in this view");
+          return;
+        }
+        onFormSubmit({ actionId, formData });
+        toast.success("Added to message draft. Send the message to continue.");
       }
     };
 
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [content, inspectorActive, onChange, onFormSubmit, openLocator, path, readOnly, requestContextPick]);
+  }, [artifactId, content, inspectorActive, onChange, onFormSubmit, openLocator, path, readOnly, requestContextPick]);
 
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- The titled iframe receives an onLoad synchronization callback for the isolated artifact editor. */
   return (

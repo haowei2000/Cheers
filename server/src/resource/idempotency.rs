@@ -1,6 +1,6 @@
 //! Idempotency keys for resource writes that are not naturally idempotent:
 //! `channel.messages.create` (post_message), `channel.files.create` (inbox_deliver)
-//! and `fs.append` (desk_append).
+//! `channel.artifacts.create` (artifact_create), and `fs.append` (desk_append).
 //!
 //! MCP 2026-07-28 dropped stream resumption: a client whose response stream breaks
 //! must re-issue the call as a new request, so a write that already committed would

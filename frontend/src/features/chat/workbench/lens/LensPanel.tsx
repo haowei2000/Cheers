@@ -30,6 +30,7 @@ export function LensView({
   openLocator,
   inspectorActive,
   onFormSubmit,
+  artifactId,
 }: {
   session: FileSession;
   lensId: string;
@@ -51,6 +52,7 @@ export function LensView({
   standalone?: boolean;
   openLocator?: (uri: string) => void;
   inspectorActive?: boolean;
+  artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
 }) {
   const lens = getLens(lensId);
@@ -88,6 +90,7 @@ export function LensView({
         }
       : null;
     const resolvedItem: ContextItem | null = target.contextItem
+      ?? (artifactId && target.locator?.startsWith("cheers:artifact/") ? locatorToContextItem(target.locator, target.label) : null)
       ?? (target.inspectableId && range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : null)
       ?? (target.locator ? locatorToContextItem(target.locator, target.label) : null)
       ?? (range ? { ...rangedFileContextItem(path, range.start, range.end), label: target.label } : fallbackFileItem);
@@ -163,6 +166,7 @@ export function LensView({
           lens.render({
             data,
             path,
+            artifactId,
             config,
             onChange: session.setData,
             onOps,
@@ -214,6 +218,7 @@ export function LensPanel({
   openLocator,
   inspectorActive,
   onFormSubmit,
+  artifactId,
 }: {
   fs: FsClient;
   path: string;
@@ -223,6 +228,7 @@ export function LensPanel({
   reloadTick?: number;
   openLocator?: (uri: string) => void;
   inspectorActive?: boolean;
+  artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
 }) {
   const session = useFileSession(fs, path);
@@ -247,6 +253,7 @@ export function LensPanel({
       openLocator={openLocator}
       inspectorActive={inspectorActive}
       onFormSubmit={onFormSubmit}
+      artifactId={artifactId}
     />
   );
 }

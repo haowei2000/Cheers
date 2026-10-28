@@ -32,6 +32,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.cheers.android.ui.components.CheersNavigationAction
+import com.cheers.android.ui.components.CheersNavigationButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -75,13 +77,7 @@ fun ConversationsScreen(
             TopAppBar(
                 title = { Text("Cheers", style = MaterialTheme.typography.titleMedium) },
                 actions = {
-                    IconButton(onClick = vm::refresh) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Refresh",
-                            tint = cc.textSecondary,
-                        )
-                    }
+                    CheersNavigationButton(CheersNavigationAction.Refresh, onClick = vm::refresh)
                     IconButton(onClick = onOpenSettings) {
                         Icon(
                             Icons.Filled.Settings,

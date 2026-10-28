@@ -269,7 +269,7 @@ struct ComposerView: View {
         HStack(alignment: .center, spacing: 2) {
             Menu {
                 Button { onUploadFile() } label: { Label("Upload file", systemImage: "paperclip") }
-                Button { onBrowseFiles() } label: { Label("Channel files", systemImage: "folder") }
+                Button { onBrowseFiles() } label: { Label("Artifacts", systemImage: "folder") }
                 Button { onAddContext() } label: { Label("Add context", systemImage: "link.badge.plus") }
                 Divider()
                 Button { onChooseSession() } label: { Label("Choose session", systemImage: "square.stack.3d.up") }

@@ -19,6 +19,7 @@
 // rejected) — "strict generation, tolerant parsing".
 
 export type Locator =
+  | { kind: "artifact"; artifactId: string; inspectableId?: string }
   | { kind: "desk"; path: string; line?: number; lineEnd?: number; inspectableId?: string }
   | { kind: "ws"; bot: string; path: string; line?: number; lineEnd?: number }
   | { kind: "msg"; messageId: string }
@@ -90,7 +91,7 @@ export function parseLocator(uri: string): Locator | null {
   let anchor: { line: number; lineEnd?: number } | null = null;
   let inspectableId: string | undefined;
   if (frag !== null) {
-    if (scheme === "desk" && frag.startsWith("^")) {
+    if ((scheme === "desk" || scheme === "artifact") && frag.startsWith("^")) {
       inspectableId = frag.slice(1);
       if (!validInspectableId(inspectableId)) return null;
     } else {
@@ -103,6 +104,10 @@ export function parseLocator(uri: string): Locator | null {
     const path = cleanRelPath(tail);
     if (!path) return null;
     return { kind: "desk", path, ...(anchor ?? {}), ...(inspectableId ? { inspectableId } : {}) };
+  }
+  if (scheme === "artifact") {
+    if (anchor !== null || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tail)) return null;
+    return { kind: "artifact", artifactId: tail, ...(inspectableId ? { inspectableId } : {}) };
   }
   if (scheme === "ws") {
     const slash2 = tail.indexOf("/");
@@ -142,6 +147,8 @@ function anchorSuffix(line?: number, lineEnd?: number): string {
  * fixtures/locator/corpus.json so the two cannot drift. */
 export function formatLocator(loc: Locator): string {
   switch (loc.kind) {
+    case "artifact":
+      return `${LOCATOR_SCHEME}artifact/${loc.artifactId}${loc.inspectableId ? `#^${loc.inspectableId}` : ""}`;
     case "desk":
       return `${LOCATOR_SCHEME}desk/${loc.path}${loc.inspectableId ? `#^${loc.inspectableId}` : anchorSuffix(loc.line, loc.lineEnd)}`;
     case "ws":
