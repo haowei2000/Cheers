@@ -19,13 +19,12 @@ path = "src/main.rs"
 portable-pty = "0.9"
 # Official ACP runtime and protocol types, consumed through the main crate's
 # schema re-export. The connector remains on stable wire protocol
-# v1; only the SDK's v1 `unstable_elicitation` API surface is enabled so Cheers
-# can implement structured form and URL interactions. Protocol v2 and native
-# MCP-over-ACP remain disabled.
+# v1. Since 3.0 the v1 elicitation types are stable, so no `unstable_*` feature
+# is enabled; protocol v2 and native MCP-over-ACP remain disabled.
 # The official runtime is the default in 0.1.37; the hand-written transport is
 # retained only as the one-release rollback. Raw hooks preserve opaque update,
 # permission, and elicitation extensions (see ACP_RUST_SDK_ADOPTION.md).
-agent-client-protocol = { version = "2.0.0", features = ["unstable_elicitation"] }
+agent-client-protocol = "3.6.0"
 # Tier B: adapt tokio ChildStdin/ChildStdout (tokio::io) to the futures_io
 # AsyncRead/AsyncWrite that the runtime crate's `ByteStreams` transport expects.
 tokio-util = { version = "0.7", features = ["compat"] }
