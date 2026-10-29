@@ -47,6 +47,10 @@ impl PrincipalType {
 pub struct Principal {
     pub principal_type: PrincipalType,
     pub principal_id: Uuid,
+    /// A bot working on this user's task: every channel check uses the lower
+    /// of the bot's and the user's role there, and the user must be a member.
+    /// It only narrows; the bot never gains what the user has and it lacks.
+    pub on_behalf_of: Option<Uuid>,
 }
 
 impl Principal {
@@ -54,6 +58,15 @@ impl Principal {
         Self {
             principal_type: PrincipalType::Bot,
             principal_id: bot_id,
+            on_behalf_of: None,
+        }
+    }
+
+    /// The bot, narrowed to what `user_id` may do (see `on_behalf_of`).
+    pub fn bot_for(bot_id: Uuid, user_id: Option<Uuid>) -> Self {
+        Self {
+            on_behalf_of: user_id,
+            ..Self::bot(bot_id)
         }
     }
 
@@ -62,6 +75,7 @@ impl Principal {
         Self {
             principal_type: PrincipalType::User,
             principal_id: user_id,
+            on_behalf_of: None,
         }
     }
 
@@ -426,22 +440,51 @@ async fn authorize_channel_read_with_executor<'a, E>(
 where
     E: Executor<'a, Database = Postgres>,
 {
+    // One query, so the executor (a pool, connection or transaction) is used
+    // once; the delegating user's role joins in only when there is one.
     let row = sqlx::query!(
-        "SELECT role
-         FROM channel_memberships
-         WHERE channel_id = $1 AND member_id = $2 AND member_type = $3",
+        r#"SELECT b.role AS "role!", u.role AS "user_role?"
+         FROM channel_memberships b
+         LEFT JOIN channel_memberships u
+           ON u.channel_id = b.channel_id AND u.member_type = 'user' AND u.member_id = $4
+         WHERE b.channel_id = $1 AND b.member_id = $2 AND b.member_type = $3"#,
         channel_id.to_string(),
         principal.principal_id.to_string(),
         principal.member_type(),
+        principal.on_behalf_of.map(|user| user.to_string()),
     )
     .fetch_optional(executor)
     .await
-    .map_err(db_err("authorize_channel_read: select membership role"))?;
+    .map_err(db_err("authorize_channel_read: select membership role"))?
+    .ok_or_else(not_member)?;
 
-    row.map(|row| ChannelMembership {
-        role: row.role.clone(),
-    })
-    .ok_or_else(not_member)
+    match (principal.on_behalf_of, row.user_role) {
+        (None, _) => Ok(ChannelMembership { role: row.role }),
+        (Some(_), Some(user_role)) => Ok(ChannelMembership {
+            role: narrower_role(&row.role, &user_role).to_string(),
+        }),
+        (Some(_), None) => Err(resource_error(
+            "NOT_MEMBER",
+            "the user this task acts for is not a member of this channel",
+        )),
+    }
+}
+
+/// The less privileged of two channel roles.
+pub fn narrower_role<'a>(a: &'a str, b: &'a str) -> &'a str {
+    fn rank(role: &str) -> u8 {
+        match role {
+            "owner" => 3,
+            "admin" => 2,
+            "member" => 1,
+            _ => 0,
+        }
+    }
+    if rank(a) <= rank(b) {
+        a
+    } else {
+        b
+    }
 }
 
 pub async fn authorize_channel_write(
@@ -492,6 +535,16 @@ mod tests {
 
     // ── locator frames ──────────────────────────────────────────────────────────
     // resolve_frame is pure, so the interesting properties are testable without a DB.
+
+    #[test]
+    fn narrower_role_takes_the_less_privileged() {
+        assert_eq!(narrower_role("owner", "member"), "member");
+        assert_eq!(narrower_role("member", "admin"), "member");
+        assert_eq!(narrower_role("admin", "readonly"), "readonly");
+        assert_eq!(narrower_role("readonly", "owner"), "readonly");
+        // An unknown role ranks lowest, so it can never widen.
+        assert_eq!(narrower_role("owner", "guest"), "guest");
+    }
 
     #[test]
     fn a_plain_resource_frame_passes_through_untouched() {

@@ -643,6 +643,9 @@ struct McpAccessClaims {
     /// execution ends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     task: Option<String>,
+    /// The human whose task this is: channel checks use bot ∩ this user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    obo: Option<String>,
     aud: String,
     iss: String,
     token_use: String,
@@ -818,8 +821,8 @@ pub async fn issue_mcp_access_token(
     // Task binding: the execution must be this bot's, in this channel, and
     // still running. The connector's host credential plus an execution id is
     // the grant; neither alone mints a task-bound token.
-    let task = match request.cheers_execution.as_deref() {
-        None => None,
+    let (task, on_behalf_of) = match request.cheers_execution.as_deref() {
+        None => (None, None),
         Some(raw) => {
             let (Ok(execution_id), Some(channel_id)) = (Uuid::parse_str(raw), channel.as_deref())
             else {
@@ -828,10 +831,9 @@ pub async fn issue_mcp_access_token(
                     "cheers_execution must be a uuid and needs cheers_channel",
                 );
             };
-            match execution_is_running(&state, &bot_id, channel_id, &execution_id.to_string()).await
-            {
-                Ok(true) => Some(execution_id.to_string()),
-                Ok(false) => {
+            match running_execution(&state, &bot_id, channel_id, &execution_id.to_string()).await {
+                Ok(Some(run)) => (Some(execution_id.to_string()), run.on_behalf_of),
+                Ok(None) => {
                     return oauth_token_error(
                         "invalid_grant",
                         "cheers_execution is not a running task of this bot in cheers_channel",
@@ -853,10 +855,51 @@ pub async fn issue_mcp_access_token(
         host_id,
         credential_hash,
         scope,
-        channel,
-        task,
+        TokenBinding {
+            channel,
+            task,
+            on_behalf_of,
+        },
         None,
     )
+}
+
+/// A running execution's delegation: the human whose task it is.
+struct RunningExecution {
+    on_behalf_of: Option<String>,
+}
+
+/// The running execution `execution_id` of this bot in this channel, and the
+/// human it narrows to: the sender of its triggering message, or for a bot's
+/// message in a task chain, the human whose message started the chain. None
+/// when the bot's owner turned narrowing off, or no human started the work.
+/// Taken from the run record, never from the request.
+async fn running_execution(
+    state: &AppState,
+    bot_id: &str,
+    channel_id: &str,
+    execution_id: &str,
+) -> Result<Option<RunningExecution>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT b.mcp_narrow_to_sender AS "narrow!",
+                  CASE WHEN m.sender_type = 'user' THEN m.sender_id
+                       WHEN root.sender_type = 'user' THEN root.sender_id END AS "human?"
+         FROM bot_runs r
+         JOIN bot_accounts b ON b.bot_id = r.bot_id
+         LEFT JOIN messages m ON m.msg_id = r.trigger_msg_id
+         LEFT JOIN task_chains c ON c.chain_id = r.chain_id
+         LEFT JOIN messages root ON root.msg_id = c.root_msg_id
+         WHERE r.execution_id = $1 AND r.bot_id = $2 AND r.channel_id = $3
+           AND r.status = 'accepted' AND r.terminal_committed_at IS NULL"#,
+        execution_id,
+        bot_id,
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(row.map(|row| RunningExecution {
+        on_behalf_of: row.human.filter(|_| row.narrow),
+    }))
 }
 
 /// Whether `execution_id` is a task of this bot in this channel that has been
@@ -899,14 +942,31 @@ async fn bot_is_channel_member(
     .await
 }
 
+/// What a token is narrowed to: its channel, and on a task, the execution and
+/// the human it acts for.
+struct TokenBinding {
+    channel: Option<String>,
+    task: Option<String>,
+    on_behalf_of: Option<String>,
+}
+
+impl TokenBinding {
+    fn channel(channel: Option<String>) -> Self {
+        Self {
+            channel,
+            task: None,
+            on_behalf_of: None,
+        }
+    }
+}
+
 fn mint_mcp_access_token(
     state: &AppState,
     bot_id: String,
     host_id: String,
     credential_hash: String,
     scope: String,
-    channel: Option<String>,
-    task: Option<String>,
+    binding: TokenBinding,
     refresh_token: Option<String>,
 ) -> Response {
     let now = chrono::Utc::now().timestamp().max(0) as u64;
@@ -926,8 +986,9 @@ fn mint_mcp_access_token(
         host_id,
         credential_hash,
         scope: scope.clone(),
-        chan: channel,
-        task,
+        chan: binding.channel,
+        task: binding.task,
+        obo: binding.on_behalf_of,
         aud: state.config.mcp_resource_url(),
         iss: state.config.mcp_authorization_issuer(),
         token_use: MCP_TOKEN_USE.to_string(),
@@ -1064,8 +1125,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         host_id,
         host.1,
         scope,
-        channel_id,
-        None,
+        TokenBinding::channel(channel_id),
         Some(refresh_token),
     )
 }
@@ -1254,8 +1314,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         host_id,
         host.1,
         scope,
-        original_channel_id,
-        None,
+        TokenBinding::channel(original_channel_id),
         Some(replacement),
     )
 }
@@ -2636,6 +2695,8 @@ struct McpIdentity {
     issued_at: u64,
     /// Task execution the token is bound to, re-checked on every request.
     task: Option<String>,
+    /// The human this task acts for; channel checks narrow to bot ∩ them.
+    on_behalf_of: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2698,6 +2759,12 @@ async fn authenticate_mcp(
     }
     let bot_id = Uuid::parse_str(&claims.sub).map_err(|_| AuthMcpError::Unauthorized)?;
     let host_id = Uuid::parse_str(&claims.host_id).map_err(|_| AuthMcpError::Unauthorized)?;
+    // Unlike `chan`, a malformed `obo` rejects the token: dropping it would
+    // widen the token back to the bot's own role.
+    let on_behalf_of = match claims.obo.as_deref() {
+        None => None,
+        Some(value) => Some(Uuid::parse_str(value).map_err(|_| AuthMcpError::Unauthorized)?),
+    };
     let row = sqlx::query!(
         "SELECT b.is_disabled
          FROM connector_hosts i
@@ -2729,6 +2796,7 @@ async fn authenticate_mcp(
                 .and_then(|value| Uuid::parse_str(value).ok()),
             issued_at: claims.iat,
             task: claims.task,
+            on_behalf_of,
         }),
         _ => Err(AuthMcpError::Unauthorized),
     }
@@ -3094,7 +3162,7 @@ async fn call_tool(
     });
     let response = crate::gateway::resource_effects::dispatch_with_effects(
         state,
-        Principal::bot(bot_id),
+        Principal::bot_for(bot_id, identity.on_behalf_of),
         &frame,
     )
     .await;
@@ -3183,7 +3251,7 @@ async fn read_resource(
     });
     let response = resource::dispatch(
         &state.db,
-        Principal::bot(bot_id),
+        Principal::bot_for(bot_id, identity.on_behalf_of),
         &frame,
         &state.bot_locator,
     )
