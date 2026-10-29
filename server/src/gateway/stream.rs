@@ -648,13 +648,28 @@ pub async fn handle_done(
         frame.get("content").and_then(Value::as_str).unwrap_or("")
     };
     let done_file_ids = parse_file_ids(frame.get("file_ids"));
-    let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
     let mention_ids = parse_mention_ids(frame.get("mention_ids"));
 
     // Routing comes from the required grant and is checked against the locked
     // message and run before any result is committed.
     let execution = &request.execution;
     let channel_id = execution.channel_id;
+    // A result may only attach files this bot delivered to this channel, the
+    // same rule a bot `send` follows.
+    if !done_file_ids.is_empty() {
+        crate::domain::messages::validate_file_ids(db, bot_id, channel_id, &done_file_ids)
+            .await
+            .map_err(|error| match error {
+                crate::errors::AppError::Db(error) => {
+                    TerminalError::database("validate terminal file_ids")(error)
+                }
+                _ => TerminalError::rejected(
+                    "TERMINAL_FORBIDDEN",
+                    "file_ids must be files this bot delivered to the channel",
+                ),
+            })?;
+    }
+    let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
     let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
         .await
         .map_err(|error| match error {

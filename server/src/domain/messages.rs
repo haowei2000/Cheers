@@ -612,7 +612,7 @@ fn normalize_file_ids(file_ids: &[String]) -> Vec<String> {
     normalized
 }
 
-async fn validate_file_ids(
+pub(crate) async fn validate_file_ids(
     db: &PgPool,
     uploader_id: Uuid,
     channel_id: Uuid,
