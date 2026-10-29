@@ -150,6 +150,11 @@ pub struct WorkspacePolicy {
     /// Explicit host opt-in to open allow-listed files in registered applications.
     pub remote_open: bool,
     pub default_cwd: Option<PathBuf>,
+    /// Run every channel the Backend pins no cwd for directly in `default_cwd`
+    /// (the pre-isolation behaviour). Off by default: each such channel gets
+    /// its own `<default_cwd>/.cheers/channels/<channel_id>`, so files one
+    /// channel's turn writes are not where another channel's turn starts.
+    pub shared_cwd: bool,
     pub backend_may_set_cwd: bool,
     pub allowed_roots: Vec<PathBuf>,
     /// Whether the connector serves the READ-ONLY git inspection ops
@@ -476,6 +481,8 @@ struct RawWorkspacePolicy {
     remote_open: bool,
     #[serde(default)]
     default_cwd: Option<String>,
+    #[serde(default)]
+    shared_cwd: bool,
     #[serde(default)]
     backend_may_set_cwd: bool,
     #[serde(default)]
@@ -876,6 +883,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             remote_terminal: raw.workspace.remote_terminal,
             remote_open: raw.workspace.remote_open,
             default_cwd,
+            shared_cwd: raw.workspace.shared_cwd,
             backend_may_set_cwd: raw.workspace.backend_may_set_cwd,
             allowed_roots: workspace_roots,
             git_ops,
