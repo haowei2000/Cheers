@@ -160,8 +160,8 @@ A loopback HTTP endpoint inside the connector:
 
 ```text
 Agent ──HTTP, any MCP revision──► 127.0.0.1:<port>/mcp   (connector)
-        Authorization: Bearer <local per-session secret>
-                                   │ secret → session → channel
+        Authorization: Bearer <local per-channel secret>
+                                   │ secret digest → channel
                                    │ swap in the real Cheers token (rotated freely)
                                    ▼
                               POST https://<gateway>/mcp
@@ -172,18 +172,23 @@ Agent ──HTTP, any MCP revision──► 127.0.0.1:<port>/mcp   (connector)
   `Content-Type`) are forwarded unchanged; only `Authorization` is replaced.
   2025-06-18, 2025-11-25 and 2026-07-28 clients all work, because `/mcp` serves
   every era statelessly. JSON and SSE responses stream back unchanged.
-- **The Agent's credential never changes during a session**, so Agents that
-  ignore refreshed headers (Codex) keep working. Token rotation happens inside
+- **The Agent's credential never changes for the Agent process's lifetime**,
+  so Agents that ignore refreshed headers (Codex) keep working. The gateway
+  lives as long as the connector's account runtime, which stops the Agent when
+  it exits, so an Agent never outlives its gateway's port or secrets. Token rotation happens inside
   the connector, which also allows a TTL of minutes.
-- **The local secret is worthless off-host**: 32 random bytes, per ACP
-  session, header-only (never in the URL), compared in constant time, and
-  bound to one channel. The listener binds loopback only, rejects a
-  non-loopback `Origin`, caps the body at the gateway's limit, and answers
-  `GET`/`DELETE` with 405 itself.
-- **Upstream 401** invalidates the cached token for that channel, re-mints once
-  and retries; a second 401 is returned to the Agent.
-- **Observation point**: every MCP request passes through, so the gateway records
-  the revisions and behaviours each Agent actually uses (§3.5).
+- **The local secret is worthless off-host**: 32 random bytes, one per
+  channel (ACP sessions are keyed by channel and bot, so this is one per
+  session too), header-only (never in the URL), and resolved by its SHA-256
+  digest so the lookup never compares the secret itself. The listener binds
+  loopback only, rejects a non-loopback `Host` (DNS rebinding) or `Origin`,
+  caps the body at the gateway's limit, and answers `GET`/`DELETE` with 405
+  itself.
+- **Upstream 401** invalidates the cached token for that channel (only if it
+  is still the rejected one, so concurrent 401s cannot evict a fresh re-mint),
+  re-mints once and retries; a second 401 is returned to the Agent.
+- **Observation point**: every MCP request passes through, so the gateway can
+  record the revisions and behaviours each Agent actually uses (§3.5, M2).
 - Rollout: config flag, default off in the first release; default on once the
   Agent matrix passes; then header injection is deleted (M4).
 
@@ -366,7 +371,7 @@ alongside M1.
 
 | Milestone | Work | Touches |
 |---|---|---|
-| **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-session secrets, Origin/body limits, 401 re-mint, SSE streaming; `native_cheers_mcp_server` hands out the local URL and secret behind a flag; unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release, then default on | connector |
+| **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-channel secrets, Host/Origin/body limits, 401 re-mint, SSE streaming; `native_cheers_mcp_server` hands out the local URL and secret behind a flag; unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release, then default on | connector |
 | **M2 host profile** | `HostProfile` in `bridge-protocol`; `ready` reports profile, `mcp_acp` and `mcp_delivery_mode`; migration adds `observed_profile` and `mcp_delivery_mode`; `/mcp` and the gateway record observations; bot policy for allowed modes via hello; MCP check and Fleet show mode and warnings | connector, server, migration, frontend |
 | **M3 isolation** | Per-channel cwd and `allowed_roots`; channel-scoped `set_status` or drop it from the default scope; refuse `MCP_CHANNEL_SCOPE=off\|warn` outside development | connector, server, mcp-server |
 | **M4 guidance and tightening** | Actionable error shape (`code`, `retryable`, `next`) and tool-error scope refusals for `client_credentials` tokens; delete header injection; cut token TTL from 24h to minutes | server, connector |
