@@ -1,6 +1,6 @@
 # MCP Authorization and Channel Isolation
 
-Status: **plan agreed 2026-10-29; M1 (credential gateway) in progress**
+Status: **plan agreed 2026-10-29, revised the same day to three delivery modes; M1 and M3 in review**
 Scope: the HTTP MCP endpoint (`POST /mcp`), its OAuth surface, and the
 connector path that hands MCP credentials to ACP Agents.
 Related: [MCP_HTTP_OAUTH_TOOL_SCOPE](./MCP_HTTP_OAUTH_TOOL_SCOPE.md) ·
@@ -69,7 +69,7 @@ Code anchors:
 |---|---|
 | MCP endpoint, auth, channel narrowing | `server/src/api/mcp.rs` (`mcp_http`, `authenticate_mcp`, `enforce_channel_scope`) |
 | Tool ↔ scope registry | `packages/cheers-mcp-server/src/registry.rs` |
-| Channel-scope mode | `MCP_CHANNEL_SCOPE` = `off` \| `warn` \| `enforce` (`server/src/config.rs`) |
+| MCP delivery mode | `policy.mcp.delivery` (`packages/cheers-acp-connector-rs/src/config.rs`), `credential_gateway.rs` |
 | Token minting and cache | `packages/cheers-acp-connector-rs/src/mcp_token.rs` |
 | Per-turn credential injection | `bridge_runtime/mod.rs` `ensure_acp_session`, `bridge_runtime/prompt.rs` |
 | ACP session key | `server/src/domain/sessions.rs` (`cheers:channel:{channel}:bot:{bot}`) |
@@ -138,21 +138,38 @@ Delivery strength, strongest first:
 | L0 execute at client | Tool calls return to the client over ACP; the client attaches its credential and forwards, or executes locally | Never |
 | L1 sign at client | Client signs each request (e.g. DPoP) | One signed request at a time |
 | L2 lend short-lived | Agent asks the client for a short-lived token | Yes, briefly |
-| L3 static injection | `mcpServers[].headers` (today) | Yes, for the token lifetime |
+| L3 static injection | `mcpServers[].headers` (`direct` mode) | Yes, for the token lifetime |
 
-Two mechanisms deliver this, chosen per Agent (§3.5):
+Three delivery modes exist, and the connector picks one per Agent process
+(§3.5). Setting: `policy.mcp.delivery` (`direct` | `gateway`, later `auto`).
 
-#### 3.4.1 Selection
+#### 3.4.1 Modes and selection
 
-| Agent advertises (ACP `initialize`) | Mechanism |
-|---|---|
-| `mcpCapabilities.acp == true` | Native MCP-over-ACP (§3.4.3) |
-| `mcpCapabilities.http == true` | Credential gateway pass-through (§3.4.2) |
-| neither | Cheers MCP not offered; the host profile and MCP check show why |
+| Mode | Path | The Agent holds | Requires |
+|---|---|---|---|
+| `acp` | `mcp/message` over ACP → connector → `/mcp` (§3.4.3) | nothing | `mcpCapabilities.acp`, and an MCP revision our provider implements |
+| `direct` | Agent → Gateway `/mcp`, bearer in `mcpServers[].headers` | the real token (one channel, host-revocable) | `mcpCapabilities.http`, and an Agent that re-reads headers on `session/load` |
+| `gateway` | Agent → `127.0.0.1` → `/mcp` (§3.4.2) | a local secret useless off-host | `mcpCapabilities.http` |
 
-The ACP `protocolVersion` (1 for every Agent tested) says nothing about the
-Agent's MCP revision; ACP and MCP negotiate independently. The gateway does not
-need to know it, because it does not parse MCP.
+`auto` order: **`acp` → `direct` → `gateway`**, restricted by bot policy
+`allowed_modes` (a deployment that will not let Agents hold a real token
+allows only `acp` and `gateway`). Neither `acp` nor `http` → Cheers MCP is not
+offered, and the host profile says why.
+
+The decision uses two reports, never a guess:
+
+- **Agent report** (ACP `initialize`, declared): `mcpCapabilities`, `agentInfo`
+  name and version. Decides which modes are possible.
+- **MCP report** (traffic `/mcp` sees, observed): protocol revision,
+  `clientInfo`, and which token generation the Agent presents. Decides whether
+  `direct` works.
+
+No field in either protocol says "re-reads headers", and the MCP revision does
+not predict it, so `direct` is confirmed by observation (§3.5). The ACP
+`protocolVersion` (1 for every Agent tested) says nothing about the Agent's MCP
+revision; ACP and MCP negotiate independently. `direct` and `gateway` do not
+need the revision either, because `/mcp` serves every era; it only gates
+`acp`.
 
 #### 3.4.2 Credential gateway (current universal path, M1)
 
@@ -189,8 +206,9 @@ Agent ──HTTP, any MCP revision──► 127.0.0.1:<port>/mcp   (connector)
   re-mints once and retries; a second 401 is returned to the Agent.
 - **Observation point**: every MCP request passes through, so the gateway can
   record the revisions and behaviours each Agent actually uses (§3.5, M2).
-- Rollout: config flag, default off in the first release; default on once the
-  Agent matrix passes; then header injection is deleted (M4).
+- Selected with `policy.mcp.delivery = "gateway"` (PR #806); `auto` picks it
+  when `direct` is ruled out (§3.5). If the listener cannot start, the
+  connector falls back to `direct` for that run.
 
 #### 3.4.3 Native MCP-over-ACP (future path, M6)
 
@@ -250,7 +268,7 @@ grant authority** — `agentInfo` and MCP `clientInfo` are self-reported.
 |---|---|---|---|
 | Declared (handshake, overwritten each connect) | host kind (desktop/daemon/container), OS/arch, headless; connector version and supported delivery modes; Agent name/version, ACP version, `mcp{acp,http,sse}`, `loadSession`, `authMethods` | connector `ready` frame | `connector_hosts.capabilities.profile` (`schema: 1`) |
 | Observed (accumulated) | MCP revisions seen, tries `server/discover`, re-reads headers on load | `/mcp` and the credential gateway | `connector_hosts.observed_profile` (new JSONB) |
-| Chosen mode | `acp` \| `gateway` \| `header` | connector | `connector_hosts.mcp_delivery_mode` (new column) |
+| Chosen mode and reason | `acp` \| `direct` \| `gateway`, plus why | connector `ready` frame | `connector_hosts.mcp_delivery_mode`, `mcp_delivery_reason` (new columns) |
 
 - The profile is per **host**, not per bot: it describes one machine's connector
   and Agent, and a re-paired host starts fresh. A bot reads its active host's
@@ -259,9 +277,45 @@ grant authority** — `agentInfo` and MCP `clientInfo` are self-reported.
 - The `HostProfile` struct lives in `bridge-protocol` so server and connector
   share one definition (`#[serde(default)]` fields, explicit `schema`).
 - **Policy is separate from facts**: allowed delivery modes are bot
-  configuration, sent in the hello `server_capabilities`. The connector picks
-  the strongest mode allowed by policy and supported by the Agent, re-evaluated
-  on every connect.
+  configuration, sent in the hello `server_capabilities`.
+
+**Decision, on every Agent process start:**
+
+```text
+possible = policy.allowed_modes ∩ modes the Agent report allows
+cached facts for agentInfo name@version + MCP clientInfo:
+  header_refresh == false → drop direct
+  MCP revision our acp provider lacks → drop acp
+pick the first of acp → direct → gateway
+unknown Agent version → start direct; the generation test below decides
+```
+
+**Generation test (confirms `direct` without a probe session).** JWTs already
+carry `iat`, so a newer token is a newer generation; no new claim is needed.
+
+1. In `direct` mode with no cached fact, the connector renews the channel's
+   token at that channel's second prompt and delivers it with the usual
+   `session/load`.
+2. `/mcp` keeps the newest `iat` minted per `(host, chan)`. A request from a
+   host reporting `direct` that presents an older `iat` more than 30 s after a
+   newer one was minted means the Agent kept the old header.
+3. The server records `header_refresh: false` in `observed_profile` and sends
+   `mcp_delivery_degraded {channel_id, reason}` over the Bridge. Nothing has
+   failed yet: the old token is still valid.
+4. No signal for 10 minutes after the renewal → the connector caches
+   `header_refresh: true`.
+
+**Switching modes means restarting the Agent.** Agents such as Codex ignore a
+changed `mcpServers` on `session/load`, so a mode cannot change inside a live
+process. After a downgrade signal the connector waits until no turn is
+running, restarts the Agent, and restores sessions with `session/load`; the
+`ready` frame then reports the new mode and reason. **Upgrades** come from the
+same re-evaluation: a new Agent version has no cached facts and is tested
+again, and an Agent that starts advertising `acp` moves to `acp`.
+
+**Token lifetime per mode.** `direct` cannot renew within a turn, so its TTL
+must be at least the longest turn (`policy.prompt.max_duration_ms`);
+`gateway` and `acp` renew inside the connector and can use minutes.
 - Record only versions, capabilities and modes — no paths, environment or
   credentials.
 
@@ -352,14 +406,14 @@ user and task.
 | Host-bound tokens, host re-validated per request | ✅ |
 | Channel-narrowed tokens, `enforce` default | ✅ |
 | ACP session per channel | ✅ |
-| Fresh token before every prompt via `session/load` | ⚠️ ignored by Codex (§3.4.4) |
-| Credential gateway pass-through | 🚧 M1 |
-| Host profile and mode negotiation | ❌ M2 |
+| Fresh token before every prompt via `session/load` (`direct`) | ⚠️ ignored by Codex (§3.4.4); `auto` moves such Agents to `gateway` (M2) |
+| Credential gateway pass-through, `policy.mcp.delivery` | 🚧 M1, PR #806 |
+| Host profile, `auto` negotiation, generation test | ❌ M2 |
 | Native MCP-over-ACP | ❌ M6 (no Agent advertises `acp: true`; SDK 3.6 upgrade in PR #805) |
 | Domain errors as `isError` tool results | ✅ (no next-step guidance) |
-| Per-channel host working directory | ❌ |
-| Channel-safe `set_status` | ❌ |
-| `off` / `warn` locked out of production | ❌ |
+| Per-channel host working directory | 🚧 M3, PR #810 |
+| Channel-safe `set_status` (owner↔bot DM only) | 🚧 M3, PR #809 |
+| `off` / `warn` removed; scope always enforced | 🚧 M3, PR #809 |
 | Task-bound tokens | ❌ (24h TTL only) |
 | Delegated identity | ❌ |
 | Actionable errors, `request_approval` | ❌ |
@@ -371,10 +425,10 @@ alongside M1.
 
 | Milestone | Work | Touches |
 |---|---|---|
-| **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-channel secrets, Host/Origin/body limits, 401 re-mint, SSE streaming; `native_cheers_mcp_server` hands out the local URL and secret behind a flag; unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release, then default on | connector |
-| **M2 host profile** | `HostProfile` in `bridge-protocol`; `ready` reports profile, `mcp_acp` and `mcp_delivery_mode`; migration adds `observed_profile` and `mcp_delivery_mode`; `/mcp` and the gateway record observations; bot policy for allowed modes via hello; MCP check and Fleet show mode and warnings | connector, server, migration, frontend |
-| **M3 isolation** | Per-channel cwd and `allowed_roots`; channel-scoped `set_status` or drop it from the default scope; refuse `MCP_CHANNEL_SCOPE=off\|warn` outside development | connector, server, mcp-server |
-| **M4 guidance and tightening** | Actionable error shape (`code`, `retryable`, `next`) and tool-error scope refusals for `client_credentials` tokens; delete header injection; cut token TTL from 24h to minutes | server, connector |
+| **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-channel secrets, Host/Origin/body limits, 401 re-mint, SSE streaming, `NO_PROXY` for loopback; selected by `policy.mcp.delivery = "gateway"` (default stays `direct`); unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release | connector |
+| **M2 host profile and negotiation** | M2a: `HostProfile`, `McpDeliveryMode` and `McpDeliveryReport` in `bridge-protocol`; `ready` reports profile and mode; migration adds `observed_profile`, `mcp_delivery_mode`, `mcp_delivery_reason`; `/mcp` records MCP revision, `clientInfo` and newest `iat` per `(host, chan)`, and sends `mcp_delivery_degraded`; bot policy `allowed_modes` via hello. M2b: `delivery = "auto"` as default; fact cache by Agent version; generation test; restart-when-idle to switch; Fleet shows mode and reason | connector, server, migration, frontend |
+| **M3 isolation** | Per-channel cwd under `default_cwd` (opt-out `shared_cwd`), #810; `set_status` only from the owner↔bot DM and `MCP_CHANNEL_SCOPE` off/warn removed, #809 | connector, server, mcp-server |
+| **M4 guidance and tightening** | Actionable error shape (`code`, `retryable`, `next`) and tool-error scope refusals for `client_credentials` tokens; token TTL per mode: minutes for `gateway`/`acp`, at least the longest turn for `direct` | server, connector |
 | **M5 task, delegation, approval** | `task_grant` and `task` claim with per-request running-task check and turn attribution in the gateway; RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
 | **M6 native MCP-over-ACP** | Enable `unstable_mcp_over_acp` after #805; provider with one `serverId` per session, declared on `session/load` too; switch per Agent via M2 negotiation; help `claude-agent-acp` advertise `mcpCapabilities.acp` | connector, upstream |
 
@@ -392,6 +446,9 @@ end-to-end run; send the Security-note PR if the RFD champion agrees.
 4. Return scope refusals for `client_credentials` tokens as tool errors instead
    of HTTP 403? Recommended: yes, documented as a deliberate deviation.
 
-Decided 2026-10-29: the credential gateway is the universal path now and
-native MCP-over-ACP the future path; the Codex header-refresh bug is fixed by
-M1 rather than separately.
+Decided 2026-10-29: native MCP-over-ACP is the future path. Revised the same
+day: header injection is kept as `direct` mode rather than deleted; `auto`
+prefers `acp` → `direct` → `gateway`, decided from the Agent's ACP report and
+the MCP traffic `/mcp` observes (generation test), with `allowed_modes` as the
+security switch. The Codex header-refresh bug is handled by `auto` moving it
+to `gateway`.
