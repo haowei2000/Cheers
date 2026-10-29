@@ -1,6 +1,6 @@
 # MCP Authorization and Channel Isolation
 
-Status: **design consolidated; P0–P4 not started**
+Status: **plan agreed 2026-10-29; M1 (credential gateway) in progress**
 Scope: the HTTP MCP endpoint (`POST /mcp`), its OAuth surface, and the
 connector path that hands MCP credentials to ACP Agents.
 Related: [MCP_HTTP_OAUTH_TOOL_SCOPE](./MCP_HTTP_OAUTH_TOOL_SCOPE.md) ·
@@ -53,12 +53,12 @@ Related: [MCP_HTTP_OAUTH_TOOL_SCOPE](./MCP_HTTP_OAUTH_TOOL_SCOPE.md) ·
  │   holds the long-lived host credential (never given      │                 │
  │   to the Agent); mints short-lived tokens per channel    │                 │
  │   (P2: per task)                                         │                 │
- │   before every session/prompt: session/load with fresh  │                 │
- │   mcpServers{url, Authorization}                         │                 │
+ │   credential gateway (M1): Agent gets 127.0.0.1 + local  │                 │
+ │   secret; connector swaps in the real token per request  │                 │
  │   relays ACP elicitation / permission → asks only U      │                 │
  │        │ ACP (stdio)                                     │                 │
  │        ▼                                                 │                 │
- │   ACP Agent (Claude / Codex / Gemini / OpenCode) ────────┘                 │
+ │   ACP Agent (Claude / Codex / Gemini / OpenCode) ──► gateway ──┘           │
  │   ACP session keyed by (channel, bot)                                      │
  └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -105,10 +105,11 @@ ACP offers exactly one channel for MCP configuration: `mcpServers` on
   context, where any prompt injection in the channel can exfiltrate it.
 - `session/prompt` `_meta` is not a standard credential carrier; Agents ignore
   it.
-- **To verify per Agent:** whether `session/load` on a session already live in
-  the Agent process actually replaces the MCP headers, rather than reusing the
-  existing MCP connection. Agents without `loadSession` fall through to
-  `session/new`, which always carries the new token.
+- **Verified 2026-10-29 (§3.4.4): not every Agent re-reads headers.** Codex
+  (codex-acp 2.3.0) keeps the first header for a live session, so after the
+  connector rotates the token Codex keeps sending the old one and starts
+  failing once it expires. Header injection is therefore not a correct
+  long-running design; the credential gateway (§3.4.2) replaces it.
 
 ### 3.3 Rejected alternatives
 
@@ -117,14 +118,14 @@ ACP offers exactly one channel for MCP configuration: `mcpServers` on
 | Agent runs MCP OAuth itself | Spike result: unreachable for most Agents (needs a public CIMD and a consent round-trip); also yields one bot-wide token, not one per channel |
 | URL-mode elicitation to authorize access to Cheers | The MCP spec forbids it ("MUST NOT rely on URL mode elicitation to authorize users for themselves"); the loopback `redirect_uri` on the host is unreachable from the user's browser; Agent support is sparse |
 | Token in prompt content | Leaks into LLM context |
-| Custom local MCP proxy that adds the header | Superseded by MCP-over-ACP (§3.4), which gives the same property through a standard ACP binding instead of a Cheers-only proxy |
+| SDK `agent-client-protocol-polyfill` as the universal path | It re-exports over loopback HTTP but speaks only MCP 2026-07-28 with no fallback; Codex and OpenCode use older MCP revisions, so it covers only Claude today |
 | A Cheers-specific ACP extension for credential callbacks | Unnecessary once MCP-over-ACP lands; per-session `serverId` already scopes authority without new wire fields |
 
-Residual risk of the current path: the bearer is visible to the Agent process
-(not the LLM context). It is short-lived, host-bound, scope-limited,
-channel-narrowed and revocable on the next request. §3.4 removes it.
+Residual risk of header injection: the bearer is visible to the Agent process
+(not the LLM context), and Agents that ignore refreshed headers break after
+expiry. §3.4 removes both.
 
-### 3.4 Target: client-held credentials via MCP-over-ACP
+### 3.4 Client-held credentials
 
 General principle, not specific to Cheers: **the Agent decides what to call;
 the ACP client decides whether, and with which credential.** Credentials
@@ -139,6 +140,55 @@ Delivery strength, strongest first:
 | L2 lend short-lived | Agent asks the client for a short-lived token | Yes, briefly |
 | L3 static injection | `mcpServers[].headers` (today) | Yes, for the token lifetime |
 
+Two mechanisms deliver this, chosen per Agent (§3.5):
+
+#### 3.4.1 Selection
+
+| Agent advertises (ACP `initialize`) | Mechanism |
+|---|---|
+| `mcpCapabilities.acp == true` | Native MCP-over-ACP (§3.4.3) |
+| `mcpCapabilities.http == true` | Credential gateway pass-through (§3.4.2) |
+| neither | Cheers MCP not offered; the host profile and MCP check show why |
+
+The ACP `protocolVersion` (1 for every Agent tested) says nothing about the
+Agent's MCP revision; ACP and MCP negotiate independently. The gateway does not
+need to know it, because it does not parse MCP.
+
+#### 3.4.2 Credential gateway (current universal path, M1)
+
+A loopback HTTP endpoint inside the connector:
+
+```text
+Agent ──HTTP, any MCP revision──► 127.0.0.1:<port>/mcp   (connector)
+        Authorization: Bearer <local per-session secret>
+                                   │ secret → session → channel
+                                   │ swap in the real Cheers token (rotated freely)
+                                   ▼
+                              POST https://<gateway>/mcp
+```
+
+- **Pass-through, not an MCP implementation.** Body and MCP headers
+  (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`, `Accept`,
+  `Content-Type`) are forwarded unchanged; only `Authorization` is replaced.
+  2025-06-18, 2025-11-25 and 2026-07-28 clients all work, because `/mcp` serves
+  every era statelessly. JSON and SSE responses stream back unchanged.
+- **The Agent's credential never changes during a session**, so Agents that
+  ignore refreshed headers (Codex) keep working. Token rotation happens inside
+  the connector, which also allows a TTL of minutes.
+- **The local secret is worthless off-host**: 32 random bytes, per ACP
+  session, header-only (never in the URL), compared in constant time, and
+  bound to one channel. The listener binds loopback only, rejects a
+  non-loopback `Origin`, caps the body at the gateway's limit, and answers
+  `GET`/`DELETE` with 405 itself.
+- **Upstream 401** invalidates the cached token for that channel, re-mints once
+  and retries; a second 401 is returned to the Agent.
+- **Observation point**: every MCP request passes through, so the gateway records
+  the revisions and behaviours each Agent actually uses (§3.5).
+- Rollout: config flag, default off in the first release; default on once the
+  Agent matrix passes; then header injection is deleted (M4).
+
+#### 3.4.3 Native MCP-over-ACP (future path, M6)
+
 The ACP [MCP-over-ACP RFD](https://agentclientprotocol.com/rfds/mcp-over-acp)
 (Active since 2026-10) is the standard L0 binding:
 
@@ -147,9 +197,9 @@ The ACP [MCP-over-ACP RFD](https://agentclientprotocol.com/rfds/mcp-over-acp)
   `session/new`.
 - Calls arrive at the client as `mcp/message` (`serverId`, `requestId`, inner
   MCP `method`/`params`), request-scoped and session-less like MCP 2026-07-28.
-- Agents without native support use the `agent-client-protocol-polyfill`
-  bridge, which presents a normal MCP server to the Agent and tunnels back over
-  ACP.
+- SDK 3.6 provides the types and `SessionBuilder::with_mcp_server` for
+  `session/new`; v1 `session/load` has no per-session attachment helper, so the
+  connector declares `{type:"acp", serverId}` on load itself.
 
 Cheers design on top of it:
 
@@ -163,15 +213,52 @@ Cheers design on top of it:
 - The connector forwards to `POST /mcp` with a token it never hands out. That
   allows a TTL of minutes instead of 24h, DPoP later, and approvals (§6) at the
   connector.
-- Rollout is gated: header injection stays the default until the Agent matrix
-  passes, then it is removed in a release with a stated deprecation window.
-  The RFD schema is still unstable ("must be released … before publication").
+- The RFD schema is still unstable ("must be released … before publication"),
+  and no tested Agent advertises `acp: true` yet; this path switches on per
+  Agent through negotiation (§3.5) when one does.
 
 Upstream engagement:
 [discussion #2584](https://github.com/orgs/agentclientprotocol/discussions/2584)
 asks to confirm per-session `serverId` as the intended way to scope authority,
 and offers a non-normative "credential-holding providers" Security note, Rust
 SDK help and adapter support for `mcpCapabilities.acp`.
+
+#### 3.4.4 Agent interop matrix (2026-10-29)
+
+Probed locally without any model call: `initialize`, `session/new` with an HTTP
+MCP server, then `session/load` with a changed `Authorization` header.
+
+| Agent | `mcpCapabilities` | MCP client revision | Re-reads headers on `session/load` |
+|---|---|---|---|
+| Claude (claude-agent-acp 0.99.0, Claude Code 2.1.312) | `http`, `sse` | tries 2026-07-28 (`server/discover`), falls back to 2025-11-25 | yes |
+| Codex (codex-acp 2.3.0, codex-mcp-client 0.164.0) | `http`, `acp: false` | 2025-06-18 only | **no** |
+| OpenCode 1.19.4 | `http`, `sse` | 2025-11-25 only | yes |
+| Gemini CLI 0.65.0 | `http`, `sse` | not reached: `session/new` refused by the provider ("no longer supported for Gemini Code Assist for individuals") | — |
+
+### 3.5 Host profile and mode negotiation
+
+Facts about a host's connector and Agent are recorded so the mechanism can be
+chosen, explained and upgraded. **They choose a compatibility mode; they never
+grant authority** — `agentInfo` and MCP `clientInfo` are self-reported.
+
+| Kind | Examples | Written by | Stored in |
+|---|---|---|---|
+| Declared (handshake, overwritten each connect) | host kind (desktop/daemon/container), OS/arch, headless; connector version and supported delivery modes; Agent name/version, ACP version, `mcp{acp,http,sse}`, `loadSession`, `authMethods` | connector `ready` frame | `connector_hosts.capabilities.profile` (`schema: 1`) |
+| Observed (accumulated) | MCP revisions seen, tries `server/discover`, re-reads headers on load | `/mcp` and the credential gateway | `connector_hosts.observed_profile` (new JSONB) |
+| Chosen mode | `acp` \| `gateway` \| `header` | connector | `connector_hosts.mcp_delivery_mode` (new column) |
+
+- The profile is per **host**, not per bot: it describes one machine's connector
+  and Agent, and a re-paired host starts fresh. A bot reads its active host's
+  profile. ("Installation" is reserved for provider installs; see migration
+  0088.)
+- The `HostProfile` struct lives in `bridge-protocol` so server and connector
+  share one definition (`#[serde(default)]` fields, explicit `schema`).
+- **Policy is separate from facts**: allowed delivery modes are bot
+  configuration, sent in the hello `server_capabilities`. The connector picks
+  the strongest mode allowed by policy and supported by the Agent, re-evaluated
+  on every connect.
+- Record only versions, capabilities and modes — no paths, environment or
+  credentials.
 
 ## 4. Channel isolation (cross-channel leakage)
 
@@ -260,8 +347,10 @@ user and task.
 | Host-bound tokens, host re-validated per request | ✅ |
 | Channel-narrowed tokens, `enforce` default | ✅ |
 | ACP session per channel | ✅ |
-| Fresh token before every prompt via `session/load` | ✅ (per-Agent header refresh unverified) |
-| Client-held credentials via MCP-over-ACP | ❌ (upstream RFD Active; connector on ACP SDK 2.0, binding needs 3.x) |
+| Fresh token before every prompt via `session/load` | ⚠️ ignored by Codex (§3.4.4) |
+| Credential gateway pass-through | 🚧 M1 |
+| Host profile and mode negotiation | ❌ M2 |
+| Native MCP-over-ACP | ❌ M6 (no Agent advertises `acp: true`; SDK 3.6 upgrade in PR #805) |
 | Domain errors as `isError` tool results | ✅ (no next-step guidance) |
 | Per-channel host working directory | ❌ |
 | Channel-safe `set_status` | ❌ |
@@ -272,14 +361,20 @@ user and task.
 
 ## 8. Roadmap
 
-| Phase | Work | Touches |
+Each step is one PR. Order: M1 > M3 > M2 > M4 > M5 > M6; M3 and M4.1 can run
+alongside M1.
+
+| Milestone | Work | Touches |
 |---|---|---|
-| **P0 isolation** | Per-channel cwd and `allowed_roots`; make `set_status` channel-scoped or drop it from the default scope; refuse `MCP_CHANNEL_SCOPE=off\|warn` outside development | connector (release per AGENTS.md), server |
-| **P0.5 client-held credentials** | Upgrade `agent-client-protocol` 2.0 → 3.x (separate PR, no behaviour change); connector serves `cheers` as an MCP-over-ACP provider with one `serverId` per session, forwarding to `/mcp`; polyfill for Agents without `mcpCapabilities.acp`; Agent matrix; flag-gated switch, then remove header injection; shorten token TTL | connector (release per AGENTS.md), server |
-| **P1 guidance** | Actionable error shape (`code`, `retryable`, `next`); tool-error form of scope refusals for `client_credentials` tokens | server |
-| **P2 task binding** | `task_grant` on dispatch; `task` claim; per-request running-task check; connector token cache keyed by task; verify per-Agent header refresh on `session/load` | server, connector, migration |
-| **P3 delegation** | RFC 8693 exchange; `sub=U, act=bot`; delegated principal with role intersection; standing-delegation setting; "bot (for U)" audit display | server, frontend, migration |
-| **P4 approval** | `request_approval` tool, approval card, one-time `approval_id` | server, frontend, migration |
+| **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-session secrets, Origin/body limits, 401 re-mint, SSE streaming; `native_cheers_mcp_server` hands out the local URL and secret behind a flag; unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release, then default on | connector |
+| **M2 host profile** | `HostProfile` in `bridge-protocol`; `ready` reports profile, `mcp_acp` and `mcp_delivery_mode`; migration adds `observed_profile` and `mcp_delivery_mode`; `/mcp` and the gateway record observations; bot policy for allowed modes via hello; MCP check and Fleet show mode and warnings | connector, server, migration, frontend |
+| **M3 isolation** | Per-channel cwd and `allowed_roots`; channel-scoped `set_status` or drop it from the default scope; refuse `MCP_CHANNEL_SCOPE=off\|warn` outside development | connector, server, mcp-server |
+| **M4 guidance and tightening** | Actionable error shape (`code`, `retryable`, `next`) and tool-error scope refusals for `client_credentials` tokens; delete header injection; cut token TTL from 24h to minutes | server, connector |
+| **M5 task, delegation, approval** | `task_grant` and `task` claim with per-request running-task check and turn attribution in the gateway; RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
+| **M6 native MCP-over-ACP** | Enable `unstable_mcp_over_acp` after #805; provider with one `serverId` per session, declared on `session/load` too; switch per Agent via M2 negotiation; help `claude-agent-acp` advertise `mcpCapabilities.acp` | connector, upstream |
+
+Upstream, in parallel: share the §3.4.4 matrix on discussion #2584 after M1's
+end-to-end run; send the Security-note PR if the RFD champion agrees.
 
 ## 9. Open decisions
 
@@ -290,4 +385,8 @@ user and task.
 3. Revoke task-bound tokens the moment the task ends, or let them expire?
    Recommended: revoke on end via the per-request task check.
 4. Return scope refusals for `client_credentials` tokens as tool errors instead
-   of HTTP 403?
+   of HTTP 403? Recommended: yes, documented as a deliberate deviation.
+
+Decided 2026-10-29: the credential gateway is the universal path now and
+native MCP-over-ACP the future path; the Codex header-refresh bug is fixed by
+M1 rather than separately.
