@@ -345,10 +345,23 @@ independently.
 
 Goal: a token that means "bot acting for user U in channel C during task T".
 
-1. On dispatch the Gateway issues a one-time, short-lived, signed `task_grant`
-   bound to task, sender, channel and host.
-2. The connector exchanges it at `/oauth/token` with RFC 8693 token exchange,
-   authenticating with its host credential. Either piece alone is useless.
+**Task binding (M5a, PR #815, as built).** The run ledger is the grant; no
+separate signed `task_grant` is issued. The connector already holds the
+task's `execution_id` from task acceptance, and sends it as
+`cheers_execution` with its host credential and `cheers_channel`. The Gateway
+mints only for an execution of this bot, in that channel, accepted and without
+a terminal result (`bot_runs`), and adds a `task` claim. Every request with a
+`task` claim re-checks that the execution still runs and is refused with 403
+once it ends. The connector binds only where each new token reaches the Agent
+(`gateway` delivery, or `direct` for an Agent judged to re-read headers);
+otherwise an Agent keeping an ended task's token would be refused at once.
+
+Delegation (M5b) builds on the same exchange:
+
+1. The connector requests the token for task T (above); the Gateway takes the
+   sender U from the task's run record, never from the request.
+2. The exchange is authenticated by the host credential and bound to a
+   running execution. Either piece alone is useless.
 3. The resulting JWT carries `sub = U`, `act = {sub: bot}`, `chan = C`,
    `task = T`, scope ⊆ the bot's scope, short TTL.
 4. Resource authorization gains a delegated principal and checks **both**
@@ -425,7 +438,7 @@ user and task.
 | Channel-safe `set_status` (owner↔bot DM only) | 🚧 M3, PR #809 |
 | `off` / `warn` removed; scope always enforced | 🚧 M3, PR #809 |
 | Token lifetime per mode (10 min for `gateway`, 24h for `direct`) | 🚧 M4b, PR #814 |
-| Task-bound tokens | ❌ M5 |
+| Task-bound tokens (`cheers_execution` → `task` claim, per-request running check) | 🚧 M5a, PR #815 |
 | Delegated identity | ❌ |
 | `request_approval` | ❌ M5 |
 
@@ -440,7 +453,7 @@ alongside M1.
 | **M2 host profile and negotiation** | M2a: `McpDeliveryMode` and `McpDeliveryReport` in `bridge-protocol`; `ready` reports the mode; migration 0118 adds `mcp_header_refresh{,_agent,_at}`; `/mcp` tracks the newest `iat` per `(host, chan)`, records the verdict and sends `mcp_delivery_observed` (PR #811). M2b: `MCP_ALLOWED_DELIVERY_MODES` via hello; `delivery = "auto"` as default; verdict cache by Agent build; generation test; restart-when-idle to switch (PR #812). Later: Fleet shows mode and reason | connector, server, migration, frontend |
 | **M3 isolation** | Per-channel cwd under `default_cwd` (opt-out `shared_cwd`), #810; `set_status` only from the owner↔bot DM and `MCP_CHANNEL_SCOPE` off/warn removed, #809 | connector, server, mcp-server |
 | **M4 guidance and tightening** | M4a (#813): `Next:` guidance and `{code, retryable}` on refused tool calls; `OUT_OF_CHANNEL` / `CHANNEL_SCOPE_REQUIRED` codes. M4b (#814): `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS` (600 s) for `gateway`/`acp` hosts, 24h for `direct`. Open: tool-error scope refusals for `client_credentials` tokens (§9.4) | server |
-| **M5 task, delegation, approval** | `task_grant` and `task` claim with per-request running-task check and turn attribution in the gateway; RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
+| **M5 task, delegation, approval** | M5a (#815): `cheers_execution` → `task` claim with per-request running-task check, bound only where each token reaches the Agent. M5b: RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
 | **M6 native MCP-over-ACP** | Enable `unstable_mcp_over_acp` after #805; provider with one `serverId` per session, declared on `session/load` too; switch per Agent via M2 negotiation; help `claude-agent-acp` advertise `mcpCapabilities.acp` | connector, upstream |
 
 Upstream, in parallel: share the §3.4.4 matrix on discussion #2584 after M1's
