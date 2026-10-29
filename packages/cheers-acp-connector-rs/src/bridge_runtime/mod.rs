@@ -3285,7 +3285,17 @@ impl RuntimeContext {
             );
             return Value::Array(servers);
         };
+        // Task binding only where each new token is known to reach the Agent
+        // (`mcp_delivery::Decision::bind_tasks`); an Agent that kept an ended
+        // task's token would otherwise be refused at once.
+        let execution = task
+            .execution
+            .as_ref()
+            .filter(|_| self.mcp_delivery.bind_tasks)
+            .map(|execution| execution.execution_id.as_str());
+        provider.retain_execution(&task.channel_id, execution).await;
         if let Some(gateway) = self.credential_gateway.as_ref() {
+            gateway.bind_execution(&task.channel_id, execution).await;
             let secret = gateway.secret_for(&task.channel_id).await;
             servers.push(native_cheers_mcp_server(
                 &task.channel_id,
@@ -3296,9 +3306,9 @@ impl RuntimeContext {
         }
         let token = if self.take_direct_renewal(&task.channel_id).await {
             tracing::info!(account = %self.account_id, channel = %task.channel_id, "renewing the MCP token to test direct delivery");
-            provider.renew(&task.channel_id).await
+            provider.renew(&task.channel_id, execution).await
         } else {
-            provider.bearer(&task.channel_id).await
+            provider.bearer(&task.channel_id, execution).await
         };
         let bearer = match token {
             Ok(token) => token,
@@ -4325,6 +4335,7 @@ max_concurrent = {max_concurrent}
                 mode: McpDeliveryMode::Direct,
                 reason: "test".into(),
                 test_direct: false,
+                bind_tasks: false,
             },
             agent: "fixture-agent@0".into(),
             direct_test: Mutex::new(DirectTest::default()),

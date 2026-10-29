@@ -2210,3 +2210,98 @@ async fn a_finished_stream_refunds_prepaid_delta_uses(db: PgPool) {
     .await
     .unwrap_or_else(|_| panic!("use_count settles at frames actually sent"));
 }
+
+impl Fixture {
+    /// `client_credentials` for this fixture's channel, optionally bound to a
+    /// task execution.
+    async fn mint(&self, execution: Option<Uuid>) -> (StatusCode, Value) {
+        let metadata: Value = self
+            .client
+            .get(format!(
+                "{}/.well-known/oauth-protected-resource/mcp",
+                self.base
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let mut form = json!({
+            "grant_type":"client_credentials","client_id":self.bot.host,
+            "client_secret":self.bot.credential,"resource":metadata["resource"],
+            "scope":"cheers:read","cheers_channel":self.channel,
+        });
+        if let Some(execution) = execution {
+            form["cheers_execution"] = json!(execution);
+        }
+        let response = self
+            .client
+            .post(format!("{}/oauth/token", self.base))
+            .json(&form)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        (status, response.json().await.unwrap())
+    }
+
+    async fn tools_list_status(&self, token: &str) -> StatusCode {
+        self.client
+            .post(format!("{}/mcp", self.base))
+            .bearer_auth(token)
+            .header("MCP-Protocol-Version", "2025-11-25")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+            .send()
+            .await
+            .unwrap()
+            .status()
+    }
+}
+
+#[sqlx::test]
+async fn a_task_bound_mcp_token_works_only_while_its_execution_runs(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let mut bridge = fixture.bridge(true).await;
+    let task = fixture.dispatch(&mut bridge.control).await;
+
+    // Not accepted yet: there is no running execution to bind to.
+    let execution = Uuid::new_v4();
+    let (status, body) = fixture.mint(Some(execution)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"], "invalid_grant", "{body}");
+
+    accept(&mut bridge.control, acceptance(&task, execution), "granted").await;
+    let (status, token) = fixture.mint(Some(execution)).await;
+    assert!(status.is_success(), "{status}: {token}");
+    let token = token["access_token"].as_str().unwrap().to_string();
+    assert_eq!(fixture.tools_list_status(&token).await, StatusCode::OK);
+
+    let ack = terminal_ack(
+        &mut bridge.data,
+        &terminal(&task, execution, Uuid::new_v4(), "done"),
+    )
+    .await;
+    assert_eq!(ack["ok"], true, "{ack}");
+
+    // The task ended: its token is refused (403, not a re-mint invitation),
+    // and no new token can be bound to it.
+    assert_eq!(
+        fixture.tools_list_status(&token).await,
+        StatusCode::FORBIDDEN
+    );
+    let (status, body) = fixture.mint(Some(execution)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"], "invalid_grant", "{body}");
+
+    // A channel-only token is unaffected.
+    let (status, plain) = fixture.mint(None).await;
+    assert!(status.is_success(), "{status}: {plain}");
+    assert_eq!(
+        fixture
+            .tools_list_status(plain["access_token"].as_str().unwrap())
+            .await,
+        StatusCode::OK
+    );
+}

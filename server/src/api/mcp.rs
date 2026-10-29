@@ -639,6 +639,10 @@ struct McpAccessClaims {
     /// endpoint treats per `mcp_channel_scope` rather than as authority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chan: Option<String>,
+    /// Task execution this token is bound to; it is refused once that
+    /// execution ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task: Option<String>,
     aud: String,
     iss: String,
     token_use: String,
@@ -673,6 +677,10 @@ struct McpTokenRequest {
     /// role still decides every operation — so a token minted for the wrong
     /// channel can be refused, never mistaken for authority it does not have.
     cheers_channel: Option<String>,
+    /// Cheers extension: the task execution (from task acceptance) this token
+    /// serves. Requires `cheers_channel`; the token then dies with the task,
+    /// because every request re-checks that the execution is still running.
+    cheers_execution: Option<String>,
 }
 
 /// Exchange an active host credential for a narrowly scoped MCP token.
@@ -807,6 +815,35 @@ pub async fn issue_mcp_access_token(
             "cheers_channel is required when channel scoping is enforced",
         );
     }
+    // Task binding: the execution must be this bot's, in this channel, and
+    // still running. The connector's host credential plus an execution id is
+    // the grant; neither alone mints a task-bound token.
+    let task = match request.cheers_execution.as_deref() {
+        None => None,
+        Some(raw) => {
+            let (Ok(execution_id), Some(channel_id)) = (Uuid::parse_str(raw), channel.as_deref())
+            else {
+                return oauth_token_error(
+                    "invalid_request",
+                    "cheers_execution must be a uuid and needs cheers_channel",
+                );
+            };
+            match execution_is_running(&state, &bot_id, channel_id, &execution_id.to_string()).await
+            {
+                Ok(true) => Some(execution_id.to_string()),
+                Ok(false) => {
+                    return oauth_token_error(
+                        "invalid_grant",
+                        "cheers_execution is not a running task of this bot in cheers_channel",
+                    )
+                }
+                Err(error) => {
+                    tracing::error!(error = %error, "MCP token execution lookup failed");
+                    return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+                }
+            }
+        }
+    };
 
     let _ = mark_mcp_authorizing(&state, &host_id).await;
 
@@ -817,8 +854,31 @@ pub async fn issue_mcp_access_token(
         credential_hash,
         scope,
         channel,
+        task,
         None,
     )
+}
+
+/// Whether `execution_id` is a task of this bot in this channel that has been
+/// accepted and has not committed a terminal result.
+async fn execution_is_running(
+    state: &AppState,
+    bot_id: &str,
+    channel_id: &str,
+    execution_id: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM bot_runs
+            WHERE execution_id = $1 AND bot_id = $2 AND channel_id = $3
+              AND status = 'accepted' AND terminal_committed_at IS NULL
+         ) AS "value!" "#,
+        execution_id,
+        bot_id,
+        channel_id,
+    )
+    .fetch_one(&state.db)
+    .await
 }
 
 /// Whether this bot is a member of the channel, in any role.
@@ -846,6 +906,7 @@ fn mint_mcp_access_token(
     credential_hash: String,
     scope: String,
     channel: Option<String>,
+    task: Option<String>,
     refresh_token: Option<String>,
 ) -> Response {
     let now = chrono::Utc::now().timestamp().max(0) as u64;
@@ -866,6 +927,7 @@ fn mint_mcp_access_token(
         credential_hash,
         scope: scope.clone(),
         chan: channel,
+        task,
         aud: state.config.mcp_resource_url(),
         iss: state.config.mcp_authorization_issuer(),
         token_use: MCP_TOKEN_USE.to_string(),
@@ -1003,6 +1065,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         host.1,
         scope,
         channel_id,
+        None,
         Some(refresh_token),
     )
 }
@@ -1192,6 +1255,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         host.1,
         scope,
         original_channel_id,
+        None,
         Some(replacement),
     )
 }
@@ -1250,6 +1314,11 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     };
     tracing::debug!(bot_id=%identity.bot_id, host_id=%identity.host_id, "authorized MCP request");
     observe_mcp_delivery(&state, &identity);
+    // After the delivery check, so a stale Agent still presenting an ended
+    // task's token is judged before it is refused.
+    if let Some(refusal) = refuse_ended_task(&state, &identity).await {
+        return refusal;
+    }
 
     let host_id = identity.host_id;
     let request: Value = match serde_json::from_slice(&body) {
@@ -1617,6 +1686,40 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
     }
     private_json_response(StatusCode::OK, final_response)
+}
+
+/// A task-bound token works only while its execution runs. Refused with 403,
+/// not 401: re-minting cannot help, so a client that re-authorizes on 401 must
+/// not be invited to.
+async fn refuse_ended_task(state: &AppState, identity: &McpIdentity) -> Option<Response> {
+    let task = identity.task.as_deref()?;
+    let Some(channel) = identity.channel_scope else {
+        return Some(mcp_http_error(
+            StatusCode::FORBIDDEN,
+            "task-bound token without a channel",
+        ));
+    };
+    match execution_is_running(
+        state,
+        &identity.bot_id.to_string(),
+        &channel.to_string(),
+        task,
+    )
+    .await
+    {
+        Ok(true) => None,
+        Ok(false) => Some(mcp_http_error(
+            StatusCode::FORBIDDEN,
+            "the task this token was minted for has ended",
+        )),
+        Err(error) => {
+            tracing::error!(error = %error, "MCP task-binding lookup failed");
+            Some(mcp_http_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error",
+            ))
+        }
+    }
 }
 
 /// Judge `direct` delivery from the token generation this request presents
@@ -2531,6 +2634,8 @@ struct McpIdentity {
     channel_scope: Option<Uuid>,
     /// The token's `iat`: its generation, for the `direct` delivery check.
     issued_at: u64,
+    /// Task execution the token is bound to, re-checked on every request.
+    task: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2623,6 +2728,7 @@ async fn authenticate_mcp(
                 .as_deref()
                 .and_then(|value| Uuid::parse_str(value).ok()),
             issued_at: claims.iat,
+            task: claims.task,
         }),
         _ => Err(AuthMcpError::Unauthorized),
     }
@@ -3881,6 +3987,21 @@ mod tests {
         assert!(ChannelScopeVerdict::Unnarrowed.is_refused(McpChannelScope::Enforce));
         assert!(!ChannelScopeVerdict::InScope.is_refused(McpChannelScope::Enforce));
         assert!(!ChannelScopeVerdict::Channelless.is_refused(McpChannelScope::Enforce));
+    }
+
+    /// task 声明可缺省：老 token 照常解析，新 token 不带 task 时也不序列化该字段。
+    #[test]
+    fn task_claim_is_optional_on_the_wire() {
+        let legacy: McpAccessClaims = serde_json::from_value(json!({
+            "sub": "b", "host_id": "h", "credential_hash": "c", "scope": "s",
+            "chan": "11111111-2222-4333-8444-555555555555",
+            "aud": "a", "iss": "i", "token_use": MCP_TOKEN_USE,
+            "exp": 2, "iat": 1, "nbf": 1
+        }))
+        .unwrap();
+        assert!(legacy.task.is_none());
+        let encoded = serde_json::to_value(&legacy).unwrap();
+        assert!(encoded.get("task").is_none());
     }
 
     #[test]
