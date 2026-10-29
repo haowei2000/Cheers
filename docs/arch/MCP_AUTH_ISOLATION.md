@@ -419,12 +419,26 @@ text; mark non-recoverable errors `retryable: false` to prevent loops.
 actionable tool error instead. This is a deliberate deviation from a SHOULD and
 needs sign-off.
 
-**`request_approval`.** It sends an approval card to the initiating user over
-the existing Bridge/WS path and returns a pending `approval_id`. On approval the
-Agent retries the original call with that id; the server checks it is bound to
-the same task, action and arguments, and consumes it once. No new token is
-issued, so MCP stays stateless — the approval lives in the database, bound to
-user and task.
+**`request_approval` (M5c, as built).** Scope: the registry's destructive
+resources (`fs.rm`, `fs.mv`) on a person's task, i.e. a token with `task` and
+`obo`. These are the platform's own resources, so the platform enforces the
+ask, unlike ACP permission requests, which an agent can skip
+([ACP_APPROVAL_FLOW](./ACP_APPROVAL_FLOW.md) keeps deciding those).
+
+1. The gated call without a valid `approval_id` is refused with
+   `APPROVAL_REQUIRED` and told to call `request_approval`.
+2. `request_approval {channel_id, tool, arguments_json, reason?}` posts a
+   `permission` card of kind `mcp_approval`, bound in its `content_data` to
+   task, person, resource and a SHA-256 of the exact arguments (`approval_id`
+   excluded). It waits up to 10 minutes and returns `approved`, `denied` or
+   `expired`; expiry finalizes the card so a late click cannot approve.
+3. Only the bound person can answer it through the existing resolve endpoint:
+   not the bot owner, not a delegate. Nothing is sent to the connector.
+4. The retried call passes `approval_id`; the gate checks the binding and
+   consumes the card with a compare-and-set, so one approval allows one call.
+
+No migration and no new token: the approval lives in the card, and MCP stays
+stateless. Channel-only tokens and tasks without a person are not gated.
 
 ## 7. Status
 
@@ -445,7 +459,7 @@ user and task.
 | Token lifetime per mode (10 min for `gateway`, 24h for `direct`) | 🚧 M4b, PR #814 |
 | Task-bound tokens (`cheers_execution` → `task` claim, per-request running check) | 🚧 M5a, PR #815 |
 | Delegated narrowing (bot ∩ sender, owner opt-out) | 🚧 M5b, PR #816 |
-| `request_approval` | ❌ M5 |
+| `request_approval` for destructive calls on a person's task | 🚧 M5c |
 
 ## 8. Roadmap
 
