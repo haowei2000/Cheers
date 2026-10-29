@@ -42,9 +42,10 @@ use crate::acp_runtime::create_runtime;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
     ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
-    ElicitationResolution, PermissionOption, PermissionResolution, RuntimeSessionAckSession,
-    RuntimeSessionControlSession, ServerCapabilities, SessionConfigOverrides, TaskAcceptanceStatus,
-    TaskExecution, BRIDGE_PROTOCOL_VERSION,
+    ElicitationResolution, McpDeliveryMode, McpDeliveryReport, PermissionOption,
+    PermissionResolution, RuntimeSessionAckSession, RuntimeSessionControlSession,
+    ServerCapabilities, SessionConfigOverrides, TaskAcceptanceStatus, TaskExecution,
+    BRIDGE_PROTOCOL_VERSION,
 };
 use crate::bridge_session::{
     connect_control_stream, connect_data_stream, BridgeReady, BridgeSession, BridgeSessionConfig,
@@ -54,7 +55,7 @@ use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy, McpDelivery,
     PermissionTimeoutAction, PromptPolicy,
 };
-use crate::credential_gateway::{bypass_proxy_for_loopback, CredentialGateway};
+use crate::credential_gateway::{bypass_proxy_for_loopback, BoundGateway, CredentialGateway};
 use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
     PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
@@ -133,7 +134,10 @@ impl AccountRuntime {
         }
         let adapter = Arc::new(Mutex::new(adapter));
 
-        let bridge_ready = bridge_ready_from_initialize(&initialize_response, &self.config.policy);
+        let (mcp_delivery, bound_gateway) =
+            choose_mcp_delivery(self.config.policy.mcp.delivery).await;
+        let bridge_ready =
+            bridge_ready_from_initialize(&initialize_response, &self.config.policy, &mcp_delivery);
         let bridge_config = BridgeSessionConfig::new(
             self.account_id.clone(),
             self.config.bridge_credential.clone(),
@@ -205,28 +209,17 @@ impl AccountRuntime {
         };
         // Gateway delivery: the Agent gets a loopback URL and a stable local
         // secret instead of the bearer, so token rotation never depends on the
-        // Agent re-reading headers. If the listener cannot start, fall back to
-        // direct delivery rather than dropping Cheers MCP for this run.
-        let credential_gateway = match (&mcp_token, self.config.policy.mcp.delivery) {
-            (Some(tokens), McpDelivery::Gateway) => {
-                match CredentialGateway::start(mcp_url.clone(), tokens.clone()).await {
-                    Ok(gateway) => {
-                        tracing::info!(
-                            account = %self.account_id,
-                            local_url = gateway.local_url(),
-                            "MCP credential gateway listening"
-                        );
-                        Some(Arc::new(gateway))
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            account = %self.account_id,
-                            error = %error,
-                            "MCP credential gateway did not start; falling back to direct delivery"
-                        );
-                        None
-                    }
-                }
+        // Agent re-reading headers. The port was bound before `ready`, so the
+        // reported mode is the one the Agent gets.
+        let credential_gateway = match (&mcp_token, bound_gateway) {
+            (Some(tokens), Some(bound)) => {
+                let gateway = bound.serve(mcp_url.clone(), tokens.clone())?;
+                tracing::info!(
+                    account = %self.account_id,
+                    local_url = gateway.local_url(),
+                    "MCP credential gateway listening"
+                );
+                Some(Arc::new(gateway))
             }
             _ => None,
         };
@@ -1091,6 +1084,18 @@ impl RuntimeContext {
                         guard.insert(ch.channel_id.clone(), name.clone());
                     }
                 }
+            }
+            ControlInbound::McpDeliveryDegraded {
+                channel_id, reason, ..
+            } => {
+                // Acting on it (switching this Agent to gateway delivery at the
+                // next idle restart) is `delivery = "auto"`, M2b.
+                tracing::warn!(
+                    account = %self.account_id,
+                    channel = %channel_id,
+                    reason = %reason,
+                    "Gateway reports direct MCP delivery is degraded; set policy.mcp.delivery = \"gateway\""
+                );
             }
             ControlInbound::Pong | ControlInbound::Unknown => {}
             ControlInbound::Error { .. } => {}
@@ -3666,6 +3671,46 @@ fn silent_result(
     }
 }
 
+/// Settles this Agent process's MCP delivery before `ready` is sent, binding
+/// the gateway's port now so a bind failure is reported instead of discovered
+/// after the Gateway was told `gateway`.
+async fn choose_mcp_delivery(configured: McpDelivery) -> (McpDeliveryReport, Option<BoundGateway>) {
+    let modes = vec![McpDeliveryMode::Direct, McpDeliveryMode::Gateway];
+    match configured {
+        McpDelivery::Direct => (
+            McpDeliveryReport {
+                modes,
+                mode: McpDeliveryMode::Direct,
+                reason: "policy.mcp.delivery = \"direct\"".into(),
+            },
+            None,
+        ),
+        McpDelivery::Gateway => {
+            match CredentialGateway::bind().await {
+                Ok(bound) => (
+                    McpDeliveryReport {
+                        modes,
+                        mode: McpDeliveryMode::Gateway,
+                        reason: "policy.mcp.delivery = \"gateway\"".into(),
+                    },
+                    Some(bound),
+                ),
+                Err(error) => {
+                    tracing::warn!(%error, "MCP credential gateway could not bind; using direct delivery");
+                    (
+                    McpDeliveryReport {
+                        modes,
+                        mode: McpDeliveryMode::Direct,
+                        reason: format!("gateway configured but its loopback port could not bind: {error:#}"),
+                    },
+                    None,
+                )
+                }
+            }
+        }
+    }
+}
+
 /// Builds a trusted route only for a human-originated task. Bot/system work has
 /// no verified human identity and therefore cannot host request-scoped elicitation.
 fn request_route_for_task(task: &TaskCommand) -> Option<RequestRoute> {
@@ -4610,6 +4655,24 @@ max_concurrent = {max_concurrent}
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn mcp_delivery_is_settled_before_ready() {
+        let (direct, bound) = choose_mcp_delivery(McpDelivery::Direct).await;
+        assert_eq!(direct.mode, McpDeliveryMode::Direct);
+        assert!(bound.is_none());
+
+        let (gateway, bound) = choose_mcp_delivery(McpDelivery::Gateway).await;
+        assert_eq!(gateway.mode, McpDeliveryMode::Gateway);
+        assert!(
+            bound.is_some(),
+            "the port is bound before ready reports gateway"
+        );
+        assert_eq!(
+            gateway.modes,
+            [McpDeliveryMode::Direct, McpDeliveryMode::Gateway]
+        );
     }
 
     #[tokio::test]

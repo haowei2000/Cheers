@@ -383,6 +383,31 @@ pub struct SessionPolicy {
     pub after_task: String,
 }
 
+/// How an Agent reaches the Cheers MCP endpoint
+/// (docs/arch/MCP_AUTH_ISOLATION.md §3.4.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpDeliveryMode {
+    /// MCP-over-ACP: calls come back to the connector as `mcp/message`.
+    Acp,
+    /// The Agent calls `/mcp` itself with the bearer in `mcpServers` headers.
+    Direct,
+    /// The Agent calls the connector's loopback credential gateway.
+    Gateway,
+}
+
+/// The connector's MCP delivery choice for the current Agent process, sent as
+/// `connector_capabilities.mcp_delivery` in `ready`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpDeliveryReport {
+    /// Modes this connector build can serve.
+    pub modes: Vec<McpDeliveryMode>,
+    /// The mode the current Agent process uses.
+    pub mode: McpDeliveryMode,
+    /// Why this mode, in words an operator can act on.
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeDescriptor {
     pub protocol: String,
@@ -790,6 +815,17 @@ pub enum ControlInbound {
         resolved_by: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_at: Option<String>,
+    },
+    /// The Gateway saw this host's Agent keep presenting an older token for
+    /// `channel_id` after a newer one was minted: the Agent does not re-read
+    /// `mcpServers` headers, so `direct` delivery will fail once the old token
+    /// expires. Sent at most once per host and channel generation.
+    #[serde(rename = "mcp_delivery_degraded")]
+    McpDeliveryDegraded {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        channel_id: String,
+        reason: String,
     },
     #[serde(rename = "pong")]
     Pong,
