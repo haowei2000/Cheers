@@ -160,11 +160,19 @@ impl McpTokenProvider {
         Ok(value)
     }
 
-    /// Drops the cached token for `channel_id`, so the next [`Self::bearer`]
-    /// mints a fresh one. Called when the Gateway rejects a cached token
-    /// before its renewal point (host credential rotated, token revoked).
-    pub(crate) async fn invalidate(&self, channel_id: &str) {
-        self.cached.lock().await.remove(channel_id);
+    /// Drops the cached token for `channel_id` if it is still `rejected`, so
+    /// the next [`Self::bearer`] mints a fresh one. Called when the Gateway
+    /// rejects a cached token before its renewal point (host credential
+    /// rotated, token revoked). Matching on the rejected value keeps
+    /// concurrent 401s from evicting a token another request just re-minted.
+    pub(crate) async fn invalidate(&self, channel_id: &str, rejected: &str) {
+        let mut cached = self.cached.lock().await;
+        if cached
+            .get(channel_id)
+            .is_some_and(|token| token.value == rejected)
+        {
+            cached.remove(channel_id);
+        }
     }
 
     /// Performs the `client_credentials` exchange against the discovered

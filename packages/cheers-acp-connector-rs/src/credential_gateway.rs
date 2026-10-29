@@ -15,7 +15,7 @@
 //! headers are forwarded unchanged, so 2025-06-18, 2025-11-25 and 2026-07-28
 //! clients all work against a Gateway that serves every era statelessly.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -45,6 +45,9 @@ const UPSTREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Pause after a failed `accept`, so a persistent error cannot spin a core.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 const LOCAL_PATH: &str = "/mcp";
+/// Hosts a proxy exclusion must name for the local URL: the URL itself uses
+/// `127.0.0.1`, and some clients resolve or normalise it to `localhost`.
+const LOOPBACK_HOSTS: [&str; 2] = ["127.0.0.1", "localhost"];
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 type ProxyBody = BoxBody<Bytes, BoxError>;
@@ -219,12 +222,12 @@ async fn proxy(
         })?
         .to_bytes();
 
-    let mut upstream = state.send(&channel_id, &forwarded, body.clone()).await?;
+    let (mut upstream, token) = state.send(&channel_id, &forwarded, body.clone()).await?;
     if upstream.status() == StatusCode::UNAUTHORIZED {
         // A cached token can be refused before its renewal point (credential
         // rotated, token revoked). Re-mint once; a second refusal is real.
-        state.tokens.invalidate(&channel_id).await;
-        upstream = state.send(&channel_id, &forwarded, body).await?;
+        state.tokens.invalidate(&channel_id, &token).await;
+        (upstream, _) = state.send(&channel_id, &forwarded, body).await?;
     }
     Ok(relay(upstream))
 }
@@ -245,12 +248,13 @@ impl GatewayState {
         channel_id: &str,
         forwarded: &HeaderMap,
         body: Bytes,
-    ) -> Result<reqwest::Response, StatusCode> {
+    ) -> Result<(reqwest::Response, String), StatusCode> {
         let token = self.tokens.bearer(channel_id).await.map_err(|error| {
             tracing::warn!(%error, channel_id, "MCP credential gateway could not mint a token");
             StatusCode::BAD_GATEWAY
         })?;
-        self.http
+        let response = self
+            .http
             .post(&self.upstream)
             .headers(forwarded.clone())
             .header(header::AUTHORIZATION, format!("Bearer {token}"))
@@ -260,12 +264,42 @@ impl GatewayState {
             .map_err(|error| {
                 tracing::warn!(%error, "MCP credential gateway could not reach the Gateway");
                 StatusCode::BAD_GATEWAY
-            })
+            })?;
+        Ok((response, token))
     }
 }
 
 /// Streams the Gateway's response back, so request-scoped SSE progress reaches
 /// the Agent as it is produced.
+/// Adds loopback to the Agent's `NO_PROXY` / `no_proxy`, keeping any hosts
+/// already listed there. An inherited `HTTP_PROXY` would otherwise route the
+/// Agent's requests for the local URL, local secret included, through that
+/// proxy: Rust MCP clients such as Codex's honour it for loopback too.
+pub(crate) fn bypass_proxy_for_loopback(env: &mut BTreeMap<String, String>, inherit_env: bool) {
+    for key in ["NO_PROXY", "no_proxy"] {
+        let current = env
+            .get(key)
+            .cloned()
+            .or_else(|| inherit_env.then(|| std::env::var(key).ok()).flatten());
+        env.insert(key.to_string(), with_loopback(current.as_deref()));
+    }
+}
+
+fn with_loopback(current: Option<&str>) -> String {
+    let mut hosts: Vec<&str> = current
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+        .collect();
+    for host in LOOPBACK_HOSTS {
+        if !hosts.iter().any(|listed| listed.eq_ignore_ascii_case(host)) {
+            hosts.push(host);
+        }
+    }
+    hosts.join(",")
+}
+
 fn relay(upstream: reqwest::Response) -> Response<ProxyBody> {
     let status = upstream.status();
     let headers = relayed_response_headers(upstream.headers());
@@ -297,7 +331,8 @@ fn forwarded_request_headers(headers: &HeaderMap) -> HeaderMap {
     })
 }
 
-/// Response headers the Agent needs. `WWW-Authenticate` is dropped: it points
+/// Response headers the Agent needs, including `Retry-After` so it can back
+/// off on Gateway rate limits. `WWW-Authenticate` is dropped: it points
 /// at the Gateway's OAuth metadata, which would invite the Agent to start an
 /// authorization flow of its own against a resource it reaches only through
 /// this gateway.
@@ -305,6 +340,7 @@ fn relayed_response_headers(headers: &HeaderMap) -> HeaderMap {
     forward_matching(headers, |name| {
         name == header::CONTENT_TYPE
             || name == header::CACHE_CONTROL
+            || name == header::RETRY_AFTER
             || name.as_str().starts_with("mcp-")
     })
 }
@@ -665,6 +701,41 @@ mod tests {
             .map(|seen| seen.authorization.clone().unwrap_or_default())
             .collect();
         assert_eq!(auths, ["Bearer token-1", "Bearer token-2"]);
+    }
+
+    #[tokio::test]
+    async fn invalidate_keeps_a_token_re_minted_by_a_concurrent_request() {
+        let fake = spawn_gateway(false).await;
+        let gateway = gateway_for(&fake).await;
+        let tokens = &gateway.state.tokens;
+
+        assert_eq!(tokens.bearer("channel-a").await.unwrap(), "token-1");
+        // A late 401 for an older token must not evict the current one.
+        tokens.invalidate("channel-a", "token-0").await;
+        assert_eq!(tokens.bearer("channel-a").await.unwrap(), "token-1");
+        tokens.invalidate("channel-a", "token-1").await;
+        assert_eq!(tokens.bearer("channel-a").await.unwrap(), "token-2");
+    }
+
+    #[test]
+    fn loopback_is_appended_to_existing_proxy_exclusions() {
+        assert_eq!(with_loopback(None), "127.0.0.1,localhost");
+        assert_eq!(
+            with_loopback(Some(" corp.example, 10.0.0.0/8 ")),
+            "corp.example,10.0.0.0/8,127.0.0.1,localhost"
+        );
+        assert_eq!(
+            with_loopback(Some("LOCALHOST,127.0.0.1")),
+            "LOCALHOST,127.0.0.1"
+        );
+    }
+
+    #[test]
+    fn agent_env_bypasses_proxies_for_loopback() {
+        let mut env = BTreeMap::from([("NO_PROXY".to_string(), "corp.example".to_string())]);
+        bypass_proxy_for_loopback(&mut env, false);
+        assert_eq!(env["NO_PROXY"], "corp.example,127.0.0.1,localhost");
+        assert_eq!(env["no_proxy"], "127.0.0.1,localhost");
     }
 
     #[tokio::test]

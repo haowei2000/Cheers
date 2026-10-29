@@ -54,7 +54,7 @@ use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
     PermissionTimeoutAction, PromptPolicy,
 };
-use crate::credential_gateway::CredentialGateway;
+use crate::credential_gateway::{bypass_proxy_for_loopback, CredentialGateway};
 use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
     PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
@@ -118,11 +118,12 @@ impl AccountRuntime {
     async fn run(self) -> anyhow::Result<()> {
         let (runtime_tx, mut runtime_rx) = mpsc::channel(512);
         let (adapter_tx, mut adapter_rx) = mpsc::channel(512);
-        let mut adapter = create_runtime(
-            self.account_id.clone(),
-            self.config.agent.clone(),
-            adapter_tx,
-        );
+        let mut agent_config = self.config.agent.clone();
+        if self.config.policy.mcp.credential_gateway {
+            // The Agent reaches Cheers MCP on loopback; an inherited proxy must not see it.
+            bypass_proxy_for_loopback(&mut agent_config.env, agent_config.inherit_env);
+        }
+        let mut adapter = create_runtime(self.account_id.clone(), agent_config, adapter_tx);
         let initialize_response = adapter.start().await?;
         if !adapter.capabilities().mcp_http {
             let _ = adapter.stop().await;
