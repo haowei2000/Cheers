@@ -266,16 +266,17 @@ grant authority** — `agentInfo` and MCP `clientInfo` are self-reported.
 
 | Kind | Examples | Written by | Stored in |
 |---|---|---|---|
-| Declared (handshake, overwritten each connect) | host kind (desktop/daemon/container), OS/arch, headless; connector version and supported delivery modes; Agent name/version, ACP version, `mcp{acp,http,sse}`, `loadSession`, `authMethods` | connector `ready` frame | `connector_hosts.capabilities.profile` (`schema: 1`) |
-| Observed (accumulated) | MCP revisions seen, tries `server/discover`, re-reads headers on load | `/mcp` and the credential gateway | `connector_hosts.observed_profile` (new JSONB) |
-| Chosen mode and reason | `acp` \| `direct` \| `gateway`, plus why | connector `ready` frame | `connector_hosts.mcp_delivery_mode`, `mcp_delivery_reason` (new columns) |
+| Declared (handshake, overwritten each connect) | connector version; Agent name/version (`runtime`); `mcp_{acp,http,sse}`, `load_session` (`agent_capabilities`); delivery `{modes, mode, reason}` (`mcp_delivery`) | connector `ready` frame | `connector_hosts.capabilities` (existing) |
+| Observed | MCP revision and client (since 0099); re-reads headers on load, with the Agent build it applies to | `/mcp` | `connector_hosts.mcp_protocol_version`, `mcp_client_*`; `mcp_header_refresh`, `mcp_header_refresh_agent`, `mcp_header_refresh_at` (0118) |
 
 - The profile is per **host**, not per bot: it describes one machine's connector
   and Agent, and a re-paired host starts fresh. A bot reads its active host's
   profile. ("Installation" is reserved for provider installs; see migration
   0088.)
-- The `HostProfile` struct lives in `bridge-protocol` so server and connector
-  share one definition (`#[serde(default)]` fields, explicit `schema`).
+- `McpDeliveryMode` and `McpDeliveryReport` live in `bridge-protocol` so
+  server and connector share one definition. The rest of the declared profile
+  already travels in `ready` (`runtime`, `agent_capabilities`), so no separate
+  profile struct is added.
 - **Policy is separate from facts**: allowed delivery modes are bot
   configuration, sent in the hello `server_capabilities`.
 
@@ -426,7 +427,7 @@ alongside M1.
 | Milestone | Work | Touches |
 |---|---|---|
 | **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-channel secrets, Host/Origin/body limits, 401 re-mint, SSE streaming, `NO_PROXY` for loopback; selected by `policy.mcp.delivery = "gateway"` (default stays `direct`); unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release | connector |
-| **M2 host profile and negotiation** | M2a: `HostProfile`, `McpDeliveryMode` and `McpDeliveryReport` in `bridge-protocol`; `ready` reports profile and mode; migration adds `observed_profile`, `mcp_delivery_mode`, `mcp_delivery_reason`; `/mcp` records MCP revision, `clientInfo` and newest `iat` per `(host, chan)`, and sends `mcp_delivery_degraded`; bot policy `allowed_modes` via hello. M2b: `delivery = "auto"` as default; fact cache by Agent version; generation test; restart-when-idle to switch; Fleet shows mode and reason | connector, server, migration, frontend |
+| **M2 host profile and negotiation** | M2a: `McpDeliveryMode` and `McpDeliveryReport` in `bridge-protocol`; `ready` reports the mode; migration 0118 adds `mcp_header_refresh{,_agent,_at}`; `/mcp` tracks the newest `iat` per `(host, chan)`, records the verdict and sends `mcp_delivery_degraded` (PR #811); bot policy `allowed_modes` via hello. M2b: `delivery = "auto"` as default; fact cache by Agent version; generation test; restart-when-idle to switch; Fleet shows mode and reason | connector, server, migration, frontend |
 | **M3 isolation** | Per-channel cwd under `default_cwd` (opt-out `shared_cwd`), #810; `set_status` only from the owner↔bot DM and `MCP_CHANNEL_SCOPE` off/warn removed, #809 | connector, server, mcp-server |
 | **M4 guidance and tightening** | Actionable error shape (`code`, `retryable`, `next`) and tool-error scope refusals for `client_credentials` tokens; token TTL per mode: minutes for `gateway`/`acp`, at least the longest turn for `direct` | server, connector |
 | **M5 task, delegation, approval** | `task_grant` and `task` claim with per-request running-task check and turn attribution in the gateway; RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
