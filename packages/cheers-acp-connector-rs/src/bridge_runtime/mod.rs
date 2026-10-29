@@ -759,6 +759,8 @@ impl RuntimeContext {
     }
 
     /// Polls for a pending restart and asks the run loop to restart once idle.
+    /// Keeps asking: the run loop re-checks and ignores a request that a newly
+    /// started task overtook.
     fn watch_for_idle_restart(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(IDLE_RESTART_POLL);
@@ -768,8 +770,12 @@ impl RuntimeContext {
                     .restart_pending
                     .load(std::sync::atomic::Ordering::SeqCst)
                     && self.is_idle().await
+                    && self
+                        .runtime_tx
+                        .send(RuntimeInput::RestartAgent)
+                        .await
+                        .is_err()
                 {
-                    let _ = self.runtime_tx.send(RuntimeInput::RestartAgent).await;
                     return;
                 }
             }
@@ -914,8 +920,12 @@ impl RuntimeContext {
                     return Err(anyhow!("Agent Bridge {stream} stream error: {error}"));
                 }
                 RuntimeInput::RestartAgent => {
-                    self.shared.watches.lock().await.clear();
-                    return Ok(RunExit::RestartAgent);
+                    // Re-checked here: a task queued ahead of this input may
+                    // have started since the watcher saw the runtime idle.
+                    if self.is_idle().await {
+                        self.shared.watches.lock().await.clear();
+                        return Ok(RunExit::RestartAgent);
+                    }
                 }
             }
         }
