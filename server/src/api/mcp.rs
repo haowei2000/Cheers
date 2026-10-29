@@ -3141,16 +3141,148 @@ fn enforce_channel_scope(
     })
 }
 
+/// The approval a destructive call needs, or `None` when it needs none: only
+/// on a human's task (a token with `task` and `obo`) do destructive resources
+/// ask that human first (`domain::mcp_approval`).
+fn approval_binding<'a>(
+    identity: &'a McpIdentity,
+    resource: &'a str,
+    params: &Map<String, Value>,
+) -> Result<Option<crate::domain::mcp_approval::Binding<'a>>, ToolCallFailure> {
+    let destructive =
+        cheers_mcp_server::registry::by_resource(resource).is_some_and(|spec| spec.destructive);
+    let (true, Some(task), Some(approver)) =
+        (destructive, identity.task.as_deref(), identity.on_behalf_of)
+    else {
+        return Ok(None);
+    };
+    let channel_id = params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| ToolCallFailure::Invalid("channel_id is required".into()))?;
+    Ok(Some(crate::domain::mcp_approval::Binding {
+        bot_id: identity.bot_id,
+        channel_id,
+        task,
+        approver,
+        resource,
+        args_hash: crate::domain::mcp_approval::args_hash(params),
+    }))
+}
+
+fn approval_refusal(tool: &str, refusal: crate::domain::mcp_approval::Refusal) -> ToolCallFailure {
+    use crate::domain::mcp_approval::Refusal;
+    let message = match refusal {
+        Refusal::Missing => format!(
+            "{tool} on this task needs the person's approval. Call request_approval with tool \"{tool}\" and these exact arguments as arguments_json, then call {tool} again with the returned approval_id."
+        ),
+        Refusal::NotApproved => {
+            "that approval was not granted; do not retry unless the person asks again".to_string()
+        }
+        Refusal::Mismatch => format!(
+            "that approval_id is not for this exact {tool} call on this task; request a new approval for these arguments"
+        ),
+        Refusal::Used => {
+            "that approval was already used; each approval allows one call".to_string()
+        }
+    };
+    ToolCallFailure::Domain {
+        code: "APPROVAL_REQUIRED".to_string(),
+        message,
+    }
+}
+
+/// `request_approval`: posts the approval card for one destructive call and
+/// waits for the person whose task this is.
+async fn request_approval(
+    state: &AppState,
+    identity: &McpIdentity,
+    params: &Map<String, Value>,
+) -> Result<Value, ToolCallFailure> {
+    let text = |name: &str| params.get(name).and_then(Value::as_str);
+    let tool = text("tool").unwrap_or_default();
+    let arguments: Map<String, Value> = text("arguments_json")
+        .and_then(|raw| serde_json::from_str(raw).ok())
+        .ok_or_else(|| ToolCallFailure::Invalid("arguments_json must be a JSON object".into()))?;
+    let call = build_tool_resource_call(tool, &arguments)
+        .map_err(|error| ToolCallFailure::Invalid(error.message))?;
+    if call.params.get("channel_id") != params.get("channel_id") {
+        return Err(ToolCallFailure::Invalid(
+            "arguments_json must name the same channel_id".into(),
+        ));
+    }
+    let Some(binding) = approval_binding(identity, call.resource, &call.params)? else {
+        return Err(ToolCallFailure::Domain {
+            code: "APPROVAL_NOT_NEEDED".to_string(),
+            message: format!(
+                "{tool} needs no approval here: it is not a destructive tool, or this is not a person's task. Call it directly."
+            ),
+        });
+    };
+    let summary = match text("reason") {
+        Some(reason) => format!(
+            "{}\n\nReason given by the bot: {reason}",
+            describe(&call.params)
+        ),
+        None => describe(&call.params),
+    };
+    let approval_id = crate::domain::mcp_approval::request(state, &binding, tool, &summary)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "mcp approval: card insert failed");
+            ToolCallFailure::Domain {
+                code: "INTERNAL_ERROR".to_string(),
+                message: "could not post the approval request".to_string(),
+            }
+        })?;
+    let decision =
+        crate::domain::mcp_approval::wait(state, &approval_id, crate::domain::mcp_approval::WAIT)
+            .await;
+    let decision = match decision {
+        crate::domain::mcp_approval::Decision::Approved => "approved",
+        crate::domain::mcp_approval::Decision::Denied => "denied",
+        crate::domain::mcp_approval::Decision::Expired => "expired",
+    };
+    Ok(json!({ "approval_id": approval_id, "decision": decision }))
+}
+
+/// The arguments of the call being approved, as the person will read them.
+fn describe(params: &Map<String, Value>) -> String {
+    params
+        .iter()
+        .filter(|(key, _)| key.as_str() != "channel_id")
+        .map(|(key, value)| match value {
+            Value::String(text) => format!("{key}: {text}"),
+            other => format!("{key}: {other}"),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 async fn call_tool(
     state: &AppState,
     identity: &McpIdentity,
     name: &str,
     arguments: &Map<String, Value>,
 ) -> Result<Value, ToolCallFailure> {
-    let call = build_tool_resource_call(name, arguments)
+    let mut call = build_tool_resource_call(name, arguments)
         .map_err(|error| ToolCallFailure::Invalid(error.message))?;
     if let Some(refusal) = enforce_channel_scope(state, identity, call.resource, &call.params) {
         return Err(refusal);
+    }
+    if call.resource == "approval.request" {
+        return request_approval(state, identity, &call.params).await;
+    }
+    // Never forwarded: it is an argument to this gate, not to the resource.
+    let approval_id = call.params.remove("approval_id");
+    if let Some(binding) = approval_binding(identity, call.resource, &call.params)? {
+        let approval_id = approval_id.as_ref().and_then(Value::as_str);
+        if let Err(refusal) =
+            crate::domain::mcp_approval::consume(state, approval_id, &binding).await
+        {
+            return Err(approval_refusal(name, refusal));
+        }
     }
     let bot_id = identity.bot_id;
     let frame = json!({
