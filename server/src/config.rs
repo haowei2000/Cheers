@@ -173,6 +173,11 @@ pub struct Config {
     /// How strictly an MCP call must stay inside the channel its token was
     /// minted for (`MCP_CHANNEL_SCOPE`: off | warn | enforce).
     pub mcp_channel_scope: McpChannelScope,
+    /// MCP delivery modes connectors may use (`MCP_ALLOWED_DELIVERY_MODES`,
+    /// comma-separated `acp,direct,gateway`; unset = all). Leaving out
+    /// `direct` keeps real tokens out of Agent processes
+    /// (docs/arch/MCP_AUTH_ISOLATION.md §3.4.1).
+    pub mcp_allowed_delivery_modes: Option<Vec<cheers_bridge_protocol::McpDeliveryMode>>,
     /// OAuth authorization-server issuer advertised by RFC 9728 metadata.
     pub mcp_authorization_server_issuer: Option<String>,
     /// Lifetime of an MCP access token in seconds (`MCP_ACCESS_TOKEN_TTL_SECS`, default 86400 = 24h).
@@ -346,6 +351,34 @@ impl McpChannelScope {
     }
 }
 
+/// Parses `MCP_ALLOWED_DELIVERY_MODES`. Startup fails on an unknown mode, and
+/// on a list connectors could not satisfy: today they serve `direct` and
+/// `gateway`, so a list without either would leave every bot without Cheers MCP.
+fn parse_mcp_allowed_delivery_modes(
+    raw: Option<&str>,
+) -> Option<Vec<cheers_bridge_protocol::McpDeliveryMode>> {
+    use cheers_bridge_protocol::McpDeliveryMode as Mode;
+    let raw = raw.map(str::trim).filter(|value| !value.is_empty())?;
+    let modes: Vec<Mode> = raw
+        .split(',')
+        .map(|item| match item.trim() {
+            "acp" => Mode::Acp,
+            "direct" => Mode::Direct,
+            "gateway" => Mode::Gateway,
+            other => panic!(
+                "MCP_ALLOWED_DELIVERY_MODES: unknown mode {other:?} (expected acp, direct, gateway)"
+            ),
+        })
+        .collect();
+    if !modes
+        .iter()
+        .any(|mode| matches!(mode, Mode::Direct | Mode::Gateway))
+    {
+        panic!("MCP_ALLOWED_DELIVERY_MODES={raw:?} allows neither direct nor gateway, which connectors serve today");
+    }
+    Some(modes)
+}
+
 impl Config {
     /// 从环境变量读取配置，缺少必填项时 panic（启动时快速失败）。
     pub fn from_env() -> Self {
@@ -511,6 +544,9 @@ impl Config {
             mcp_public_url,
             mcp_channel_scope: McpChannelScope::from_env_value(
                 optional("MCP_CHANNEL_SCOPE").as_deref(),
+            ),
+            mcp_allowed_delivery_modes: parse_mcp_allowed_delivery_modes(
+                optional("MCP_ALLOWED_DELIVERY_MODES").as_deref(),
             ),
             mcp_authorization_server_issuer: optional("MCP_AUTHORIZATION_SERVER_ISSUER").map(
                 |value| {
@@ -902,6 +938,21 @@ mod tests {
             McpChannelScope::from_env_value(Some("off")),
             McpChannelScope::Off
         );
+    }
+
+    #[test]
+    fn mcp_allowed_delivery_modes_parse_and_reject_unservable_lists() {
+        use cheers_bridge_protocol::McpDeliveryMode as Mode;
+        assert_eq!(parse_mcp_allowed_delivery_modes(None), None);
+        assert_eq!(parse_mcp_allowed_delivery_modes(Some(" ")), None);
+        assert_eq!(
+            parse_mcp_allowed_delivery_modes(Some("acp, gateway")),
+            Some(vec![Mode::Acp, Mode::Gateway])
+        );
+        for bad in ["acp", "proxy", "direct,"] {
+            let result = std::panic::catch_unwind(|| parse_mcp_allowed_delivery_modes(Some(bad)));
+            assert!(result.is_err(), "{bad} must stop startup");
+        }
     }
 
     #[test]

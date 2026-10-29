@@ -2899,6 +2899,9 @@ fn server_capabilities(state: &AppState) -> Value {
     if let Some(v) = &state.config.connector_release_version {
         caps["latest_connector_version"] = json!(v);
     }
+    if let Some(modes) = &state.config.mcp_allowed_delivery_modes {
+        caps["mcp_allowed_modes"] = json!(modes);
+    }
     caps
 }
 
