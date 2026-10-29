@@ -408,6 +408,7 @@ mod tests {
             }),
             content: Some("exact terminal result".into()),
             file_ids: vec!["file".into()],
+            attachment_errors: Vec::new(),
             mention_ids: vec!["mention".into()],
             provider_session_key: Some("provider".into()),
             provider_session_id: Some("acp".into()),

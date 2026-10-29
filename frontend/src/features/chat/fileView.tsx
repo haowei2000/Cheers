@@ -179,22 +179,52 @@ function TranscriptSection({ file }: { file: FileInfo }) {
 // Historical staged attachments have no durable object after the Connector-side
 // realization path was retired. Keep the record visible, but never offer an action
 // that can no longer succeed.
-function UnavailableFileTile({ file }: { file: FileInfo }) {
+function UnavailableTile({ name, detail, title }: { name: string; detail: string; title: string }) {
   return (
     /* design-system-exempt: drop-zone */
     <div
       role="status"
-      title={file.original_filename || file.file_id}
+      title={title}
       className="inline-flex max-w-[240px] items-center gap-2 rounded-sm border border-dashed border-zinc-700 bg-zinc-900/40 px-3 py-2 text-content-muted"
       data-design-system-exempt="drop-zone"
     >
       <FileText className="h-3.5 w-3.5 shrink-0" />
       <span className="min-w-0">
-        <span className="block truncate">{file.original_filename || "Remote file"}</span>
-        <span className="block text-minimal">Attachment unavailable</span>
+        <span className="block truncate">{name}</span>
+        <span className="block truncate text-minimal">{detail}</span>
       </span>
     </div>
   );
+}
+
+function UnavailableFileTile({ file }: { file: FileInfo }) {
+  return (
+    <UnavailableTile
+      name={file.original_filename || "Remote file"}
+      detail="Attachment unavailable"
+      title={file.original_filename || file.file_id}
+    />
+  );
+}
+
+/** An attachment the agent produced but the connector could not deliver
+ *  (`content_data.attachment_errors`, written by the gateway on Done). */
+export interface AttachmentError {
+  filename: string;
+  code: string;
+  message: string;
+}
+
+export function attachmentErrors(contentData: unknown): AttachmentError[] {
+  if (!contentData || typeof contentData !== "object" || Array.isArray(contentData)) return [];
+  const raw = (contentData as Record<string, unknown>).attachment_errors;
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 8).flatMap((entry): AttachmentError[] => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const e = entry as Record<string, unknown>;
+    const text = (v: unknown) => (typeof v === "string" ? v : "");
+    return [{ filename: text(e.filename), code: text(e.code), message: text(e.message) }];
+  });
 }
 
 // One durable file: an image thumbnail or a typed chip. Historical non-uploaded
@@ -274,11 +304,14 @@ export function FileTile({ file, channelId }: { file: FileInfo; channelId?: stri
 
 export function FileGrid({
   files,
+  missing = [],
   className = "",
   focusFileId,
   channelId,
 }: {
   files: FileInfo[];
+  /** Attachments that were produced but never delivered; shown as unavailable. */
+  missing?: AttachmentError[];
   className?: string;
   focusFileId?: string;
   channelId?: string;
@@ -289,7 +322,7 @@ export function FileGrid({
       focusRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   }, [focusFileId]);
-  if (!files.length) return null;
+  if (!files.length && !missing.length) return null;
   return (
     <div className={`flex flex-wrap gap-2 ${className}`}>
       {files.map((f) => {
@@ -304,6 +337,14 @@ export function FileGrid({
           </div>
         );
       })}
+      {missing.map((m, i) => (
+        <UnavailableTile
+          key={`missing-${i}`}
+          name={m.filename || "Generated image"}
+          detail={m.message ? `Not attached: ${m.message}` : "Not attached"}
+          title={[m.filename, m.code, m.message].filter(Boolean).join(" — ")}
+        />
+      ))}
     </div>
   );
 }

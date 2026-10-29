@@ -40,11 +40,11 @@ mod remote_execution;
 
 use crate::acp_runtime::create_runtime;
 use crate::bridge::{
-    AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
-    ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
-    ElicitationResolution, PermissionOption, PermissionResolution, RuntimeSessionAckSession,
-    RuntimeSessionControlSession, ServerCapabilities, SessionConfigOverrides, TaskAcceptanceStatus,
-    TaskExecution, BRIDGE_PROTOCOL_VERSION,
+    AcpCapabilityEnvelope, AcpSecurityHello, AttachmentError, AttachmentInfo,
+    ConfigStatusRejectedField, ConnectorControlSettings, ControlInbound, ControlOutbound,
+    DataInbound, DataOutbound, ElicitationResolution, PermissionOption, PermissionResolution,
+    RuntimeSessionAckSession, RuntimeSessionControlSession, ServerCapabilities,
+    SessionConfigOverrides, TaskAcceptanceStatus, TaskExecution, BRIDGE_PROTOCOL_VERSION,
 };
 use crate::bridge_session::{
     connect_control_stream, connect_data_stream, BridgeReady, BridgeSession, BridgeSessionConfig,
@@ -2193,8 +2193,9 @@ impl RuntimeContext {
             trace_seq: 0,
             text: String::new(),
             streaming_started: false,
-            agent_images: Vec::new(),
+            agent_uploads: Vec::new(),
             agent_image_keys: HashSet::new(),
+            attachment_errors: Vec::new(),
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: evaluation_id.clone(),
         }));
@@ -2417,7 +2418,7 @@ impl RuntimeContext {
                         ))
                         .await?;
                 } else {
-                    let file_ids = self.upload_agent_images(&run).await;
+                    let (file_ids, attachment_errors) = self.collect_agent_attachments(&run).await;
                     let terminal_ack = self
                         .send_terminal(DataOutbound::Done {
                             v: BRIDGE_PROTOCOL_VERSION,
@@ -2425,6 +2426,7 @@ impl RuntimeContext {
                             execution: task.execution.clone(),
                             msg_id: task.msg_id.clone(),
                             file_ids,
+                            attachment_errors,
                             mention_ids: Vec::new(),
                             content: Some(final_text),
                             provider_session_key: Some(task.provider_session_key.clone()),
@@ -2895,18 +2897,50 @@ impl RuntimeContext {
                 let policy = &self.config.policy.file_upload;
                 let gateway_max_bytes = self.io.file_upload_max_bytes();
                 for image in images {
-                    if guard.agent_images.len() >= agent_files::MAX_IMAGES_PER_RUN {
-                        break;
-                    }
-                    if !agent_files::image_allowed(policy, gateway_max_bytes, &image) {
-                        tracing::info!(
-                            filename = %image.filename,
-                            "agent image not delivered: file_upload policy or gateway limit"
-                        );
+                    if guard.agent_image_keys.contains(&image.key) {
                         continue;
                     }
-                    if guard.agent_image_keys.insert(image.key) {
-                        guard.agent_images.push(image);
+                    if guard.agent_image_keys.len() >= agent_files::MAX_IMAGES_PER_RUN {
+                        if guard.attachment_errors.len() < agent_files::MAX_IMAGES_PER_RUN {
+                            guard.attachment_errors.push(agent_files::attachment_error(
+                                &image,
+                                "TOO_MANY",
+                                format!(
+                                    "only the first {} images of a reply are attached",
+                                    agent_files::MAX_IMAGES_PER_RUN
+                                ),
+                            ));
+                        }
+                        continue;
+                    }
+                    guard.agent_image_keys.insert(image.key);
+                    match agent_files::decide_image(policy, gateway_max_bytes, &image) {
+                        agent_files::ImageDecision::Skip => {}
+                        agent_files::ImageDecision::Reject(error) => {
+                            tracing::info!(
+                                filename = %image.filename,
+                                code = %error.code,
+                                "agent image not delivered"
+                            );
+                            guard.attachment_errors.push(error);
+                        }
+                        // An older gateway has nowhere to put the image, or to
+                        // show that it is missing.
+                        agent_files::ImageDecision::Upload if !self.io.file_upload_enabled() => {
+                            tracing::info!(
+                                filename = %image.filename,
+                                "agent image not delivered: gateway does not accept file_upload"
+                            );
+                        }
+                        agent_files::ImageDecision::Upload => {
+                            let upload = tokio::spawn(agent_files::upload_image(
+                                self.io.clone(),
+                                guard.channel_id.clone(),
+                                guard.task_id.clone(),
+                                image,
+                            ));
+                            guard.agent_uploads.push(upload);
+                        }
                     }
                 }
             }
@@ -3011,82 +3045,47 @@ impl RuntimeContext {
         Ok(())
     }
 
-    /// Upload the images the agent emitted this turn and return their file ids
-    /// for `done.file_ids`. Best-effort: a rejected or failed upload is traced
-    /// and skipped, never failing the reply itself.
-    async fn upload_agent_images(&self, run: &Arc<Mutex<ActiveRun>>) -> Vec<String> {
-        let (channel_id, task_id, images) = {
+    /// Wait for this turn's image uploads and return the stored file ids for
+    /// `done.file_ids`, with every image that will not be attached. Best-effort:
+    /// a failed upload is traced and reported, never failing the reply itself.
+    async fn collect_agent_attachments(
+        &self,
+        run: &Arc<Mutex<ActiveRun>>,
+    ) -> (Vec<String>, Vec<AttachmentError>) {
+        let (uploads, mut errors) = {
             let mut guard = run.lock().await;
             (
-                guard.channel_id.clone(),
-                guard.task_id.clone(),
-                std::mem::take(&mut guard.agent_images),
+                std::mem::take(&mut guard.agent_uploads),
+                std::mem::take(&mut guard.attachment_errors),
             )
         };
-        if images.is_empty() {
-            return Vec::new();
-        }
-        if !self.io.file_upload_enabled() {
-            tracing::info!(
-                count = images.len(),
-                "agent images not delivered: gateway does not accept file_upload"
-            );
-            return Vec::new();
-        }
         let mut file_ids = Vec::new();
-        for image in images {
-            let filename = image.filename.clone();
-            let frame = DataOutbound::FileUpload {
-                v: BRIDGE_PROTOCOL_VERSION,
-                // Stable per task and content: the gateway's idempotency key, so
-                // a retry (or a redelivered task) resolves to the stored file
-                // instead of a duplicate.
-                client_file_id: format!("{task_id}:{:016x}", image.key),
-                channel_id: channel_id.clone(),
-                filename: image.filename,
-                content_type: Some(image.mime_type),
-                data_b64: image.data_b64,
-            };
-            // A transport failure or timeout may still have stored the file;
-            // retry once with the same id. A rejection ack is final.
-            let mut ack = self
-                .io
-                .send_data_expect_file_upload_ack(frame.clone())
-                .await;
-            if ack.is_err() {
-                ack = self.io.send_data_expect_file_upload_ack(frame).await;
-            }
-            let failure = match ack {
-                Ok(DataInbound::FileUploadAck {
-                    ok: true,
-                    file_id: Some(file_id),
-                    ..
-                }) => {
+        for upload in uploads {
+            let error = match upload.await {
+                Ok(Ok(file_id)) => {
                     file_ids.push(file_id);
                     continue;
                 }
-                Ok(DataInbound::FileUploadAck { error, code, .. }) => {
-                    format!(
-                        "{}: {}",
-                        code.unwrap_or_default(),
-                        error.unwrap_or_default()
-                    )
-                }
-                Ok(_) => "unexpected reply".to_string(),
-                Err(err) => err.to_string(),
+                Ok(Err(error)) => error,
+                Err(join) => AttachmentError {
+                    filename: String::new(),
+                    code: "FILE_UPLOAD_FAILED".to_string(),
+                    message: format!("upload task ended: {join}"),
+                },
             };
-            tracing::warn!(%filename, %failure, "agent image upload failed");
+            tracing::warn!(filename = %error.filename, code = %error.code, message = %error.message, "agent image upload failed");
             let _ = self
                 .trace(
                     run,
                     "file_upload_failed",
                     "error",
                     "Could not attach a generated image",
-                    Some(&format!("{filename}: {failure}")),
+                    Some(&format!("{}: {}", error.filename, error.message)),
                 )
                 .await;
+            errors.push(error);
         }
-        file_ids
+        (file_ids, errors)
     }
 
     async fn session_lock(&self, provider_session_key: &str) -> Arc<Mutex<()>> {
@@ -3611,9 +3610,12 @@ struct ActiveRun {
     /// False until adapter.prompt() is called; guards against codex-acp replaying
     /// prior-session history as agent_message_chunk notifications during load_session.
     streaming_started: bool,
-    /// Images the agent emitted this turn, uploaded and attached on Done.
-    agent_images: Vec<agent_files::AgentImage>,
+    /// Uploads of images the agent emitted this turn, started as each one
+    /// appears; Done attaches the stored files.
+    agent_uploads: Vec<tokio::task::JoinHandle<Result<String, AttachmentError>>>,
     agent_image_keys: HashSet<u64>,
+    /// Emitted images that will not be attached, reported on Done.
+    attachment_errors: Vec<AttachmentError>,
     /// Last-known `tool_call` snapshot per `toolCallId`, newest last.
     ///
     /// ACP's `session/request_permission` carries a `ToolCallUpdate` — a DELTA, not
@@ -4514,8 +4516,24 @@ max_concurrent = {max_concurrent}
         }
     }
 
+    fn upload_ack(client_file_id: String, result: Result<&str, &str>) -> DataInbound {
+        DataInbound::FileUploadAck {
+            v: BRIDGE_PROTOCOL_VERSION,
+            client_file_id: Some(client_file_id),
+            ok: result.is_ok(),
+            file_id: result.ok().map(ToString::to_string),
+            filename: None,
+            content_type: None,
+            size_bytes: None,
+            preview_url: None,
+            download_url: None,
+            error: result.err().map(ToString::to_string),
+            code: result.err().map(|_| "FILE_TOO_LARGE".to_string()),
+        }
+    }
+
     #[tokio::test]
-    async fn agent_images_upload_before_done_and_return_file_ids() {
+    async fn agent_images_upload_while_running_and_done_collects_ids_and_errors() {
         let dir = tempfile::tempdir().unwrap();
         let (mut runtime, _started, _release, mut taps) =
             fixture_runtime(dir.path(), PromptGate::All, 1).await;
@@ -4524,13 +4542,20 @@ max_concurrent = {max_concurrent}
             .io
             .enable_file_upload_for_test(Duration::from_secs(5));
         let run = Arc::new(Mutex::new(empty_run()));
-        run.lock().await.agent_images.push(generated_image());
+        let rejected = agent_files::attachment_error(&generated_image(), "TOO_LARGE", "big");
+        {
+            let mut guard = run.lock().await;
+            let upload = tokio::spawn(agent_files::upload_image(
+                runtime.io.clone(),
+                guard.channel_id.clone(),
+                guard.task_id.clone(),
+                generated_image(),
+            ));
+            guard.agent_uploads.push(upload);
+            guard.attachment_errors.push(rejected.clone());
+        }
 
-        let upload = tokio::spawn({
-            let runtime = runtime.clone();
-            let run = run.clone();
-            async move { runtime.upload_agent_images(&run).await }
-        });
+        // The frame leaves before Done is assembled.
         let frame = timeout(Duration::from_secs(2), taps.priority.recv())
             .await
             .unwrap()
@@ -4547,29 +4572,54 @@ max_concurrent = {max_concurrent}
             panic!("expected file_upload, got {frame:?}");
         };
         assert_eq!(channel_id, "c");
+        assert!(client_file_id.ends_with(":000000000000002a"));
         assert_eq!(filename, "exec-1.png");
         assert_eq!(content_type.as_deref(), Some("image/png"));
         assert_eq!(data_b64, "aGVsbG8=");
         assert!(
             runtime
                 .io
-                .resolve_data_ack(&DataInbound::FileUploadAck {
-                    v: BRIDGE_PROTOCOL_VERSION,
-                    client_file_id: Some(client_file_id),
-                    ok: true,
-                    file_id: Some("file-9".into()),
-                    filename: None,
-                    content_type: None,
-                    size_bytes: None,
-                    preview_url: None,
-                    download_url: None,
-                    error: None,
-                    code: None,
-                })
+                .resolve_data_ack(&upload_ack(client_file_id, Ok("file-9")))
                 .await
         );
-        assert_eq!(upload.await.unwrap(), vec!["file-9".to_string()]);
-        assert!(run.lock().await.agent_images.is_empty());
+        let (file_ids, errors) = runtime.collect_agent_attachments(&run).await;
+        assert_eq!(file_ids, vec!["file-9".to_string()]);
+        assert_eq!(errors, vec![rejected]);
+        let guard = run.lock().await;
+        assert!(guard.agent_uploads.is_empty() && guard.attachment_errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_rejected_upload_is_reported_and_not_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut runtime, _started, _release, mut taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 1).await;
+        Arc::get_mut(&mut runtime)
+            .unwrap()
+            .io
+            .enable_file_upload_for_test(Duration::from_secs(5));
+        let upload = tokio::spawn(agent_files::upload_image(
+            runtime.io.clone(),
+            "c".into(),
+            "t".into(),
+            generated_image(),
+        ));
+        let frame = timeout(Duration::from_secs(2), taps.priority.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let DataOutbound::FileUpload { client_file_id, .. } = frame else {
+            panic!("expected file_upload, got {frame:?}");
+        };
+        runtime
+            .io
+            .resolve_data_ack(&upload_ack(client_file_id, Err("over 8 MB")))
+            .await;
+        let error = upload.await.unwrap().unwrap_err();
+        assert_eq!(error.filename, "exec-1.png");
+        assert_eq!(error.code, "FILE_TOO_LARGE");
+        assert_eq!(error.message, "over 8 MB");
+        assert!(taps.drain_priority().is_empty());
     }
 
     #[tokio::test]
@@ -4577,10 +4627,14 @@ max_concurrent = {max_concurrent}
         let dir = tempfile::tempdir().unwrap();
         let (runtime, _started, _release, mut taps) =
             fixture_runtime(dir.path(), PromptGate::All, 1).await;
-        let run = Arc::new(Mutex::new(empty_run()));
-        run.lock().await.agent_images.push(generated_image());
-
-        assert!(runtime.upload_agent_images(&run).await.is_empty());
+        let result = agent_files::upload_image(
+            runtime.io.clone(),
+            "c".into(),
+            "t".into(),
+            generated_image(),
+        )
+        .await;
+        assert!(result.is_err());
         assert!(taps.drain_priority().is_empty());
     }
 
@@ -5059,8 +5113,9 @@ max_concurrent = {max_concurrent}
             trace_seq: 0,
             text: String::new(),
             streaming_started: false,
-            agent_images: Vec::new(),
+            agent_uploads: Vec::new(),
             agent_image_keys: HashSet::new(),
+            attachment_errors: Vec::new(),
             tool_call_snapshots: VecDeque::new(),
             evaluation_id: None,
         }
@@ -5620,6 +5675,7 @@ max_concurrent = {max_concurrent}
             client_msg_id: "terminal-1".to_string(),
             msg_id: "msg-1".to_string(),
             file_ids: Vec::new(),
+            attachment_errors: Vec::new(),
             mention_ids: Vec::new(),
             content: None,
             provider_session_key: None,

@@ -545,6 +545,15 @@ pub enum TaskAcceptanceStatus {
     Rejected,
 }
 
+/// A reply attachment that was produced but could not be delivered, so the
+/// message can say so instead of silently missing it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentError {
+    pub filename: String,
+    pub code: String,
+    pub message: String,
+}
+
 /// Immutable execution owner carried across result delivery connections.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskExecution {
@@ -1140,6 +1149,9 @@ pub enum DataOutbound {
         execution: Option<TaskExecution>,
         #[serde(default)]
         file_ids: Vec<String>,
+        /// Reply attachments the connector could not deliver; omitted when none.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        attachment_errors: Vec<AttachmentError>,
         #[serde(default)]
         mention_ids: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

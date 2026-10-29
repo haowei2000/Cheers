@@ -3,8 +3,9 @@
 //! ACP carries agent-produced media as `image` content blocks — in an
 //! `agent_message_chunk`, or inside a `tool_call` / `tool_call_update`'s
 //! `content` list (e.g. an image-generation tool's result). The text stream
-//! drops them, so the run collects them here and uploads them with the Done
-//! frame. This stays ACP-generic: only the standard content-block shape and the
+//! drops them, so the run uploads each one as soon as it appears and attaches
+//! the stored files to the Done frame; anything that could not be delivered is
+//! listed in `done.attachment_errors` so the message says so. This stays ACP-generic: only the standard content-block shape and the
 //! standard tool `kind` are read.
 //!
 //! A tool result is not always something the agent made: `read` / `fetch` /
@@ -16,6 +17,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use super::*;
+
 use crate::config::FileUploadPolicy;
 
 /// Upper bound on images attached to a single reply.
@@ -108,28 +110,113 @@ fn extension(mime_type: &str) -> &'static str {
     }
 }
 
-/// Whether local policy lets this image leave the machine, and the gateway
-/// would accept it. `gateway_max_bytes` is the limit the gateway advertises;
-/// checking it here keeps an image it would reject from crossing the socket.
-pub(super) fn image_allowed(
+/// What to do with an image the agent emitted.
+#[derive(Debug, PartialEq)]
+pub(super) enum ImageDecision {
+    Upload,
+    /// Policy turned agent output off: not an error worth reporting.
+    Skip,
+    /// The image would be rejected; the reply should say it is missing.
+    Reject(AttachmentError),
+}
+
+/// Apply local policy and the gateway's advertised limit. Checking the
+/// gateway limit here keeps an image it would reject from crossing the socket.
+pub(super) fn decide_image(
     policy: &FileUploadPolicy,
     gateway_max_bytes: Option<u64>,
     image: &AgentImage,
-) -> bool {
+) -> ImageDecision {
     if !policy.agent_output {
-        return false;
+        return ImageDecision::Skip;
     }
     // base64 → bytes, without decoding the payload just to measure it.
     let approx_bytes = (image.data_b64.len() as u64 / 4) * 3;
     let max_bytes = gateway_max_bytes.map_or(policy.max_bytes, |max| max.min(policy.max_bytes));
     if approx_bytes > max_bytes {
-        return false;
+        return ImageDecision::Reject(attachment_error(
+            image,
+            "TOO_LARGE",
+            format!(
+                "larger than the {} MB attachment limit",
+                max_bytes.div_ceil(1024 * 1024)
+            ),
+        ));
     }
-    policy.allowed_content_types.is_empty()
+    let type_allowed = policy.allowed_content_types.is_empty()
         || policy
             .allowed_content_types
             .iter()
-            .any(|allowed| allowed.eq_ignore_ascii_case(&image.mime_type))
+            .any(|allowed| allowed.eq_ignore_ascii_case(&image.mime_type));
+    if !type_allowed {
+        return ImageDecision::Reject(attachment_error(
+            image,
+            "TYPE_NOT_ALLOWED",
+            format!("{} is not an allowed attachment type", image.mime_type),
+        ));
+    }
+    ImageDecision::Upload
+}
+
+pub(super) fn attachment_error(
+    image: &AgentImage,
+    code: &str,
+    message: impl Into<String>,
+) -> AttachmentError {
+    AttachmentError {
+        filename: image.filename.clone(),
+        code: code.to_string(),
+        message: message.into(),
+    }
+}
+
+/// Store one image as a channel attachment and return its file id. Runs in the
+/// background while the turn continues, so Done only waits for what is left.
+pub(super) async fn upload_image(
+    io: BridgeIoHandle,
+    channel_id: String,
+    task_id: String,
+    image: AgentImage,
+) -> Result<String, AttachmentError> {
+    let frame = DataOutbound::FileUpload {
+        v: BRIDGE_PROTOCOL_VERSION,
+        // Stable per task and content: the gateway's idempotency key, so a
+        // retry (or a redelivered task) resolves to the stored file instead
+        // of a duplicate.
+        client_file_id: format!("{task_id}:{:016x}", image.key),
+        channel_id,
+        filename: image.filename.clone(),
+        content_type: Some(image.mime_type.clone()),
+        data_b64: image.data_b64.clone(),
+    };
+    // A transport failure or timeout may still have stored the file; retry
+    // once with the same id. A rejection ack is final.
+    let mut ack = io.send_data_expect_file_upload_ack(frame.clone()).await;
+    if ack.is_err() {
+        ack = io.send_data_expect_file_upload_ack(frame).await;
+    }
+    match ack {
+        Ok(DataInbound::FileUploadAck {
+            ok: true,
+            file_id: Some(file_id),
+            ..
+        }) => Ok(file_id),
+        Ok(DataInbound::FileUploadAck { error, code, .. }) => Err(attachment_error(
+            &image,
+            code.as_deref().unwrap_or("FILE_UPLOAD_FAILED"),
+            error.unwrap_or_else(|| "the gateway rejected the upload".to_string()),
+        )),
+        Ok(_) => Err(attachment_error(
+            &image,
+            "FILE_UPLOAD_FAILED",
+            "unexpected reply",
+        )),
+        Err(err) => Err(attachment_error(
+            &image,
+            "FILE_UPLOAD_FAILED",
+            err.to_string(),
+        )),
+    }
 }
 
 /// Replace oversized inline media in a forwarded event payload: an `image` /
@@ -258,41 +345,68 @@ mod tests {
         );
     }
 
-    #[test]
-    fn policy_gates_agent_output_size_and_type() {
-        let image = AgentImage {
-            key: 1,
-            data_b64: "aGVsbG8=".into(),
-            mime_type: "image/png".into(),
-            filename: "a.png".into(),
-        };
-        assert!(image_allowed(&policy(true), None, &image));
-        assert!(!image_allowed(&policy(false), None, &image));
-
-        let mut small = policy(true);
-        small.max_bytes = 2;
-        assert!(!image_allowed(&small, None, &image));
-
-        let mut typed = policy(true);
-        typed.allowed_content_types = vec!["image/jpeg".into()];
-        assert!(!image_allowed(&typed, None, &image));
-        typed.allowed_content_types.push("IMAGE/PNG".into());
-        assert!(image_allowed(&typed, None, &image));
-    }
-
-    #[test]
-    fn gateway_limit_tightens_but_never_loosens_local_policy() {
-        let image = AgentImage {
+    fn small_image() -> AgentImage {
+        AgentImage {
             key: 1,
             data_b64: "aGVsbG8=".into(), // ~6 bytes
             mime_type: "image/png".into(),
             filename: "a.png".into(),
-        };
-        assert!(!image_allowed(&policy(true), Some(2), &image));
-        assert!(image_allowed(&policy(true), Some(1 << 30), &image));
+        }
+    }
+
+    fn code(decision: ImageDecision) -> Option<String> {
+        match decision {
+            ImageDecision::Reject(error) => Some(error.code),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn policy_gates_agent_output_size_and_type() {
+        let image = small_image();
+        assert_eq!(
+            decide_image(&policy(true), None, &image),
+            ImageDecision::Upload
+        );
+        assert_eq!(
+            decide_image(&policy(false), None, &image),
+            ImageDecision::Skip
+        );
+
         let mut small = policy(true);
         small.max_bytes = 2;
-        assert!(!image_allowed(&small, Some(1 << 30), &image));
+        assert_eq!(
+            code(decide_image(&small, None, &image)).as_deref(),
+            Some("TOO_LARGE")
+        );
+
+        let mut typed = policy(true);
+        typed.allowed_content_types = vec!["image/jpeg".into()];
+        assert_eq!(
+            code(decide_image(&typed, None, &image)).as_deref(),
+            Some("TYPE_NOT_ALLOWED")
+        );
+        typed.allowed_content_types.push("IMAGE/PNG".into());
+        assert_eq!(decide_image(&typed, None, &image), ImageDecision::Upload);
+    }
+
+    #[test]
+    fn gateway_limit_tightens_but_never_loosens_local_policy() {
+        let image = small_image();
+        assert_eq!(
+            code(decide_image(&policy(true), Some(2), &image)).as_deref(),
+            Some("TOO_LARGE")
+        );
+        assert_eq!(
+            decide_image(&policy(true), Some(1 << 30), &image),
+            ImageDecision::Upload
+        );
+        let mut small = policy(true);
+        small.max_bytes = 2;
+        assert_eq!(
+            code(decide_image(&small, Some(1 << 30), &image)).as_deref(),
+            Some("TOO_LARGE")
+        );
     }
 
     #[test]

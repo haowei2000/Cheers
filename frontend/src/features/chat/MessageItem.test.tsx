@@ -54,6 +54,26 @@ describe("MessageItem suggested questions", () => {
   });
 });
 
+describe("MessageItem undelivered attachments", () => {
+  const withError: Message = {
+    ...reply,
+    content_data: { attachment_errors: [{ filename: "exec-1.png", code: "TOO_LARGE", message: "larger than the 8 MB attachment limit" }] },
+  };
+
+  it("shows a bot reply's undelivered attachment as unavailable instead of omitting it", () => {
+    const markup = renderToStaticMarkup(<MessageItem message={withError} />);
+    expect(markup).toContain("exec-1.png");
+    expect(markup).toContain("Not attached: larger than the 8 MB attachment limit");
+  });
+
+  it("ignores attachment errors on human messages and malformed entries", () => {
+    expect(renderToStaticMarkup(<MessageItem message={{ ...withError, sender_type: "user" }} />))
+      .not.toContain("Not attached");
+    expect(renderToStaticMarkup(<MessageItem message={{ ...reply, content_data: { attachment_errors: "x" } }} />))
+      .not.toContain("Not attached");
+  });
+});
+
 describe("MessageItem identity anatomy", () => {
   it("renders a standalone Bot URL as a link after completion and plain text while streaming", () => {
     const final = renderToStaticMarkup(<MessageItem message={{ ...reply, content: "https://example.com" }} />);
