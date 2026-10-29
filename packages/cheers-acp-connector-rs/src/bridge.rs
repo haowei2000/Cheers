@@ -633,8 +633,8 @@ mod fixture_tests {
                 "AuthAcknowledged",
             ),
             (
-                "control/to_connector/mcp_delivery_degraded.json",
-                "McpDeliveryDegraded",
+                "control/to_connector/mcp_delivery_observed.json",
+                "McpDeliveryObserved",
             ),
         ] {
             let frame: ControlInbound = serde_json::from_value(load(rel))
@@ -658,9 +658,14 @@ mod fixture_tests {
                     assert_eq!(action, "retry", "{rel}");
                     "AuthAcknowledged"
                 }
-                ControlInbound::McpDeliveryDegraded { channel_id, .. } => {
+                ControlInbound::McpDeliveryObserved {
+                    channel_id,
+                    header_refresh,
+                    ..
+                } => {
                     assert_eq!(channel_id, "11111111-2222-4333-8444-555555555555", "{rel}");
-                    "McpDeliveryDegraded"
+                    assert!(!header_refresh, "{rel}");
+                    "McpDeliveryObserved"
                 }
                 other => panic!("{rel}: unexpected variant {other:?}"),
             };

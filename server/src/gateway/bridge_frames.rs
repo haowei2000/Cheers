@@ -112,13 +112,18 @@ pub(crate) fn config_update_frame(settings: proto::ConnectorControlSettings) -> 
     })
 }
 
-/// Tells a connector its Agent kept an older MCP token after a renewal, so
-/// `direct` delivery will fail once that token expires.
-pub(crate) fn mcp_delivery_degraded_frame(channel_id: String, reason: String) -> Value {
-    frame_value(&proto::ControlInbound::McpDeliveryDegraded {
+/// Tells a connector whether its `direct` Agent picked up a renewed MCP token
+/// (`gateway::mcp_delivery`).
+pub(crate) fn mcp_delivery_observed_frame(
+    channel_id: String,
+    agent: String,
+    header_refresh: bool,
+) -> Value {
+    frame_value(&proto::ControlInbound::McpDeliveryObserved {
         v: BRIDGE_PROTOCOL_VERSION,
         channel_id,
-        reason,
+        agent,
+        header_refresh,
     })
 }
 
@@ -657,14 +662,15 @@ mod tests {
     }
 
     #[test]
-    fn mcp_delivery_degraded_matches_fixture() {
-        let frame = mcp_delivery_degraded_frame(
+    fn mcp_delivery_observed_matches_fixture() {
+        let frame = mcp_delivery_observed_frame(
             "11111111-2222-4333-8444-555555555555".into(),
-            "agent kept an older MCP token after a newer one was minted".into(),
+            "codex-acp@2.3.0".into(),
+            false,
         );
         assert_matches_fixture(
             &frame,
-            "control/to_connector/mcp_delivery_degraded.json",
+            "control/to_connector/mcp_delivery_observed.json",
             &[],
         );
     }

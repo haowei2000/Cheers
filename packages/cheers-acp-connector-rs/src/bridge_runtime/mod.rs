@@ -1085,17 +1085,25 @@ impl RuntimeContext {
                     }
                 }
             }
-            ControlInbound::McpDeliveryDegraded {
-                channel_id, reason, ..
+            ControlInbound::McpDeliveryObserved {
+                channel_id,
+                agent,
+                header_refresh,
+                ..
             } => {
-                // Acting on it (switching this Agent to gateway delivery at the
-                // next idle restart) is `delivery = "auto"`, M2b.
-                tracing::warn!(
-                    account = %self.account_id,
-                    channel = %channel_id,
-                    reason = %reason,
-                    "Gateway reports direct MCP delivery is degraded; set policy.mcp.delivery = \"gateway\""
-                );
+                // Acting on it (caching the fact, switching this Agent to
+                // gateway delivery at the next idle restart) is
+                // `delivery = "auto"`, M2b.
+                if header_refresh {
+                    tracing::info!(account = %self.account_id, channel = %channel_id, %agent, "Gateway confirms the Agent picks up renewed MCP tokens");
+                } else {
+                    tracing::warn!(
+                        account = %self.account_id,
+                        channel = %channel_id,
+                        %agent,
+                        "Gateway reports the Agent keeps old MCP tokens; direct delivery will fail on expiry; set policy.mcp.delivery = \"gateway\""
+                    );
+                }
             }
             ControlInbound::Pong | ControlInbound::Unknown => {}
             ControlInbound::Error { .. } => {}

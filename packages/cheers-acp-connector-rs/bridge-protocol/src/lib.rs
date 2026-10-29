@@ -816,16 +816,19 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_at: Option<String>,
     },
-    /// The Gateway saw this host's Agent keep presenting an older token for
-    /// `channel_id` after a newer one was minted: the Agent does not re-read
-    /// `mcpServers` headers, so `direct` delivery will fail once the old token
-    /// expires. Sent at most once per host and channel generation.
-    #[serde(rename = "mcp_delivery_degraded")]
-    McpDeliveryDegraded {
+    /// The Gateway's verdict on `direct` delivery for this Agent process,
+    /// judged from the token generation the Agent presented on `channel_id`
+    /// after a renewal: `header_refresh` is true when it sent the newer token
+    /// and false when it kept the older one (so `direct` will fail once that
+    /// expires). Sent at most once per Agent process.
+    #[serde(rename = "mcp_delivery_observed")]
+    McpDeliveryObserved {
         #[serde(default = "default_bridge_protocol_version")]
         v: u32,
         channel_id: String,
-        reason: String,
+        /// `name@version` of the Agent the verdict applies to.
+        agent: String,
+        header_refresh: bool,
     },
     #[serde(rename = "pong")]
     Pong,

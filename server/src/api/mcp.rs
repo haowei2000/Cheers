@@ -1609,10 +1609,10 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
 }
 
 /// Judge `direct` delivery from the token generation this request presents
-/// (`gateway::mcp_delivery`). A verdict is recorded on the host; a stale one is
-/// also pushed to the connector, which can move the Agent to `gateway` delivery
-/// before the old token expires. Off the request path: neither write delays
-/// the call.
+/// (`gateway::mcp_delivery`). The verdict is recorded on the host and pushed to
+/// the connector, which caches it per Agent build and, for a stale Agent, can
+/// move it to `gateway` delivery before the old token expires. Off the request
+/// path: neither write delays the call.
 fn observe_mcp_delivery(state: &AppState, identity: &McpIdentity) {
     let Some(seen) = state.mcp_delivery.observe(
         identity.host_id,
@@ -1641,14 +1641,13 @@ fn observe_mcp_delivery(state: &AppState, identity: &McpIdentity) {
         {
             tracing::warn!(%error, %host_id, "MCP header-refresh fact persist failed");
         }
-        if !refreshes {
-            let frame = crate::gateway::bridge_frames::mcp_delivery_degraded_frame(
-                seen.channel_id.to_string(),
-                "agent kept an older MCP token after a newer one was minted".into(),
-            );
-            if !state.bot_locator.dispatch_task(bot_id, frame).await {
-                tracing::warn!(%bot_id, "could not deliver mcp_delivery_degraded");
-            }
+        let frame = crate::gateway::bridge_frames::mcp_delivery_observed_frame(
+            seen.channel_id.to_string(),
+            seen.agent,
+            refreshes,
+        );
+        if !state.bot_locator.dispatch_task(bot_id, frame).await {
+            tracing::warn!(%bot_id, "could not deliver mcp_delivery_observed");
         }
     });
 }
