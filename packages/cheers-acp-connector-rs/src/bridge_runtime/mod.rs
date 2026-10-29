@@ -51,7 +51,7 @@ use crate::bridge_session::{
     BridgeSessionParts,
 };
 use crate::config::{
-    AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
+    AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy, McpDelivery,
     PermissionTimeoutAction, PromptPolicy,
 };
 use crate::credential_gateway::{bypass_proxy_for_loopback, CredentialGateway};
@@ -119,7 +119,7 @@ impl AccountRuntime {
         let (runtime_tx, mut runtime_rx) = mpsc::channel(512);
         let (adapter_tx, mut adapter_rx) = mpsc::channel(512);
         let mut agent_config = self.config.agent.clone();
-        if self.config.policy.mcp.credential_gateway {
+        if self.config.policy.mcp.delivery == McpDelivery::Gateway {
             // The Agent reaches Cheers MCP on loopback; an inherited proxy must not see it.
             bypass_proxy_for_loopback(&mut agent_config.env, agent_config.inherit_env);
         }
@@ -203,12 +203,12 @@ impl AccountRuntime {
                 None
             }
         };
-        // Opt-in (policy.mcp.credential_gateway): the Agent gets a loopback URL and
-        // a stable local secret instead of the bearer, so token rotation never
-        // depends on the Agent re-reading headers. If the listener cannot start,
-        // keep header injection rather than dropping Cheers MCP for this run.
-        let credential_gateway = match (&mcp_token, self.config.policy.mcp.credential_gateway) {
-            (Some(tokens), true) => {
+        // Gateway delivery: the Agent gets a loopback URL and a stable local
+        // secret instead of the bearer, so token rotation never depends on the
+        // Agent re-reading headers. If the listener cannot start, fall back to
+        // direct delivery rather than dropping Cheers MCP for this run.
+        let credential_gateway = match (&mcp_token, self.config.policy.mcp.delivery) {
+            (Some(tokens), McpDelivery::Gateway) => {
                 match CredentialGateway::start(mcp_url.clone(), tokens.clone()).await {
                     Ok(gateway) => {
                         tracing::info!(
@@ -222,7 +222,7 @@ impl AccountRuntime {
                         tracing::warn!(
                             account = %self.account_id,
                             error = %error,
-                            "MCP credential gateway did not start; injecting the bearer instead"
+                            "MCP credential gateway did not start; falling back to direct delivery"
                         );
                         None
                     }

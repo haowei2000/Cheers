@@ -265,11 +265,24 @@ pub struct SessionUpdatePolicy {
     pub include_metadata: bool,
 }
 
+/// How the Agent reaches the Cheers MCP endpoint
+/// (docs/arch/MCP_AUTH_ISOLATION.md §3.4.1).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpDelivery {
+    /// The Agent calls the Gateway's `/mcp` itself, with the real bearer in
+    /// `mcpServers[].headers`. Needs an Agent that re-reads headers on
+    /// `session/load` to pick up a renewed token.
+    #[default]
+    Direct,
+    /// The Agent calls the connector's loopback credential gateway with a
+    /// per-channel local secret; the connector swaps in the real bearer.
+    Gateway,
+}
+
 #[derive(Debug, Clone)]
 pub struct McpPolicy {
-    /// Serve the Cheers MCP endpoint through the connector's loopback
-    /// credential gateway instead of injecting the bearer into `mcpServers`.
-    pub credential_gateway: bool,
+    pub delivery: McpDelivery,
     pub backend_may_inject_extra_servers: bool,
     pub allowed_servers: Vec<String>,
     pub servers: Value,
@@ -634,7 +647,7 @@ struct RawMcpPolicy {
     #[serde(rename = "inject_cheers")]
     _inject_cheers: bool,
     #[serde(default)]
-    credential_gateway: bool,
+    delivery: McpDelivery,
     #[serde(default)]
     backend_may_inject_extra_servers: bool,
     #[serde(default)]
@@ -647,7 +660,7 @@ impl Default for RawMcpPolicy {
     fn default() -> Self {
         Self {
             _inject_cheers: false,
-            credential_gateway: false,
+            delivery: McpDelivery::default(),
             backend_may_inject_extra_servers: false,
             allowed_servers: Vec::new(),
             servers: Vec::new(),
@@ -924,7 +937,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             include_metadata: raw.session_update.include_metadata,
         },
         mcp: McpPolicy {
-            credential_gateway: raw.mcp.credential_gateway,
+            delivery: raw.mcp.delivery,
             backend_may_inject_extra_servers: raw.mcp.backend_may_inject_extra_servers,
             allowed_servers: raw.mcp.allowed_servers,
             servers: mcp_servers,
@@ -1277,6 +1290,18 @@ fn default_acp_capability_algorithm() -> String {
 mod tests {
     use super::*;
 
+    /// `delivery` 缺省为 direct（现行行为）；未知值在加载时报错，不能悄悄回落。
+    #[test]
+    fn mcp_delivery_defaults_to_direct_and_rejects_unknown_modes() {
+        let empty: RawMcpPolicy = toml::from_str("").unwrap();
+        assert_eq!(empty.delivery, McpDelivery::Direct);
+        assert_eq!(RawMcpPolicy::default().delivery, McpDelivery::Direct);
+        let gateway: RawMcpPolicy = toml::from_str("delivery = \"gateway\"").unwrap();
+        assert_eq!(gateway.delivery, McpDelivery::Gateway);
+        assert!(toml::from_str::<RawMcpPolicy>("delivery = \"proxy\"").is_err());
+        assert!(toml::from_str::<RawMcpPolicy>("credential_gateway = true").is_err());
+    }
+
     /// 配置里整个 `[policy.prompt]` 表缺席时，走的是 `Default` impl 而不是 serde
     /// 的字段默认——两者曾经不一致，把并发上限悄悄钉死在 1。
     #[test]
@@ -1391,7 +1416,7 @@ include_metadata = false
 request_timeout_ms = 666000
 
 [accounts.local.policy.mcp]
-credential_gateway = true
+delivery = "gateway"
 "#,
                 std::env::current_exe().unwrap().display(),
                 workspace.display(),
@@ -1461,7 +1486,7 @@ credential_gateway = true
         );
         assert_eq!(account.policy.trace.max_message_bytes, 888);
         assert!(!account.policy.session_update.include_metadata);
-        assert!(account.policy.mcp.credential_gateway);
+        assert_eq!(account.policy.mcp.delivery, McpDelivery::Gateway);
     }
 
     #[tokio::test]
