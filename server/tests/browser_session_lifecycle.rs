@@ -723,3 +723,310 @@ async fn revocation_cancels_a_blocked_resource_without_waiting_for_its_database_
     f.rejected(&f.first).await;
     f.healthy(&f.second, &mut second).await;
 }
+
+#[sqlx::test]
+async fn password_change_preserves_native_refresh_and_revokes_other_sessions(db: PgPool) {
+    let f = Fixture::start(&db).await;
+    let mut other_socket = f.socket(&f.second.token).await;
+    let new_password = Uuid::new_v4().to_string();
+    let changed = f
+        .ok(
+            &f.first.token,
+            Method::POST,
+            "/auth/change-password",
+            Some(json!({"new_password": new_password})),
+        )
+        .await;
+    let token = changed["access_token"].as_str().unwrap();
+    f.ok(token, Method::GET, "/users/me", None).await;
+    closed(&mut other_socket, None).await;
+    f.rejected(&f.second).await;
+    let refreshed = f
+        .ok(
+            "",
+            Method::POST,
+            "/auth/refresh",
+            Some(json!({"refresh_token": f.first.refresh})),
+        )
+        .await;
+    let sessions = f
+        .ok(
+            refreshed["access_token"].as_str().unwrap(),
+            Method::GET,
+            "/auth/sessions",
+            None,
+        )
+        .await;
+    assert_eq!(sessions.as_array().unwrap().len(), 1);
+    assert_eq!(sessions[0]["session_id"], f.first.id);
+    assert_eq!(sessions[0]["client"], "macos");
+    assert!(
+        server::domain::auth::authenticate(&db, &f.login, &new_password)
+            .await
+            .is_ok()
+    );
+    assert!(
+        server::domain::auth::authenticate(&db, &f.login, &f.password)
+            .await
+            .is_err()
+    );
+}
+
+#[sqlx::test]
+async fn password_change_preserves_web_refresh_cookies(db: PgPool) {
+    let f = Fixture::start(&db).await;
+    let response = f
+        .client
+        .post(format!("{}/api/v1/auth/login", f.base))
+        .json(&json!({"login": f.login, "password": f.password, "client":"web"}))
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let cookies = response
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .map(|header| {
+            header
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let auth: Value = response.json().await.unwrap();
+    let changed = f
+        .ok(
+            auth["access_token"].as_str().unwrap(),
+            Method::POST,
+            "/auth/change-password",
+            Some(json!({"new_password": Uuid::new_v4().to_string()})),
+        )
+        .await;
+    f.ok(
+        changed["access_token"].as_str().unwrap(),
+        Method::GET,
+        "/users/me",
+        None,
+    )
+    .await;
+    let response = f
+        .client
+        .post(format!("{}/api/v1/auth/refresh", f.base))
+        .header(reqwest::header::COOKIE, cookies)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        response.status().is_success(),
+        "web refresh after password change: {}",
+        response.text().await.unwrap()
+    );
+}
+
+#[sqlx::test]
+async fn initial_password_preserves_ios_session_and_refresh(db: PgPool) {
+    let f = Fixture::start(&db).await;
+    let auth = f
+        .ok(
+            "",
+            Method::POST,
+            "/auth/login",
+            Some(json!({"login": f.login, "password": f.password, "client":"ios"})),
+        )
+        .await;
+    sqlx::query("UPDATE users SET password_hash=NULL WHERE user_id=$1")
+        .bind(f.user.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    let new_password = Uuid::new_v4().to_string();
+    let changed = f
+        .ok(
+            auth["access_token"].as_str().unwrap(),
+            Method::POST,
+            "/auth/set-password",
+            Some(json!({"new_password": new_password})),
+        )
+        .await;
+    f.ok(
+        changed["access_token"].as_str().unwrap(),
+        Method::GET,
+        "/users/me",
+        None,
+    )
+    .await;
+    let refreshed = f
+        .ok(
+            "",
+            Method::POST,
+            "/auth/refresh",
+            Some(json!({"refresh_token":auth["refresh_token"]})),
+        )
+        .await;
+    let sessions = f
+        .ok(
+            refreshed["access_token"].as_str().unwrap(),
+            Method::GET,
+            "/auth/sessions",
+            None,
+        )
+        .await;
+    assert_eq!(sessions.as_array().unwrap().len(), 1);
+    assert_eq!(sessions[0]["client"], "ios");
+    assert!(
+        server::domain::auth::authenticate(&db, &f.login, &new_password)
+            .await
+            .is_ok()
+    );
+}
+
+#[sqlx::test]
+async fn stale_sessions_need_confirmation_to_set_password_or_unlink(db: PgPool) {
+    let f = Fixture::start(&db).await;
+    sqlx::query("INSERT INTO auth_external_identities(identity_id,provider,subject,user_id,corp_id) VALUES($1,'google',$2,$3,'')")
+        .bind(Uuid::new_v4().to_string()).bind(Uuid::new_v4().to_string()).bind(f.user.to_string()).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO auth_external_identities(identity_id,provider,subject,user_id,corp_id) VALUES($1,'github',$2,$3,'')")
+        .bind(Uuid::new_v4().to_string()).bind(Uuid::new_v4().to_string()).bind(f.user.to_string()).execute(&db).await.unwrap();
+    for provider in ["google", "github"] {
+        let identity = f
+            .ok(
+                &f.first.token,
+                Method::GET,
+                &format!("/users/me/external-identities/{provider}"),
+                None,
+            )
+            .await;
+        assert_eq!(identity["linked"], true);
+    }
+    sqlx::query("UPDATE auth_sessions SET authenticated_at=NOW()-INTERVAL '16 minutes',step_up_at=NULL WHERE session_id=$1")
+        .bind(&f.first.id).execute(&db).await.unwrap();
+    for (method, path, body) in [
+        (
+            Method::POST,
+            "/auth/set-password",
+            Some(json!({"new_password":Uuid::new_v4().to_string()})),
+        ),
+        (
+            Method::POST,
+            "/auth/change-password",
+            Some(json!({"new_password":Uuid::new_v4().to_string()})),
+        ),
+        (Method::DELETE, "/users/me/external-identities/google", None),
+    ] {
+        let (status, body) = f.call(&f.first.token, method, path, body).await;
+        assert_eq!(status, StatusCode::PRECONDITION_REQUIRED, "{body}");
+        assert_eq!(body["code"], "recent_authentication_required");
+    }
+    let flow = f
+        .ok(
+            &f.first.token,
+            Method::POST,
+            "/auth/flows/start",
+            Some(json!({"purpose":"step_up","client":"macos"})),
+        )
+        .await;
+    let proof = f
+        .ok(
+            &f.first.token,
+            Method::POST,
+            &format!(
+                "/auth/flows/{}/password",
+                flow["transaction_id"].as_str().unwrap()
+            ),
+            Some(json!({"password":f.password})),
+        )
+        .await;
+    assert_eq!(proof["status"], "verified");
+    f.ok(
+        &f.first.token,
+        Method::DELETE,
+        "/users/me/external-identities/google",
+        None,
+    )
+    .await;
+    let remaining = f
+        .ok(
+            &f.first.token,
+            Method::GET,
+            "/users/me/external-identities/github",
+            None,
+        )
+        .await;
+    assert_eq!(
+        remaining["linked"], true,
+        "unlinking one provider must retain the other"
+    );
+}
+
+#[sqlx::test]
+async fn password_change_rolls_back_when_revocation_commit_fails(db: PgPool) {
+    let f = Fixture::start(&db).await;
+    install_commit_fault(&db, &f.second.id).await;
+    let new_password = Uuid::new_v4().to_string();
+    let (status, _) = f
+        .call(
+            &f.first.token,
+            Method::POST,
+            "/auth/change-password",
+            Some(json!({"new_password":new_password})),
+        )
+        .await;
+    assert!(status.is_server_error());
+    assert!(
+        server::domain::auth::authenticate(&db, &f.login, &f.password)
+            .await
+            .is_ok()
+    );
+    assert!(
+        server::domain::auth::authenticate(&db, &f.login, &new_password)
+            .await
+            .is_err()
+    );
+    f.ok(&f.first.token, Method::GET, "/users/me", None).await;
+    f.ok(&f.second.token, Method::GET, "/users/me", None).await;
+    remove_commit_fault(&db).await;
+}
+
+#[sqlx::test]
+async fn oauth_account_link_handoff_is_client_bound_and_single_use(db: PgPool) {
+    let f = Fixture::start(&db).await;
+    let code = Uuid::new_v4().to_string();
+    sqlx::query("INSERT INTO auth_transactions(transaction_id,kind,status,client_type,provider,handoff_code_hash,context_json,expires_at) VALUES($1,'oauth','verified','ios','github',$2,$3,NOW()+INTERVAL '10 minutes')")
+        .bind(Uuid::new_v4().to_string()).bind(server::infra::crypto::sha256_hex(&code))
+        .bind(json!({"account_link_required":"github"})).execute(&db).await.unwrap();
+    let (status, _) = f
+        .call(
+            "",
+            Method::POST,
+            "/auth/oauth/handoff",
+            Some(json!({"code":code,"client":"macos"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, body) = f
+        .call(
+            "",
+            Method::POST,
+            "/auth/oauth/handoff",
+            Some(json!({"code":code,"client":"ios"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "account_link_required");
+    assert_eq!(body["provider"], "github");
+    let (status, _) = f
+        .call(
+            "",
+            Method::POST,
+            "/auth/oauth/handoff",
+            Some(json!({"code":code,"client":"ios"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

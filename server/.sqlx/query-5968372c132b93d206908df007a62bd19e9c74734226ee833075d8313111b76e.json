@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT password_hash IS NOT NULL AS \"has_password!\", token_version, role FROM users\n         WHERE user_id = $1 AND is_deleted = FALSE AND is_suspended = FALSE\n         FOR NO KEY UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_password!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "token_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "role",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "5968372c132b93d206908df007a62bd19e9c74734226ee833075d8313111b76e"
+}

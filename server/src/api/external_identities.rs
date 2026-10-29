@@ -101,6 +101,7 @@ pub async fn unlink(
     Extension(claims): Extension<Claims>,
     Path(provider): Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     let provider = checked_provider(&provider)?;
     let mut tx = state.db.begin().await?;
     // Serialize identity removal per user. Keep FK KEY SHARE compatible: session
@@ -164,6 +165,7 @@ pub async fn unlink(
         &mut tx,
         &claims.sub,
         &claims.sid,
+        "identity_changed",
     )
     .await?;
     tx.commit().await?;

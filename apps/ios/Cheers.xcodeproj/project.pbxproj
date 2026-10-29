@@ -59,7 +59,7 @@
 		CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000426 /* PasskeySettingsView.swift */; };
 		CE0000000000000000000435 /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000427 /* ForgotPasswordView.swift */; };
 		CE0000000000000000000436 /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000428 /* FriendsView.swift */; };
-		CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000429 /* GoogleOAuthSession.swift */; };
+		CE0000000000000000000437 /* OAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000429 /* OAuthSession.swift */; };
 		CE0000000000000000000440 /* AuthRequiredCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000441 /* AuthRequiredCardView.swift */; };
 		CE0000000000000000000450 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000451 /* Localizable.xcstrings */; };
 		CE0000000000000000000480 /* SourceSerif4-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000481 /* SourceSerif4-Regular.ttf */; };
@@ -147,7 +147,7 @@
 		CE0000000000000000000426 /* PasskeySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeySettingsView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000427 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000428 /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
-		CE0000000000000000000429 /* GoogleOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuthSession.swift; sourceTree = "<group>"; };
+		CE0000000000000000000429 /* OAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthSession.swift; sourceTree = "<group>"; };
 		CE0000000000000000000441 /* AuthRequiredCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthRequiredCardView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000451 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		CE0000000000000000000453 /* BotTracePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotTracePanelView.swift; sourceTree = "<group>"; };
@@ -241,7 +241,7 @@
 				CE0000000000000000000103 /* KeychainStore.swift */,
 				CE000000000000000000011F /* PushRouter.swift */,
 				CE0000000000000000000425 /* PasskeyController.swift */,
-				CE0000000000000000000429 /* GoogleOAuthSession.swift */,
+				CE0000000000000000000429 /* OAuthSession.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -527,7 +527,7 @@
 				CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */,
 				CE0000000000000000000431 /* NewWorkspaceSheet.swift in Sources */,
 				CE0000000000000000000433 /* PasskeyController.swift in Sources */,
-				CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */,
+				CE0000000000000000000437 /* OAuthSession.swift in Sources */,
 				CE000000000000000000021C /* ApprovalCardView.swift in Sources */,
 				CE0000000000000000000452 /* BotTracePanelView.swift in Sources */,
 				CE0000000000000000000440 /* AuthRequiredCardView.swift in Sources */,
