@@ -155,6 +155,10 @@ spec:
             - name: MCP_PUBLIC_URL
               value: {{ .Values.gateway.mcpPublicUrl | quote }}
             {{- end }}
+            {{- if .Values.gateway.mcpGatewayAccessTokenTtlSecs }}
+            - name: MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS
+              value: {{ .Values.gateway.mcpGatewayAccessTokenTtlSecs | quote }}
+            {{- end }}
             {{- if .Values.gateway.mcpAllowedDeliveryModes }}
             - name: MCP_ALLOWED_DELIVERY_MODES
               value: {{ .Values.gateway.mcpAllowedDeliveryModes | quote }}

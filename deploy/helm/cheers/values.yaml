@@ -36,6 +36,10 @@ gateway:
   # Empty allows all. "gateway" alone keeps real MCP tokens out of agent
   # processes (connectors then always use their loopback credential gateway).
   mcpAllowedDeliveryModes: ""
+  # Lifetime (seconds) of MCP tokens for hosts using gateway delivery; empty =
+  # 600, minimum 120. Direct-delivery tokens keep the 24h default because the
+  # agent cannot renew them mid-turn.
+  mcpGatewayAccessTokenTtlSecs: ""
   # How strictly an MCP call must stay inside the channel its token was minted
   # for: off | warn | enforce. Channel scope is enforced by default; use warn
   # temporarily while migrating legacy MCP clients that lack channel-bound tokens.
