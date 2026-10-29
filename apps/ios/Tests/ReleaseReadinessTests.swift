@@ -18,6 +18,32 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertFalse(expired.isReady)
     }
 
+    func testUndeliveredAttachmentsDecodeOnlyOnFinishedBotReplies() throws {
+        func message(_ fields: String) throws -> MessageDto {
+            try JSONDecoder().decode(MessageDto.self, from: Data("""
+            {"msg_id":"m","channel_id":"c","sender_type":"bot","content":"done",\(fields)}
+            """.utf8))
+        }
+        let reply = try message("""
+        "content_data":{"attachment_errors":[
+          {"filename":"exec-1.png","code":"TOO_LARGE","message":"larger than the 8 MB attachment limit"},
+          {"filename":42},"not an object"]}
+        """)
+        XCTAssertEqual(reply.attachmentErrors, [
+            AttachmentDeliveryError(filename: "exec-1.png", code: "TOO_LARGE",
+                                    message: "larger than the 8 MB attachment limit"),
+            AttachmentDeliveryError(filename: "", code: "", message: ""),
+        ])
+
+        var human = reply
+        human.senderType = "user"
+        XCTAssertTrue(human.attachmentErrors.isEmpty)
+        var streaming = reply
+        streaming.isPartial = true
+        XCTAssertTrue(streaming.attachmentErrors.isEmpty)
+        XCTAssertTrue(try message("\"content_data\":{\"attachment_errors\":\"x\"}").attachmentErrors.isEmpty)
+    }
+
     func testArtifactSnapshotUsesCanonicalVersionAndSourceData() throws {
         let content = try JSONDecoder().decode(ChannelArtifactContent.self, from: Data("""
         {"artifact":{"artifact_id":"stable-id","channel_id":"channel","uri":"cheers:artifact/stable-id",

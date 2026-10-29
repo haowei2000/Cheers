@@ -1392,6 +1392,31 @@ struct MessageFileRef: Codable, Hashable, Identifiable {
     }
 }
 
+/// An attachment the agent produced but the connector could not deliver
+/// (`content_data.attachment_errors`, written by the gateway on Done).
+struct AttachmentDeliveryError: Hashable {
+    let filename: String
+    let code: String
+    let message: String
+}
+
+extension MessageDto {
+    /// Undelivered reply attachments, shown as missing instead of omitted.
+    /// Only a finished bot reply carries them; the gateway caps the list at 8.
+    var attachmentErrors: [AttachmentDeliveryError] {
+        guard senderType == "bot", isPartial != true,
+              let raw = contentData?["attachment_errors"]?.arrayValue else { return [] }
+        return raw.prefix(8).compactMap { entry in
+            guard let object = entry.objectValue else { return nil }
+            return AttachmentDeliveryError(
+                filename: object["filename"]?.stringValue ?? "",
+                code: object["code"]?.stringValue ?? "",
+                message: object["message"]?.stringValue ?? ""
+            )
+        }
+    }
+}
+
 struct MessageDto: Codable, Identifiable, Hashable {
     var v: Int?
     var msgId: String
