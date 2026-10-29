@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { createElement, type MouseEvent } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { placeNearRect } from "./floating-layer";
-import { isPointInSelection, quoteSelectedText } from "./context-actions";
+import { quoteSelectedText, useContextSurface } from "./context-actions";
 
 describe("context action helpers", () => {
   it("formats every selected line as a markdown quote", () => {
@@ -14,34 +16,95 @@ describe("context action helpers", () => {
       y: 162,
     });
   });
+});
 
-  it("identifies if a point lands within an active text selection", () => {
-    expect(isPointInSelection(null, 100, 100)).toBe(false);
+// Exercise the hook's event handlers without adding a DOM runtime to Vitest.
+class SurfaceElement {
+  constructor(private nativeMenu = false, private code = false) {}
+  closest(selector: string) {
+    return (selector === "pre, code" ? this.code : this.nativeMenu) ? this : null;
+  }
+  contains(node: unknown) { return node === this; }
+}
 
-    const mockSelectionCollapsed = {
-      isCollapsed: true,
-      rangeCount: 1,
-      toString: () => "",
-    } as unknown as Selection;
-    expect(isPointInSelection(mockSelectionCollapsed, 100, 100)).toBe(false);
+function contextGesture({ selected = true, code = false, nativeMenu = false, outside = false } = {}) {
+  const surface = new SurfaceElement(false, code);
+  const target = nativeMenu ? new SurfaceElement(true) : surface;
+  const rangeNode = outside ? new SurfaceElement() : surface;
+  const rect = { left: 50, right: 150, top: 20, bottom: 40, width: 100, height: 20 };
+  const getSelection = vi.fn(() => selected ? {
+    isCollapsed: false,
+    rangeCount: 1,
+    toString: () => "selected message text",
+    getRangeAt: () => ({
+      startContainer: rangeNode,
+      endContainer: rangeNode,
+      commonAncestorContainer: rangeNode,
+      getBoundingClientRect: () => rect,
+      getClientRects: () => [rect],
+    }),
+  } : null);
+  vi.stubGlobal("Element", SurfaceElement);
+  vi.stubGlobal("window", { getSelection });
+  vi.stubGlobal("DOMRect", class {
+    constructor(public x: number, public y: number, public width: number, public height: number) {}
+  });
+  const actions = vi.fn(() => [{ id: "reply", label: "Reply", run: vi.fn() }]);
+  const selectionActions = vi.fn(() => [{ id: "copy-selection", label: "Copy selection", run: vi.fn() }]);
+  let handlers!: ReturnType<typeof useContextSurface>;
+  function Harness() {
+    handlers = useContextSurface({
+      surfaceRef: { current: surface as unknown as HTMLElement },
+      actions,
+      selectionActions,
+    });
+    return null;
+  }
+  renderToStaticMarkup(createElement(Harness));
+  const event = {
+    target,
+    clientX: 100,
+    clientY: 30,
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn(),
+  };
+  handlers.onContextMenu(event as unknown as MouseEvent<HTMLElement>);
+  return { actions, selectionActions, event, getSelection };
+}
 
-    const mockSelection = {
-      isCollapsed: false,
-      rangeCount: 1,
-      toString: () => "hello world",
-      getRangeAt: () => ({
-        getClientRects: () => [
-          { left: 50, right: 150, top: 20, bottom: 40 } as DOMRect,
-        ],
-      }),
-    } as unknown as Selection;
+describe("context surface right-click", () => {
+  afterEach(() => vi.unstubAllGlobals());
 
-    // Inside rect
-    expect(isPointInSelection(mockSelection, 100, 30)).toBe(true);
-    // Boundary tolerance (within 2px)
-    expect(isPointInSelection(mockSelection, 49, 30)).toBe(true);
-    // Clearly outside
-    expect(isPointInSelection(mockSelection, 200, 30)).toBe(false);
-    expect(isPointInSelection(mockSelection, 100, 80)).toBe(false);
+  it.each([false, true])("opens application actions on selected text (code: %s)", (code) => {
+    const { actions, selectionActions, event } = contextGesture({ code });
+    expect(selectionActions).toHaveBeenCalledWith(expect.objectContaining({
+      text: "selected message text", isCode: code,
+    }));
+    expect(actions).not.toHaveBeenCalled();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(event.stopPropagation).toHaveBeenCalledOnce();
+  });
+
+  it("uses message actions when there is no text selection", () => {
+    const { actions, selectionActions, event } = contextGesture({ selected: false });
+    expect(actions).toHaveBeenCalledOnce();
+    expect(selectionActions).not.toHaveBeenCalled();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it("does not apply a selection belonging to another surface", () => {
+    const { actions, selectionActions, event } = contextGesture({ outside: true });
+    expect(actions).toHaveBeenCalledOnce();
+    expect(selectionActions).not.toHaveBeenCalled();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it("preserves native menus on editable fields and other native targets", () => {
+    const { actions, selectionActions, event, getSelection } = contextGesture({ nativeMenu: true });
+    expect(getSelection).not.toHaveBeenCalled();
+    expect(actions).not.toHaveBeenCalled();
+    expect(selectionActions).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(event.stopPropagation).not.toHaveBeenCalled();
   });
 });

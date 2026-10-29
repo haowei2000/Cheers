@@ -146,3 +146,22 @@ describe("MessageItem identity anatomy", () => {
     expect(markup).toContain("Please prepare the document and attach it here.");
   });
 });
+
+describe("MessageItem run overview", () => {
+  const failedTool = { v: 1, id: "tool-failed", msg_id: reply.msg_id, trace_seq: 1, kind: "trace", phase: "tool_call", tool_call_id: "tool-1", status: "failed", is_terminal: true, created_at: "2026-10-29T00:00:00Z" };
+  const finished = { ...failedTool, id: "finished", trace_seq: 2, phase: "prompt_finished", tool_call_id: undefined, status: "completed" };
+
+  it("summarizes completion with tool errors without announcing a failed run", () => {
+    const markup = renderToStaticMarkup(<MessageItem message={{ ...reply, trace_has_failure: true, _trace_events: [failedTool, finished] }} />);
+    expect(markup).toContain("Completed · 1 tool · 1 tool failed");
+    expect(markup).not.toContain("Agent step failed");
+    expect(markup).not.toContain('role="alert"');
+    expect(markup).toContain('aria-haspopup="dialog"');
+  });
+
+  it("does not label a reloaded failure flag as an overall failure", () => {
+    const markup = renderToStaticMarkup(<MessageItem message={{ ...reply, trace_count: 3, trace_has_failure: true }} />);
+    expect(markup).toContain("Outcome unavailable · Step errors recorded");
+    expect(markup).not.toContain("Run failed");
+  });
+});
