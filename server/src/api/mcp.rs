@@ -1774,10 +1774,77 @@ fn complete_tool_result(data: Value) -> Value {
     })
 }
 
+/// What the model should do after a refused tool call. Static text only: it
+/// is advisory and grants nothing (the server re-checks every call), it never
+/// names another channel, and it never interpolates user-supplied text
+/// (docs/arch/MCP_AUTH_ISOLATION.md §6).
+struct ToolErrorGuidance {
+    next: &'static str,
+    /// Whether calling again (with fixed arguments, or once after a transient
+    /// failure) can succeed. False stops loops on refusals no retry can change.
+    retryable: bool,
+}
+
+fn tool_error_guidance(code: &str) -> Option<ToolErrorGuidance> {
+    let (next, retryable) = match code {
+        "OUT_OF_CHANNEL" => (
+            "This task can act only in the channel it was started from. To act in another channel, ask the user to mention you there.",
+            false,
+        ),
+        "CHANNEL_SCOPE_REQUIRED" => (
+            "Your connector sent an MCP token without a channel. Tell the user the bot's owner needs to upgrade the Cheers connector.",
+            false,
+        ),
+        "NOT_MEMBER" => (
+            "You are not a member of that channel. Ask a channel member to invite you, or tell the user you cannot reach it.",
+            false,
+        ),
+        "PERMISSION_DENIED" | "FORBIDDEN" => (
+            "Your role does not allow this here. Tell the user what you could not do; a channel admin can change your role.",
+            false,
+        ),
+        "NOT_FOUND" => (
+            "Check the id or path. It may not exist, or you may not have access to it.",
+            false,
+        ),
+        "INVALID_PARAMS" | "BAD_REQUEST" | "INVALID_LOCATOR" | "UNRESOLVABLE_LOCATOR"
+        | "INVALID_PATCH" | "INVALID_UI" => (
+            "Fix the arguments described above, then call again.",
+            true,
+        ),
+        "E_TOO_LARGE" => ("Send less data per call, for example by splitting it.", true),
+        "CONFLICT" | "E_CONFLICT" | "INVALID_STATE" => (
+            "The resource changed since you read it. Read it again, then retry.",
+            true,
+        ),
+        "INTERNAL" | "INTERNAL_ERROR" => (
+            "A temporary server error. Retry once; if it fails again, tell the user.",
+            true,
+        ),
+        _ => return None,
+    };
+    Some(ToolErrorGuidance { next, retryable })
+}
+
+/// A refused tool call as an `isError` result, so the model sees it (most
+/// clients hide protocol errors from the model). `structuredContent` carries
+/// the same guidance for clients that act on it.
 fn tool_error_result(code: &str, message: &str) -> Value {
+    let guidance = tool_error_guidance(code);
+    let mut text = format!("[{code}] {message}");
+    let mut structured = json!({ "code": code });
+    if let Some(guidance) = &guidance {
+        text.push_str("\nNext: ");
+        text.push_str(guidance.next);
+        if !guidance.retryable {
+            text.push_str("\nDo not retry this call unchanged.");
+        }
+        structured["retryable"] = json!(guidance.retryable);
+    }
     json!({
         "resultType": "complete",
-        "content": [{"type": "text", "text": format!("[{code}] {message}")}],
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": structured,
         "isError": true,
         "ttlMs": 0,
         "cacheScope": "private",
@@ -2886,13 +2953,14 @@ fn enforce_channel_scope(
         );
     }
 
-    refused.then(|| ToolCallFailure::Domain {
-        code: "PERMISSION_DENIED".to_string(),
-        message: match verdict {
-            ChannelScopeVerdict::Unnarrowed => {
-                "this gateway requires a channel-scoped MCP token".to_string()
-            }
-            _ => "this token is scoped to a different channel".to_string(),
+    refused.then(|| match verdict {
+        ChannelScopeVerdict::Unnarrowed => ToolCallFailure::Domain {
+            code: "CHANNEL_SCOPE_REQUIRED".to_string(),
+            message: "this gateway requires a channel-scoped MCP token".to_string(),
+        },
+        _ => ToolCallFailure::Domain {
+            code: "OUT_OF_CHANNEL".to_string(),
+            message: "this token is scoped to a different channel".to_string(),
         },
     })
 }
@@ -3801,6 +3869,43 @@ mod tests {
             assert!(!verdict.is_refused(McpChannelScope::Off));
             assert!(!verdict.is_refused(McpChannelScope::Warn));
         }
+    }
+
+    /// 拒绝结果要让模型看得见、知道下一步，且明确是否可重试，避免死循环。
+    #[test]
+    fn refused_tool_calls_carry_next_steps_and_retryability() {
+        let refused = tool_error_result(
+            "OUT_OF_CHANNEL",
+            "this token is scoped to a different channel",
+        );
+        assert_eq!(refused["isError"], true);
+        assert_eq!(refused["structuredContent"]["code"], "OUT_OF_CHANNEL");
+        assert_eq!(refused["structuredContent"]["retryable"], false);
+        let text = refused["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with("[OUT_OF_CHANNEL] this token is scoped"),
+            "{text}"
+        );
+        assert!(text.contains("\nNext: "), "{text}");
+        assert!(
+            text.ends_with("Do not retry this call unchanged."),
+            "{text}"
+        );
+
+        let invalid = tool_error_result("INVALID_PARAMS", "channel_id is required");
+        assert_eq!(invalid["structuredContent"]["retryable"], true);
+        assert!(!invalid["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Do not retry"));
+
+        // Unknown codes keep the plain shape: no guessed advice.
+        let unknown = tool_error_result("TOOL_ERROR", "tool call failed");
+        assert_eq!(
+            unknown["content"][0]["text"],
+            "[TOOL_ERROR] tool call failed"
+        );
+        assert!(unknown["structuredContent"].get("retryable").is_none());
     }
 
     /// enforce 下越界与无声明都拒；无频道资源永远不拒，否则每个 bot 的
