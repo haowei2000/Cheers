@@ -356,20 +356,25 @@ once it ends. The connector binds only where each new token reaches the Agent
 (`gateway` delivery, or `direct` for an Agent judged to re-read headers);
 otherwise an Agent keeping an ended task's token would be refused at once.
 
-Delegation (M5b) builds on the same exchange:
+**Delegated narrowing (M5b, PR #816, as built).**
 
-1. The connector requests the token for task T (above); the Gateway takes the
-   sender U from the task's run record, never from the request.
-2. The exchange is authenticated by the host credential and bound to a
-   running execution. Either piece alone is useless.
-3. The resulting JWT carries `sub = U`, `act = {sub: bot}`, `chan = C`,
-   `task = T`, scope ⊆ the bot's scope, short TTL.
-4. Resource authorization gains a delegated principal and checks **both**
-   memberships, taking the intersection. A prompt-injected Agent acting for an
-   admin still has no more than the bot's own rights, and the bot cannot reach
-   what U cannot.
-5. Each request also checks that the task is running, U is still a channel
-   member, and U has not revoked the bot's standing delegation.
+1. On the task-bound mint above, the Gateway takes the human U from the run
+   record, never from the request: the trigger message's sender, or for a bot
+   message in a task chain, the sender of the chain's root message.
+2. The JWT keeps `sub = bot` and adds `obo = U` (with `chan = C`, `task = T`).
+   A malformed `obo` rejects the token: dropping it would widen it.
+3. `Principal` gains `on_behalf_of`. The shared channel checks
+   (`authorize_channel_read` / `_write`, behind every resource handler) use the
+   lower of the bot's and U's role and refuse when U is not a member. A
+   prompt-injected Agent working for an admin still has no more than the bot's
+   own rights, and the bot cannot reach what U cannot.
+4. Each request re-checks that the task is running (M5a); U's membership and
+   role are read on every channel check.
+5. **No per-user consent.** Narrowing only removes access, so requiring consent
+   first would leave non-consenting users' tasks with the bot's full role. The
+   bot's owner can opt a bot out (`bot_accounts.mcp_narrow_to_sender`, `PUT
+   /api/v1/bots/:id/mcp-policy`) for automation that read-only members must
+   drive.
 
 Tasks with no human sender (scheduled, autonomous) keep the plain bot identity.
 
@@ -439,7 +444,7 @@ user and task.
 | `off` / `warn` removed; scope always enforced | 🚧 M3, PR #809 |
 | Token lifetime per mode (10 min for `gateway`, 24h for `direct`) | 🚧 M4b, PR #814 |
 | Task-bound tokens (`cheers_execution` → `task` claim, per-request running check) | 🚧 M5a, PR #815 |
-| Delegated identity | ❌ |
+| Delegated narrowing (bot ∩ sender, owner opt-out) | 🚧 M5b, PR #816 |
 | `request_approval` | ❌ M5 |
 
 ## 8. Roadmap
@@ -461,12 +466,11 @@ end-to-end run; send the Security-note PR if the RFD champion agrees.
 
 ## 9. Open decisions
 
-1. Delegation consent: implicit (mentioning the bot) or explicit standing
-   permission per bot? Recommended: explicit.
-2. Bot-to-bot chains: delegate from the originating human with a depth limit,
-   or fall back to bot identity? Recommended: originating human, bounded depth.
-3. Revoke task-bound tokens the moment the task ends, or let them expire?
-   Recommended: revoke on end via the per-request task check.
+1. ~~Delegation consent~~ Decided 2026-10-29: always narrow, no per-user
+   consent (it would be backwards for a narrowing), owner opt-out per bot (#816).
+2. ~~Bot-to-bot chains~~ Decided: narrow to the chain's originating human; the
+   chain engine's existing depth limit bounds the chain (#816).
+3. ~~Revoke on end~~ Decided: yes, by the per-request running-task check (#815).
 4. Return scope refusals for `client_credentials` tokens as tool errors instead
    of HTTP 403? Recommended: yes, documented as a deliberate deviation.
 
