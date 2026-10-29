@@ -384,7 +384,9 @@ the model:
 | code | Guidance to the model | retryable |
 |---|---|---|
 | `OUT_OF_CHANNEL` | This task can access only its own channel; ask the user to mention you there | no |
-| `ROLE_REQUIRED` | Your channel role is insufficient; ask a channel admin | no |
+| `CHANNEL_SCOPE_REQUIRED` | The connector sent a channel-less token; the bot owner must upgrade it | no |
+| `NOT_MEMBER` | Not a member of that channel; ask a member to invite you | no |
+| `PERMISSION_DENIED` / `FORBIDDEN` | Your channel role is insufficient; ask a channel admin | no |
 | `APPROVAL_REQUIRED` | Call `request_approval`, then retry with `approval_id` | yes |
 | `SCOPE_REQUIRED` | See below | no |
 | `NOT_FOUND` | Stay opaque; never disclose whether a resource exists elsewhere | no |
@@ -418,13 +420,14 @@ user and task.
 | Credential gateway pass-through, `policy.mcp.delivery` | 🚧 M1, PR #806 |
 | Host profile, `auto` negotiation, generation test | ❌ M2 |
 | Native MCP-over-ACP | ❌ M6 (no Agent advertises `acp: true`; SDK 3.6 upgrade in PR #805) |
-| Domain errors as `isError` tool results | ✅ (no next-step guidance) |
+| Domain errors as `isError` tool results with `Next:` guidance and `{code, retryable}` | 🚧 M4a, PR #813 |
 | Per-channel host working directory | 🚧 M3, PR #810 |
 | Channel-safe `set_status` (owner↔bot DM only) | 🚧 M3, PR #809 |
 | `off` / `warn` removed; scope always enforced | 🚧 M3, PR #809 |
-| Task-bound tokens | ❌ (24h TTL only) |
+| Token lifetime per mode (10 min for `gateway`, 24h for `direct`) | 🚧 M4b, PR #814 |
+| Task-bound tokens | ❌ M5 |
 | Delegated identity | ❌ |
-| Actionable errors, `request_approval` | ❌ |
+| `request_approval` | ❌ M5 |
 
 ## 8. Roadmap
 
@@ -436,7 +439,7 @@ alongside M1.
 | **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-channel secrets, Host/Origin/body limits, 401 re-mint, SSE streaming, `NO_PROXY` for loopback; selected by `policy.mcp.delivery = "gateway"` (default stays `direct`); unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release | connector |
 | **M2 host profile and negotiation** | M2a: `McpDeliveryMode` and `McpDeliveryReport` in `bridge-protocol`; `ready` reports the mode; migration 0118 adds `mcp_header_refresh{,_agent,_at}`; `/mcp` tracks the newest `iat` per `(host, chan)`, records the verdict and sends `mcp_delivery_observed` (PR #811). M2b: `MCP_ALLOWED_DELIVERY_MODES` via hello; `delivery = "auto"` as default; verdict cache by Agent build; generation test; restart-when-idle to switch (PR #812). Later: Fleet shows mode and reason | connector, server, migration, frontend |
 | **M3 isolation** | Per-channel cwd under `default_cwd` (opt-out `shared_cwd`), #810; `set_status` only from the owner↔bot DM and `MCP_CHANNEL_SCOPE` off/warn removed, #809 | connector, server, mcp-server |
-| **M4 guidance and tightening** | Actionable error shape (`code`, `retryable`, `next`) and tool-error scope refusals for `client_credentials` tokens; token TTL per mode: minutes for `gateway`/`acp`, at least the longest turn for `direct` | server, connector |
+| **M4 guidance and tightening** | M4a (#813): `Next:` guidance and `{code, retryable}` on refused tool calls; `OUT_OF_CHANNEL` / `CHANNEL_SCOPE_REQUIRED` codes. M4b (#814): `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS` (600 s) for `gateway`/`acp` hosts, 24h for `direct`. Open: tool-error scope refusals for `client_credentials` tokens (§9.4) | server |
 | **M5 task, delegation, approval** | `task_grant` and `task` claim with per-request running-task check and turn attribution in the gateway; RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
 | **M6 native MCP-over-ACP** | Enable `unstable_mcp_over_acp` after #805; provider with one `serverId` per session, declared on `session/load` too; switch per Agent via M2 negotiation; help `claude-agent-acp` advertise `mcpCapabilities.acp` | connector, upstream |
 
