@@ -2,21 +2,21 @@ import AuthenticationServices
 import Foundation
 import UIKit
 
-enum GoogleOAuthError: LocalizedError {
+enum OAuthError: LocalizedError {
     case cancelled
     case underlying(Error)
 
     var errorDescription: String? {
         switch self {
-        case .cancelled: return "Google sign-in was cancelled."
+        case .cancelled: return "Sign-in was cancelled."
         case .underlying(let error): return error.localizedDescription
         }
     }
 }
 
-/// ASWebAuthenticationSession wrapper for Google OAuth → `cheers://auth/callback`.
+/// ASWebAuthenticationSession wrapper for provider OAuth → `cheers://auth/callback`.
 @MainActor
-final class GoogleOAuthSession: NSObject, ASWebAuthenticationPresentationContextProviding {
+final class OAuthSession: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var session: ASWebAuthenticationSession?
 
     func authenticate(authorizationURL: URL) async throws -> URL {
@@ -30,14 +30,14 @@ final class GoogleOAuthSession: NSObject, ASWebAuthenticationPresentationContext
                     let ns = error as NSError
                     if ns.domain == ASWebAuthenticationSessionErrorDomain,
                        ns.code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                        continuation.resume(throwing: GoogleOAuthError.cancelled)
+                        continuation.resume(throwing: OAuthError.cancelled)
                     } else {
-                        continuation.resume(throwing: GoogleOAuthError.underlying(error))
+                        continuation.resume(throwing: OAuthError.underlying(error))
                     }
                     return
                 }
                 guard let callbackURL else {
-                    continuation.resume(throwing: GoogleOAuthError.cancelled)
+                    continuation.resume(throwing: OAuthError.cancelled)
                     return
                 }
                 continuation.resume(returning: callbackURL)
@@ -46,12 +46,13 @@ final class GoogleOAuthSession: NSObject, ASWebAuthenticationPresentationContext
             session.prefersEphemeralWebBrowserSession = false
             self.session = session
             if !session.start() {
+                self.session = nil
                 continuation.resume(
-                    throwing: GoogleOAuthError.underlying(
+                    throwing: OAuthError.underlying(
                         NSError(
-                            domain: "Cheers.GoogleOAuth",
+                            domain: "Cheers.OAuth",
                             code: 1,
-                            userInfo: [NSLocalizedDescriptionKey: "Could not start Google sign-in."]
+                            userInfo: [NSLocalizedDescriptionKey: "Could not start sign-in."]
                         )
                     )
                 )

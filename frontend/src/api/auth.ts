@@ -537,7 +537,8 @@ export async function getExternalIdentity(
 export async function unlinkExternalIdentity(
   provider: "apple" | "google" | "github"
 ): Promise<{ provider: string; linked: false }> {
-  return apiJson(`/users/me/external-identities/${provider}`, { method: "DELETE" });
+  return apiJson(`/users/me/external-identities/${provider}`, { method: "DELETE" },
+    { recentAuth: "auto", actionClass: "identity_unlink" });
 }
 
 /** Authenticated Google link: starts OAuth that returns `?linked=google` on success. */
@@ -597,14 +598,14 @@ export async function register(input: {
 /** Rotate the current user's password. Returns a fresh token (the server revokes
  *  every other session); swap it into the store so THIS session stays signed in. */
 export async function changePassword(input: {
-  current_password: string;
+  current_password?: string;
   new_password: string;
   two_factor_code?: string;
 }): Promise<{ ok: boolean; access_token: string }> {
   return apiJson("/auth/change-password", {
     method: "POST",
     body: JSON.stringify(input),
-  });
+  }, { recentAuth: "auto", actionClass: "password_change" });
 }
 
 /** Set an initial password for accounts without one (e.g. OAuth-only). */
@@ -614,7 +615,7 @@ export async function setPassword(input: {
   return apiJson("/auth/set-password", {
     method: "POST",
     body: JSON.stringify(input),
-  });
+  }, { recentAuth: "auto", actionClass: "password_set" });
 }
 
 /** Request a verification code to set or change account email. */

@@ -122,10 +122,11 @@ export function StepUpDialog() {
               <Fingerprint className="h-4 w-4" />
             </Button>
           )}
-          <p className="pt-1 text-compact font-medium text-content-muted">Try another method</p>
+          <p className="pt-1 text-compact font-medium text-content-muted">Choose a verification method</p>
           {methods.includes("password") && <MethodButton icon={KeyRound} action="changePassword" onClick={() => setMethod("password")} />}
           {methods.includes("totp") && <MethodButton icon={ShieldCheck} action="authenticator" onClick={() => setMethod("totp")} />}
           {methods.includes("email") && <MethodButton icon={Mail} action="emailCode" onClick={() => setMethod("email")} />}
+          {methods.includes("recovery_code") && <Button variant="secondary" controlWidth="fill" onClick={() => setMethod("recovery_code")}>Recovery code</Button>}
         </div>
       )}
 
@@ -137,7 +138,7 @@ export function StepUpDialog() {
             <>
               <Input
                 type={method === "password" ? "password" : "text"}
-                inputMode={method === "password" ? undefined : "numeric"}
+                inputMode={method === "totp" || method === "email" ? "numeric" : undefined}
                 autoComplete={method === "password" ? "current-password" : "one-time-code"}
                 placeholder={method === "password" ? "Password" : "Verification or recovery code"}
                 value={value}

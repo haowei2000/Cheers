@@ -203,18 +203,14 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
   const hasPassword = profile.data?.has_password ?? true;
 
   const [open, setOpen] = useState(false);
-  const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [twoFactorCode, setTwoFactorCode] = useState("");
   const [busy, setBusy] = useState(false);
 
   function closeDialog() {
     if (busy) return;
-    setCurrent("");
     setNext("");
     setConfirm("");
-    setTwoFactorCode("");
     setOpen(false);
   }
 
@@ -231,9 +227,7 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
     try {
       if (hasPassword) {
         const res = await changePassword({
-          current_password: current,
           new_password: next,
-          two_factor_code: twoFactorCode.trim() || undefined,
         });
         onRotated(res.access_token); // keep this session alive on the fresh token
         toast.success("Password changed — other sessions were signed out");
@@ -244,10 +238,8 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
         onRotated(res.access_token);
         toast.success("Password set successfully");
       }
-      setCurrent("");
       setNext("");
       setConfirm("");
-      setTwoFactorCode("");
       await queryClient.invalidateQueries({ queryKey: queryKeys.currentUser });
       setOpen(false);
     } catch (e) {
@@ -283,17 +275,6 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
               : "Create a password to sign in to Cheers with your username or email."}
           </p>
           <div className={hasPassword ? "grid grid-cols-2 gap-3 max-md:grid-cols-1" : "space-y-3"}>
-            {hasPassword && (
-              <Field label="Current password" htmlFor="cp-current">
-                <UiInput
-                  id="cp-current"
-                  type="password"
-                  value={current}
-                  onChange={(e) => setCurrent(e.target.value)}
-                  autoComplete="current-password"
-                />
-              </Field>
-            )}
             <Field label="New password" htmlFor="cp-new">
               <UiInput
                 id="cp-new"
@@ -314,17 +295,6 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
                 autoComplete="new-password"
               />
             </Field>
-            {hasPassword && (
-              <Field label="Verification code" htmlFor="cp-two-factor">
-                <UiInput
-                  id="cp-two-factor"
-                  value={twoFactorCode}
-                  onChange={(e) => setTwoFactorCode(e.target.value)}
-                  placeholder="Authenticator or recovery code"
-                  autoComplete="one-time-code"
-                />
-              </Field>
-            )}
           </div>
           <div className="flex justify-end gap-2">
             <ActionButton action="cancel" context="dialog" onClick={closeDialog} disabled={busy} />
@@ -334,7 +304,7 @@ export function ChangePasswordAction({ onRotated }: { onRotated: (token: string)
               accessibleLabel={hasPassword ? "Update account password" : "Set account password"}
               loading={busy}
               onClick={() => void submit()}
-              disabled={(hasPassword && !current) || !next || !confirm}
+              disabled={!next || !confirm}
             />
           </div>
         </Dialog>
@@ -437,10 +407,6 @@ export function ExternalIdentitiesCard() {
   async function linkOAuth(identity: ExternalIdentityStatus) {
     if (identity.provider !== "google" && identity.provider !== "github") return;
     const label = identity.provider === "github" ? "GitHub" : "Google";
-    if (!identity.recent_authentication) {
-      toast.error(`Confirm your identity, then link ${label}.`);
-      return;
-    }
     setLinkingProvider(identity.provider);
     try {
       sessionStorage.setItem("cheers.oauth_redirect", "/settings/account");
@@ -471,7 +437,7 @@ export function ExternalIdentitiesCard() {
           severity="info"
           icon={Link2}
           className="mb-4"
-          action={requestedIdentity?.recent_authentication ? {
+          action={requestedIdentity ? {
             label: `Link ${requestedProvider === "github" ? "GitHub" : "Google"}`,
             onClick: () => void linkOAuth(requestedIdentity),
           } : undefined}
@@ -516,8 +482,7 @@ export function ExternalIdentitiesCard() {
                     {identity.linked ? identity.email || identity.display_name || "Linked" : "Not linked"}
                   </Badge>
                 )}
-                subtitle={!identity.recent_authentication ? "Sign in again to make changes" : undefined}
-                actions={identity.linked && identity.can_unlink && identity.recent_authentication ? (
+                actions={identity.linked && identity.can_unlink ? (
                   <ActionButton
                     action="unlink"
                     context="security"
@@ -527,7 +492,7 @@ export function ExternalIdentitiesCard() {
                     title={`Unlink ${label}`}
                     onClick={() => setUnlinkTarget(identity)}
                   />
-                ) : !identity.linked && identity.recent_authentication && (identity.provider === "google" || identity.provider === "github") ? (
+                ) : !identity.linked && (identity.provider === "google" || identity.provider === "github") ? (
                   <ActionButton
                     action="link"
                     context="security"
@@ -546,7 +511,7 @@ export function ExternalIdentitiesCard() {
       )}
       {identities.data?.some((identity) => !identity.recent_authentication) && (
         <Banner severity="warning" className="mt-4">
-          Sign in again to change your sign-in methods.
+          We may ask you to confirm your identity before changing sign-in methods.
         </Banner>
       )}
     </SettingsCardSection>

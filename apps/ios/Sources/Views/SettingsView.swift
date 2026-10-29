@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var showSwitchServerConfirm = false
     @State private var appleIdentity: ExternalIdentityStatusDto?
     @State private var googleIdentity: ExternalIdentityStatusDto?
+    @State private var githubIdentity: ExternalIdentityStatusDto?
 
     var body: some View {
         List {
@@ -101,17 +102,20 @@ struct SettingsView: View {
         guard let api = app.api else { return }
         async let apple = api.externalIdentityStatus(provider: "apple")
         async let google = api.externalIdentityStatus(provider: "google")
+        async let github = api.externalIdentityStatus(provider: "github")
         appleIdentity = try? await apple
         googleIdentity = try? await google
+        githubIdentity = try? await github
     }
 
     private var signInMethodsSummary: String {
         let linked = [
             appleIdentity?.linked == true ? "Apple" : nil,
             googleIdentity?.linked == true ? "Google" : nil,
+            githubIdentity?.linked == true ? "GitHub" : nil,
         ].compactMap { $0 }
         if linked.isEmpty {
-            return (appleIdentity == nil && googleIdentity == nil) ? "" : "None"
+            return (appleIdentity == nil && googleIdentity == nil && githubIdentity == nil) ? "" : "None"
         }
         return linked.joined(separator: ", ")
     }
@@ -237,7 +241,8 @@ struct SettingsView: View {
             NavigationLink {
                 SignInMethodsView(
                     appleIdentity: $appleIdentity,
-                    googleIdentity: $googleIdentity
+                    googleIdentity: $googleIdentity,
+                    githubIdentity: $githubIdentity
                 )
             } label: {
                 HStack {
@@ -255,7 +260,7 @@ struct SettingsView: View {
             .listRowBackground(Theme.bgSurface)
         } header: {
             sectionHeader("Account")
-                .helpExplanation("Link Apple or Google to sign in on other devices.")
+                .helpExplanation("Link Apple, Google, or GitHub to sign in on other devices.")
         }
     }
 
@@ -525,91 +530,62 @@ private struct ProfileEditSheet: View {
 private struct ChangePasswordSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-
-    @State private var currentPassword = ""
     @State private var newPassword = ""
     @State private var confirmation = ""
-    @State private var twoFactorCode = ""
-    @State private var twoFactorEnabled = false
+    @State private var hasPassword: Bool?
     @State private var isSaving = false
+    @State private var showIdentityConfirmation = false
     @State private var errorText: String?
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    SecureField("Current password", text: $currentPassword)
-                        .textContentType(.password)
                     SecureField("New password", text: $newPassword)
                         .textContentType(.newPassword)
                     SecureField("Confirm new password", text: $confirmation)
                         .textContentType(.newPassword)
                 } footer: {
-                    Text("Changing your password signs out other sessions. This device keeps its notification registration; other devices must sign in again.")
+                    Text("Use at least 12 characters. Other sessions will be signed out. We may ask you to confirm your identity before saving.")
                 }
-
-                if twoFactorEnabled {
-                    Section {
-                        TextField("Authenticator or backup code", text: $twoFactorCode)
-                            .textContentType(.oneTimeCode)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    } footer: {
-                        Text("Required because two-factor authentication is on.")
-                    }
-                }
-
-                if let errorText {
-                    Section {
-                        Text(errorText)
-                            .foregroundStyle(Theme.danger)
-                    }
-                }
+                if let errorText { Section { Text(errorText).foregroundStyle(Theme.danger) } }
             }
-            .navigationTitle("Change password")
+            .navigationTitle(hasPassword == false ? "Set password" : "Change password")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(isSaving) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(isSaving ? "Saving…" : "Save") {
-                        save()
-                    }
-                    .disabled(!canSave || isSaving)
+                    Button(isSaving ? "Saving…" : "Save", action: save)
+                        .disabled(hasPassword == nil || newPassword.count < 12 || newPassword != confirmation || isSaving)
                 }
             }
             .task {
-                twoFactorEnabled = (try? await app.api?.twoFactorStatus().enabled) ?? false
+                do {
+                    guard let api = app.api else { throw APIError.unauthorized }
+                    hasPassword = try await api.externalIdentityStatus(provider: "apple").hasPassword
+                } catch { errorText = error.localizedDescription }
+            }
+            .sheet(isPresented: $showIdentityConfirmation) {
+                IdentityConfirmationSheet {
+                    showIdentityConfirmation = false
+                    save()
+                }
             }
         }
     }
 
-    private var canSave: Bool {
-        let factorOk = !twoFactorEnabled || !twoFactorCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return !currentPassword.isEmpty && newPassword.count >= 12 && newPassword == confirmation && factorOk
-    }
-
     private func save() {
-        guard canSave, !isSaving else { return }
+        guard let hasPassword, !isSaving else { return }
         isSaving = true
         errorText = nil
         Task {
             defer { isSaving = false }
             do {
-                let code = twoFactorCode.trimmingCharacters(in: .whitespacesAndNewlines)
-                try await app.changePassword(
-                    currentPassword: currentPassword,
-                    newPassword: newPassword,
-                    twoFactorCode: twoFactorEnabled ? code : nil
-                )
+                try await app.changePassword(newPassword: newPassword, hasPassword: hasPassword)
                 dismiss()
-            } catch let error as APIError {
-                // Wrong password / 2FA code is also 401 — don't force a local sign-out.
-                errorText = error.errorDescription ?? "Could not change password."
-            } catch {
-                errorText = error.localizedDescription
-            }
+            } catch APIError.recentAuthenticationRequired {
+                showIdentityConfirmation = true
+            } catch { errorText = error.localizedDescription }
         }
     }
 }
@@ -620,6 +596,8 @@ private struct AppleAuthorizationControl: View {
     @State private var challenge: AppleChallenge?
     @State private var isBusy = false
     @State private var errorText: String?
+    @State private var pendingPayload: AppleAuthorizationPayload?
+    @State private var showIdentityConfirmation = false
 
     var body: some View {
         VStack(spacing: 8) {
@@ -639,6 +617,12 @@ private struct AppleAuthorizationControl: View {
             if let errorText { Text(errorText).font(.caption).foregroundStyle(Theme.danger) }
         }
         .task { await reload() }
+        .sheet(isPresented: $showIdentityConfirmation) {
+            IdentityConfirmationSheet {
+                showIdentityConfirmation = false
+                if let payload = pendingPayload { submit(payload) }
+            }
+        }
     }
 
     private func reload() async {
@@ -667,13 +651,163 @@ private struct AppleAuthorizationControl: View {
             familyName: credential.fullName?.familyName,
             inviteToken: nil
         )
+        submit(payload)
+    }
+
+    private func submit(_ payload: AppleAuthorizationPayload) {
         isBusy = true
         errorText = nil
         Task {
             defer { isBusy = false }
             do { try await perform(payload) }
+            catch APIError.recentAuthenticationRequired {
+                pendingPayload = payload
+                showIdentityConfirmation = true
+            }
             catch { errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription }
             await reload()
+        }
+    }
+}
+
+/// Reauthenticates the current session, preserving the form and the original
+/// action. Available methods come from the server, including Passkeys.
+struct IdentityConfirmationSheet: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    let onVerified: () -> Void
+    @State private var flow: IdentityConfirmationFlow?
+    @State private var method = ""
+    @State private var value = ""
+    @State private var emailSent = false
+    @State private var busy = false
+    @State private var verified = false
+    @State private var errorText: String?
+    @State private var passkeyController = PasskeyController()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Confirm your identity to continue. Your current work stays open.")
+                    if let flow {
+                        ForEach(flow.methods ?? [], id: \.self) { candidate in
+                            Button(label(candidate)) {
+                                value = ""
+                                emailSent = false
+                                method = candidate
+                                if candidate == "passkey" { usePasskey() }
+                            }.disabled(busy)
+                        }
+                    } else {
+                        ProgressView()
+                    }
+                }
+                if !method.isEmpty && method != "passkey" {
+                    Section(label(method)) {
+                        if method == "email" && !emailSent {
+                            Button("Send verification code", action: sendEmail).disabled(busy)
+                        } else {
+                            if method == "password" {
+                                SecureField("Password", text: $value).textContentType(.password)
+                            } else {
+                                TextField("Verification or recovery code", text: $value)
+                                    .textContentType(.oneTimeCode)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                            }
+                            Button("Continue", action: confirm).disabled(value.isEmpty || busy)
+                        }
+                    }
+                }
+                if let errorText { Section { Text(errorText).foregroundStyle(Theme.danger) } }
+            }
+            .navigationTitle("Confirm it's you")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) }
+            }
+            .interactiveDismissDisabled(busy)
+            .task {
+                do {
+                    guard let api = app.api else { throw APIError.unauthorized }
+                    flow = try await api.startIdentityConfirmation()
+                } catch { errorText = error.localizedDescription }
+            }
+            .onDisappear {
+                if !verified, let flow, let api = app.api {
+                    Task { try? await api.cancelIdentityConfirmation(transactionId: flow.transactionId) }
+                }
+            }
+        }
+    }
+
+    private func label(_ method: String) -> String {
+        switch method {
+        case "password": return "Password"
+        case "email": return "Email code"
+        case "totp": return "Authenticator app"
+        case "passkey": return "Passkey"
+        case "recovery_code": return "Recovery code"
+        default: return method
+        }
+    }
+
+    private func accept(_ response: IdentityConfirmationFlow) {
+        if response.status == "verified" {
+            verified = true
+            onVerified()
+        } else {
+            flow = response
+            method = ""
+            value = ""
+            emailSent = false
+        }
+    }
+
+    private func confirm() {
+        guard let flow, let api = app.api, !busy else { return }
+        busy = true
+        errorText = nil
+        Task {
+            defer { busy = false }
+            do { accept(try await api.confirmIdentity(transactionId: flow.transactionId, method: method, value: value)) }
+            catch { errorText = error.localizedDescription }
+        }
+    }
+
+    private func sendEmail() {
+        guard let flow, let api = app.api, !busy else { return }
+        busy = true
+        errorText = nil
+        Task {
+            defer { busy = false }
+            do {
+                try await api.sendIdentityConfirmationEmail(transactionId: flow.transactionId)
+                emailSent = true
+            } catch { errorText = error.localizedDescription }
+        }
+    }
+
+    private func usePasskey() {
+        guard let flow, let api = app.api, !busy else { return }
+        busy = true
+        errorText = nil
+        Task {
+            defer { busy = false }
+            do {
+                let options = try await api.identityConfirmationPasskeyOptions(transactionId: flow.transactionId)
+                let rpId = options.rpId ?? options.publicKey.rpId ?? ""
+                guard !rpId.isEmpty else { throw PasskeyError.invalidChallenge }
+                let assertion = try await passkeyController.assert(
+                    rpId: rpId,
+                    challenge: PasskeyCodec.decodeBase64URL(options.publicKey.challenge),
+                    allowedCredentialIds: (options.publicKey.allowCredentials ?? []).map { try PasskeyCodec.decodeBase64URL($0.id) }
+                )
+                accept(try await api.confirmIdentityPasskey(transactionId: flow.transactionId,
+                    credential: PasskeyCodec.assertionCredentialJSON(assertion)))
+            } catch PasskeyError.cancelled { method = "" }
+            catch { errorText = error.localizedDescription }
         }
     }
 }
@@ -682,13 +816,14 @@ private struct SignInMethodsView: View {
     @Environment(AppModel.self) private var app
     @Binding var appleIdentity: ExternalIdentityStatusDto?
     @Binding var googleIdentity: ExternalIdentityStatusDto?
+    @Binding var githubIdentity: ExternalIdentityStatusDto?
 
-    @State private var newPassword = ""
-    @State private var confirmation = ""
+    @State private var showIdentityConfirmation = false
+    @State private var retryAction: (() -> Void)?
     @State private var errorText: String?
     @State private var busyProvider: String?
     @State private var isLoading = false
-    @State private var googleOAuth = GoogleOAuthSession()
+    @State private var oauthSession = OAuthSession()
 
     var body: some View {
         List {
@@ -705,14 +840,20 @@ private struct SignInMethodsView: View {
                     systemImage: "g.circle",
                     status: googleIdentity
                 )
+                providerRow(
+                    provider: "github",
+                    title: "GitHub",
+                    systemImage: "chevron.left.forwardslash.chevron.right",
+                    status: githubIdentity
+                )
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Removing a provider signs out other sessions and removes trusted devices.")
                     if unlinkBlockedByMissingMethod {
-                        Text("Add another sign-in method (password, Apple, Google, or passkey) before unlinking.")
+                        Text("Add another sign-in method (password, Apple, Google, GitHub, or passkey) before unlinking.")
                     }
                     if needsRecentAuthReminder {
-                        Text("Sign in again (within the last 5 minutes) before linking or unlinking.")
+                        Text("We may ask you to confirm your identity before making changes.")
                             .foregroundStyle(Theme.warning)
                     }
                 }
@@ -728,47 +869,18 @@ private struct SignInMethodsView: View {
                         try await api.linkApple(payload)
                         await load()
                     }
-                    .disabled(busyProvider != nil || !(appleIdentity?.recentAuthentication ?? false))
-                    .opacity((appleIdentity?.recentAuthentication ?? false) ? 1 : 0.55)
+                    .disabled(busyProvider != nil)
                 } header: {
                     Text("Link Apple")
                         .helpExplanation("Authenticate both your current Cheers session and Apple account. Matching email addresses are never linked automatically.")
                 } footer: {
                     if appleIdentity?.recentAuthentication == false {
-                        Text("Sign in again (within the last 5 minutes), then link Apple.")
+                        Text("Confirm your identity when asked to link Apple.")
                     }
                 }
             }
 
-            if let apple = appleIdentity, apple.linked, !apple.hasPassword {
-                Section {
-                    SecureField("New password", text: $newPassword)
-                        .textContentType(.newPassword)
-                    SecureField("Confirm password", text: $confirmation)
-                        .textContentType(.newPassword)
-                    if !newPassword.isEmpty && newPassword.count < 12 {
-                        Text("Use at least 12 characters.")
-                            .foregroundStyle(Theme.danger)
-                    }
-                    AppleAuthorizationControl { payload in
-                        guard newPassword.count >= 12, newPassword == confirmation else {
-                            throw APIError.http(
-                                status: 400,
-                                detail: "Passwords must match and contain at least 12 characters."
-                            )
-                        }
-                        guard let api = app.api else { throw APIError.unauthorized }
-                        try await api.setPassword(newPassword, apple: payload)
-                        newPassword = ""
-                        confirmation = ""
-                        await load()
-                    }
-                } header: {
-                    Text("Add a password for Web sign-in")
-                }
-            }
-
-            if isLoading && appleIdentity == nil && googleIdentity == nil {
+            if isLoading && appleIdentity == nil && googleIdentity == nil && githubIdentity == nil {
                 Section {
                     ProgressView()
                         .frame(maxWidth: .infinity)
@@ -787,14 +899,22 @@ private struct SignInMethodsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showIdentityConfirmation) {
+            IdentityConfirmationSheet {
+                showIdentityConfirmation = false
+                let action = retryAction
+                retryAction = nil
+                action?()
+            }
+        }
     }
 
     private var needsRecentAuthReminder: Bool {
-        [appleIdentity, googleIdentity].compactMap { $0 }.contains { !$0.recentAuthentication }
+        [appleIdentity, googleIdentity, githubIdentity].compactMap { $0 }.contains { !$0.recentAuthentication }
     }
 
     private var unlinkBlockedByMissingMethod: Bool {
-        [appleIdentity, googleIdentity].compactMap { $0 }.contains { $0.linked && !$0.canUnlink }
+        [appleIdentity, googleIdentity, githubIdentity].compactMap { $0 }.contains { $0.linked && !$0.canUnlink }
     }
 
     @ViewBuilder
@@ -836,19 +956,19 @@ private struct SignInMethodsView: View {
             Button("Unlink", role: .destructive) {
                 Task { await unlink(provider: provider) }
             }
-            .disabled(busyProvider != nil || !status.canUnlink || !status.recentAuthentication)
+            .disabled(busyProvider != nil || !status.canUnlink)
             .accessibilityHint(unlinkHint(for: status))
-        } else if provider == "google" {
+        } else if provider == "google" || provider == "github" {
             Button {
-                Task { await linkGoogle() }
+                Task { await linkOAuth(provider: provider) }
             } label: {
-                if busyProvider == "google" {
+                if busyProvider == provider {
                     ProgressView().controlSize(.small)
                 } else {
                     Text("Link")
                 }
             }
-            .disabled(busyProvider != nil || !status.recentAuthentication)
+            .disabled(busyProvider != nil)
         }
         // Apple link uses SignInWithAppleButton in the dedicated section below.
     }
@@ -868,7 +988,7 @@ private struct SignInMethodsView: View {
             return "Add another sign-in method first"
         }
         if !status.recentAuthentication {
-            return "Sign in again to make this change"
+            return "Confirm your identity when asked to make this change"
         }
         return "Unlink this provider"
     }
@@ -880,8 +1000,10 @@ private struct SignInMethodsView: View {
         do {
             async let apple = api.externalIdentityStatus(provider: "apple")
             async let google = api.externalIdentityStatus(provider: "google")
+            async let github = api.externalIdentityStatus(provider: "github")
             appleIdentity = try await apple
             googleIdentity = try await google
+            githubIdentity = try await github
             errorText = nil
         } catch {
             errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
@@ -894,35 +1016,41 @@ private struct SignInMethodsView: View {
         do {
             try await app.api?.unlinkExternalIdentity(provider: provider)
             await load()
+        } catch APIError.recentAuthenticationRequired {
+            retryAction = { Task { await unlink(provider: provider) } }
+            showIdentityConfirmation = true
         } catch {
             errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    private func linkGoogle() async {
-        busyProvider = "google"
+    private func linkOAuth(provider: String) async {
+        busyProvider = provider
         defer { busyProvider = nil }
         do {
             guard let api = app.api else { throw APIError.unauthorized }
             let started = try await api.startExternalIdentityOAuthLink(
-                provider: "google",
+                provider: provider,
                 deviceName: UIDevice.current.name
             )
             guard let url = URL(string: started.authorizationURL) else {
-                throw APIError.http(status: 500, detail: "Invalid Google authorization URL.")
+                throw APIError.http(status: 500, detail: "Invalid authorization URL.")
             }
-            let callback = try await googleOAuth.authenticate(authorizationURL: url)
+            let callback = try await oauthSession.authenticate(authorizationURL: url)
             guard let comps = URLComponents(url: callback, resolvingAgainstBaseURL: false) else {
-                throw APIError.http(status: 401, detail: "Google link did not return a callback.")
+                throw APIError.http(status: 401, detail: "Sign-in method did not return a callback.")
             }
             if let err = comps.queryItems?.first(where: { $0.name == "error" })?.value {
                 throw APIError.http(status: 401, detail: err)
             }
-            guard comps.queryItems?.first(where: { $0.name == "linked" })?.value == "google" else {
-                throw APIError.http(status: 401, detail: "Google link did not complete.")
+            guard comps.queryItems?.first(where: { $0.name == "linked" })?.value == provider else {
+                throw APIError.http(status: 401, detail: "Sign-in method link did not complete.")
             }
             await load()
-        } catch let oauthError as GoogleOAuthError {
+        } catch APIError.recentAuthenticationRequired {
+            retryAction = { Task { await linkOAuth(provider: provider) } }
+            showIdentityConfirmation = true
+        } catch let oauthError as OAuthError {
             if case .cancelled = oauthError { return }
             errorText = oauthError.localizedDescription
         } catch {

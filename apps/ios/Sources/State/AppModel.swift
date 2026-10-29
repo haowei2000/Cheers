@@ -201,9 +201,9 @@ final class AppModel {
         )
     }
 
-    /// Exchanges the `cheers://` handoff code from Google OAuth for a session.
+    /// Exchanges the `cheers://` handoff code from provider OAuth for a session.
     @discardableResult
-    func completeGoogleOAuth(server: String, callbackURL: URL) async throws -> FactorChallenge? {
+    func completeOAuth(server: String, callbackURL: URL) async throws -> FactorChallenge? {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
         guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
@@ -213,7 +213,7 @@ final class AppModel {
                 .queryItems?.first(where: { $0.name == "error" })?.value {
                 throw APIError.http(status: 401, detail: err)
             }
-            throw APIError.http(status: 401, detail: "Google sign-in did not return a code.")
+            throw APIError.http(status: 401, detail: "Sign-in did not return a code.")
         }
         let response = try await APIClient(baseURL: base, token: nil)
             .exchangeOAuthHandoff(
@@ -224,15 +224,15 @@ final class AppModel {
         return try finishLoginOrChallenge(base: base, response: response)
     }
 
-    func startGoogleOAuth(server: String, deviceName: String?) async throws -> URL {
+    func startOAuth(provider: String, server: String, deviceName: String?) async throws -> URL {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
         let started = try await APIClient(baseURL: base, token: nil).startOAuth(
-            provider: "google",
+            provider: provider,
             client: "ios",
             deviceName: deviceName
         )
         guard let url = URL(string: started.authorizationURL) else {
-            throw APIError.http(status: 500, detail: "Invalid Google authorization URL.")
+            throw APIError.http(status: 500, detail: "Invalid authorization URL.")
         }
         return url
     }
@@ -388,19 +388,21 @@ final class AppModel {
         clearSession(forgetDevice: true)
     }
 
-    /// Changes the password and replaces the locally held token. The gateway
-    /// revokes every older session and push registration as part of this flow.
+    /// Changes the password and replaces the access token while retaining this
+    /// session's refresh credential. Other sessions and trusted devices are revoked.
     func changePassword(
-        currentPassword: String,
+        currentPassword: String? = nil,
         newPassword: String,
-        twoFactorCode: String? = nil
+        twoFactorCode: String? = nil,
+        hasPassword: Bool = true
     ) async throws {
         guard let api else { throw APIError.unauthorized }
-        let response = try await api.changePassword(
-            currentPassword: currentPassword,
-            newPassword: newPassword,
-            twoFactorCode: twoFactorCode
-        )
+        let response: ChangePasswordResponse
+        if hasPassword {
+            response = try await api.changePassword(currentPassword: currentPassword, newPassword: newPassword, twoFactorCode: twoFactorCode)
+        } else {
+            response = try await api.setInitialPassword(newPassword)
+        }
         token = response.accessToken
         _ = KeychainStore.set(response.accessToken, for: Keys.token)
         socket.disconnect()

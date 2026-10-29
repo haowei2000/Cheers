@@ -599,7 +599,7 @@ async fn complete_callback(
         return Ok(oauth_return_redirect(target, "linked", provider).into_response());
     }
 
-    let user_id = resolve_identity(
+    let user_id = match resolve_identity(
         state,
         provider,
         &subject,
@@ -607,7 +607,27 @@ async fn complete_callback(
         name.as_deref(),
         context["invite_token"].as_str(),
     )
-    .await?;
+    .await
+    {
+        Ok(user_id) => user_id,
+        Err(AppError::Conflict(payload))
+            if serde_json::from_str::<Value>(&payload)
+                .is_ok_and(|error| error["code"] == "account_link_required") =>
+        {
+            // Return through the same one-time handoff as successful OAuth.
+            // A raw 409 here strands the browser at the provider callback and
+            // never reaches the frontend's account-link recovery UI.
+            let handoff = random_url_secret()?;
+            sqlx::query!("UPDATE auth_transactions SET status='verified', consumed_at=NULL,
+                handoff_code_hash=$2, context_json=context_json || jsonb_build_object('account_link_required', $3::text),
+                updated_at=NOW() WHERE transaction_id=$1 AND status='consumed'",
+                &transaction_id, crypto::sha256_hex(&handoff), provider)
+                .execute(&state.db).await?;
+            let target = context["return_uri"].as_str().unwrap_or(&return_uri);
+            return Ok(oauth_return_redirect(target, "code", &handoff).into_response());
+        }
+        Err(error) => return Err(error),
+    };
     if provider == "apple" {
         if let Some(token) = refresh_token.as_deref() {
             persist_apple_refresh_token(state, &subject, &user_id, token).await?;
@@ -1050,7 +1070,6 @@ async fn resolve_identity(
         }
         return Ok(user_id);
     }
-    auth::ensure_may_register(state, invite_token).await?;
     if let Some(email) = email.map(str::trim).filter(|v| !v.is_empty()) {
         if sqlx::query!(
                 "SELECT 1 AS present FROM users WHERE lower(email) = lower($1) AND is_deleted = FALSE LIMIT 1",
@@ -1062,6 +1081,7 @@ async fn resolve_identity(
             return Err(account_link_required(provider));
         }
     }
+    auth::ensure_may_register(state, invite_token).await?;
     let user_id = Uuid::new_v4().to_string();
     let identity_id = Uuid::new_v4().to_string();
     let username = format!(
@@ -1166,6 +1186,9 @@ pub async fn handoff(
         ));
     };
     tx.commit().await?;
+    if let Some(provider) = row.context_json["account_link_required"].as_str() {
+        return Err(account_link_required(provider));
+    }
     let transaction_id: String = row.transaction_id.clone();
     let user_id: String = row
         .user_id
