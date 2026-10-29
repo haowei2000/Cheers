@@ -267,6 +267,9 @@ pub struct SessionUpdatePolicy {
 
 #[derive(Debug, Clone)]
 pub struct McpPolicy {
+    /// Serve the Cheers MCP endpoint through the connector's loopback
+    /// credential gateway instead of injecting the bearer into `mcpServers`.
+    pub credential_gateway: bool,
     pub backend_may_inject_extra_servers: bool,
     pub allowed_servers: Vec<String>,
     pub servers: Value,
@@ -631,6 +634,8 @@ struct RawMcpPolicy {
     #[serde(rename = "inject_cheers")]
     _inject_cheers: bool,
     #[serde(default)]
+    credential_gateway: bool,
+    #[serde(default)]
     backend_may_inject_extra_servers: bool,
     #[serde(default)]
     allowed_servers: Vec<String>,
@@ -642,6 +647,7 @@ impl Default for RawMcpPolicy {
     fn default() -> Self {
         Self {
             _inject_cheers: false,
+            credential_gateway: false,
             backend_may_inject_extra_servers: false,
             allowed_servers: Vec::new(),
             servers: Vec::new(),
@@ -918,6 +924,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             include_metadata: raw.session_update.include_metadata,
         },
         mcp: McpPolicy {
+            credential_gateway: raw.mcp.credential_gateway,
             backend_may_inject_extra_servers: raw.mcp.backend_may_inject_extra_servers,
             allowed_servers: raw.mcp.allowed_servers,
             servers: mcp_servers,
@@ -1382,6 +1389,9 @@ include_metadata = false
 
 [accounts.local.policy.loopback]
 request_timeout_ms = 666000
+
+[accounts.local.policy.mcp]
+credential_gateway = true
 "#,
                 std::env::current_exe().unwrap().display(),
                 workspace.display(),
@@ -1451,6 +1461,7 @@ request_timeout_ms = 666000
         );
         assert_eq!(account.policy.trace.max_message_bytes, 888);
         assert!(!account.policy.session_update.include_metadata);
+        assert!(account.policy.mcp.credential_gateway);
     }
 
     #[tokio::test]

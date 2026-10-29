@@ -54,6 +54,7 @@ use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
     PermissionTimeoutAction, PromptPolicy,
 };
+use crate::credential_gateway::CredentialGateway;
 use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
     PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
@@ -201,6 +202,33 @@ impl AccountRuntime {
                 None
             }
         };
+        // Opt-in (policy.mcp.credential_gateway): the Agent gets a loopback URL and
+        // a stable local secret instead of the bearer, so token rotation never
+        // depends on the Agent re-reading headers. If the listener cannot start,
+        // keep header injection rather than dropping Cheers MCP for this run.
+        let credential_gateway = match (&mcp_token, self.config.policy.mcp.credential_gateway) {
+            (Some(tokens), true) => {
+                match CredentialGateway::start(mcp_url.clone(), tokens.clone()).await {
+                    Ok(gateway) => {
+                        tracing::info!(
+                            account = %self.account_id,
+                            local_url = gateway.local_url(),
+                            "MCP credential gateway listening"
+                        );
+                        Some(Arc::new(gateway))
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            account = %self.account_id,
+                            error = %error,
+                            "MCP credential gateway did not start; injecting the bearer instead"
+                        );
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
         // Capture the bot's own identity from the hello before `spawn_bridge_io`
         // consumes the session — it's injected into every prompt (see build_prompt).
         let identity = {
@@ -265,6 +293,7 @@ impl AccountRuntime {
             identity,
             mcp_url,
             mcp_token,
+            credential_gateway,
             state: self.state,
             adapter,
             io,
@@ -598,6 +627,9 @@ struct RuntimeContext {
     /// `None` when this Gateway cannot provide the host identity required to
     /// mint a scoped token; in that case the endpoint is not exposed to Agents.
     mcp_token: Option<Arc<McpTokenProvider>>,
+    /// Loopback pass-through that holds the bearer on the Agent's behalf. When
+    /// set, the Agent is handed its URL and a local secret, never the token.
+    credential_gateway: Option<Arc<CredentialGateway>>,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
@@ -3088,6 +3120,15 @@ impl RuntimeContext {
             );
             return Value::Array(servers);
         };
+        if let Some(gateway) = self.credential_gateway.as_ref() {
+            let secret = gateway.secret_for(&task.channel_id).await;
+            servers.push(native_cheers_mcp_server(
+                &task.channel_id,
+                gateway.local_url(),
+                &secret,
+            ));
+            return Value::Array(servers);
+        }
         let bearer = match provider.bearer(&task.channel_id).await {
             Ok(token) => token,
             Err(error) => {
@@ -4062,6 +4103,7 @@ max_concurrent = {max_concurrent}
             identity: test_identity(),
             mcp_url: "https://example.invalid/mcp".to_string(),
             mcp_token: None,
+            credential_gateway: None,
             state: Arc::new(Mutex::new(SessionStateStore::new(dir.join("state.json")))),
             adapter: Arc::new(Mutex::new(adapter)),
             io: handle,

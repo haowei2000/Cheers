@@ -160,6 +160,13 @@ impl McpTokenProvider {
         Ok(value)
     }
 
+    /// Drops the cached token for `channel_id`, so the next [`Self::bearer`]
+    /// mints a fresh one. Called when the Gateway rejects a cached token
+    /// before its renewal point (host credential rotated, token revoked).
+    pub(crate) async fn invalidate(&self, channel_id: &str) {
+        self.cached.lock().await.remove(channel_id);
+    }
+
     /// Performs the `client_credentials` exchange against the discovered
     /// token endpoint.
     async fn mint(&self, channel_id: &str) -> anyhow::Result<CachedToken> {
