@@ -148,6 +148,30 @@ pub async fn open_dm(
 }
 
 /// Compatibility wrapper for existing human REST callers and integration tests.
+/// The 1:1 DM between `bot_id` and the user who owns it, if one exists. The
+/// status-refresh prompt runs there (`api::bots::refresh_bot_status` and the
+/// status scheduler), so it is the one channel that may write the bot-wide
+/// status card.
+pub async fn owner_dm_channel(db: &PgPool, bot_id: Uuid) -> Result<Option<Uuid>, AppError> {
+    let owner = sqlx::query!(
+        "SELECT created_by FROM bot_accounts WHERE bot_id = $1",
+        bot_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .and_then(|row| row.created_by)
+    .and_then(|owner| Uuid::parse_str(&owner).ok());
+    let Some(owner) = owner else {
+        return Ok(None);
+    };
+    find_by_key(
+        db,
+        &dm_key(Participant::User(owner), Participant::Bot(bot_id))?,
+    )
+    .await
+}
+
 pub async fn find_or_create_dm(
     db: &PgPool,
     me: Uuid,
