@@ -652,3 +652,21 @@ export async function updateBotSocialPolicy(
     body: JSON.stringify(policy),
   });
 }
+
+/** Whether the bot's MCP calls on a person's task are limited to that person's
+ *  channel role (docs/arch/MCP_AUTH_ISOLATION.md §5). On by default. */
+export interface BotMcpPolicy {
+  bot_id: string;
+  narrow_to_sender: boolean;
+}
+
+export async function getBotMcpPolicy(botId: string): Promise<BotMcpPolicy> {
+  return apiJson<BotMcpPolicy>(`/bots/${botId}/mcp-policy`);
+}
+
+export async function updateBotMcpPolicy(botId: string, narrowToSender: boolean): Promise<BotMcpPolicy> {
+  return apiJson<BotMcpPolicy>(`/bots/${botId}/mcp-policy`, {
+    method: "PUT",
+    body: JSON.stringify({ narrow_to_sender: narrowToSender }),
+  });
+}

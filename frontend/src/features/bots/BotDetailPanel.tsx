@@ -45,6 +45,7 @@ import { cn } from "@/lib/cn";
 import { messageOf } from "@/lib/notify";
 import { HostItem } from "./HostItem";
 import { BotPostureSection } from "./BotPostureSection";
+import { BotMcpPolicySection } from "./BotMcpPolicySection";
 import { BotSocialAccessSection } from "./BotSocialAccessSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
 import { BotToBotGrantsSection } from "./BotToBotGrantsSection";
@@ -254,6 +255,7 @@ export function BotDetailPanel({
         {tab === "agent" && (
           <div className="space-y-6">
             <BotPostureSection botId={bot.bot_id} />
+            {bot.can_manage && <BotMcpPolicySection botId={bot.bot_id} />}
             <BotPermissionGrantsSection botId={bot.bot_id} />
             <BotToBotGrantsSection botId={bot.bot_id} />
           </div>
