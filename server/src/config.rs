@@ -170,9 +170,6 @@ pub struct Config {
     /// Canonical externally visible MCP protected-resource URL, including
     /// `/mcp`. Token audience binding and RFC 9728 metadata use this exact URL.
     pub mcp_public_url: Option<String>,
-    /// How strictly an MCP call must stay inside the channel its token was
-    /// minted for (`MCP_CHANNEL_SCOPE`: off | warn | enforce).
-    pub mcp_channel_scope: McpChannelScope,
     /// MCP delivery modes connectors may use (`MCP_ALLOWED_DELIVERY_MODES`,
     /// comma-separated `acp,direct,gateway`; unset = all). Leaving out
     /// `direct` keeps real tokens out of Agent processes
@@ -319,35 +316,16 @@ pub struct Config {
     pub task_claims_enabled: bool,
 }
 
-/// How strictly the MCP endpoint holds a call to the channel its token names.
-///
-/// A bot works in many channels at once through one agent process, and the
-/// channel an MCP call acts on arrives as a model-supplied argument. A token
-/// minted for one channel is the only per-turn thing the transport carries, so
-/// this decides what happens when a call names a different one.
-///
-/// Channel scoping is enforced by default. `Warn` and `Off` remain explicit
-/// rollout overrides for deployments that need to migrate legacy clients.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum McpChannelScope {
-    /// Never check. The pre-existing behaviour.
-    Off,
-    /// Check and log, allow either way. Explicit compatibility mode only.
-    Warn,
-    /// Refuse a call that leaves its token's channel, and refuse a token that
-    /// names no channel at all.
-    #[default]
-    Enforce,
-}
-
-impl McpChannelScope {
-    fn from_env_value(raw: Option<&str>) -> Self {
-        match raw.map(str::trim).unwrap_or_default() {
-            "off" => Self::Off,
-            "" | "enforce" => Self::Enforce,
-            "warn" => Self::Warn,
-            other => panic!("MCP_CHANNEL_SCOPE must be off, warn or enforce (got {other:?})"),
-        }
+/// `MCP_CHANNEL_SCOPE` used to select off / warn / enforce. Channel scoping is
+/// now always enforced; `enforce` is still accepted for one release so existing
+/// deployments keep booting, and `off` / `warn` stop startup instead of being
+/// silently ignored. Remove this check (and the variable) in the next release.
+fn reject_removed_mcp_channel_scope(raw: Option<&str>) {
+    match raw.map(str::trim).unwrap_or_default() {
+        "" | "enforce" => {}
+        other => panic!(
+            "MCP_CHANNEL_SCOPE={other:?} was removed: MCP channel scoping is always enforced; unset MCP_CHANNEL_SCOPE"
+        ),
     }
 }
 
@@ -383,6 +361,7 @@ impl Config {
     /// 从环境变量读取配置，缺少必填项时 panic（启动时快速失败）。
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();
+        reject_removed_mcp_channel_scope(optional("MCP_CHANNEL_SCOPE").as_deref());
 
         // Fail fast on the JWT keypair: read AND parse both PEMs here, before
         // anything binds the listener, so `helm install` / `docker compose up`
@@ -542,9 +521,6 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
             mcp_public_url,
-            mcp_channel_scope: McpChannelScope::from_env_value(
-                optional("MCP_CHANNEL_SCOPE").as_deref(),
-            ),
             mcp_allowed_delivery_modes: parse_mcp_allowed_delivery_modes(
                 optional("MCP_ALLOWED_DELIVERY_MODES").as_deref(),
             ),
@@ -924,20 +900,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mcp_channel_scope_defaults_to_enforce() {
-        assert_eq!(McpChannelScope::default(), McpChannelScope::Enforce);
-        assert_eq!(
-            McpChannelScope::from_env_value(None),
-            McpChannelScope::Enforce
-        );
-        assert_eq!(
-            McpChannelScope::from_env_value(Some("warn")),
-            McpChannelScope::Warn
-        );
-        assert_eq!(
-            McpChannelScope::from_env_value(Some("off")),
-            McpChannelScope::Off
-        );
+    fn mcp_channel_scope_accepts_only_enforce_or_unset() {
+        reject_removed_mcp_channel_scope(None);
+        reject_removed_mcp_channel_scope(Some(" enforce "));
+        for removed in ["off", "warn"] {
+            let result =
+                std::panic::catch_unwind(|| reject_removed_mcp_channel_scope(Some(removed)));
+            assert!(result.is_err(), "{removed} must stop startup");
+        }
     }
 
     #[test]

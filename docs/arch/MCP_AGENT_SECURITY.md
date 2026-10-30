@@ -2,6 +2,8 @@
 
 > 配套：[ACP_INTEGRATION](./ACP_INTEGRATION.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [BOT_PERMISSION](./BOT_PERMISSION.md)
 
+> ⚠️ SUPERSEDED（§1–§2）：stdio sidecar 拓扑已被原生 HTTP MCP（`POST /mcp`）取代，当前认证与隔离设计见 [MCP_AUTH_ISOLATION](./MCP_AUTH_ISOLATION.md)。
+
 本文描述 `cheers-mcp-server` 的运行拓扑，以及"权限边界在 connector 层"这一核心设计原则。
 
 ---
