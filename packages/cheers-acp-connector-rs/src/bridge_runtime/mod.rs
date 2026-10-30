@@ -57,6 +57,7 @@ use crate::config::{
 };
 use crate::credential_gateway::{bypass_proxy_for_loopback, CredentialGateway};
 use crate::mcp_delivery;
+use crate::mcp_over_acp::{self, AcpMcpServer};
 use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
     PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
@@ -192,6 +193,7 @@ impl AccountRuntime {
                     .as_ref()
                     .and_then(|caps| caps.mcp_allowed_modes.as_deref()),
                 gateway_bound: bound.is_some(),
+                agent_acp: mcp_over_acp::agent_supports_acp(&initialize_response),
                 agent: &agent,
                 header_refresh,
             })?;
@@ -284,6 +286,15 @@ impl AccountRuntime {
             }
             _ => None,
         };
+        // Acp delivery: the Agent sends MCP back over the ACP connection, and
+        // the connector forwards it with the real bearer.
+        let mcp_over_acp = match (&mcp_token, mcp_delivery.mode) {
+            (Some(tokens), McpDeliveryMode::Acp) => Some(Arc::new(AcpMcpServer::new(
+                mcp_url.clone(),
+                tokens.clone(),
+            )?)),
+            _ => None,
+        };
         // Capture the bot's own identity from the hello before `spawn_bridge_io`
         // consumes the session — it's injected into every prompt (see build_prompt).
         let identity = {
@@ -349,6 +360,7 @@ impl AccountRuntime {
             mcp_url,
             mcp_token,
             credential_gateway,
+            mcp_over_acp,
             mcp_delivery,
             agent,
             direct_test: Mutex::new(DirectTest::default()),
@@ -690,6 +702,9 @@ struct RuntimeContext {
     /// Loopback pass-through that holds the bearer on the Agent's behalf. When
     /// set, the Agent is handed its URL and a local secret, never the token.
     credential_gateway: Option<Arc<CredentialGateway>>,
+    /// Serves Cheers MCP over the ACP connection (`mcp/message`). When set,
+    /// the Agent is handed an `acp` server entry, never a URL or token.
+    mcp_over_acp: Option<Arc<AcpMcpServer>>,
     /// How this Agent process reaches Cheers MCP; fixed for its lifetime.
     mcp_delivery: mcp_delivery::Decision,
     /// `name@version` of the Agent, the key for cached MCP facts.
@@ -2239,6 +2254,21 @@ impl RuntimeContext {
                     }
                 });
             }
+            RuntimeEvent::McpMessage { params, respond_to } => {
+                let server = self.mcp_over_acp.clone();
+                tokio::spawn(async move {
+                    let outcome = match server {
+                        Some(server) => server.handle(&params).await,
+                        None => Err(mcp_over_acp::EnvelopeError {
+                            code: -32601,
+                            message:
+                                "this connector does not serve Cheers MCP over ACP for this Agent"
+                                    .into(),
+                        }),
+                    };
+                    let _ = respond_to.send(outcome);
+                });
+            }
             RuntimeEvent::ElicitationComplete { elicitation_id } => {
                 self.io
                     .send_data(DataOutbound::ElicitationComplete {
@@ -3311,6 +3341,14 @@ impl RuntimeContext {
             .filter(|_| self.mcp_delivery.bind_tasks)
             .map(|execution| execution.execution_id.as_str());
         provider.retain_execution(&task.channel_id, execution).await;
+        if let Some(server) = self.mcp_over_acp.as_ref() {
+            server.bind_execution(&task.channel_id, execution).await;
+            servers.push(mcp_over_acp::server_entry(
+                &cheers_mcp_server_name(&task.channel_id),
+                &task.channel_id,
+            ));
+            return Value::Array(servers);
+        }
         if let Some(gateway) = self.credential_gateway.as_ref() {
             gateway.bind_execution(&task.channel_id, execution).await;
             let secret = gateway.secret_for(&task.channel_id).await;
@@ -4341,6 +4379,21 @@ max_concurrent = {max_concurrent}
         watch::Sender<Option<PromptOutcome>>,
         RuntimeTaps,
     ) {
+        fixture_runtime_with(dir, gate, max_concurrent, |_| {}).await
+    }
+
+    /// [`fixture_runtime`], with `customize` applied before the context is shared.
+    async fn fixture_runtime_with(
+        dir: &std::path::Path,
+        gate: PromptGate,
+        max_concurrent: usize,
+        customize: impl FnOnce(&mut RuntimeContext),
+    ) -> (
+        Arc<RuntimeContext>,
+        Arc<Semaphore>,
+        watch::Sender<Option<PromptOutcome>>,
+        RuntimeTaps,
+    ) {
         let (release, release_rx) = watch::channel(None);
         let started = Arc::new(Semaphore::new(0));
         let prompt_client = Arc::new(GatedPromptClient {
@@ -4372,7 +4425,7 @@ max_concurrent = {max_concurrent}
             config.policy.prompt.max_concurrent,
             &config.agent,
         ));
-        let context = Arc::new(RuntimeContext {
+        let mut context = RuntimeContext {
             account_id: "test".to_string(),
             host_id: None,
             config,
@@ -4380,6 +4433,7 @@ max_concurrent = {max_concurrent}
             mcp_url: "https://example.invalid/mcp".to_string(),
             mcp_token: None,
             credential_gateway: None,
+            mcp_over_acp: None,
             mcp_delivery: mcp_delivery::Decision {
                 mode: McpDeliveryMode::Direct,
                 reason: "test".into(),
@@ -4406,9 +4460,10 @@ max_concurrent = {max_concurrent}
             .unwrap(),
             shared,
             runtime_tx,
-        });
+        };
+        customize(&mut context);
         (
-            context,
+            Arc::new(context),
             started,
             release,
             RuntimeTaps {
@@ -5183,6 +5238,45 @@ max_concurrent = {max_concurrent}
             error_msg_ids(&taps.drain_priority()),
             vec!["msg-channel-a".to_string(), "msg-channel-b".to_string()],
             "每个频道各拿到自己的终帧"
+        );
+    }
+
+    /// `acp` delivery declares each channel's server as an ACP server: no URL,
+    /// no token, and a `serverId` that names the channel its messages act in.
+    #[tokio::test]
+    async fn acp_delivery_declares_an_acp_server_per_channel() {
+        let dir = tempfile::tempdir().unwrap();
+        let upstream = "http://127.0.0.1:9/mcp".to_string();
+        let tokens = Arc::new(
+            McpTokenProvider::new(upstream.clone(), "host-1".into(), "secret".into()).unwrap(),
+        );
+        let server = Arc::new(AcpMcpServer::new(upstream, tokens.clone()).unwrap());
+        let (runtime, _started, _release, _taps) =
+            fixture_runtime_with(dir.path(), PromptGate::First, 4, |context| {
+                context.mcp_token = Some(tokens);
+                context.mcp_over_acp = Some(server);
+                context.mcp_delivery.mode = McpDeliveryMode::Acp;
+            })
+            .await;
+
+        let servers = runtime
+            .mcp_servers_for_task(&fixture_task("channel-a"))
+            .await;
+        let cheers: Vec<&Value> = servers
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|server| {
+                server["name"]
+                    .as_str()
+                    .is_some_and(is_cheers_mcp_server_name)
+            })
+            .collect();
+        assert_eq!(
+            cheers,
+            [
+                &json!({"type": "acp", "name": cheers_mcp_server_name("channel-a"), "serverId": "cheers:channel-a"})
+            ]
         );
     }
 

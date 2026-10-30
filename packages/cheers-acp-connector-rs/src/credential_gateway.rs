@@ -445,7 +445,7 @@ fn digest(secret: &str) -> [u8; 32] {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use hyper::header::HeaderValue;
@@ -455,24 +455,24 @@ mod tests {
 
     /// What the fake Gateway saw on `/mcp`.
     #[derive(Debug, Clone)]
-    struct Seen {
-        authorization: Option<String>,
-        protocol: Option<String>,
-        method: Option<String>,
-        origin: Option<String>,
-        body: String,
+    pub(crate) struct Seen {
+        pub(crate) authorization: Option<String>,
+        pub(crate) protocol: Option<String>,
+        pub(crate) method: Option<String>,
+        pub(crate) origin: Option<String>,
+        pub(crate) body: String,
     }
 
-    struct FakeGateway {
-        base: String,
-        seen: Arc<Mutex<Vec<Seen>>>,
-        token_hits: Arc<AtomicUsize>,
+    pub(crate) struct FakeGateway {
+        pub(crate) base: String,
+        pub(crate) seen: Arc<Mutex<Vec<Seen>>>,
+        pub(crate) token_hits: Arc<AtomicUsize>,
     }
 
     /// A Gateway that serves discovery, mints `token-<n>`, and answers `/mcp`.
     /// With `reject_first`, the first `/mcp` request gets a 401 carrying a
     /// `WWW-Authenticate` challenge.
-    async fn spawn_gateway(reject_first: bool) -> FakeGateway {
+    pub(crate) async fn spawn_gateway(reject_first: bool) -> FakeGateway {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let seen = Arc::new(Mutex::new(Vec::new()));

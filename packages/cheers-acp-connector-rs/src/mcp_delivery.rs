@@ -11,9 +11,12 @@ use cheers_bridge_protocol::{McpDeliveryMode, McpDeliveryReport};
 
 use crate::config::McpDelivery;
 
-/// Modes this connector build serves. `acp` arrives with MCP-over-ACP (M6).
-pub(crate) const SERVED_MODES: [McpDeliveryMode; 2] =
-    [McpDeliveryMode::Direct, McpDeliveryMode::Gateway];
+/// Modes this connector build serves.
+pub(crate) const SERVED_MODES: [McpDeliveryMode; 3] = [
+    McpDeliveryMode::Acp,
+    McpDeliveryMode::Direct,
+    McpDeliveryMode::Gateway,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Decision {
@@ -23,8 +26,8 @@ pub(crate) struct Decision {
     /// channel's token so the Gateway can see whether the Agent picks it up.
     pub test_direct: bool,
     /// Bind tokens to the running task, so one dies with its task. Only when
-    /// every new token reaches the Agent: `gateway` swaps it in per request,
-    /// and `direct` only for an Agent judged to re-read headers.
+    /// every new token reaches the Agent: `acp` and `gateway` swap it in per
+    /// request, and `direct` only for an Agent judged to re-read headers.
     pub bind_tasks: bool,
 }
 
@@ -45,6 +48,8 @@ pub(crate) struct Inputs<'a> {
     pub allowed: Option<&'a [McpDeliveryMode]>,
     /// The loopback port bound, so `gateway` can be served.
     pub gateway_bound: bool,
+    /// The Agent advertises `mcpCapabilities.acp`, so `acp` can be served.
+    pub agent_acp: bool,
     /// `name@version` of the Agent.
     pub agent: &'a str,
     /// The cached verdict for this Agent build, if any.
@@ -53,6 +58,12 @@ pub(crate) struct Inputs<'a> {
 
 pub(crate) fn decide(inputs: Inputs<'_>) -> anyhow::Result<Decision> {
     let allowed = |mode| inputs.allowed.is_none_or(|modes| modes.contains(&mode));
+    let acp_ok = allowed(McpDeliveryMode::Acp) && inputs.agent_acp;
+    let acp_why_not = if !inputs.agent_acp {
+        "the Agent does not advertise mcpCapabilities.acp"
+    } else {
+        "the Gateway does not allow acp delivery"
+    };
     let direct_ok = allowed(McpDeliveryMode::Direct);
     let gateway_ok = allowed(McpDeliveryMode::Gateway) && inputs.gateway_bound;
     let gateway_why_not = if !allowed(McpDeliveryMode::Gateway) {
@@ -65,11 +76,41 @@ pub(crate) fn decide(inputs: Inputs<'_>) -> anyhow::Result<Decision> {
         mode,
         reason,
         test_direct,
-        bind_tasks: mode == McpDeliveryMode::Gateway
+        bind_tasks: matches!(mode, McpDeliveryMode::Acp | McpDeliveryMode::Gateway)
             || (mode == McpDeliveryMode::Direct && header_refresh == Some(true)),
     };
     let agent = inputs.agent;
-    Ok(match inputs.configured {
+    let configured = match inputs.configured {
+        McpDelivery::Acp if acp_ok => {
+            return Ok(decision(
+                McpDeliveryMode::Acp,
+                "policy.mcp.delivery = \"acp\"".into(),
+                false,
+            ))
+        }
+        // Without acp, choose as `auto` would among the others.
+        McpDelivery::Acp => {
+            let mut fallback = decide(Inputs {
+                configured: McpDelivery::Auto,
+                agent_acp: false,
+                ..inputs
+            })?;
+            fallback.reason = format!(
+                "policy.mcp.delivery = \"acp\", but {acp_why_not}; {}",
+                fallback.reason
+            );
+            return Ok(fallback);
+        }
+        McpDelivery::Auto if acp_ok => {
+            return Ok(decision(
+                McpDeliveryMode::Acp,
+                format!("{agent} serves MCP over ACP"),
+                false,
+            ))
+        }
+        other => other,
+    };
+    Ok(match configured {
         McpDelivery::Direct if direct_ok => decision(
             McpDeliveryMode::Direct,
             "policy.mcp.delivery = \"direct\"".into(),
@@ -116,7 +157,7 @@ pub(crate) fn decide(inputs: Inputs<'_>) -> anyhow::Result<Decision> {
             false,
         ),
         _ => anyhow::bail!(
-            "no MCP delivery mode is possible: the Gateway allows {:?}, this connector serves direct and gateway ({gateway_why_not})",
+            "no MCP delivery mode is possible: the Gateway allows {:?}, this connector serves acp, direct and gateway ({acp_why_not}; {gateway_why_not})",
             inputs.allowed.unwrap_or_default()
         ),
     })
@@ -125,13 +166,14 @@ pub(crate) fn decide(inputs: Inputs<'_>) -> anyhow::Result<Decision> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use McpDeliveryMode::{Direct, Gateway};
+    use McpDeliveryMode::{Acp, Direct, Gateway};
 
     fn inputs(configured: McpDelivery) -> Inputs<'static> {
         Inputs {
             configured,
             allowed: None,
             gateway_bound: true,
+            agent_acp: false,
             agent: "codex-acp@2.3.0",
             header_refresh: None,
         }
@@ -210,9 +252,59 @@ mod tests {
     }
 
     #[test]
+    fn auto_prefers_acp_when_the_agent_serves_it_and_the_gateway_allows_it() {
+        let acp = Inputs {
+            agent_acp: true,
+            ..inputs(McpDelivery::Auto)
+        };
+        let chosen = decide(acp).unwrap();
+        assert_eq!((chosen.mode, chosen.test_direct), (Acp, false));
+        assert!(chosen.bind_tasks, "every request carries the newest token");
+        assert!(
+            chosen.reason.contains("serves MCP over ACP"),
+            "{}",
+            chosen.reason
+        );
+
+        // The Gateway's policy still wins.
+        let direct_only = [Direct];
+        let refused = decide(Inputs {
+            allowed: Some(&direct_only),
+            agent_acp: true,
+            ..inputs(McpDelivery::Auto)
+        })
+        .unwrap();
+        assert_eq!(refused.mode, Direct);
+    }
+
+    #[test]
+    fn configured_acp_falls_back_as_auto_would() {
+        let chosen = decide(Inputs {
+            agent_acp: true,
+            ..inputs(McpDelivery::Acp)
+        })
+        .unwrap();
+        assert_eq!(chosen.mode, Acp);
+
+        let fallback = decide(Inputs {
+            header_refresh: Some(false),
+            ..inputs(McpDelivery::Acp)
+        })
+        .unwrap();
+        assert_eq!(fallback.mode, Gateway);
+        assert!(
+            fallback
+                .reason
+                .contains("does not advertise mcpCapabilities.acp"),
+            "{}",
+            fallback.reason
+        );
+    }
+
+    #[test]
     fn the_report_lists_served_modes() {
         let report = decide(inputs(McpDelivery::Gateway)).unwrap().report();
-        assert_eq!(report.modes, [Direct, Gateway]);
+        assert_eq!(report.modes, [Acp, Direct, Gateway]);
         assert_eq!(report.mode, Gateway);
     }
 }

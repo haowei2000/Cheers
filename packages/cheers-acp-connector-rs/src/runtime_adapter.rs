@@ -158,6 +158,13 @@ pub enum RuntimeEvent {
         /// One-shot channel carrying the ACP response object.
         respond_to: oneshot::Sender<Value>,
     },
+    /// An MCP-over-ACP `mcp/message` request for a Cheers server.
+    McpMessage {
+        /// Unmodified `mcp/message` parameters (`serverId`, `requestId`, …).
+        params: Value,
+        /// The ACP result (inner MCP `result` or `error`), or an envelope error.
+        respond_to: oneshot::Sender<Result<Value, crate::mcp_over_acp::EnvelopeError>>,
+    },
     /// Signals that an accepted URL elicitation completed externally.
     ElicitationComplete {
         /// Opaque ACP elicitation identifier.

@@ -336,8 +336,9 @@ fn reject_removed_mcp_channel_scope(raw: Option<&str>) {
 }
 
 /// Parses `MCP_ALLOWED_DELIVERY_MODES`. Startup fails on an unknown mode, and
-/// on a list connectors could not satisfy: today they serve `direct` and
-/// `gateway`, so a list without either would leave every bot without Cheers MCP.
+/// on a list connectors could not satisfy: `acp` needs an Agent advertising
+/// `mcpCapabilities.acp`, so a list without `direct` or `gateway` would leave
+/// every other Agent without Cheers MCP.
 fn parse_mcp_allowed_delivery_modes(
     raw: Option<&str>,
 ) -> Option<Vec<cheers_bridge_protocol::McpDeliveryMode>> {
@@ -358,7 +359,7 @@ fn parse_mcp_allowed_delivery_modes(
         .iter()
         .any(|mode| matches!(mode, Mode::Direct | Mode::Gateway))
     {
-        panic!("MCP_ALLOWED_DELIVERY_MODES={raw:?} allows neither direct nor gateway, which connectors serve today");
+        panic!("MCP_ALLOWED_DELIVERY_MODES={raw:?} allows neither direct nor gateway, which every Agent can use");
     }
     Some(modes)
 }

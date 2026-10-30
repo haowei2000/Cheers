@@ -275,9 +275,10 @@ pub struct SessionUpdatePolicy {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum McpDelivery {
-    /// Decide per Agent build from the Gateway's observations: `direct` for an
-    /// Agent that picks up renewed tokens (tested on first use), `gateway`
-    /// for one that keeps old ones (`crate::mcp_delivery`).
+    /// `acp` for an Agent that advertises it; otherwise decide per Agent build
+    /// from the Gateway's observations: `direct` for an Agent that picks up
+    /// renewed tokens (tested on first use), `gateway` for one that keeps old
+    /// ones (`crate::mcp_delivery`).
     #[default]
     Auto,
     /// The Agent calls the Gateway's `/mcp` itself, with the real bearer in
@@ -287,6 +288,10 @@ pub enum McpDelivery {
     /// The Agent calls the connector's loopback credential gateway with a
     /// per-channel local secret; the connector swaps in the real bearer.
     Gateway,
+    /// The Agent sends MCP to the connector over the ACP connection
+    /// (`mcp/message`), for an Agent advertising `mcpCapabilities.acp`. Falls
+    /// back as `auto` would for one that does not.
+    Acp,
 }
 
 #[derive(Debug, Clone)]
