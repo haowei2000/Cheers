@@ -233,6 +233,7 @@ All policy tables are optional; each key falls back to the default below.
 
 | Key                                | Type     | Default | Meaning |
 |------------------------------------|----------|---------|---------|
+| `delivery`                         | string   | `"direct"` | How the Agent reaches Cheers MCP. `"direct"`: the Agent calls the Gateway's `/mcp` with the bearer in `mcpServers[].headers` (needs an Agent that re-reads headers on `session/load`). `"gateway"`: the Agent gets `http://127.0.0.1:<port>/mcp` and a stable per-channel local secret, and the connector swaps in the real, rotated token on each request; fixes Agents that ignore refreshed headers (Codex). An `"auto"` mode chosen from Agent reports is planned (M2). See [MCP_AUTH_ISOLATION](MCP_AUTH_ISOLATION.md) §3.4. |
 | `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? **Inert today** — see below. |
 | `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject. **Inert today** — see below. |
 | `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. Enforced: these are injected as written (minus any the Agent's `mcpCapabilities` cannot transport). |
