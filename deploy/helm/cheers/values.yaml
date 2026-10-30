@@ -40,10 +40,6 @@ gateway:
   # 600, minimum 120. Direct-delivery tokens keep the 24h default because the
   # agent cannot renew them mid-turn.
   mcpGatewayAccessTokenTtlSecs: ""
-  # How strictly an MCP call must stay inside the channel its token was minted
-  # for: off | warn | enforce. Channel scope is enforced by default; use warn
-  # temporarily while migrating legacy MCP clients that lack channel-bound tokens.
-  mcpChannelScope: enforce
   # Rate-limit client identity: in this chart the gateway is ClusterIP-only and
   # every client request passes the bundled frontend nginx (which sets
   # X-Real-IP) or the ingress, so proxy headers are trustworthy. Set false if

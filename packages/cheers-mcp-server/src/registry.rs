@@ -547,7 +547,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "set_status",
                 "Update Bot status",
-                "Update this Bot's own status/profile card.",
+                "Update this Bot's own status/profile card. It is shown in every channel, so it only works in your owner's direct message with you; elsewhere it is refused.",
                 SCOPE_PROFILE_WRITE,
                 &[
                     Param::opt("status_text", ParamKind::String),
