@@ -210,7 +210,7 @@ Agent ──HTTP, any MCP revision──► 127.0.0.1:<port>/mcp   (connector)
   when `direct` is ruled out (§3.5). If the listener cannot start, the
   connector falls back to `direct` for that run.
 
-#### 3.4.3 Native MCP-over-ACP (future path, M6)
+#### 3.4.3 Native MCP-over-ACP (M6, connector side built)
 
 The ACP [MCP-over-ACP RFD](https://agentclientprotocol.com/rfds/mcp-over-acp)
 (Active since 2026-10) is the standard L0 binding:
@@ -223,6 +223,27 @@ The ACP [MCP-over-ACP RFD](https://agentclientprotocol.com/rfds/mcp-over-acp)
 - SDK 3.6 provides the types and `SessionBuilder::with_mcp_server` for
   `session/new`; v1 `session/load` has no per-session attachment helper, so the
   connector declares `{type:"acp", serverId}` on load itself.
+
+**As built (M6).** The connector's adapter speaks raw JSON-RPC, so it needs
+neither the SDK's builder nor #805:
+
+- `mcp_over_acp::server_entry` declares `{type: "acp", name: "cheers-<channel>",
+  serverId: "cheers:<channel>"}` on both `session/new` and `session/load`. One
+  `serverId` per channel, so a message names the channel whose token it uses.
+- `mcp/message` goes adapter → runtime (`RuntimeEvent::McpMessage`) →
+  `AcpMcpServer::handle`, which POSTs the inner message to `/mcp` with that
+  channel's token. The token is task-bound and re-minted once on a 401. The
+  message carries the `MCP-Protocol-Version` from `initialize`, and the reply
+  (JSON or SSE) becomes the inner `result` or `error`. A malformed envelope
+  (unknown `serverId`, no `method`/`requestId`) is an outer `-32602`.
+- `auto` picks `acp` when the Agent advertises `mcpCapabilities.acp` and the
+  Gateway allows it; `policy.mcp.delivery = "acp"` forces it and falls back as
+  `auto` would. The server still refuses an `acp`-only
+  `MCP_ALLOWED_DELIVERY_MODES`, because every other Agent would be left
+  without Cheers MCP.
+- Not yet: the "MCP revision our provider lacks" check below. No Agent
+  advertises `acp` today (codex-acp 2.2.2: `acp: false`; claude-agent-acp
+  0.94.0: http and sse only), so it is untested against a real Agent.
 
 Cheers design on top of it:
 
@@ -454,7 +475,7 @@ stateless. Channel-only tokens and tasks without a person are not gated.
 | Fresh token before every prompt via `session/load` (`direct`) | ⚠️ ignored by Codex (§3.4.4); `auto` moves such Agents to `gateway` (M2) |
 | Credential gateway pass-through, `policy.mcp.delivery` | 🚧 M1, PR #806 |
 | Host profile, `auto` negotiation, generation test | ❌ M2 |
-| Native MCP-over-ACP | ❌ M6 (no Agent advertises `acp: true`; SDK 3.6 upgrade in PR #805) |
+| Native MCP-over-ACP | 🚧 M6: connector serves `mcp/message`; no Agent advertises `acp: true` yet |
 | Domain errors as `isError` tool results with `Next:` guidance and `{code, retryable}` | 🚧 M4a, PR #813 |
 | Per-channel host working directory | 🚧 M3, PR #810 |
 | Channel-safe `set_status` (owner↔bot DM only) | 🚧 M3, PR #809 |
