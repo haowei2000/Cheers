@@ -406,7 +406,7 @@ the model:
 | `NOT_MEMBER` | Not a member of that channel; ask a member to invite you | no |
 | `PERMISSION_DENIED` / `FORBIDDEN` | Your channel role is insufficient; ask a channel admin | no |
 | `APPROVAL_REQUIRED` | Call `request_approval`, then retry with `approval_id` | yes |
-| `SCOPE_REQUIRED` | See below | no |
+| `SCOPE_REQUIRED` | The connector's token lacks a scope the Gateway gained after it started; the bot owner restarts the connector | no |
 | `NOT_FOUND` | Stay opaque; never disclose whether a resource exists elsewhere | no |
 
 Rules: the text is advisory and grants nothing (the server re-checks every
@@ -416,8 +416,11 @@ text; mark non-recoverable errors `retryable: false` to prevent loops.
 **Scope errors.** Authorization-code clients keep the spec's HTTP 403 +
 `WWW-Authenticate: insufficient_scope` step-up challenge. Connector-minted
 `client_credentials` tokens cannot step up, so for them the refusal becomes an
-actionable tool error instead. This is a deliberate deviation from a SHOULD and
-needs sign-off.
+actionable tool error instead: a `tools/call` returns `isError` with
+`structuredContent {code: "SCOPE_REQUIRED", retryable: false, requiredScopes}`
+and a `Next:` line. Such tokens carry a `gty: "client_credentials"` claim; a
+token without it keeps the 403 challenge. This is a deliberate deviation from a
+SHOULD, signed off 2026-10-30 (M4c).
 
 **`request_approval` (M5c, as built).** Scope: the registry's destructive
 resources (`fs.rm`, `fs.mv`) on a person's task, i.e. a token with `task` and
@@ -471,7 +474,7 @@ alongside M1.
 | **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-channel secrets, Host/Origin/body limits, 401 re-mint, SSE streaming, `NO_PROXY` for loopback; selected by `policy.mcp.delivery = "gateway"` (default stays `direct`); unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release | connector |
 | **M2 host profile and negotiation** | M2a: `McpDeliveryMode` and `McpDeliveryReport` in `bridge-protocol`; `ready` reports the mode; migration 0118 adds `mcp_header_refresh{,_agent,_at}`; `/mcp` tracks the newest `iat` per `(host, chan)`, records the verdict and sends `mcp_delivery_observed` (PR #811). M2b: `MCP_ALLOWED_DELIVERY_MODES` via hello; `delivery = "auto"` as default; verdict cache by Agent build; generation test; restart-when-idle to switch (PR #812). Later: Fleet shows mode and reason | connector, server, migration, frontend |
 | **M3 isolation** | Per-channel cwd under `default_cwd` (opt-out `shared_cwd`), #810; `set_status` only from the owner↔bot DM and `MCP_CHANNEL_SCOPE` off/warn removed, #809 | connector, server, mcp-server |
-| **M4 guidance and tightening** | M4a (#813): `Next:` guidance and `{code, retryable}` on refused tool calls; `OUT_OF_CHANNEL` / `CHANNEL_SCOPE_REQUIRED` codes. M4b (#814): `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS` (600 s) for `gateway`/`acp` hosts, 24h for `direct`. Open: tool-error scope refusals for `client_credentials` tokens (§9.4) | server |
+| **M4 guidance and tightening** | M4a (#813): `Next:` guidance and `{code, retryable}` on refused tool calls; `OUT_OF_CHANNEL` / `CHANNEL_SCOPE_REQUIRED` codes. M4b (#814): `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS` (600 s) for `gateway`/`acp` hosts, 24h for `direct`. M4c: tool-error scope refusals for `client_credentials` tokens (§9.4) | server |
 | **M5 task, delegation, approval** | M5a (#815): `cheers_execution` → `task` claim with per-request running-task check, bound only where each token reaches the Agent. M5b: RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
 | **M6 native MCP-over-ACP** | Enable `unstable_mcp_over_acp` after #805; provider with one `serverId` per session, declared on `session/load` too; switch per Agent via M2 negotiation; help `claude-agent-acp` advertise `mcpCapabilities.acp` | connector, upstream |
 
@@ -485,8 +488,8 @@ end-to-end run; send the Security-note PR if the RFD champion agrees.
 2. ~~Bot-to-bot chains~~ Decided: narrow to the chain's originating human; the
    chain engine's existing depth limit bounds the chain (#816).
 3. ~~Revoke on end~~ Decided: yes, by the per-request running-task check (#815).
-4. Return scope refusals for `client_credentials` tokens as tool errors instead
-   of HTTP 403? Recommended: yes, documented as a deliberate deviation.
+4. ~~Scope refusals as tool errors~~ Decided 2026-10-30: yes for
+   `client_credentials` tokens, as a documented deviation (M4c).
 
 Decided 2026-10-29: native MCP-over-ACP is the future path. Revised the same
 day: header injection is kept as `direct` mode rather than deleted; `auto`
