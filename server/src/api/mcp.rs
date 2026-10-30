@@ -55,6 +55,7 @@ pub(crate) const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-
 const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. Channel outputs share one Artifacts library: use artifact_list/get/read to discover and inspect, artifact_create for documents, HTML/TSX pages and canvases, artifact_update with the returned artifact ID and version to edit, and artifact_deliver for binary files. Reuse idempotency_key when retrying create or deliver. Reference the returned artifact.uri (cheers:artifact/<id>) in replies and resource_ref cards; cards are references, not separate content copies. Check availability before reading; expired files are not recoverable through metadata. Legacy desk tools are for remaining path/directory operations, not a private Bot space. Host workspace files stay remote until explicitly delivered. For interactive UI, first call read_ui_contract or read cheers://help/interactive-ui and its catalog/example resources. Use the advertised Cheers catalog, create an artifact, and attach its resource_ref card to the current reply with set_resource_cards. Streaming card references are staged until completion. User interaction context is structured data, not an authorization grant; read the source and check its version before updating it. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
 
 const MCP_TOKEN_USE: &str = "mcp_access";
+const GRANT_CLIENT_CREDENTIALS: &str = "client_credentials";
 pub(crate) const DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS: u64 = 86_400;
 const MCP_CATALOG_TTL_MS: u64 = 30_000;
 const MCP_AUTH_CODE_TTL_MINUTES: i64 = 5;
@@ -636,6 +637,11 @@ struct McpAccessClaims {
     /// endpoint refuses every channel-bearing call they make.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chan: Option<String>,
+    /// OAuth grant that minted the token. `client_credentials` tokens cannot
+    /// step up, so a missing scope is refused as a tool error instead of a
+    /// 403 challenge. Absent means a client that can step up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gty: Option<String>,
     aud: String,
     iss: String,
     token_use: String,
@@ -705,7 +711,7 @@ pub async fn issue_mcp_access_token(
     if grant_type == "refresh_token" {
         return exchange_refresh_token(&state, request).await;
     }
-    if grant_type != "client_credentials" {
+    if grant_type != GRANT_CLIENT_CREDENTIALS {
         return oauth_token_error("unsupported_grant_type", "unsupported OAuth grant type");
     }
     if request.resource.as_deref() != Some(state.config.mcp_resource_url().as_str()) {
@@ -853,6 +859,10 @@ fn mint_mcp_access_token(
         credential_hash,
         scope: scope.clone(),
         chan: channel,
+        // Only the client_credentials grant mints without a refresh token.
+        gty: refresh_token
+            .is_none()
+            .then(|| GRANT_CLIENT_CREDENTIALS.to_string()),
         aud: state.config.mcp_resource_url(),
         iss: state.config.mcp_authorization_issuer(),
         token_use: MCP_TOKEN_USE.to_string(),
@@ -1380,6 +1390,24 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     if !identity.scopes.contains(required_scope) {
         let message = format!("Insufficient OAuth scope {required_scope}");
         record_mcp_rejection(&state, host_id, -32003, &message, None).await;
+        // A client_credentials token cannot step up, and most clients hide a
+        // 403 from the model, so tell the model as a tool error instead: a
+        // deliberate deviation from the spec's SHOULD (MCP_AUTH_ISOLATION.md §6).
+        if method == "tools/call" && identity.client_credentials {
+            let mut result = tool_error_result(
+                "SCOPE_REQUIRED",
+                &format!("This tool needs the {required_scope} scope, which your MCP token lacks."),
+            );
+            result["structuredContent"]["requiredScopes"] = json!([required_scope]);
+            let result = match era {
+                ProtocolEra::Modern => result,
+                ProtocolEra::Legacy => legacy_result(result),
+            };
+            return private_json_response(
+                StatusCode::OK,
+                json!({"jsonrpc": "2.0", "id": id, "result": result}),
+            );
+        }
         return insufficient_scope_response(&state, id, required_scope);
     }
 
@@ -1855,6 +1883,10 @@ fn tool_error_guidance(code: &str) -> Option<ToolErrorGuidance> {
         ),
         "PERMISSION_DENIED" | "FORBIDDEN" => (
             "Your role does not allow this here. Tell the user what you could not do; a channel admin can change your role.",
+            false,
+        ),
+        "SCOPE_REQUIRED" => (
+            "Your connector's MCP token was issued without this permission, usually because the Gateway gained it after the connector started. Tell the user the bot's owner should restart the Cheers connector.",
             false,
         ),
         "NOT_FOUND" => (
@@ -2583,6 +2615,8 @@ struct McpIdentity {
     scopes: HashSet<String>,
     /// Channel this token was narrowed to at mint time, when it named one.
     channel_scope: Option<Uuid>,
+    /// Minted by `client_credentials`, so it cannot answer a step-up challenge.
+    client_credentials: bool,
     /// The token's `iat`: its generation, for the `direct` delivery check.
     issued_at: u64,
 }
@@ -2676,6 +2710,7 @@ async fn authenticate_mcp(
                 .chan
                 .as_deref()
                 .and_then(|value| Uuid::parse_str(value).ok()),
+            client_credentials: claims.gty.as_deref() == Some(GRANT_CLIENT_CREDENTIALS),
             issued_at: claims.iat,
         }),
         _ => Err(AuthMcpError::Unauthorized),
