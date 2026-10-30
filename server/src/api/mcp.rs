@@ -40,7 +40,6 @@ use uuid::Uuid;
 use crate::{
     api::middleware::Claims,
     app_state::AppState,
-    config::McpChannelScope,
     errors::AppError,
     infra::crypto::hash_host_credential,
     resource::{self, Principal},
@@ -345,12 +344,11 @@ pub async fn authorize_approve(
             }
             Some(channel_id.to_string())
         }
-        None if state.config.mcp_channel_scope == McpChannelScope::Enforce => {
+        None => {
             return Err(AppError::BadRequest(
                 "choose a channel to bind this MCP authorization".into(),
             ));
         }
-        None => None,
     };
 
     let code = random_oauth_secret()?;
@@ -634,8 +632,8 @@ struct McpAccessClaims {
     credential_hash: String,
     scope: String,
     /// Channel this token is narrowed to, when the connector asked for one.
-    /// Absent on tokens from connectors that predate the request, which the
-    /// endpoint treats per `mcp_channel_scope` rather than as authority.
+    /// Absent only on tokens from connectors that predate the request; the
+    /// endpoint refuses every channel-bearing call they make.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chan: Option<String>,
     aud: String,
@@ -800,7 +798,7 @@ pub async fn issue_mcp_access_token(
             }
         }
     };
-    if channel.is_none() && state.config.mcp_channel_scope == McpChannelScope::Enforce {
+    if channel.is_none() {
         return oauth_token_error(
             "invalid_target",
             "cheers_channel is required when channel scoping is enforced",
@@ -1086,7 +1084,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         original_scope,
         original_channel_id,
     ) = decoded;
-    if original_channel_id.is_none() && state.config.mcp_channel_scope == McpChannelScope::Enforce {
+    if original_channel_id.is_none() {
         return oauth_token_error(
             "invalid_grant",
             "this refresh grant has no channel binding; authorize again and choose a channel",
@@ -2870,15 +2868,13 @@ impl ChannelScopeVerdict {
         }
     }
 
-    /// Whether this verdict is a refusal at the given strictness.
+    /// Whether this verdict is a refusal.
     ///
-    /// `Channelless` is never refused: a resource that takes no channel cannot
-    /// leave one, and refusing it would break `dm.open` for every bot.
-    fn is_refused(self, scope: McpChannelScope) -> bool {
-        match scope {
-            McpChannelScope::Off | McpChannelScope::Warn => false,
-            McpChannelScope::Enforce => matches!(self, Self::OutOfScope | Self::Unnarrowed),
-        }
+    /// `Channelless` is never refused here: a resource that takes no channel
+    /// cannot leave one, and refusing it would break `dm.open` for every bot.
+    /// `bot.status.write` has its own rule ([`enforce_status_channel`]).
+    fn is_refused(self) -> bool {
+        matches!(self, Self::OutOfScope | Self::Unnarrowed)
     }
 }
 
@@ -2900,16 +2896,12 @@ fn classify_channel_scope(
 
 /// Hold an MCP call to the channel its token names, and record what happened.
 ///
-/// Returns the refusal when the call must not proceed. Off and warn always
-/// return `None`, so a deployment can measure exactly what enforce would refuse
-/// before it refuses anything — connectors that predate channel-narrowed tokens
-/// send no channel and would otherwise be cut off on upgrade.
+/// Returns the refusal when the call must not proceed.
 ///
 /// This narrowing never *grants*: the bot's channel role is still checked for
 /// every operation downstream. A token whose channel is wrong therefore costs
 /// its holder access, and can never buy any.
 fn enforce_channel_scope(
-    state: &AppState,
     identity: &McpIdentity,
     resource: &str,
     params: &Map<String, Value>,
@@ -2919,8 +2911,7 @@ fn enforce_channel_scope(
         .and_then(Value::as_str)
         .and_then(|value| Uuid::parse_str(value).ok());
     let verdict = classify_channel_scope(identity.channel_scope, call_channel);
-    let scope = state.config.mcp_channel_scope;
-    let refused = verdict.is_refused(scope);
+    let refused = verdict.is_refused();
 
     if refused || verdict == ChannelScopeVerdict::OutOfScope {
         tracing::warn!(
@@ -2956,6 +2947,51 @@ fn enforce_channel_scope(
     })
 }
 
+/// `set_status` writes the bot's single status card, which every channel shows.
+/// Written during a shared channel's turn, it can carry that channel's content
+/// into all the others, so only a token narrowed to the owner's DM with the bot
+/// (where the status-refresh prompt runs) may write it.
+async fn enforce_status_channel(
+    state: &AppState,
+    identity: &McpIdentity,
+) -> Result<(), ToolCallFailure> {
+    let owner_dm = match identity.channel_scope {
+        Some(_) => crate::domain::dms::owner_dm_channel(&state.db, identity.bot_id)
+            .await
+            .map_err(|error| {
+                tracing::error!(error = %error, bot_id = %identity.bot_id, "owner DM lookup failed");
+                ToolCallFailure::Domain {
+                    code: "INTERNAL_ERROR".to_string(),
+                    message: "could not check where set_status may run".to_string(),
+                }
+            })?,
+        None => None,
+    };
+    if status_write_allowed(identity.channel_scope, owner_dm) {
+        return Ok(());
+    }
+    tracing::warn!(
+        target: MCP_SCOPE_AUDIT,
+        verdict = "status_outside_owner_dm",
+        refused = true,
+        bot_id = %identity.bot_id,
+        token_channel = ?identity.channel_scope,
+        "set_status refused outside the owner's DM"
+    );
+    Err(ToolCallFailure::Domain {
+        code: "PERMISSION_DENIED".to_string(),
+        message: "set_status only works in your owner's direct message with you: your status \
+                  is shown in every channel, so it cannot be set from a shared one. Do not \
+                  retry here; ask your owner to request a status update in that DM."
+            .to_string(),
+    })
+}
+
+/// Pure half of [`enforce_status_channel`].
+fn status_write_allowed(token_channel: Option<Uuid>, owner_dm: Option<Uuid>) -> bool {
+    matches!((token_channel, owner_dm), (Some(token), Some(dm)) if token == dm)
+}
+
 async fn call_tool(
     state: &AppState,
     identity: &McpIdentity,
@@ -2964,8 +3000,11 @@ async fn call_tool(
 ) -> Result<Value, ToolCallFailure> {
     let call = build_tool_resource_call(name, arguments)
         .map_err(|error| ToolCallFailure::Invalid(error.message))?;
-    if let Some(refusal) = enforce_channel_scope(state, identity, call.resource, &call.params) {
+    if let Some(refusal) = enforce_channel_scope(identity, call.resource, &call.params) {
         return Err(refusal);
+    }
+    if call.resource == "bot.status.write" {
+        enforce_status_channel(state, identity).await?;
     }
     let bot_id = identity.bot_id;
     let frame = json!({
@@ -3051,7 +3090,7 @@ async fn read_resource(
             ResourceReadError::Invalid(error.message)
         }
     })?;
-    if enforce_channel_scope(state, identity, call.resource, &call.params).is_some() {
+    if enforce_channel_scope(identity, call.resource, &call.params).is_some() {
         // Same opaque result as a missing channel: a refusal must not tell the
         // caller whether the resource exists in a channel it cannot reach.
         return Err(ResourceReadError::Unavailable);
@@ -3848,28 +3887,27 @@ mod tests {
         );
     }
 
-    /// off / warn 一律放行——灰度期先量出 enforce 会拒掉什么，再去拒。
+    /// set_status 只允许在 owner↔bot 私聊的 token 下写；无 chan、别的频道、
+    /// 没有私聊都拒。
     #[test]
-    fn scope_refuses_nothing_before_enforce() {
-        for verdict in [
-            ChannelScopeVerdict::InScope,
-            ChannelScopeVerdict::OutOfScope,
-            ChannelScopeVerdict::Unnarrowed,
-            ChannelScopeVerdict::Channelless,
-        ] {
-            assert!(!verdict.is_refused(McpChannelScope::Off));
-            assert!(!verdict.is_refused(McpChannelScope::Warn));
-        }
+    fn status_write_needs_the_owner_dm() {
+        let dm = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        assert!(status_write_allowed(Some(dm), Some(dm)));
+        assert!(!status_write_allowed(Some(other), Some(dm)));
+        assert!(!status_write_allowed(Some(dm), None));
+        assert!(!status_write_allowed(None, Some(dm)));
+        assert!(!status_write_allowed(None, None));
     }
 
-    /// enforce 下越界与无声明都拒；无频道资源永远不拒，否则每个 bot 的
-    /// dm.open 都会被打断。
+    /// 越界与无声明都拒；无频道资源在这里不拒，否则每个 bot 的 dm.open
+    /// 都会被打断（bot.status.write 另有规则）。
     #[test]
-    fn enforce_refuses_out_of_scope_and_unnarrowed_only() {
-        assert!(ChannelScopeVerdict::OutOfScope.is_refused(McpChannelScope::Enforce));
-        assert!(ChannelScopeVerdict::Unnarrowed.is_refused(McpChannelScope::Enforce));
-        assert!(!ChannelScopeVerdict::InScope.is_refused(McpChannelScope::Enforce));
-        assert!(!ChannelScopeVerdict::Channelless.is_refused(McpChannelScope::Enforce));
+    fn refuses_out_of_scope_and_unnarrowed_only() {
+        assert!(ChannelScopeVerdict::OutOfScope.is_refused());
+        assert!(ChannelScopeVerdict::Unnarrowed.is_refused());
+        assert!(!ChannelScopeVerdict::InScope.is_refused());
+        assert!(!ChannelScopeVerdict::Channelless.is_refused());
     }
 
     #[test]
