@@ -40,4 +40,6 @@ pub struct AppState {
     /// gateways). None = push unconfigured; in-app WS delivery is unaffected
     /// (docs/arch/MOBILE_APP_DESIGN.md §5).
     pub push: Option<Arc<crate::notify::PushTransport>>,
+    /// Observed MCP delivery: whether `direct` Agents pick up renewed tokens.
+    pub mcp_delivery: Arc<crate::gateway::mcp_delivery::McpDeliveryTracker>,
 }

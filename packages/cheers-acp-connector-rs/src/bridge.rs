@@ -632,6 +632,10 @@ mod fixture_tests {
                 "control/to_connector/auth_acknowledged.json",
                 "AuthAcknowledged",
             ),
+            (
+                "control/to_connector/mcp_delivery_observed.json",
+                "McpDeliveryObserved",
+            ),
         ] {
             let frame: ControlInbound = serde_json::from_value(load(rel))
                 .unwrap_or_else(|e| panic!("{rel} failed to parse: {e}"));
@@ -653,6 +657,15 @@ mod fixture_tests {
                     assert_eq!(request_id, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "{rel}");
                     assert_eq!(action, "retry", "{rel}");
                     "AuthAcknowledged"
+                }
+                ControlInbound::McpDeliveryObserved {
+                    channel_id,
+                    header_refresh,
+                    ..
+                } => {
+                    assert_eq!(channel_id, "11111111-2222-4333-8444-555555555555", "{rel}");
+                    assert!(!header_refresh, "{rel}");
+                    "McpDeliveryObserved"
                 }
                 other => panic!("{rel}: unexpected variant {other:?}"),
             };

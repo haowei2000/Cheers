@@ -408,6 +408,7 @@ async fn handle_control_frame(
         proto::ControlOutbound::Ready {
             connector_version,
             plugin_version,
+            runtime,
             connector_capabilities,
             ..
         } => {
@@ -424,6 +425,22 @@ async fn handle_control_frame(
             // a connector upgrade updates them automatically. The version rides
             // along so bot status can report update availability while offline.
             let caps = connector_capabilities;
+            let mcp_delivery = caps
+                .as_ref()
+                .and_then(|caps| caps.get("mcp_delivery"))
+                .and_then(|value| {
+                    serde_json::from_value::<proto::McpDeliveryReport>(value.clone()).ok()
+                });
+            state.mcp_delivery.record_ready(
+                bot.host_id,
+                mcp_delivery.as_ref(),
+                crate::gateway::mcp_delivery::agent_key(
+                    runtime.as_ref().and_then(|runtime| runtime.name.as_deref()),
+                    runtime
+                        .as_ref()
+                        .and_then(|runtime| runtime.version.as_deref()),
+                ),
+            );
             state.bot_registry.set_task_acceptance(
                 bot_id,
                 connection_id,

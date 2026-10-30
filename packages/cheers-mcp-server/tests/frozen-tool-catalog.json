@@ -793,7 +793,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Update this Bot's own status/profile card.",
+    "description": "Update this Bot's own status/profile card. It is shown in every channel, so it only works in your owner's direct message with you; elsewhere it is refused.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
