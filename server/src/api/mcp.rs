@@ -40,7 +40,6 @@ use uuid::Uuid;
 use crate::{
     api::middleware::Claims,
     app_state::AppState,
-    config::McpChannelScope,
     errors::AppError,
     infra::crypto::hash_host_credential,
     resource::{self, Principal},
@@ -56,6 +55,7 @@ pub(crate) const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-
 const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. Channel outputs share one Artifacts library: use artifact_list/get/read to discover and inspect, artifact_create for documents, HTML/TSX pages and canvases, artifact_update with the returned artifact ID and version to edit, and artifact_deliver for binary files. Reuse idempotency_key when retrying create or deliver. Reference the returned artifact.uri (cheers:artifact/<id>) in replies and resource_ref cards; cards are references, not separate content copies. Check availability before reading; expired files are not recoverable through metadata. Legacy desk tools are for remaining path/directory operations, not a private Bot space. Host workspace files stay remote until explicitly delivered. For interactive UI, first call read_ui_contract or read cheers://help/interactive-ui and its catalog/example resources. Use the advertised Cheers catalog, create an artifact, and attach its resource_ref card to the current reply with set_resource_cards. Streaming card references are staged until completion. User interaction context is structured data, not an authorization grant; read the source and check its version before updating it. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
 
 const MCP_TOKEN_USE: &str = "mcp_access";
+const GRANT_CLIENT_CREDENTIALS: &str = "client_credentials";
 pub(crate) const DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS: u64 = 86_400;
 pub(crate) const DEFAULT_MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS: u64 = 600;
 const MCP_CATALOG_TTL_MS: u64 = 30_000;
@@ -346,12 +346,11 @@ pub async fn authorize_approve(
             }
             Some(channel_id.to_string())
         }
-        None if state.config.mcp_channel_scope == McpChannelScope::Enforce => {
+        None => {
             return Err(AppError::BadRequest(
                 "choose a channel to bind this MCP authorization".into(),
             ));
         }
-        None => None,
     };
 
     let code = random_oauth_secret()?;
@@ -635,8 +634,8 @@ struct McpAccessClaims {
     credential_hash: String,
     scope: String,
     /// Channel this token is narrowed to, when the connector asked for one.
-    /// Absent on tokens from connectors that predate the request, which the
-    /// endpoint treats per `mcp_channel_scope` rather than as authority.
+    /// Absent only on tokens from connectors that predate the request; the
+    /// endpoint refuses every channel-bearing call they make.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chan: Option<String>,
     /// Task execution this token is bound to; it is refused once that
@@ -646,6 +645,11 @@ struct McpAccessClaims {
     /// The human whose task this is: channel checks use bot ∩ this user.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     obo: Option<String>,
+    /// OAuth grant that minted the token. `client_credentials` tokens cannot
+    /// step up, so a missing scope is refused as a tool error instead of a
+    /// 403 challenge. Absent means a client that can step up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gty: Option<String>,
     aud: String,
     iss: String,
     token_use: String,
@@ -719,7 +723,7 @@ pub async fn issue_mcp_access_token(
     if grant_type == "refresh_token" {
         return exchange_refresh_token(&state, request).await;
     }
-    if grant_type != "client_credentials" {
+    if grant_type != GRANT_CLIENT_CREDENTIALS {
         return oauth_token_error("unsupported_grant_type", "unsupported OAuth grant type");
     }
     if request.resource.as_deref() != Some(state.config.mcp_resource_url().as_str()) {
@@ -812,7 +816,7 @@ pub async fn issue_mcp_access_token(
             }
         }
     };
-    if channel.is_none() && state.config.mcp_channel_scope == McpChannelScope::Enforce {
+    if channel.is_none() {
         return oauth_token_error(
             "invalid_target",
             "cheers_channel is required when channel scoping is enforced",
@@ -989,6 +993,10 @@ fn mint_mcp_access_token(
         chan: binding.channel,
         task: binding.task,
         obo: binding.on_behalf_of,
+        // Only the client_credentials grant mints without a refresh token.
+        gty: refresh_token
+            .is_none()
+            .then(|| GRANT_CLIENT_CREDENTIALS.to_string()),
         aud: state.config.mcp_resource_url(),
         iss: state.config.mcp_authorization_issuer(),
         token_use: MCP_TOKEN_USE.to_string(),
@@ -1220,7 +1228,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         original_scope,
         original_channel_id,
     ) = decoded;
-    if original_channel_id.is_none() && state.config.mcp_channel_scope == McpChannelScope::Enforce {
+    if original_channel_id.is_none() {
         return oauth_token_error(
             "invalid_grant",
             "this refresh grant has no channel binding; authorize again and choose a channel",
@@ -1521,6 +1529,24 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     if !identity.scopes.contains(required_scope) {
         let message = format!("Insufficient OAuth scope {required_scope}");
         record_mcp_rejection(&state, host_id, -32003, &message, None).await;
+        // A client_credentials token cannot step up, and most clients hide a
+        // 403 from the model, so tell the model as a tool error instead: a
+        // deliberate deviation from the spec's SHOULD (MCP_AUTH_ISOLATION.md §6).
+        if method == "tools/call" && identity.client_credentials {
+            let mut result = tool_error_result(
+                "SCOPE_REQUIRED",
+                &format!("This tool needs the {required_scope} scope, which your MCP token lacks."),
+            );
+            result["structuredContent"]["requiredScopes"] = json!([required_scope]);
+            let result = match era {
+                ProtocolEra::Modern => result,
+                ProtocolEra::Legacy => legacy_result(result),
+            };
+            return private_json_response(
+                StatusCode::OK,
+                json!({"jsonrpc": "2.0", "id": id, "result": result}),
+            );
+        }
         return insufficient_scope_response(&state, id, required_scope);
     }
 
@@ -2003,10 +2029,81 @@ fn complete_tool_result(data: Value) -> Value {
     })
 }
 
+/// What the model should do after a refused tool call. Static text only: it
+/// is advisory and grants nothing (the server re-checks every call), it never
+/// names another channel, and it never interpolates user-supplied text
+/// (docs/arch/MCP_AUTH_ISOLATION.md §6).
+struct ToolErrorGuidance {
+    next: &'static str,
+    /// Whether calling again (with fixed arguments, or once after a transient
+    /// failure) can succeed. False stops loops on refusals no retry can change.
+    retryable: bool,
+}
+
+fn tool_error_guidance(code: &str) -> Option<ToolErrorGuidance> {
+    let (next, retryable) = match code {
+        "OUT_OF_CHANNEL" => (
+            "This task can act only in the channel it was started from. To act in another channel, ask the user to mention you there.",
+            false,
+        ),
+        "CHANNEL_SCOPE_REQUIRED" => (
+            "Your connector sent an MCP token without a channel. Tell the user the bot's owner needs to upgrade the Cheers connector.",
+            false,
+        ),
+        "NOT_MEMBER" => (
+            "You are not a member of that channel. Ask a channel member to invite you, or tell the user you cannot reach it.",
+            false,
+        ),
+        "PERMISSION_DENIED" | "FORBIDDEN" => (
+            "Your role does not allow this here. Tell the user what you could not do; a channel admin can change your role.",
+            false,
+        ),
+        "SCOPE_REQUIRED" => (
+            "Your connector's MCP token was issued without this permission, usually because the Gateway gained it after the connector started. Tell the user the bot's owner should restart the Cheers connector.",
+            false,
+        ),
+        "NOT_FOUND" => (
+            "Check the id or path. It may not exist, or you may not have access to it.",
+            false,
+        ),
+        "INVALID_PARAMS" | "BAD_REQUEST" | "INVALID_LOCATOR" | "UNRESOLVABLE_LOCATOR"
+        | "INVALID_PATCH" | "INVALID_UI" => (
+            "Fix the arguments described above, then call again.",
+            true,
+        ),
+        "E_TOO_LARGE" => ("Send less data per call, for example by splitting it.", true),
+        "CONFLICT" | "E_CONFLICT" | "INVALID_STATE" => (
+            "The resource changed since you read it. Read it again, then retry.",
+            true,
+        ),
+        "INTERNAL" | "INTERNAL_ERROR" => (
+            "A temporary server error. Retry once; if it fails again, tell the user.",
+            true,
+        ),
+        _ => return None,
+    };
+    Some(ToolErrorGuidance { next, retryable })
+}
+
+/// A refused tool call as an `isError` result, so the model sees it (most
+/// clients hide protocol errors from the model). `structuredContent` carries
+/// the same guidance for clients that act on it.
 fn tool_error_result(code: &str, message: &str) -> Value {
+    let guidance = tool_error_guidance(code);
+    let mut text = format!("[{code}] {message}");
+    let mut structured = json!({ "code": code });
+    if let Some(guidance) = &guidance {
+        text.push_str("\nNext: ");
+        text.push_str(guidance.next);
+        if !guidance.retryable {
+            text.push_str("\nDo not retry this call unchanged.");
+        }
+        structured["retryable"] = json!(guidance.retryable);
+    }
     json!({
         "resultType": "complete",
-        "content": [{"type": "text", "text": format!("[{code}] {message}")}],
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": structured,
         "isError": true,
         "ttlMs": 0,
         "cacheScope": "private",
@@ -2691,6 +2788,8 @@ struct McpIdentity {
     scopes: HashSet<String>,
     /// Channel this token was narrowed to at mint time, when it named one.
     channel_scope: Option<Uuid>,
+    /// Minted by `client_credentials`, so it cannot answer a step-up challenge.
+    client_credentials: bool,
     /// The token's `iat`: its generation, for the `direct` delivery check.
     issued_at: u64,
     /// Task execution the token is bound to, re-checked on every request.
@@ -2794,6 +2893,7 @@ async fn authenticate_mcp(
                 .chan
                 .as_deref()
                 .and_then(|value| Uuid::parse_str(value).ok()),
+            client_credentials: claims.gty.as_deref() == Some(GRANT_CLIENT_CREDENTIALS),
             issued_at: claims.iat,
             task: claims.task,
             on_behalf_of,
@@ -3055,15 +3155,13 @@ impl ChannelScopeVerdict {
         }
     }
 
-    /// Whether this verdict is a refusal at the given strictness.
+    /// Whether this verdict is a refusal.
     ///
-    /// `Channelless` is never refused: a resource that takes no channel cannot
-    /// leave one, and refusing it would break `dm.open` for every bot.
-    fn is_refused(self, scope: McpChannelScope) -> bool {
-        match scope {
-            McpChannelScope::Off | McpChannelScope::Warn => false,
-            McpChannelScope::Enforce => matches!(self, Self::OutOfScope | Self::Unnarrowed),
-        }
+    /// `Channelless` is never refused here: a resource that takes no channel
+    /// cannot leave one, and refusing it would break `dm.open` for every bot.
+    /// `bot.status.write` has its own rule ([`enforce_status_channel`]).
+    fn is_refused(self) -> bool {
+        matches!(self, Self::OutOfScope | Self::Unnarrowed)
     }
 }
 
@@ -3085,16 +3183,12 @@ fn classify_channel_scope(
 
 /// Hold an MCP call to the channel its token names, and record what happened.
 ///
-/// Returns the refusal when the call must not proceed. Off and warn always
-/// return `None`, so a deployment can measure exactly what enforce would refuse
-/// before it refuses anything — connectors that predate channel-narrowed tokens
-/// send no channel and would otherwise be cut off on upgrade.
+/// Returns the refusal when the call must not proceed.
 ///
 /// This narrowing never *grants*: the bot's channel role is still checked for
 /// every operation downstream. A token whose channel is wrong therefore costs
 /// its holder access, and can never buy any.
 fn enforce_channel_scope(
-    state: &AppState,
     identity: &McpIdentity,
     resource: &str,
     params: &Map<String, Value>,
@@ -3104,8 +3198,7 @@ fn enforce_channel_scope(
         .and_then(Value::as_str)
         .and_then(|value| Uuid::parse_str(value).ok());
     let verdict = classify_channel_scope(identity.channel_scope, call_channel);
-    let scope = state.config.mcp_channel_scope;
-    let refused = verdict.is_refused(scope);
+    let refused = verdict.is_refused();
 
     if refused || verdict == ChannelScopeVerdict::OutOfScope {
         tracing::warn!(
@@ -3130,13 +3223,14 @@ fn enforce_channel_scope(
         );
     }
 
-    refused.then(|| ToolCallFailure::Domain {
-        code: "PERMISSION_DENIED".to_string(),
-        message: match verdict {
-            ChannelScopeVerdict::Unnarrowed => {
-                "this gateway requires a channel-scoped MCP token".to_string()
-            }
-            _ => "this token is scoped to a different channel".to_string(),
+    refused.then(|| match verdict {
+        ChannelScopeVerdict::Unnarrowed => ToolCallFailure::Domain {
+            code: "CHANNEL_SCOPE_REQUIRED".to_string(),
+            message: "this gateway requires a channel-scoped MCP token".to_string(),
+        },
+        _ => ToolCallFailure::Domain {
+            code: "OUT_OF_CHANNEL".to_string(),
+            message: "this token is scoped to a different channel".to_string(),
         },
     })
 }
@@ -3260,6 +3354,51 @@ fn describe(params: &Map<String, Value>) -> String {
         .join("\n")
 }
 
+/// `set_status` writes the bot's single status card, which every channel shows.
+/// Written during a shared channel's turn, it can carry that channel's content
+/// into all the others, so only a token narrowed to the owner's DM with the bot
+/// (where the status-refresh prompt runs) may write it.
+async fn enforce_status_channel(
+    state: &AppState,
+    identity: &McpIdentity,
+) -> Result<(), ToolCallFailure> {
+    let owner_dm = match identity.channel_scope {
+        Some(_) => crate::domain::dms::owner_dm_channel(&state.db, identity.bot_id)
+            .await
+            .map_err(|error| {
+                tracing::error!(error = %error, bot_id = %identity.bot_id, "owner DM lookup failed");
+                ToolCallFailure::Domain {
+                    code: "INTERNAL_ERROR".to_string(),
+                    message: "could not check where set_status may run".to_string(),
+                }
+            })?,
+        None => None,
+    };
+    if status_write_allowed(identity.channel_scope, owner_dm) {
+        return Ok(());
+    }
+    tracing::warn!(
+        target: MCP_SCOPE_AUDIT,
+        verdict = "status_outside_owner_dm",
+        refused = true,
+        bot_id = %identity.bot_id,
+        token_channel = ?identity.channel_scope,
+        "set_status refused outside the owner's DM"
+    );
+    Err(ToolCallFailure::Domain {
+        code: "PERMISSION_DENIED".to_string(),
+        message: "set_status only works in your owner's direct message with you: your status \
+                  is shown in every channel, so it cannot be set from a shared one. Do not \
+                  retry here; ask your owner to request a status update in that DM."
+            .to_string(),
+    })
+}
+
+/// Pure half of [`enforce_status_channel`].
+fn status_write_allowed(token_channel: Option<Uuid>, owner_dm: Option<Uuid>) -> bool {
+    matches!((token_channel, owner_dm), (Some(token), Some(dm)) if token == dm)
+}
+
 async fn call_tool(
     state: &AppState,
     identity: &McpIdentity,
@@ -3268,8 +3407,11 @@ async fn call_tool(
 ) -> Result<Value, ToolCallFailure> {
     let mut call = build_tool_resource_call(name, arguments)
         .map_err(|error| ToolCallFailure::Invalid(error.message))?;
-    if let Some(refusal) = enforce_channel_scope(state, identity, call.resource, &call.params) {
+    if let Some(refusal) = enforce_channel_scope(identity, call.resource, &call.params) {
         return Err(refusal);
+    }
+    if call.resource == "bot.status.write" {
+        enforce_status_channel(state, identity).await?;
     }
     if call.resource == "approval.request" {
         return request_approval(state, identity, &call.params).await;
@@ -3368,7 +3510,7 @@ async fn read_resource(
             ResourceReadError::Invalid(error.message)
         }
     })?;
-    if enforce_channel_scope(state, identity, call.resource, &call.params).is_some() {
+    if enforce_channel_scope(identity, call.resource, &call.params).is_some() {
         // Same opaque result as a missing channel: a refusal must not tell the
         // caller whether the resource exists in a channel it cannot reach.
         return Err(ResourceReadError::Unavailable);
@@ -4165,28 +4307,64 @@ mod tests {
         );
     }
 
-    /// off / warn 一律放行——灰度期先量出 enforce 会拒掉什么，再去拒。
+    /// set_status 只允许在 owner↔bot 私聊的 token 下写；无 chan、别的频道、
+    /// 没有私聊都拒。
     #[test]
-    fn scope_refuses_nothing_before_enforce() {
-        for verdict in [
-            ChannelScopeVerdict::InScope,
-            ChannelScopeVerdict::OutOfScope,
-            ChannelScopeVerdict::Unnarrowed,
-            ChannelScopeVerdict::Channelless,
-        ] {
-            assert!(!verdict.is_refused(McpChannelScope::Off));
-            assert!(!verdict.is_refused(McpChannelScope::Warn));
-        }
+    fn status_write_needs_the_owner_dm() {
+        let dm = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        assert!(status_write_allowed(Some(dm), Some(dm)));
+        assert!(!status_write_allowed(Some(other), Some(dm)));
+        assert!(!status_write_allowed(Some(dm), None));
+        assert!(!status_write_allowed(None, Some(dm)));
+        assert!(!status_write_allowed(None, None));
     }
 
-    /// enforce 下越界与无声明都拒；无频道资源永远不拒，否则每个 bot 的
-    /// dm.open 都会被打断。
+    /// 拒绝结果要让模型看得见、知道下一步，且明确是否可重试，避免死循环。
     #[test]
-    fn enforce_refuses_out_of_scope_and_unnarrowed_only() {
-        assert!(ChannelScopeVerdict::OutOfScope.is_refused(McpChannelScope::Enforce));
-        assert!(ChannelScopeVerdict::Unnarrowed.is_refused(McpChannelScope::Enforce));
-        assert!(!ChannelScopeVerdict::InScope.is_refused(McpChannelScope::Enforce));
-        assert!(!ChannelScopeVerdict::Channelless.is_refused(McpChannelScope::Enforce));
+    fn refused_tool_calls_carry_next_steps_and_retryability() {
+        let refused = tool_error_result(
+            "OUT_OF_CHANNEL",
+            "this token is scoped to a different channel",
+        );
+        assert_eq!(refused["isError"], true);
+        assert_eq!(refused["structuredContent"]["code"], "OUT_OF_CHANNEL");
+        assert_eq!(refused["structuredContent"]["retryable"], false);
+        let text = refused["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with("[OUT_OF_CHANNEL] this token is scoped"),
+            "{text}"
+        );
+        assert!(text.contains("\nNext: "), "{text}");
+        assert!(
+            text.ends_with("Do not retry this call unchanged."),
+            "{text}"
+        );
+
+        let invalid = tool_error_result("INVALID_PARAMS", "channel_id is required");
+        assert_eq!(invalid["structuredContent"]["retryable"], true);
+        assert!(!invalid["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Do not retry"));
+
+        // Unknown codes keep the plain shape: no guessed advice.
+        let unknown = tool_error_result("TOOL_ERROR", "tool call failed");
+        assert_eq!(
+            unknown["content"][0]["text"],
+            "[TOOL_ERROR] tool call failed"
+        );
+        assert!(unknown["structuredContent"].get("retryable").is_none());
+    }
+
+    /// 越界与无声明都拒；无频道资源在这里不拒，否则每个 bot 的 dm.open
+    /// 都会被打断（bot.status.write 另有规则）。
+    #[test]
+    fn refuses_out_of_scope_and_unnarrowed_only() {
+        assert!(ChannelScopeVerdict::OutOfScope.is_refused());
+        assert!(ChannelScopeVerdict::Unnarrowed.is_refused());
+        assert!(!ChannelScopeVerdict::InScope.is_refused());
+        assert!(!ChannelScopeVerdict::Channelless.is_refused());
     }
 
     /// task 声明可缺省：老 token 照常解析，新 token 不带 task 时也不序列化该字段。
