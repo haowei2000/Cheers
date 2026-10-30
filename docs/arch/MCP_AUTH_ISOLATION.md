@@ -403,6 +403,7 @@ the model:
 |---|---|---|
 | `OUT_OF_CHANNEL` | This task can access only its own channel; ask the user to mention you there | no |
 | `CHANNEL_SCOPE_REQUIRED` | The connector sent a channel-less token; the bot owner must upgrade it | no |
+| `STATUS_OWNER_DM_ONLY` | `set_status` runs only from the owner↔bot DM; ask the owner there | no |
 | `NOT_MEMBER` | Not a member of that channel; ask a member to invite you | no |
 | `PERMISSION_DENIED` / `FORBIDDEN` | Your channel role is insufficient; ask a channel admin | no |
 | `APPROVAL_REQUIRED` | Call `request_approval`, then retry with `approval_id` | yes |
@@ -457,7 +458,7 @@ stateless. Channel-only tokens and tasks without a person are not gated.
 | Native MCP-over-ACP | ❌ M6 (no Agent advertises `acp: true`; SDK 3.6 upgrade in PR #805) |
 | Domain errors as `isError` tool results with `Next:` guidance and `{code, retryable}` | 🚧 M4a, PR #813 |
 | Per-channel host working directory | 🚧 M3, PR #810 |
-| Channel-safe `set_status` (owner↔bot DM only) | 🚧 M3, PR #809 |
+| Channel-safe `set_status` (owner↔bot DM only) | ✅ M3, #809; own code `STATUS_OWNER_DM_ONLY` |
 | `off` / `warn` removed; scope always enforced | 🚧 M3, PR #809 |
 | Token lifetime per mode (10 min for `gateway`, 24h for `direct`) | 🚧 M4b, PR #814 |
 | Task-bound tokens (`cheers_execution` → `task` claim, per-request running check) | 🚧 M5a, PR #815 |

@@ -2050,6 +2050,10 @@ fn tool_error_guidance(code: &str) -> Option<ToolErrorGuidance> {
             "Your connector sent an MCP token without a channel. Tell the user the bot's owner needs to upgrade the Cheers connector.",
             false,
         ),
+        "STATUS_OWNER_DM_ONLY" => (
+            "Do not set your status from this channel. Ask your owner to request the status update in their direct message with you.",
+            false,
+        ),
         "NOT_MEMBER" => (
             "You are not a member of that channel. Ask a channel member to invite you, or tell the user you cannot reach it.",
             false,
@@ -3386,10 +3390,9 @@ async fn enforce_status_channel(
         "set_status refused outside the owner's DM"
     );
     Err(ToolCallFailure::Domain {
-        code: "PERMISSION_DENIED".to_string(),
+        code: "STATUS_OWNER_DM_ONLY".to_string(),
         message: "set_status only works in your owner's direct message with you: your status \
-                  is shown in every channel, so it cannot be set from a shared one. Do not \
-                  retry here; ask your owner to request a status update in that DM."
+                  is shown in every channel, so it cannot be set from a shared one."
             .to_string(),
     })
 }
@@ -4347,6 +4350,13 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Do not retry"));
+
+        let status = tool_error_result("STATUS_OWNER_DM_ONLY", "set_status only works in the DM");
+        assert_eq!(status["structuredContent"]["retryable"], false);
+        assert!(status["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Next: Do not set your status from this channel."));
 
         // Unknown codes keep the plain shape: no guessed advice.
         let unknown = tool_error_result("TOOL_ERROR", "tool call failed");
