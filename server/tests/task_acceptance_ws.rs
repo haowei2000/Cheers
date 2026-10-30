@@ -2519,3 +2519,60 @@ async fn a_destructive_call_on_a_persons_task_runs_once_per_approval(db: PgPool)
     );
     assert!(result_text(&again).contains("already used"), "{again}");
 }
+
+/// A `client_credentials` token cannot step up, so a missing scope reaches the
+/// model as a tool error it can act on, not a 403 the client hides from it.
+#[sqlx::test]
+async fn a_connector_token_missing_a_scope_gets_an_actionable_tool_error(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let metadata: Value = fixture
+        .client
+        .get(format!(
+            "{}/.well-known/oauth-protected-resource/mcp",
+            fixture.base
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token: Value = fixture.client.post(format!("{}/oauth/token", fixture.base)).json(&json!({
+        "grant_type":"client_credentials","client_id":fixture.bot.host,"client_secret":fixture.bot.credential,
+        "resource":metadata["resource"],"scope":"cheers:read","cheers_channel":fixture.channel,
+    })).send().await.unwrap().json().await.unwrap();
+    let response = fixture
+        .client
+        .post(format!("{}/mcp", fixture.base))
+        .bearer_auth(token["access_token"].as_str().unwrap())
+        .header("MCP-Protocol-Version", "2025-11-25")
+        .header("Accept", "application/json, text/event-stream")
+        .json(
+            &json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"post_message",
+            "arguments":{"channel_id":fixture.channel,"text":"needs write"}}}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let rpc: Value = response.json().await.unwrap();
+    let result = &rpc["result"];
+    assert_eq!(result["isError"], true, "{rpc}");
+    assert_eq!(result["structuredContent"]["code"], "SCOPE_REQUIRED");
+    assert_eq!(result["structuredContent"]["retryable"], false);
+    assert_eq!(
+        result["structuredContent"]["requiredScopes"],
+        json!(["cheers:messages:write"])
+    );
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("Next:") && text.contains("restart the Cheers connector"),
+        "{text}"
+    );
+    let posted: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE content='needs write'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(posted, 0);
+}
