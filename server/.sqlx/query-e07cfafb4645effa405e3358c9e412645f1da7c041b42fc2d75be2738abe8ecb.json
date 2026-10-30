@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE messages\n         SET content_data = content_data || jsonb_build_object('consumed_at', NOW())\n         WHERE msg_id = $1 AND content_data->>'consumed_at' IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e07cfafb4645effa405e3358c9e412645f1da7c041b42fc2d75be2738abe8ecb"
+}

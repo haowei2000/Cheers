@@ -1376,6 +1376,55 @@ pub async fn update_bot_social_policy(
     })))
 }
 
+#[derive(Deserialize)]
+pub struct UpdateBotMcpPolicyRequest {
+    pub narrow_to_sender: bool,
+}
+
+/// Whether this bot's MCP calls on a human's task narrow to bot ∩ that
+/// human's channel role (docs/arch/MCP_AUTH_ISOLATION.md §5). On by default.
+pub async fn get_bot_mcp_policy(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let narrow = sqlx::query_scalar!(
+        "SELECT mcp_narrow_to_sender FROM bot_accounts WHERE bot_id = $1",
+        &bot_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    Ok(Json(
+        json!({ "bot_id": bot_id, "narrow_to_sender": narrow }),
+    ))
+}
+
+/// The owner's opt-out, for automation that read-only members must be able to
+/// drive. Applies to tokens minted from now on; a running task keeps its own.
+pub async fn update_bot_mcp_policy(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Json(body): Json<UpdateBotMcpPolicyRequest>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let updated = sqlx::query!(
+        "UPDATE bot_accounts SET mcp_narrow_to_sender = $1 WHERE bot_id = $2",
+        body.narrow_to_sender,
+        &bot_id,
+    )
+    .execute(&state.db)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(
+        json!({ "bot_id": bot_id, "narrow_to_sender": body.narrow_to_sender }),
+    ))
+}
+
 /// Parse a strict semver triple "major.minor.patch"; tolerates a leading `v`.
 pub(crate) fn version_triple(s: &str) -> Option<(u64, u64, u64)> {
     let mut it = s.trim().trim_start_matches('v').splitn(3, '.');

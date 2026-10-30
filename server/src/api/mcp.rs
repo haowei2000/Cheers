@@ -642,6 +642,9 @@ struct McpAccessClaims {
     /// execution ends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     task: Option<String>,
+    /// The human whose task this is: channel checks use bot ∩ this user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    obo: Option<String>,
     /// OAuth grant that minted the token. `client_credentials` tokens cannot
     /// step up, so a missing scope is refused as a tool error instead of a
     /// 403 challenge. Absent means a client that can step up.
@@ -822,8 +825,8 @@ pub async fn issue_mcp_access_token(
     // Task binding: the execution must be this bot's, in this channel, and
     // still running. The connector's host credential plus an execution id is
     // the grant; neither alone mints a task-bound token.
-    let task = match request.cheers_execution.as_deref() {
-        None => None,
+    let (task, on_behalf_of) = match request.cheers_execution.as_deref() {
+        None => (None, None),
         Some(raw) => {
             let (Ok(execution_id), Some(channel_id)) = (Uuid::parse_str(raw), channel.as_deref())
             else {
@@ -832,10 +835,9 @@ pub async fn issue_mcp_access_token(
                     "cheers_execution must be a uuid and needs cheers_channel",
                 );
             };
-            match execution_is_running(&state, &bot_id, channel_id, &execution_id.to_string()).await
-            {
-                Ok(true) => Some(execution_id.to_string()),
-                Ok(false) => {
+            match running_execution(&state, &bot_id, channel_id, &execution_id.to_string()).await {
+                Ok(Some(run)) => (Some(execution_id.to_string()), run.on_behalf_of),
+                Ok(None) => {
                     return oauth_token_error(
                         "invalid_grant",
                         "cheers_execution is not a running task of this bot in cheers_channel",
@@ -857,10 +859,51 @@ pub async fn issue_mcp_access_token(
         host_id,
         credential_hash,
         scope,
-        channel,
-        task,
+        TokenBinding {
+            channel,
+            task,
+            on_behalf_of,
+        },
         None,
     )
+}
+
+/// A running execution's delegation: the human whose task it is.
+struct RunningExecution {
+    on_behalf_of: Option<String>,
+}
+
+/// The running execution `execution_id` of this bot in this channel, and the
+/// human it narrows to: the sender of its triggering message, or for a bot's
+/// message in a task chain, the human whose message started the chain. None
+/// when the bot's owner turned narrowing off, or no human started the work.
+/// Taken from the run record, never from the request.
+async fn running_execution(
+    state: &AppState,
+    bot_id: &str,
+    channel_id: &str,
+    execution_id: &str,
+) -> Result<Option<RunningExecution>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT b.mcp_narrow_to_sender AS "narrow!",
+                  CASE WHEN m.sender_type = 'user' THEN m.sender_id
+                       WHEN root.sender_type = 'user' THEN root.sender_id END AS "human?"
+         FROM bot_runs r
+         JOIN bot_accounts b ON b.bot_id = r.bot_id
+         LEFT JOIN messages m ON m.msg_id = r.trigger_msg_id
+         LEFT JOIN task_chains c ON c.chain_id = r.chain_id
+         LEFT JOIN messages root ON root.msg_id = c.root_msg_id
+         WHERE r.execution_id = $1 AND r.bot_id = $2 AND r.channel_id = $3
+           AND r.status = 'accepted' AND r.terminal_committed_at IS NULL"#,
+        execution_id,
+        bot_id,
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(row.map(|row| RunningExecution {
+        on_behalf_of: row.human.filter(|_| row.narrow),
+    }))
 }
 
 /// Whether `execution_id` is a task of this bot in this channel that has been
@@ -903,14 +946,31 @@ async fn bot_is_channel_member(
     .await
 }
 
+/// What a token is narrowed to: its channel, and on a task, the execution and
+/// the human it acts for.
+struct TokenBinding {
+    channel: Option<String>,
+    task: Option<String>,
+    on_behalf_of: Option<String>,
+}
+
+impl TokenBinding {
+    fn channel(channel: Option<String>) -> Self {
+        Self {
+            channel,
+            task: None,
+            on_behalf_of: None,
+        }
+    }
+}
+
 fn mint_mcp_access_token(
     state: &AppState,
     bot_id: String,
     host_id: String,
     credential_hash: String,
     scope: String,
-    channel: Option<String>,
-    task: Option<String>,
+    binding: TokenBinding,
     refresh_token: Option<String>,
 ) -> Response {
     let now = chrono::Utc::now().timestamp().max(0) as u64;
@@ -930,8 +990,9 @@ fn mint_mcp_access_token(
         host_id,
         credential_hash,
         scope: scope.clone(),
-        chan: channel,
-        task,
+        chan: binding.channel,
+        task: binding.task,
+        obo: binding.on_behalf_of,
         // Only the client_credentials grant mints without a refresh token.
         gty: refresh_token
             .is_none()
@@ -1072,8 +1133,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         host_id,
         host.1,
         scope,
-        channel_id,
-        None,
+        TokenBinding::channel(channel_id),
         Some(refresh_token),
     )
 }
@@ -1262,8 +1322,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         host_id,
         host.1,
         scope,
-        original_channel_id,
-        None,
+        TokenBinding::channel(original_channel_id),
         Some(replacement),
     )
 }
@@ -2735,6 +2794,8 @@ struct McpIdentity {
     issued_at: u64,
     /// Task execution the token is bound to, re-checked on every request.
     task: Option<String>,
+    /// The human this task acts for; channel checks narrow to bot ∩ them.
+    on_behalf_of: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2797,6 +2858,12 @@ async fn authenticate_mcp(
     }
     let bot_id = Uuid::parse_str(&claims.sub).map_err(|_| AuthMcpError::Unauthorized)?;
     let host_id = Uuid::parse_str(&claims.host_id).map_err(|_| AuthMcpError::Unauthorized)?;
+    // Unlike `chan`, a malformed `obo` rejects the token: dropping it would
+    // widen the token back to the bot's own role.
+    let on_behalf_of = match claims.obo.as_deref() {
+        None => None,
+        Some(value) => Some(Uuid::parse_str(value).map_err(|_| AuthMcpError::Unauthorized)?),
+    };
     let row = sqlx::query!(
         "SELECT b.is_disabled
          FROM connector_hosts i
@@ -2829,6 +2896,7 @@ async fn authenticate_mcp(
             client_credentials: claims.gty.as_deref() == Some(GRANT_CLIENT_CREDENTIALS),
             issued_at: claims.iat,
             task: claims.task,
+            on_behalf_of,
         }),
         _ => Err(AuthMcpError::Unauthorized),
     }
@@ -3167,6 +3235,125 @@ fn enforce_channel_scope(
     })
 }
 
+/// The approval a destructive call needs, or `None` when it needs none: only
+/// on a human's task (a token with `task` and `obo`) do destructive resources
+/// ask that human first (`domain::mcp_approval`).
+fn approval_binding<'a>(
+    identity: &'a McpIdentity,
+    resource: &'a str,
+    params: &Map<String, Value>,
+) -> Result<Option<crate::domain::mcp_approval::Binding<'a>>, ToolCallFailure> {
+    let destructive =
+        cheers_mcp_server::registry::by_resource(resource).is_some_and(|spec| spec.destructive);
+    let (true, Some(task), Some(approver)) =
+        (destructive, identity.task.as_deref(), identity.on_behalf_of)
+    else {
+        return Ok(None);
+    };
+    let channel_id = params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| ToolCallFailure::Invalid("channel_id is required".into()))?;
+    Ok(Some(crate::domain::mcp_approval::Binding {
+        bot_id: identity.bot_id,
+        channel_id,
+        task,
+        approver,
+        resource,
+        args_hash: crate::domain::mcp_approval::args_hash(params),
+    }))
+}
+
+fn approval_refusal(tool: &str, refusal: crate::domain::mcp_approval::Refusal) -> ToolCallFailure {
+    use crate::domain::mcp_approval::Refusal;
+    let message = match refusal {
+        Refusal::Missing => format!(
+            "{tool} on this task needs the person's approval. Call request_approval with tool \"{tool}\" and these exact arguments as arguments_json, then call {tool} again with the returned approval_id."
+        ),
+        Refusal::NotApproved => {
+            "that approval was not granted; do not retry unless the person asks again".to_string()
+        }
+        Refusal::Mismatch => format!(
+            "that approval_id is not for this exact {tool} call on this task; request a new approval for these arguments"
+        ),
+        Refusal::Used => {
+            "that approval was already used; each approval allows one call".to_string()
+        }
+    };
+    ToolCallFailure::Domain {
+        code: "APPROVAL_REQUIRED".to_string(),
+        message,
+    }
+}
+
+/// `request_approval`: posts the approval card for one destructive call and
+/// waits for the person whose task this is.
+async fn request_approval(
+    state: &AppState,
+    identity: &McpIdentity,
+    params: &Map<String, Value>,
+) -> Result<Value, ToolCallFailure> {
+    let text = |name: &str| params.get(name).and_then(Value::as_str);
+    let tool = text("tool").unwrap_or_default();
+    let arguments: Map<String, Value> = text("arguments_json")
+        .and_then(|raw| serde_json::from_str(raw).ok())
+        .ok_or_else(|| ToolCallFailure::Invalid("arguments_json must be a JSON object".into()))?;
+    let call = build_tool_resource_call(tool, &arguments)
+        .map_err(|error| ToolCallFailure::Invalid(error.message))?;
+    if call.params.get("channel_id") != params.get("channel_id") {
+        return Err(ToolCallFailure::Invalid(
+            "arguments_json must name the same channel_id".into(),
+        ));
+    }
+    let Some(binding) = approval_binding(identity, call.resource, &call.params)? else {
+        return Err(ToolCallFailure::Domain {
+            code: "APPROVAL_NOT_NEEDED".to_string(),
+            message: format!(
+                "{tool} needs no approval here: it is not a destructive tool, or this is not a person's task. Call it directly."
+            ),
+        });
+    };
+    let summary = match text("reason") {
+        Some(reason) => format!(
+            "{}\n\nReason given by the bot: {reason}",
+            describe(&call.params)
+        ),
+        None => describe(&call.params),
+    };
+    let approval_id = crate::domain::mcp_approval::request(state, &binding, tool, &summary)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "mcp approval: card insert failed");
+            ToolCallFailure::Domain {
+                code: "INTERNAL_ERROR".to_string(),
+                message: "could not post the approval request".to_string(),
+            }
+        })?;
+    let decision =
+        crate::domain::mcp_approval::wait(state, &approval_id, crate::domain::mcp_approval::WAIT)
+            .await;
+    let decision = match decision {
+        crate::domain::mcp_approval::Decision::Approved => "approved",
+        crate::domain::mcp_approval::Decision::Denied => "denied",
+        crate::domain::mcp_approval::Decision::Expired => "expired",
+    };
+    Ok(json!({ "approval_id": approval_id, "decision": decision }))
+}
+
+/// The arguments of the call being approved, as the person will read them.
+fn describe(params: &Map<String, Value>) -> String {
+    params
+        .iter()
+        .filter(|(key, _)| key.as_str() != "channel_id")
+        .map(|(key, value)| match value {
+            Value::String(text) => format!("{key}: {text}"),
+            other => format!("{key}: {other}"),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// `set_status` writes the bot's single status card, which every channel shows.
 /// Written during a shared channel's turn, it can carry that channel's content
 /// into all the others, so only a token narrowed to the owner's DM with the bot
@@ -3218,13 +3405,26 @@ async fn call_tool(
     name: &str,
     arguments: &Map<String, Value>,
 ) -> Result<Value, ToolCallFailure> {
-    let call = build_tool_resource_call(name, arguments)
+    let mut call = build_tool_resource_call(name, arguments)
         .map_err(|error| ToolCallFailure::Invalid(error.message))?;
     if let Some(refusal) = enforce_channel_scope(identity, call.resource, &call.params) {
         return Err(refusal);
     }
     if call.resource == "bot.status.write" {
         enforce_status_channel(state, identity).await?;
+    }
+    if call.resource == "approval.request" {
+        return request_approval(state, identity, &call.params).await;
+    }
+    // Never forwarded: it is an argument to this gate, not to the resource.
+    let approval_id = call.params.remove("approval_id");
+    if let Some(binding) = approval_binding(identity, call.resource, &call.params)? {
+        let approval_id = approval_id.as_ref().and_then(Value::as_str);
+        if let Err(refusal) =
+            crate::domain::mcp_approval::consume(state, approval_id, &binding).await
+        {
+            return Err(approval_refusal(name, refusal));
+        }
     }
     let bot_id = identity.bot_id;
     let frame = json!({
@@ -3236,7 +3436,7 @@ async fn call_tool(
     });
     let response = crate::gateway::resource_effects::dispatch_with_effects(
         state,
-        Principal::bot(bot_id),
+        Principal::bot_for(bot_id, identity.on_behalf_of),
         &frame,
     )
     .await;
@@ -3325,7 +3525,7 @@ async fn read_resource(
     });
     let response = resource::dispatch(
         &state.db,
-        Principal::bot(bot_id),
+        Principal::bot_for(bot_id, identity.on_behalf_of),
         &frame,
         &state.bot_locator,
     )
