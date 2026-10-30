@@ -72,6 +72,11 @@ impl McpDeliveryTracker {
         );
     }
 
+    /// The delivery mode the host's current Agent process reported.
+    pub fn mode(&self, host_id: Uuid) -> Option<McpDeliveryMode> {
+        self.hosts.get(&host_id).map(|host| host.mode)
+    }
+
     /// The Gateway minted a token for `(host, channel)` issued at `iat`.
     pub fn record_mint(&self, host_id: Uuid, channel_id: Uuid, iat: u64, now: Instant) {
         let mut generation = self
@@ -202,6 +207,21 @@ mod tests {
         // A reconnect is a new Agent process: judged again from scratch.
         tracker.record_ready(host, Some(&direct()), "codex-acp@2.3.0".into());
         assert_eq!(tracker.observe(host, Some(chan), 100, late), None);
+    }
+
+    #[test]
+    fn mode_follows_the_latest_ready() {
+        let tracker = McpDeliveryTracker::default();
+        let host = Uuid::new_v4();
+        assert_eq!(tracker.mode(host), None);
+        tracker.record_ready(host, Some(&direct()), "a@1".into());
+        assert_eq!(tracker.mode(host), Some(McpDeliveryMode::Direct));
+        let gateway = McpDeliveryReport {
+            mode: McpDeliveryMode::Gateway,
+            ..direct()
+        };
+        tracker.record_ready(host, Some(&gateway), "a@1".into());
+        assert_eq!(tracker.mode(host), Some(McpDeliveryMode::Gateway));
     }
 
     #[test]

@@ -57,6 +57,7 @@ const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. Cha
 const MCP_TOKEN_USE: &str = "mcp_access";
 const GRANT_CLIENT_CREDENTIALS: &str = "client_credentials";
 pub(crate) const DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS: u64 = 86_400;
+pub(crate) const DEFAULT_MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS: u64 = 600;
 const MCP_CATALOG_TTL_MS: u64 = 30_000;
 const MCP_AUTH_CODE_TTL_MINUTES: i64 = 5;
 const MCP_REFRESH_TOKEN_TTL_DAYS: i64 = 30;
@@ -852,7 +853,17 @@ fn mint_mcp_access_token(
     refresh_token: Option<String>,
 ) -> Response {
     let now = chrono::Utc::now().timestamp().max(0) as u64;
-    let ttl_secs = state.config.mcp_access_token_ttl_secs;
+    let ttl_secs = match Uuid::parse_str(&host_id)
+        .ok()
+        .and_then(|host| state.mcp_delivery.mode(host))
+    {
+        // The connector holds and renews these; nothing waits on them mid-turn.
+        Some(
+            cheers_bridge_protocol::McpDeliveryMode::Gateway
+            | cheers_bridge_protocol::McpDeliveryMode::Acp,
+        ) => state.config.mcp_gateway_access_token_ttl_secs,
+        _ => state.config.mcp_access_token_ttl_secs,
+    };
     let claims = McpAccessClaims {
         sub: bot_id,
         host_id,

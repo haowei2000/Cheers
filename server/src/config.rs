@@ -180,6 +180,12 @@ pub struct Config {
     /// Lifetime of an MCP access token in seconds (`MCP_ACCESS_TOKEN_TTL_SECS`, default 86400 = 24h).
     /// Prevents premature expiration during long-running tasks and human-in-the-loop approval waits.
     pub mcp_access_token_ttl_secs: u64,
+    /// Lifetime for tokens minted to a host whose Agent uses `gateway` delivery
+    /// (`MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS`, default 600, at least 120). The
+    /// connector holds and renews these itself, so they never need to outlive
+    /// a turn; `direct` tokens keep `mcp_access_token_ttl_secs` because the
+    /// Agent cannot renew one mid-turn.
+    pub mcp_gateway_access_token_ttl_secs: u64,
 
     /// Public WS base the connector dials to reach this gateway's agent-bridge,
     /// e.g. `ws://localhost:30080` (via the frontend proxy for local kind) or
@@ -355,6 +361,20 @@ fn parse_mcp_allowed_delivery_modes(
         panic!("MCP_ALLOWED_DELIVERY_MODES={raw:?} allows neither direct nor gateway, which connectors serve today");
     }
     Some(modes)
+}
+
+/// Parses `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS`. The floor leaves the connector,
+/// which renews at 80% of the lifetime and never closer than 30 s to expiry,
+/// room to renew before a request goes out with an expiring token.
+fn gateway_access_token_ttl(raw: Option<&str>) -> u64 {
+    const MIN: u64 = 120;
+    match raw.map(str::trim).filter(|value| !value.is_empty()) {
+        None => crate::api::mcp::DEFAULT_MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS,
+        Some(value) => match value.parse::<u64>() {
+            Ok(secs) if secs >= MIN => secs,
+            _ => panic!("MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS must be a whole number of seconds >= {MIN} (got {value:?})"),
+        },
+    }
 }
 
 impl Config {
@@ -534,6 +554,9 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(crate::api::mcp::DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS),
+            mcp_gateway_access_token_ttl_secs: gateway_access_token_ttl(
+                optional("MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS").as_deref(),
+            ),
             connector_public_base,
             connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
                 .ok()
@@ -907,6 +930,16 @@ mod tests {
             let result =
                 std::panic::catch_unwind(|| reject_removed_mcp_channel_scope(Some(removed)));
             assert!(result.is_err(), "{removed} must stop startup");
+        }
+    }
+
+    #[test]
+    fn gateway_token_ttl_defaults_short_and_has_a_floor() {
+        assert_eq!(gateway_access_token_ttl(None), 600);
+        assert_eq!(gateway_access_token_ttl(Some("900")), 900);
+        for bad in ["60", "ten", "-5"] {
+            let result = std::panic::catch_unwind(|| gateway_access_token_ttl(Some(bad)));
+            assert!(result.is_err(), "{bad} must stop startup");
         }
     }
 
