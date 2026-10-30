@@ -55,7 +55,8 @@ use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy, McpDelivery,
     PermissionTimeoutAction, PromptPolicy,
 };
-use crate::credential_gateway::{bypass_proxy_for_loopback, BoundGateway, CredentialGateway};
+use crate::credential_gateway::{bypass_proxy_for_loopback, CredentialGateway};
+use crate::mcp_delivery;
 use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
     PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
@@ -63,6 +64,9 @@ use crate::runtime_adapter::{
 use crate::self_update::SelfUpdater;
 use crate::state::SessionStateStore;
 use crate::terminal_outbox::{Scope as TerminalScope, TerminalOutbox};
+
+/// How often a pending Agent restart checks whether the runtime is idle.
+const IDLE_RESTART_POLL: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
     // Self-update rollback rail first: if a freshly-swapped binary keeps failing
@@ -81,17 +85,34 @@ pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
     for (account_id, account) in config.accounts {
         let state = state.clone();
         let updater = updater.clone();
-        join_set.spawn(async move {
-            AccountRuntime::new(account_id, account, state, updater)
-                .run()
-                .await
-        });
+        join_set.spawn(run_account(account_id, account, state, updater));
     }
 
     while let Some(result) = join_set.join_next().await {
         result.context("account runtime task panicked")??;
     }
     Ok(())
+}
+
+/// Runs one account, starting a fresh Agent process each time the runtime
+/// asks for a restart (an MCP delivery switch).
+async fn run_account(
+    account_id: String,
+    account: AccountConfig,
+    state: Arc<Mutex<SessionStateStore>>,
+    updater: Arc<SelfUpdater>,
+) -> anyhow::Result<()> {
+    loop {
+        let runtime = AccountRuntime::new(
+            account_id.clone(),
+            account.clone(),
+            state.clone(),
+            updater.clone(),
+        );
+        match runtime.run().await? {
+            RunExit::RestartAgent => continue,
+        }
+    }
 }
 
 struct AccountRuntime {
@@ -116,14 +137,14 @@ impl AccountRuntime {
         }
     }
 
-    async fn run(self) -> anyhow::Result<()> {
+    async fn run(self) -> anyhow::Result<RunExit> {
         let (runtime_tx, mut runtime_rx) = mpsc::channel(512);
         let (adapter_tx, mut adapter_rx) = mpsc::channel(512);
         let mut agent_config = self.config.agent.clone();
-        if self.config.policy.mcp.delivery == McpDelivery::Gateway {
-            // The Agent reaches Cheers MCP on loopback; an inherited proxy must not see it.
-            bypass_proxy_for_loopback(&mut agent_config.env, agent_config.inherit_env);
-        }
+        // The delivery mode is only settled after the hello, and gateway
+        // delivery puts Cheers MCP on loopback; an inherited proxy must never
+        // see it, and bypassing one for loopback costs nothing otherwise.
+        bypass_proxy_for_loopback(&mut agent_config.env, agent_config.inherit_env);
         let mut adapter = create_runtime(self.account_id.clone(), agent_config, adapter_tx);
         let initialize_response = adapter.start().await?;
         if !adapter.capabilities().mcp_http {
@@ -134,10 +155,22 @@ impl AccountRuntime {
         }
         let adapter = Arc::new(Mutex::new(adapter));
 
-        let (mcp_delivery, bound_gateway) =
-            choose_mcp_delivery(self.config.policy.mcp.delivery).await;
-        let bridge_ready =
-            bridge_ready_from_initialize(&initialize_response, &self.config.policy, &mcp_delivery);
+        let agent = agent_key(&initialize_response);
+        let header_refresh = self
+            .state
+            .lock()
+            .await
+            .agent_mcp_facts(&agent)
+            .map(|facts| facts.header_refresh);
+        // Bound before `ready` so the mode it reports is one the Agent gets;
+        // released below when the decision is not `gateway`.
+        let bound = match CredentialGateway::bind().await {
+            Ok(bound) => Some(bound),
+            Err(error) => {
+                tracing::warn!(account = %self.account_id, %error, "MCP credential gateway could not bind");
+                None
+            }
+        };
         let bridge_config = BridgeSessionConfig::new(
             self.account_id.clone(),
             self.config.bridge_credential.clone(),
@@ -150,7 +183,35 @@ impl AccountRuntime {
             self.config.advanced.heartbeat_interval_ms,
             self.config.advanced.send_ack_timeout_ms,
         );
-        let bridge = BridgeSession::connect(bridge_config.clone(), bridge_ready.clone()).await?;
+        let mut decided = None;
+        let (bridge, bridge_ready) = BridgeSession::connect(bridge_config.clone(), |hello| {
+            let decision = mcp_delivery::decide(mcp_delivery::Inputs {
+                configured: self.config.policy.mcp.delivery,
+                allowed: hello
+                    .server_capabilities
+                    .as_ref()
+                    .and_then(|caps| caps.mcp_allowed_modes.as_deref()),
+                gateway_bound: bound.is_some(),
+                agent: &agent,
+                header_refresh,
+            })?;
+            tracing::info!(
+                account = %self.account_id,
+                mode = ?decision.mode,
+                reason = %decision.reason,
+                "MCP delivery decided"
+            );
+            let ready = bridge_ready_from_initialize(
+                &initialize_response,
+                &self.config.policy,
+                &decision.report(),
+            );
+            decided = Some(decision);
+            Ok(ready)
+        })
+        .await?;
+        let mcp_delivery = decided.context("Bridge connected without building ready")?;
+        let bound_gateway = bound.filter(|_| mcp_delivery.mode == McpDeliveryMode::Gateway);
         // A healthy bridge connection is the self-update success signal (stops
         // the rollback boot counter), and the gateway-advertised release version
         // in the same hello is the update trigger.
@@ -288,6 +349,10 @@ impl AccountRuntime {
             mcp_url,
             mcp_token,
             credential_gateway,
+            mcp_delivery,
+            agent,
+            direct_test: Mutex::new(DirectTest::default()),
+            restart_pending: std::sync::atomic::AtomicBool::new(false),
             state: self.state,
             adapter,
             io,
@@ -305,6 +370,7 @@ impl AccountRuntime {
             }
         }
         let _outbox_worker = AbortOnDrop(context.start_terminal_outbox().abort_handle());
+        let _restart_watch = AbortOnDrop(context.clone().watch_for_idle_restart().abort_handle());
         let result = context.run_loop(&mut runtime_rx).await;
         let _ = adapter_for_stop.lock().await.stop().await;
         result
@@ -624,6 +690,13 @@ struct RuntimeContext {
     /// Loopback pass-through that holds the bearer on the Agent's behalf. When
     /// set, the Agent is handed its URL and a local secret, never the token.
     credential_gateway: Option<Arc<CredentialGateway>>,
+    /// How this Agent process reaches Cheers MCP; fixed for its lifetime.
+    mcp_delivery: mcp_delivery::Decision,
+    /// `name@version` of the Agent, the key for cached MCP facts.
+    agent: String,
+    direct_test: Mutex<DirectTest>,
+    /// Restart the Agent once idle, to apply a new MCP delivery decision.
+    restart_pending: std::sync::atomic::AtomicBool,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
@@ -635,6 +708,87 @@ struct RuntimeContext {
 }
 
 impl RuntimeContext {
+    /// Cache the Gateway's verdict on this Agent build and, when `auto` chose
+    /// `direct` for an Agent that keeps old tokens, restart it on gateway
+    /// delivery once no turn is running (before the old token can expire).
+    async fn handle_mcp_delivery_observed(
+        &self,
+        channel_id: &str,
+        agent: &str,
+        header_refresh: bool,
+    ) {
+        if agent != self.agent {
+            tracing::warn!(account = %self.account_id, %agent, running = %self.agent, "ignoring an MCP delivery verdict for another Agent build");
+            return;
+        }
+        tracing::info!(account = %self.account_id, channel = %channel_id, %agent, header_refresh, "Gateway judged direct MCP delivery");
+        if let Err(error) = self
+            .state
+            .lock()
+            .await
+            .set_agent_header_refresh(agent, header_refresh)
+            .await
+        {
+            tracing::warn!(account = %self.account_id, %error, "could not cache the MCP delivery verdict");
+        }
+        if !header_refresh
+            && self.mcp_delivery.mode == McpDeliveryMode::Direct
+            && self.config.policy.mcp.delivery == McpDelivery::Auto
+        {
+            tracing::warn!(account = %self.account_id, %agent, "Agent keeps old MCP tokens; restarting it on gateway delivery once idle");
+            self.restart_pending
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        } else if !header_refresh && self.mcp_delivery.mode == McpDeliveryMode::Direct {
+            tracing::warn!(
+                account = %self.account_id,
+                %agent,
+                "Agent keeps old MCP tokens; direct delivery will fail on expiry; set policy.mcp.delivery = \"auto\" or \"gateway\""
+            );
+        }
+    }
+
+    /// No turn queued or running: the Agent can be replaced without losing work.
+    async fn is_idle(&self) -> bool {
+        let reserved = self
+            .shared
+            .task_reservations
+            .lock()
+            .map(|reservations| reservations.is_empty())
+            .unwrap_or(false);
+        reserved && self.shared.runs.lock().await.by_msg.is_empty()
+    }
+
+    /// Polls for a pending restart and asks the run loop to restart once idle.
+    /// Keeps asking: the run loop re-checks and ignores a request that a newly
+    /// started task overtook.
+    fn watch_for_idle_restart(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(IDLE_RESTART_POLL);
+            loop {
+                tick.tick().await;
+                if self
+                    .restart_pending
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    && self.is_idle().await
+                    && self
+                        .runtime_tx
+                        .send(RuntimeInput::RestartAgent)
+                        .await
+                        .is_err()
+                {
+                    return;
+                }
+            }
+        })
+    }
+
+    /// Whether this prompt should carry a freshly renewed token for the
+    /// `direct` test: once per Agent process, at the first channel's second
+    /// prompt (the first prompt minted the generation to compare against).
+    async fn take_direct_renewal(&self, channel_id: &str) -> bool {
+        self.mcp_delivery.test_direct && self.direct_test.lock().await.take(channel_id)
+    }
+
     /// The only producer path for ordinary task terminal frames. Publishing the
     /// immutable result precedes its first send; retrying delivery never runs ACP.
     async fn send_terminal(&self, frame: DataOutbound) -> anyhow::Result<DataInbound> {
@@ -743,7 +897,7 @@ impl RuntimeContext {
     async fn run_loop(
         self: Arc<Self>,
         rx: &mut mpsc::Receiver<RuntimeInput>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<RunExit> {
         while let Some(input) = rx.recv().await {
             match input {
                 RuntimeInput::Control(frame) => {
@@ -764,6 +918,14 @@ impl RuntimeContext {
                 RuntimeInput::SocketError { stream, error } => {
                     self.shared.watches.lock().await.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream error: {error}"));
+                }
+                RuntimeInput::RestartAgent => {
+                    // Re-checked here: a task queued ahead of this input may
+                    // have started since the watcher saw the runtime idle.
+                    if self.is_idle().await {
+                        self.shared.watches.lock().await.clear();
+                        return Ok(RunExit::RestartAgent);
+                    }
                 }
             }
         }
@@ -1091,19 +1253,8 @@ impl RuntimeContext {
                 header_refresh,
                 ..
             } => {
-                // Acting on it (caching the fact, switching this Agent to
-                // gateway delivery at the next idle restart) is
-                // `delivery = "auto"`, M2b.
-                if header_refresh {
-                    tracing::info!(account = %self.account_id, channel = %channel_id, %agent, "Gateway confirms the Agent picks up renewed MCP tokens");
-                } else {
-                    tracing::warn!(
-                        account = %self.account_id,
-                        channel = %channel_id,
-                        %agent,
-                        "Gateway reports the Agent keeps old MCP tokens; direct delivery will fail on expiry; set policy.mcp.delivery = \"gateway\""
-                    );
-                }
+                self.handle_mcp_delivery_observed(&channel_id, &agent, header_refresh)
+                    .await;
             }
             ControlInbound::Pong | ControlInbound::Unknown => {}
             ControlInbound::Error { .. } => {}
@@ -3160,7 +3311,13 @@ impl RuntimeContext {
             ));
             return Value::Array(servers);
         }
-        let bearer = match provider.bearer(&task.channel_id).await {
+        let token = if self.take_direct_renewal(&task.channel_id).await {
+            tracing::info!(account = %self.account_id, channel = %task.channel_id, "renewing the MCP token to test direct delivery");
+            provider.renew(&task.channel_id).await
+        } else {
+            provider.bearer(&task.channel_id).await
+        };
+        let bearer = match token {
             Ok(token) => token,
             Err(error) => {
                 tracing::warn!(
@@ -3696,46 +3853,6 @@ fn silent_result(
     }
 }
 
-/// Settles this Agent process's MCP delivery before `ready` is sent, binding
-/// the gateway's port now so a bind failure is reported instead of discovered
-/// after the Gateway was told `gateway`.
-async fn choose_mcp_delivery(configured: McpDelivery) -> (McpDeliveryReport, Option<BoundGateway>) {
-    let modes = vec![McpDeliveryMode::Direct, McpDeliveryMode::Gateway];
-    match configured {
-        McpDelivery::Direct => (
-            McpDeliveryReport {
-                modes,
-                mode: McpDeliveryMode::Direct,
-                reason: "policy.mcp.delivery = \"direct\"".into(),
-            },
-            None,
-        ),
-        McpDelivery::Gateway => {
-            match CredentialGateway::bind().await {
-                Ok(bound) => (
-                    McpDeliveryReport {
-                        modes,
-                        mode: McpDeliveryMode::Gateway,
-                        reason: "policy.mcp.delivery = \"gateway\"".into(),
-                    },
-                    Some(bound),
-                ),
-                Err(error) => {
-                    tracing::warn!(%error, "MCP credential gateway could not bind; using direct delivery");
-                    (
-                    McpDeliveryReport {
-                        modes,
-                        mode: McpDeliveryMode::Direct,
-                        reason: format!("gateway configured but its loopback port could not bind: {error:#}"),
-                    },
-                    None,
-                )
-                }
-            }
-        }
-    }
-}
-
 /// The directory a channel with no Backend-pinned cwd runs in:
 /// `<default_cwd>/.cheers/channels/<channel_id>`, created on first use. A
 /// `.gitignore` in `.cheers/` keeps these out of the repository `default_cwd`
@@ -3825,7 +3942,53 @@ enum RuntimeInput {
     Data(Box<DataInbound>),
     Adapter(RuntimeEvent),
     SocketClosed(&'static str),
-    SocketError { stream: &'static str, error: String },
+    SocketError {
+        stream: &'static str,
+        error: String,
+    },
+    /// Stop this Agent process and start a new one (MCP delivery switch).
+    RestartAgent,
+}
+
+/// Why an account runtime ended without an error.
+enum RunExit {
+    RestartAgent,
+}
+
+/// The `direct` delivery test for an Agent build the Gateway has not judged:
+/// at the first channel's second prompt, renew its token once.
+#[derive(Default)]
+struct DirectTest {
+    prompts_by_channel: HashMap<String, u32>,
+    renewed: bool,
+}
+
+impl DirectTest {
+    /// Counts a prompt on `channel_id`; true exactly once, at the first
+    /// channel to reach its second prompt.
+    fn take(&mut self, channel_id: &str) -> bool {
+        if self.renewed {
+            return false;
+        }
+        let prompts = self
+            .prompts_by_channel
+            .entry(channel_id.to_string())
+            .or_default();
+        *prompts += 1;
+        self.renewed = *prompts >= 2;
+        self.renewed
+    }
+}
+
+/// `name@version` of the Agent, as the Gateway keys its verdicts.
+fn agent_key(initialize: &Value) -> String {
+    let info = initialize.get("agentInfo");
+    let field = |name| info.and_then(|info| info.get(name)).and_then(Value::as_str);
+    format!(
+        "{}@{}",
+        field("name").unwrap_or("unknown"),
+        field("version").unwrap_or("unknown")
+    )
 }
 
 mod auth;
@@ -4207,6 +4370,14 @@ max_concurrent = {max_concurrent}
             mcp_url: "https://example.invalid/mcp".to_string(),
             mcp_token: None,
             credential_gateway: None,
+            mcp_delivery: mcp_delivery::Decision {
+                mode: McpDeliveryMode::Direct,
+                reason: "test".into(),
+                test_direct: false,
+            },
+            agent: "fixture-agent@0".into(),
+            direct_test: Mutex::new(DirectTest::default()),
+            restart_pending: std::sync::atomic::AtomicBool::new(false),
             state: Arc::new(Mutex::new(SessionStateStore::new(dir.join("state.json")))),
             adapter: Arc::new(Mutex::new(adapter)),
             io: handle,
@@ -4715,6 +4886,16 @@ max_concurrent = {max_concurrent}
     }
 
     #[test]
+    fn direct_test_renews_once_at_the_first_second_prompt() {
+        let mut test = DirectTest::default();
+        assert!(!test.take("a"));
+        assert!(!test.take("b"));
+        assert!(test.take("a"), "channel a's second prompt renews");
+        assert!(!test.take("b"), "only once per Agent process");
+        assert!(!test.take("a"));
+    }
+
+    #[test]
     fn unpinned_channels_get_their_own_ignored_working_directory() {
         let dir = tempfile::tempdir().unwrap();
         let a = channel_cwd(dir.path(), "channel-a").unwrap();
@@ -4742,22 +4923,46 @@ max_concurrent = {max_concurrent}
         assert!(!dir.path().join(".cheers").exists());
     }
 
-    #[tokio::test]
-    async fn mcp_delivery_is_settled_before_ready() {
-        let (direct, bound) = choose_mcp_delivery(McpDelivery::Direct).await;
-        assert_eq!(direct.mode, McpDeliveryMode::Direct);
-        assert!(bound.is_none());
-
-        let (gateway, bound) = choose_mcp_delivery(McpDelivery::Gateway).await;
-        assert_eq!(gateway.mode, McpDeliveryMode::Gateway);
-        assert!(
-            bound.is_some(),
-            "the port is bound before ready reports gateway"
-        );
+    #[test]
+    fn agent_key_matches_the_gateway_format() {
         assert_eq!(
-            gateway.modes,
-            [McpDeliveryMode::Direct, McpDeliveryMode::Gateway]
+            agent_key(&json!({"agentInfo": {"name": "codex-acp", "version": "2.3.0"}})),
+            "codex-acp@2.3.0"
         );
+        assert_eq!(agent_key(&json!({})), "unknown@unknown");
+    }
+
+    #[tokio::test]
+    async fn stale_verdict_is_cached_and_schedules_an_idle_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, _started, _release, _taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        assert_eq!(runtime.config.policy.mcp.delivery, McpDelivery::Auto);
+
+        // A verdict for some other Agent build changes nothing.
+        runtime
+            .handle_mcp_delivery_observed("channel-a", "other-agent@1", false)
+            .await;
+        assert!(!runtime
+            .restart_pending
+            .load(std::sync::atomic::Ordering::SeqCst));
+
+        runtime
+            .handle_mcp_delivery_observed("channel-a", "fixture-agent@0", false)
+            .await;
+        assert!(runtime
+            .restart_pending
+            .load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(
+            runtime
+                .state
+                .lock()
+                .await
+                .agent_mcp_facts("fixture-agent@0")
+                .map(|facts| facts.header_refresh),
+            Some(false)
+        );
+        assert!(runtime.is_idle().await);
     }
 
     #[tokio::test]

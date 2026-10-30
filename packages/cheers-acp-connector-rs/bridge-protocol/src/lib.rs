@@ -326,6 +326,10 @@ pub struct ServerCapabilities {
     /// gateways that pin no release version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_connector_version: Option<String>,
+    /// MCP delivery modes this Gateway permits (deployment policy). Absent:
+    /// every mode. The connector never picks a mode outside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_allowed_modes: Option<Vec<McpDeliveryMode>>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }

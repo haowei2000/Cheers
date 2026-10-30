@@ -160,6 +160,17 @@ impl McpTokenProvider {
         Ok(value)
     }
 
+    /// Mints a new token for `channel_id` now, replacing the cached one, and
+    /// returns it. This is the renewal the `direct` delivery test hands the
+    /// Agent: the Gateway then sees which generation the Agent presents.
+    pub(crate) async fn renew(&self, channel_id: &str) -> anyhow::Result<String> {
+        let mut cached = self.cached.lock().await;
+        let minted = self.mint(channel_id).await?;
+        let value = minted.value.clone();
+        cached.insert(channel_id.to_string(), minted);
+        Ok(value)
+    }
+
     /// Drops the cached token for `channel_id` if it is still `rejected`, so
     /// the next [`Self::bearer`] mints a fresh one. Called when the Gateway
     /// rejects a cached token before its renewal point (host credential

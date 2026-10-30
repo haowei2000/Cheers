@@ -71,6 +71,18 @@ impl SessionRecord {
 pub struct StateFile {
     pub version: u32,
     pub sessions: BTreeMap<String, BTreeMap<String, SessionRecord>>,
+    /// What the Gateway observed about each Agent build's MCP behaviour, keyed
+    /// by `name@version` (docs/arch/MCP_AUTH_ISOLATION.md §3.5). A new build
+    /// has no entry and is judged again.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub mcp_agents: BTreeMap<String, AgentMcpFacts>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentMcpFacts {
+    /// Whether the Agent picks up a renewed bearer on `session/load`.
+    pub header_refresh: bool,
+    pub observed_at: String,
 }
 
 impl Default for StateFile {
@@ -78,6 +90,7 @@ impl Default for StateFile {
         Self {
             version: 1,
             sessions: BTreeMap::new(),
+            mcp_agents: BTreeMap::new(),
         }
     }
 }
@@ -222,6 +235,25 @@ impl SessionStateStore {
                     pinned_digest: previous.and_then(|record| record.pinned_digest),
                 },
             );
+        self.save().await
+    }
+
+    pub fn agent_mcp_facts(&self, agent: &str) -> Option<&AgentMcpFacts> {
+        self.state.mcp_agents.get(agent)
+    }
+
+    pub async fn set_agent_header_refresh(
+        &mut self,
+        agent: &str,
+        header_refresh: bool,
+    ) -> anyhow::Result<()> {
+        self.state.mcp_agents.insert(
+            agent.to_string(),
+            AgentMcpFacts {
+                header_refresh,
+                observed_at: Utc::now().to_rfc3339(),
+            },
+        );
         self.save().await
     }
 
