@@ -22,6 +22,10 @@ pub(crate) struct Decision {
     /// `direct` for an Agent build the Gateway has not judged yet: renew one
     /// channel's token so the Gateway can see whether the Agent picks it up.
     pub test_direct: bool,
+    /// Bind tokens to the running task, so one dies with its task. Only when
+    /// every new token reaches the Agent: `gateway` swaps it in per request,
+    /// and `direct` only for an Agent judged to re-read headers.
+    pub bind_tasks: bool,
 }
 
 impl Decision {
@@ -56,10 +60,13 @@ pub(crate) fn decide(inputs: Inputs<'_>) -> anyhow::Result<Decision> {
     } else {
         "the gateway's loopback port could not bind"
     };
+    let header_refresh = inputs.header_refresh;
     let decision = |mode, reason: String, test_direct| Decision {
         mode,
         reason,
         test_direct,
+        bind_tasks: mode == McpDeliveryMode::Gateway
+            || (mode == McpDeliveryMode::Direct && header_refresh == Some(true)),
     };
     let agent = inputs.agent;
     Ok(match inputs.configured {
@@ -134,6 +141,10 @@ mod tests {
     fn auto_prefers_direct_and_tests_unjudged_agents() {
         let unjudged = decide(inputs(McpDelivery::Auto)).unwrap();
         assert_eq!((unjudged.mode, unjudged.test_direct), (Direct, true));
+        assert!(
+            !unjudged.bind_tasks,
+            "an unjudged Agent may keep old tokens"
+        );
 
         let refreshes = decide(Inputs {
             header_refresh: Some(true),
@@ -141,6 +152,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!((refreshes.mode, refreshes.test_direct), (Direct, false));
+        assert!(refreshes.bind_tasks);
 
         let stale = decide(Inputs {
             header_refresh: Some(false),
@@ -148,6 +160,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(stale.mode, Gateway);
+        assert!(stale.bind_tasks, "the gateway swaps in each new token");
         assert!(
             stale.reason.contains("keeps old tokens"),
             "{}",

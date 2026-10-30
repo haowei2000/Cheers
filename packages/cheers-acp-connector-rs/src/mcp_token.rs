@@ -90,6 +90,14 @@ impl std::fmt::Debug for CachedToken {
     }
 }
 
+/// A cached token's binding: its channel, and the task execution it is bound
+/// to, if any.
+type TokenKey = (String, Option<String>);
+
+fn key(channel_id: &str, execution_id: Option<&str>) -> TokenKey {
+    (channel_id.to_string(), execution_id.map(str::to_string))
+}
+
 /// Mints and caches host-bound MCP access tokens.
 pub(crate) struct McpTokenProvider {
     mcp_url: String,
@@ -101,7 +109,7 @@ pub(crate) struct McpTokenProvider {
     /// evicting the others' tokens on every turn. Held across the mint await so
     /// concurrent `session/new` calls for one channel collapse into a single
     /// token request rather than stampeding the endpoint.
-    cached: Mutex<HashMap<String, CachedToken>>,
+    cached: Mutex<HashMap<TokenKey, CachedToken>>,
     discovered: Mutex<Option<Discovered>>,
 }
 
@@ -147,27 +155,47 @@ impl McpTokenProvider {
     /// up on the wrong channel's connection costs its holder access and can
     /// never buy any. That is the property that makes it safe to put per-turn
     /// context on a connection at all.
-    pub(crate) async fn bearer(&self, channel_id: &str) -> anyhow::Result<String> {
+    ///
+    /// With `execution_id` the token is also bound to that running task and is
+    /// refused once the task ends.
+    pub(crate) async fn bearer(
+        &self,
+        channel_id: &str,
+        execution_id: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let key = key(channel_id, execution_id);
         let mut cached = self.cached.lock().await;
-        if let Some(token) = cached.get(channel_id) {
+        if let Some(token) = cached.get(&key) {
             if Instant::now() < token.renew_after {
                 return Ok(token.value.clone());
             }
         }
-        let minted = self.mint(channel_id).await?;
+        let minted = self.mint(channel_id, execution_id).await?;
         let value = minted.value.clone();
-        cached.insert(channel_id.to_string(), minted);
+        cached.insert(key, minted);
         Ok(value)
+    }
+
+    /// Drops this channel's tokens bound to other executions: those tasks
+    /// have ended, so their tokens are refused anyway.
+    pub(crate) async fn retain_execution(&self, channel_id: &str, current: Option<&str>) {
+        self.cached.lock().await.retain(|(channel, execution), _| {
+            channel != channel_id || execution.is_none() || execution.as_deref() == current
+        });
     }
 
     /// Mints a new token for `channel_id` now, replacing the cached one, and
     /// returns it. This is the renewal the `direct` delivery test hands the
     /// Agent: the Gateway then sees which generation the Agent presents.
-    pub(crate) async fn renew(&self, channel_id: &str) -> anyhow::Result<String> {
+    pub(crate) async fn renew(
+        &self,
+        channel_id: &str,
+        execution_id: Option<&str>,
+    ) -> anyhow::Result<String> {
         let mut cached = self.cached.lock().await;
-        let minted = self.mint(channel_id).await?;
+        let minted = self.mint(channel_id, execution_id).await?;
         let value = minted.value.clone();
-        cached.insert(channel_id.to_string(), minted);
+        cached.insert(key(channel_id, execution_id), minted);
         Ok(value)
     }
 
@@ -176,21 +204,31 @@ impl McpTokenProvider {
     /// rejects a cached token before its renewal point (host credential
     /// rotated, token revoked). Matching on the rejected value keeps
     /// concurrent 401s from evicting a token another request just re-minted.
-    pub(crate) async fn invalidate(&self, channel_id: &str, rejected: &str) {
+    pub(crate) async fn invalidate(
+        &self,
+        channel_id: &str,
+        execution_id: Option<&str>,
+        rejected: &str,
+    ) {
+        let key = key(channel_id, execution_id);
         let mut cached = self.cached.lock().await;
         if cached
-            .get(channel_id)
+            .get(&key)
             .is_some_and(|token| token.value == rejected)
         {
-            cached.remove(channel_id);
+            cached.remove(&key);
         }
     }
 
     /// Performs the `client_credentials` exchange against the discovered
     /// token endpoint.
-    async fn mint(&self, channel_id: &str) -> anyhow::Result<CachedToken> {
+    async fn mint(
+        &self,
+        channel_id: &str,
+        execution_id: Option<&str>,
+    ) -> anyhow::Result<CachedToken> {
         let discovered = self.discover().await?;
-        let form: [(&str, &str); 6] = [
+        let mut form: Vec<(&str, &str)> = vec![
             ("grant_type", "client_credentials"),
             ("client_id", &self.host_id),
             ("client_secret", &self.credential),
@@ -201,6 +239,10 @@ impl McpTokenProvider {
             // wide as it is today — never wider.
             ("cheers_channel", channel_id),
         ];
+        if let Some(execution_id) = execution_id {
+            // Cheers extension: bind the token to this running task.
+            form.push(("cheers_execution", execution_id));
+        }
         let response = self
             .http
             .post(&discovered.token_endpoint)
@@ -505,6 +547,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn task_bound_tokens_are_cached_per_execution_and_pruned() {
+        let gateway = spawn_gateway().await;
+        let provider = McpTokenProvider::new(
+            format!("{}/mcp", gateway.base),
+            "host-42".to_string(),
+            "credential-secret".to_string(),
+        )
+        .unwrap();
+
+        provider.bearer("channel-a", Some("exec-1")).await.unwrap();
+        provider.bearer("channel-a", Some("exec-1")).await.unwrap();
+        provider.bearer("channel-a", None).await.unwrap();
+        {
+            let requests = gateway.token_requests.lock().await;
+            assert_eq!(requests.len(), 2, "one mint per (channel, execution)");
+            assert!(
+                requests[0].contains("cheers_execution=exec-1"),
+                "{}",
+                requests[0]
+            );
+            assert!(!requests[1].contains("cheers_execution"), "{}", requests[1]);
+        }
+
+        // The channel moved on to exec-2: exec-1's token is dropped, the
+        // channel-only one is kept.
+        provider.retain_execution("channel-a", Some("exec-2")).await;
+        provider.bearer("channel-a", None).await.unwrap();
+        assert_eq!(gateway.token_requests.lock().await.len(), 2);
+        provider.bearer("channel-a", Some("exec-1")).await.unwrap();
+        assert_eq!(gateway.token_requests.lock().await.len(), 3);
+    }
+
+    #[tokio::test]
     async fn mints_a_host_bound_token_through_full_discovery() {
         let gateway = spawn_gateway().await;
         let mcp_url = format!("{}/mcp", gateway.base);
@@ -515,7 +590,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(provider.bearer("channel-a").await.unwrap(), "minted-token");
+        assert_eq!(
+            provider.bearer("channel-a", None).await.unwrap(),
+            "minted-token"
+        );
 
         let requests = gateway.token_requests.lock().await;
         let body = requests.first().expect("a token request was made");
@@ -546,7 +624,10 @@ mod tests {
         .unwrap();
 
         for _ in 0..3 {
-            assert_eq!(provider.bearer("channel-a").await.unwrap(), "minted-token");
+            assert_eq!(
+                provider.bearer("channel-a", None).await.unwrap(),
+                "minted-token"
+            );
         }
         assert_eq!(gateway.token_hits.load(Ordering::SeqCst), 1);
     }
@@ -564,7 +645,10 @@ mod tests {
         .unwrap();
 
         for channel in ["channel-a", "channel-b", "channel-a", "channel-b"] {
-            assert_eq!(provider.bearer(channel).await.unwrap(), "minted-token");
+            assert_eq!(
+                provider.bearer(channel, None).await.unwrap(),
+                "minted-token"
+            );
         }
         assert_eq!(
             gateway.token_hits.load(Ordering::SeqCst),
@@ -588,7 +672,11 @@ mod tests {
             "credential-secret".to_string(),
         )
         .unwrap();
-        let error = provider.bearer("channel-a").await.unwrap_err().to_string();
+        let error = provider
+            .bearer("channel-a", None)
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("protected-resource metadata"), "{error}");
     }
 
