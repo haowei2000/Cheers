@@ -26,6 +26,8 @@ pub(super) struct BridgeIoHandle {
     send_ack_enabled: bool,
     terminal_ack_enabled: bool,
     file_upload_enabled: bool,
+    /// Largest decoded upload the gateway accepts, when it advertises one.
+    file_upload_max_bytes: Option<u64>,
     task_acceptance_enabled: bool,
     terminal_replay_enabled: bool,
     #[cfg(test)]
@@ -44,6 +46,14 @@ struct PendingTerminalAck {
 }
 
 impl BridgeIoHandle {
+    pub(super) fn file_upload_enabled(&self) -> bool {
+        self.file_upload_enabled
+    }
+
+    pub(super) fn file_upload_max_bytes(&self) -> Option<u64> {
+        self.file_upload_max_bytes
+    }
+
     pub(super) fn task_acceptance_enabled(&self) -> bool {
         self.task_acceptance_enabled
     }
@@ -99,6 +109,12 @@ impl BridgeIoHandle {
     pub(super) fn enable_task_acceptance_for_test(&mut self, wait: Duration) {
         self.task_acceptance_enabled = true;
         self.terminal_replay_enabled = true;
+        self.ack_timeout = wait;
+    }
+
+    #[cfg(test)]
+    pub(super) fn enable_file_upload_for_test(&mut self, wait: Duration) {
+        self.file_upload_enabled = true;
         self.ack_timeout = wait;
     }
 
@@ -240,21 +256,9 @@ impl BridgeIoHandle {
             return Err(anyhow!("file_upload frame does not carry client_file_id"));
         };
         if !self.file_upload_enabled {
-            self.send_data(frame).await?;
-            return Ok(DataInbound::FileUploadAck {
-                v: BRIDGE_PROTOCOL_VERSION,
-                client_file_id: Some(client_file_id),
-                ok: true,
-                file_id: None,
-                filename: None,
-                content_type: None,
-                size_bytes: None,
-                preview_url: None,
-                download_url: None,
-                error: None,
-                code: None,
-            });
+            return Err(anyhow!("gateway does not accept file_upload"));
         }
+        let wait = file_upload_ack_timeout(self.ack_timeout, &frame);
         let (tx, rx) = oneshot::channel();
         self.pending_file_upload_acks
             .lock()
@@ -267,7 +271,7 @@ impl BridgeIoHandle {
                 .remove(&client_file_id);
             return Err(err);
         }
-        match timeout(self.ack_timeout, rx).await {
+        match timeout(wait, rx).await {
             Ok(Ok(frame)) => Ok(frame),
             Ok(Err(_)) => Err(anyhow!(
                 "file_upload_ack waiter closed client_file_id={client_file_id}"
@@ -374,6 +378,7 @@ pub(super) fn test_io() -> TestIo {
             send_ack_enabled: false,
             terminal_ack_enabled: true,
             file_upload_enabled: false,
+            file_upload_max_bytes: None,
             task_acceptance_enabled: false,
             terminal_replay_enabled: false,
             terminal_test_ack: true,
@@ -444,10 +449,16 @@ pub(super) fn spawn_bridge_io(
         send_ack_enabled: capability_enabled(&data_capabilities, |cap| cap.send_ack),
         terminal_ack_enabled: data_capabilities.as_ref().and_then(|cap| cap.terminal_ack)
             == Some(true),
+        // `true` or a limits object enables it; an older gateway sends `false`.
         file_upload_enabled: data_capabilities
             .as_ref()
             .and_then(|cap| cap.file_upload.as_ref())
-            .is_some(),
+            .is_some_and(|value| matches!(value, Value::Bool(true) | Value::Object(_))),
+        file_upload_max_bytes: data_capabilities
+            .as_ref()
+            .and_then(|cap| cap.file_upload.as_ref())
+            .and_then(|value| value.get("max_bytes"))
+            .and_then(Value::as_u64),
         task_acceptance_enabled: control_hello
             .server_capabilities
             .as_ref()
@@ -469,6 +480,21 @@ fn terminal_replay_supported(
 ) -> bool {
     control.as_ref().and_then(|cap| cap.terminal_replay) == Some(true)
         && data.as_ref().and_then(|cap| cap.terminal_replay) == Some(true)
+}
+
+/// Bytes of payload granted one extra second of ack wait.
+const FILE_UPLOAD_BYTES_PER_SEC: u64 = 256 * 1024;
+const FILE_UPLOAD_MAX_ACK_WAIT: Duration = Duration::from_secs(120);
+
+/// A file_upload ack arrives only after the gateway has stored the bytes, so its
+/// wait grows with the payload instead of reusing the small-frame ack timeout.
+fn file_upload_ack_timeout(base: Duration, frame: &DataOutbound) -> Duration {
+    let payload = match frame {
+        DataOutbound::FileUpload { data_b64, .. } => data_b64.len() as u64,
+        _ => 0,
+    };
+    (base + Duration::from_secs(payload / FILE_UPLOAD_BYTES_PER_SEC))
+        .min(FILE_UPLOAD_MAX_ACK_WAIT.max(base))
 }
 
 pub(super) fn spawn_control_socket(
@@ -917,6 +943,28 @@ mod tests {
             &Some(enabled.clone()),
             &Some(enabled)
         ));
+    }
+
+    #[test]
+    fn file_upload_ack_wait_scales_with_payload_and_is_capped() {
+        let upload = |len: usize| DataOutbound::FileUpload {
+            v: BRIDGE_PROTOCOL_VERSION,
+            client_file_id: "f".into(),
+            channel_id: "c".into(),
+            filename: "a.png".into(),
+            content_type: None,
+            data_b64: "A".repeat(len),
+        };
+        let base = Duration::from_secs(5);
+        assert_eq!(file_upload_ack_timeout(base, &upload(8)), base);
+        assert_eq!(
+            file_upload_ack_timeout(base, &upload(4 * 1024 * 1024)),
+            Duration::from_secs(21)
+        );
+        assert_eq!(
+            file_upload_ack_timeout(base, &upload(64 * 1024 * 1024)),
+            FILE_UPLOAD_MAX_ACK_WAIT
+        );
     }
 
     fn terminal_fixture() -> DataOutbound {

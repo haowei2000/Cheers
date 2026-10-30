@@ -157,6 +157,40 @@ pub(crate) fn send_ack_err(client_msg_id: &str, code: &str, error: &str) -> Valu
     })
 }
 
+/// Ack a stored `file_upload`. `file` is the `channel.files.create` result.
+pub(crate) fn file_upload_ack_ok(client_file_id: &str, file: &Value) -> Value {
+    let field = |key: &str| file.get(key).and_then(Value::as_str).map(str::to_string);
+    frame_value(&proto::DataInbound::FileUploadAck {
+        v: BRIDGE_PROTOCOL_VERSION,
+        client_file_id: Some(client_file_id.to_string()),
+        ok: true,
+        file_id: field("file_id"),
+        filename: field("filename"),
+        content_type: field("content_type"),
+        size_bytes: file.get("size_bytes").and_then(Value::as_u64),
+        preview_url: None,
+        download_url: field("download_url"),
+        error: None,
+        code: None,
+    })
+}
+
+pub(crate) fn file_upload_ack_err(client_file_id: Option<&str>, code: &str, error: &str) -> Value {
+    frame_value(&proto::DataInbound::FileUploadAck {
+        v: BRIDGE_PROTOCOL_VERSION,
+        client_file_id: client_file_id.map(str::to_string),
+        ok: false,
+        file_id: None,
+        filename: None,
+        content_type: None,
+        size_bytes: None,
+        preview_url: None,
+        download_url: None,
+        error: Some(error.to_string()),
+        code: Some(code.to_string()),
+    })
+}
+
 pub(crate) fn terminal_ack_ok(client_msg_id: &str, msg_id: Uuid) -> Value {
     frame_value(&proto::DataInbound::TerminalAck {
         v: BRIDGE_PROTOCOL_VERSION,

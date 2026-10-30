@@ -249,6 +249,12 @@ pub struct SendPolicy {
 #[derive(Debug, Clone)]
 pub struct FileUploadPolicy {
     pub allow: bool,
+    /// Upload images the agent puts in its own reply (ACP `image` content).
+    /// On unless `allow = false` is written explicitly: the image is reply
+    /// content the agent chose to emit, like its text. Images in the results of
+    /// tools that read, fetch or run things are never sent — see
+    /// `bridge_runtime::agent_files`.
+    pub agent_output: bool,
     pub max_bytes: u64,
     pub allowed_content_types: Vec<String>,
 }
@@ -569,7 +575,7 @@ impl Default for RawSendPolicy {
 #[serde(deny_unknown_fields)]
 struct RawFileUploadPolicy {
     #[serde(default)]
-    allow: bool,
+    allow: Option<bool>,
     #[serde(default = "default_file_upload_max_bytes")]
     max_bytes: u64,
     #[serde(default)]
@@ -579,7 +585,7 @@ struct RawFileUploadPolicy {
 impl Default for RawFileUploadPolicy {
     fn default() -> Self {
         Self {
-            allow: false,
+            allow: None,
             max_bytes: default_file_upload_max_bytes(),
             allowed_content_types: Vec::new(),
         }
@@ -905,7 +911,8 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             max_files: raw.send.max_files,
         },
         file_upload: FileUploadPolicy {
-            allow: raw.file_upload.allow,
+            allow: raw.file_upload.allow == Some(true),
+            agent_output: raw.file_upload.allow != Some(false),
             max_bytes: raw.file_upload.max_bytes.max(1),
             allowed_content_types: raw.file_upload.allowed_content_types,
         },

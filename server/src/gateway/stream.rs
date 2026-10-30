@@ -648,13 +648,29 @@ pub async fn handle_done(
         frame.get("content").and_then(Value::as_str).unwrap_or("")
     };
     let done_file_ids = parse_file_ids(frame.get("file_ids"));
-    let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
+    let attachment_errors = parse_attachment_errors(frame.get("attachment_errors"));
     let mention_ids = parse_mention_ids(frame.get("mention_ids"));
 
     // Routing comes from the required grant and is checked against the locked
     // message and run before any result is committed.
     let execution = &request.execution;
     let channel_id = execution.channel_id;
+    // A result may only attach files this bot delivered to this channel, the
+    // same rule a bot `send` follows.
+    if !done_file_ids.is_empty() {
+        crate::domain::messages::validate_file_ids(db, bot_id, channel_id, &done_file_ids)
+            .await
+            .map_err(|error| match error {
+                crate::errors::AppError::Db(error) => {
+                    TerminalError::database("validate terminal file_ids")(error)
+                }
+                _ => TerminalError::rejected(
+                    "TERMINAL_FORBIDDEN",
+                    "file_ids must be files this bot delivered to the channel",
+                ),
+            })?;
+    }
+    let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
     let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
         .await
         .map_err(|error| match error {
@@ -777,9 +793,20 @@ pub async fn handle_done(
     let session_id = stored_id("session_id")?;
     let task_claim_id = stored_id("task_claim_id")?;
     let claim_update = task_results::complete(&mut tx, &request, bot_id, task_claim_id).await?;
-    if let Some(data) = message.content_data {
-        let finalized =
-            crate::resource::messages::finalize_card_metadata(data, !content.trim().is_empty());
+    let content_data = match message.content_data {
+        Some(data) => Some(crate::resource::messages::finalize_card_metadata(
+            data,
+            !content.trim().is_empty(),
+        )),
+        None if !attachment_errors.is_empty() => Some(serde_json::json!({})),
+        None => None,
+    };
+    if let Some(mut finalized) = content_data {
+        // Attachments the connector produced but could not deliver, so the
+        // message shows them as missing rather than silently omitting them.
+        if let (false, Some(object)) = (attachment_errors.is_empty(), finalized.as_object_mut()) {
+            object.insert("attachment_errors".into(), Value::Array(attachment_errors));
+        }
         sqlx::query!(
             "UPDATE messages SET content_data = $2 WHERE msg_id = $1",
             msg_id.to_string(),
@@ -1232,6 +1259,37 @@ fn parse_mention_ids(value: Option<&Value>) -> Vec<Uuid> {
         .unwrap_or_default()
 }
 
+const MAX_ATTACHMENT_ERRORS: usize = 8;
+
+/// Bounded, string-only copies of `done.attachment_errors`. The entries are
+/// display text from the connector, never acted on.
+fn parse_attachment_errors(value: Option<&Value>) -> Vec<Value> {
+    let field = |entry: &Value, key: &str, max: usize| -> String {
+        entry
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .chars()
+            .take(max)
+            .collect()
+    };
+    value
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|entry| entry.is_object())
+        .take(MAX_ATTACHMENT_ERRORS)
+        .map(|entry| {
+            serde_json::json!({
+                "filename": field(entry, "filename", 255),
+                "code": field(entry, "code", 64),
+                "message": field(entry, "message", 240),
+            })
+        })
+        .collect()
+}
+
 fn parse_file_ids(value: Option<&Value>) -> Vec<String> {
     let mut file_ids = Vec::new();
     for v in value
@@ -1313,6 +1371,31 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attachment_errors_are_bounded_display_strings() {
+        let raw = serde_json::json!([
+            { "filename": "a.png", "code": "TOO_LARGE", "message": "over 8 MB", "extra": 1 },
+            { "filename": 42, "code": "x".repeat(100), "message": "m".repeat(500) },
+            "not an object",
+        ]);
+        let parsed = parse_attachment_errors(Some(&raw));
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(
+            parsed[0],
+            serde_json::json!({ "filename": "a.png", "code": "TOO_LARGE", "message": "over 8 MB" })
+        );
+        assert_eq!(parsed[1]["filename"], "");
+        assert_eq!(parsed[1]["code"].as_str().unwrap().len(), 64);
+        assert_eq!(parsed[1]["message"].as_str().unwrap().len(), 240);
+
+        let many = Value::Array(vec![serde_json::json!({ "filename": "f" }); 20]);
+        assert_eq!(
+            parse_attachment_errors(Some(&many)).len(),
+            MAX_ATTACHMENT_ERRORS
+        );
+        assert!(parse_attachment_errors(None).is_empty());
+    }
 
     fn entry(msg_id: Uuid) -> StreamEntry {
         StreamEntry {

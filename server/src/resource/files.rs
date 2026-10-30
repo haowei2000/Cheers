@@ -18,7 +18,7 @@ const TEXT_CAP: usize = 256 * 1024;
 
 /// Largest file an agent may deliver inline (base64) via `inbox_deliver`. Bigger files should go
 /// through the chunked upload path, not a single resource frame.
-const MAX_DELIVER_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_DELIVER_BYTES: usize = 8 * 1024 * 1024;
 
 /// Process-global S3 handle (client + default bucket), injected at startup by main.rs.
 /// The resource dispatch only carries `db`, and threading S3 through it would force every

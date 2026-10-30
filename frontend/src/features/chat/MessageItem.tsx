@@ -26,7 +26,7 @@ import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
 import { TypewriterCursor } from "@/components/ui/typewriter-cursor";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { ResourceRefCards, resourceRefCards } from "./ResourceRefCards";
-import { FileGrid } from "./fileView";
+import { attachmentErrors, FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
 import { AgentInteractionCard } from "./AgentInteractionCard";
@@ -1176,6 +1176,9 @@ function MessageBody({
   const cards = message.sender_type === "bot" && !active
     ? resourceRefCards(message.content_data)
     : [];
+  const missing = message.sender_type === "bot" && !active
+    ? attachmentErrors(message.content_data)
+    : [];
 
   return (
     <div className="relative">
@@ -1204,7 +1207,7 @@ function MessageBody({
           <StopButton channelId={channelId} msgId={message.msg_id} />
         </div>
       )}
-      <FileGrid files={files} className="mt-1" channelId={channelId} />
+      <FileGrid files={files} missing={missing} className="mt-1" channelId={channelId} />
     </div>
   );
 }

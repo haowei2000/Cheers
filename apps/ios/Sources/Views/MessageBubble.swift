@@ -231,6 +231,10 @@ struct MessageBubbleView: View {
                 }
             }
 
+            ForEach(Array(message.attachmentErrors.enumerated()), id: \.offset) { _, error in
+                UndeliveredAttachmentView(error: error)
+            }
+
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -354,6 +358,25 @@ struct AttachmentChipView: View {
         .padding(.vertical, 6)
         .background(Theme.bgSelected.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+/// A reply attachment that was produced but never delivered. Read-only: there
+/// is no file to open, so it is a plain item row rather than a button, and the
+/// missing state is stated in text, not only by colour.
+struct UndeliveredAttachmentView: View {
+    let error: AttachmentDeliveryError
+
+    var body: some View {
+        CheersItemRow(
+            title: error.filename.isEmpty ? "Generated image" : error.filename,
+            subtitle: error.message.isEmpty ? nil : error.message,
+            leading: AnyView(Image(systemName: "photo").foregroundStyle(Theme.textMuted)),
+            criticalStatus: AnyView(
+                Text("Not attached").font(.caption2.bold()).foregroundStyle(Theme.warning)
+            )
+        )
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -589,4 +612,19 @@ struct MessageContentView: View {
         }
         return result
     }
+}
+
+#Preview("Undelivered attachments") {
+    VStack(alignment: .leading, spacing: Theme.space2) {
+        ForEach(PresentationLevel.allCases, id: \.self) { level in
+            UndeliveredAttachmentView(error: AttachmentDeliveryError(
+                filename: "exec-1.png",
+                code: "TOO_LARGE",
+                message: "larger than the 8 MB attachment limit"
+            ))
+            .presentationLevel(level)
+        }
+        UndeliveredAttachmentView(error: AttachmentDeliveryError(filename: "", code: "FILE_UPLOAD_FAILED", message: ""))
+    }
+    .padding()
 }
