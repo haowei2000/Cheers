@@ -75,16 +75,22 @@ struct Routes {
     channel_by_digest: HashMap<[u8; 32], String>,
 }
 
-impl CredentialGateway {
-    /// Binds `127.0.0.1` on an ephemeral port and starts serving.
-    pub(crate) async fn start(
+/// A bound but not yet serving gateway. Binding happens before the Bridge
+/// connects, so the `ready` frame can report the delivery mode the Agent will
+/// really get; serving needs the Gateway URL and token provider, which only
+/// arrive with the hello.
+pub(crate) struct BoundGateway {
+    listener: TcpListener,
+}
+
+impl BoundGateway {
+    /// Starts serving on the bound port, forwarding to `upstream`.
+    pub(crate) fn serve(
+        self,
         upstream: String,
         tokens: Arc<McpTokenProvider>,
-    ) -> anyhow::Result<Self> {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .context("failed to bind the MCP credential gateway on 127.0.0.1")?;
-        let port = listener.local_addr()?.port();
+    ) -> anyhow::Result<CredentialGateway> {
+        let port = self.listener.local_addr()?.port();
         // No overall timeout: request-scoped SSE responses stay open for as
         // long as the tool call runs.
         let http = reqwest::Client::builder()
@@ -98,12 +104,22 @@ impl CredentialGateway {
             http,
             routes: RwLock::new(Routes::default()),
         });
-        let accept = tokio::spawn(accept_loop(listener, state.clone())).abort_handle();
-        Ok(Self {
+        let accept = tokio::spawn(accept_loop(self.listener, state.clone())).abort_handle();
+        Ok(CredentialGateway {
             local_url: format!("http://127.0.0.1:{port}{LOCAL_PATH}"),
             state,
             accept,
         })
+    }
+}
+
+impl CredentialGateway {
+    /// Binds `127.0.0.1` on an ephemeral port.
+    pub(crate) async fn bind() -> anyhow::Result<BoundGateway> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .context("failed to bind the MCP credential gateway on 127.0.0.1")?;
+        Ok(BoundGateway { listener })
     }
 
     /// The URL the Agent is given in place of the Gateway's `/mcp`.
@@ -559,7 +575,11 @@ mod tests {
         let tokens = Arc::new(
             McpTokenProvider::new(upstream.clone(), "host-1".into(), "secret".into()).unwrap(),
         );
-        CredentialGateway::start(upstream, tokens).await.unwrap()
+        CredentialGateway::bind()
+            .await
+            .unwrap()
+            .serve(upstream, tokens)
+            .unwrap()
     }
 
     fn client() -> reqwest::Client {

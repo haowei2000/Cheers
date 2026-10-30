@@ -112,6 +112,21 @@ pub(crate) fn config_update_frame(settings: proto::ConnectorControlSettings) -> 
     })
 }
 
+/// Tells a connector whether its `direct` Agent picked up a renewed MCP token
+/// (`gateway::mcp_delivery`).
+pub(crate) fn mcp_delivery_observed_frame(
+    channel_id: String,
+    agent: String,
+    header_refresh: bool,
+) -> Value {
+    frame_value(&proto::ControlInbound::McpDeliveryObserved {
+        v: BRIDGE_PROTOCOL_VERSION,
+        channel_id,
+        agent,
+        header_refresh,
+    })
+}
+
 /// App-level heartbeat reply. Deliberately version-less (wire-compat).
 pub(crate) fn pong_frame() -> Value {
     frame_value(&proto::DataInbound::Pong)
@@ -644,6 +659,20 @@ mod tests {
     fn cancel_matches_fixture() {
         let frame = cancel_frame(conn_id(), "user_cancelled");
         assert_matches_fixture(&frame, "control/to_connector/cancel.json", &[]);
+    }
+
+    #[test]
+    fn mcp_delivery_observed_matches_fixture() {
+        let frame = mcp_delivery_observed_frame(
+            "11111111-2222-4333-8444-555555555555".into(),
+            "codex-acp@2.3.0".into(),
+            false,
+        );
+        assert_matches_fixture(
+            &frame,
+            "control/to_connector/mcp_delivery_observed.json",
+            &[],
+        );
     }
 
     #[test]

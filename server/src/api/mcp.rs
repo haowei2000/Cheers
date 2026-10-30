@@ -871,6 +871,17 @@ fn mint_mcp_access_token(
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
+    if let (Ok(host), Some(channel)) = (
+        Uuid::parse_str(&claims.host_id),
+        claims
+            .chan
+            .as_deref()
+            .and_then(|value| Uuid::parse_str(value).ok()),
+    ) {
+        state
+            .mcp_delivery
+            .record_mint(host, channel, claims.iat, std::time::Instant::now());
+    }
     private_json_response(
         StatusCode::OK,
         json!(McpTokenResponse {
@@ -1225,6 +1236,7 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
     };
     tracing::debug!(bot_id=%identity.bot_id, host_id=%identity.host_id, "authorized MCP request");
+    observe_mcp_delivery(&state, &identity);
 
     let host_id = identity.host_id;
     let request: Value = match serde_json::from_slice(&body) {
@@ -1592,6 +1604,50 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
     }
     private_json_response(StatusCode::OK, final_response)
+}
+
+/// Judge `direct` delivery from the token generation this request presents
+/// (`gateway::mcp_delivery`). The verdict is recorded on the host and pushed to
+/// the connector, which caches it per Agent build and, for a stale Agent, can
+/// move it to `gateway` delivery before the old token expires. Off the request
+/// path: neither write delays the call.
+fn observe_mcp_delivery(state: &AppState, identity: &McpIdentity) {
+    let Some(seen) = state.mcp_delivery.observe(
+        identity.host_id,
+        identity.channel_scope,
+        identity.issued_at,
+        std::time::Instant::now(),
+    ) else {
+        return;
+    };
+    let state = state.clone();
+    let (bot_id, host_id) = (identity.bot_id, identity.host_id);
+    tokio::spawn(async move {
+        let refreshes = seen.refresh == crate::gateway::mcp_delivery::HeaderRefresh::Refreshes;
+        tracing::info!(%host_id, agent = %seen.agent, refreshes, "MCP direct delivery judged");
+        if let Err(error) = sqlx::query!(
+            "UPDATE connector_hosts
+             SET mcp_header_refresh = $2, mcp_header_refresh_agent = $3,
+                 mcp_header_refresh_at = NOW()
+             WHERE host_id = $1",
+            host_id.to_string(),
+            refreshes,
+            truncated(&seen.agent, 160),
+        )
+        .execute(&state.db)
+        .await
+        {
+            tracing::warn!(%error, %host_id, "MCP header-refresh fact persist failed");
+        }
+        let frame = crate::gateway::bridge_frames::mcp_delivery_observed_frame(
+            seen.channel_id.to_string(),
+            seen.agent,
+            refreshes,
+        );
+        if !state.bot_locator.dispatch_task(bot_id, frame).await {
+            tracing::warn!(%bot_id, "could not deliver mcp_delivery_observed");
+        }
+    });
 }
 
 /// What a handled MCP request showed about the client that sent it.
@@ -2527,6 +2583,8 @@ struct McpIdentity {
     scopes: HashSet<String>,
     /// Channel this token was narrowed to at mint time, when it named one.
     channel_scope: Option<Uuid>,
+    /// The token's `iat`: its generation, for the `direct` delivery check.
+    issued_at: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2618,6 +2676,7 @@ async fn authenticate_mcp(
                 .chan
                 .as_deref()
                 .and_then(|value| Uuid::parse_str(value).ok()),
+            issued_at: claims.iat,
         }),
         _ => Err(AuthMcpError::Unauthorized),
     }
