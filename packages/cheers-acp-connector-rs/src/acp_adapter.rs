@@ -1366,6 +1366,7 @@ mod tests {
             json!({
                 "fs": {"readTextFile": false, "writeTextFile": false},
                 "terminal": false,
+                "auth": {"terminal": false},
                 "elicitation": {"form": {}, "url": {}}
             })
         );
