@@ -157,7 +157,8 @@ All policy tables are optional; each key falls back to the default below.
 
 | Key                   | Type     | Default | Meaning |
 |-----------------------|----------|---------|---------|
-| `default_cwd`         | string   | none    | CWD the agent starts in when the Backend doesn't set one. |
+| `default_cwd`         | string   | none    | Base for channels the Backend pins no cwd for: each runs in `<default_cwd>/.cheers/channels/<channel_id>` (created on first use; `.cheers/` is git-ignored). |
+| `shared_cwd`          | bool     | `false` | Run those channels directly in `default_cwd` instead, sharing one directory (the pre-isolation behaviour). Not a sandbox either way. |
 | `backend_may_set_cwd` | bool     | `false` | May the Backend pick the session cwd (from `allowed_roots`)? |
 | `allowed_roots`       | string[] | `[]`    | The only directories the session cwd + additional dirs may live under. |
 | `git_ops`             | string   | `"read"`| `"read"` = expose read-only `git_status`/`git_diff`/`git_log`; `"off"` = no git resources. |
@@ -233,6 +234,7 @@ All policy tables are optional; each key falls back to the default below.
 
 | Key                                | Type     | Default | Meaning |
 |------------------------------------|----------|---------|---------|
+| `delivery`                         | string   | `"direct"` | How the Agent reaches Cheers MCP. `"direct"`: the Agent calls the Gateway's `/mcp` with the bearer in `mcpServers[].headers` (needs an Agent that re-reads headers on `session/load`). `"gateway"`: the Agent gets `http://127.0.0.1:<port>/mcp` and a stable per-channel local secret, and the connector swaps in the real, rotated token on each request; fixes Agents that ignore refreshed headers (Codex). An `"auto"` mode chosen from Agent reports is planned (M2). See [MCP_AUTH_ISOLATION](MCP_AUTH_ISOLATION.md) §3.4. |
 | `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? **Inert today** — see below. |
 | `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject. **Inert today** — see below. |
 | `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. Enforced: these are injected as written (minus any the Agent's `mcpCapabilities` cannot transport). |

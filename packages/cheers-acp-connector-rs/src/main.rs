@@ -17,6 +17,7 @@ mod bridge_runtime;
 mod bridge_session;
 mod cli;
 mod config;
+mod credential_gateway;
 mod daemon;
 #[cfg(test)]
 mod desktop_config_tests;

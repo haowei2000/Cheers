@@ -51,9 +51,10 @@ use crate::bridge_session::{
     BridgeSessionParts,
 };
 use crate::config::{
-    AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
+    AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy, McpDelivery,
     PermissionTimeoutAction, PromptPolicy,
 };
+use crate::credential_gateway::{bypass_proxy_for_loopback, CredentialGateway};
 use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
     PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
@@ -117,11 +118,12 @@ impl AccountRuntime {
     async fn run(self) -> anyhow::Result<()> {
         let (runtime_tx, mut runtime_rx) = mpsc::channel(512);
         let (adapter_tx, mut adapter_rx) = mpsc::channel(512);
-        let mut adapter = create_runtime(
-            self.account_id.clone(),
-            self.config.agent.clone(),
-            adapter_tx,
-        );
+        let mut agent_config = self.config.agent.clone();
+        if self.config.policy.mcp.delivery == McpDelivery::Gateway {
+            // The Agent reaches Cheers MCP on loopback; an inherited proxy must not see it.
+            bypass_proxy_for_loopback(&mut agent_config.env, agent_config.inherit_env);
+        }
+        let mut adapter = create_runtime(self.account_id.clone(), agent_config, adapter_tx);
         let initialize_response = adapter.start().await?;
         if !adapter.capabilities().mcp_http {
             let _ = adapter.stop().await;
@@ -201,6 +203,33 @@ impl AccountRuntime {
                 None
             }
         };
+        // Gateway delivery: the Agent gets a loopback URL and a stable local
+        // secret instead of the bearer, so token rotation never depends on the
+        // Agent re-reading headers. If the listener cannot start, fall back to
+        // direct delivery rather than dropping Cheers MCP for this run.
+        let credential_gateway = match (&mcp_token, self.config.policy.mcp.delivery) {
+            (Some(tokens), McpDelivery::Gateway) => {
+                match CredentialGateway::start(mcp_url.clone(), tokens.clone()).await {
+                    Ok(gateway) => {
+                        tracing::info!(
+                            account = %self.account_id,
+                            local_url = gateway.local_url(),
+                            "MCP credential gateway listening"
+                        );
+                        Some(Arc::new(gateway))
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            account = %self.account_id,
+                            error = %error,
+                            "MCP credential gateway did not start; falling back to direct delivery"
+                        );
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
         // Capture the bot's own identity from the hello before `spawn_bridge_io`
         // consumes the session — it's injected into every prompt (see build_prompt).
         let identity = {
@@ -265,6 +294,7 @@ impl AccountRuntime {
             identity,
             mcp_url,
             mcp_token,
+            credential_gateway,
             state: self.state,
             adapter,
             io,
@@ -598,6 +628,9 @@ struct RuntimeContext {
     /// `None` when this Gateway cannot provide the host identity required to
     /// mint a scoped token; in that case the endpoint is not exposed to Agents.
     mcp_token: Option<Arc<McpTokenProvider>>,
+    /// Loopback pass-through that holds the bearer on the Agent's behalf. When
+    /// set, the Agent is handed its URL and a local secret, never the token.
+    credential_gateway: Option<Arc<CredentialGateway>>,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
@@ -2135,12 +2168,19 @@ impl RuntimeContext {
                 self.shared.turn_slots.acquire().await?
             }
         };
-        let start_options = self.session_start_options(&task).await;
-        let run_cwd = start_options.cwd.clone();
         // Evaluation turns retain Cheers MCP solely to record their decision
         // through the gateway-owned task-claim resource.
-        let acp_session_id = match self.ensure_acp_session(&task, start_options).await {
-            Ok(id) => id,
+        let started = match self.session_start_options(&task).await {
+            Ok(start_options) => {
+                let run_cwd = start_options.cwd.clone();
+                self.ensure_acp_session(&task, start_options)
+                    .await
+                    .map(|id| (id, run_cwd))
+            }
+            Err(error) => Err(error),
+        };
+        let (acp_session_id, run_cwd) = match started {
+            Ok(started) => started,
             Err(err) => {
                 let message = err.to_string();
                 tracing::error!(account = %self.account_id, "ensure_acp_session failed: {message}");
@@ -2740,8 +2780,11 @@ impl RuntimeContext {
                     context_bundle: None,
                     session_config: session.session_config.clone(),
                 };
-                let options = self.session_start_options(&task).await;
-                self.ensure_acp_session(&task, options).await.map(|id| {
+                let started = match self.session_start_options(&task).await {
+                    Ok(options) => self.ensure_acp_session(&task, options).await,
+                    Err(error) => Err(error),
+                };
+                started.map(|id| {
                     (
                         true,
                         Some(RuntimeSessionAckSession {
@@ -2977,18 +3020,25 @@ impl RuntimeContext {
 
     /// Resolve the ACP session-start options for a task. The per-session `cwd`
     /// (ACP `session/new`) is the Backend-pinned one when it passes the local
-    /// `allowed_roots` + `backend_may_set_cwd` policy, else the connector default;
+    /// `allowed_roots` + `backend_may_set_cwd` policy, else the channel's own
+    /// directory under `default_cwd` ([`channel_cwd`], or `default_cwd` itself
+    /// with `shared_cwd`);
     /// `additional_dirs` (ACP `additionalDirectories`) is the pinned list with any
     /// out-of-policy entry dropped. cwd is a pure `session/new` argument — changing
     /// it needs no process restart (ACP: the agent MUST honor it regardless of
     /// spawn dir).
-    async fn session_start_options(&self, task: &TaskCommand) -> SessionStartOptions {
-        let default_cwd = self
-            .config
-            .agent
-            .cwd
-            .as_ref()
-            .map(|path| path.display().to_string());
+    async fn session_start_options(
+        &self,
+        task: &TaskCommand,
+    ) -> anyhow::Result<SessionStartOptions> {
+        let default_cwd = match self.config.agent.cwd.as_deref() {
+            Some(base) if !self.config.policy.workspace.shared_cwd => {
+                Some(channel_cwd(base, &task.channel_id)?)
+            }
+            Some(base) => Some(base.to_path_buf()),
+            None => None,
+        }
+        .map(|path| path.display().to_string());
         let cwd = match task.cwd.as_deref() {
             Some(requested) => match self.validate_backend_cwd(requested) {
                 Ok(canonical) => Some(canonical.display().to_string()),
@@ -3020,12 +3070,12 @@ impl RuntimeContext {
                 }
             })
             .collect();
-        SessionStartOptions {
+        Ok(SessionStartOptions {
             cwd,
             additional_dirs,
             mcp_servers: self.mcp_servers_for_task(task).await,
             request_route: request_route_for_task(task),
-        }
+        })
     }
 
     async fn mcp_servers_for_task(&self, task: &TaskCommand) -> Value {
@@ -3088,6 +3138,15 @@ impl RuntimeContext {
             );
             return Value::Array(servers);
         };
+        if let Some(gateway) = self.credential_gateway.as_ref() {
+            let secret = gateway.secret_for(&task.channel_id).await;
+            servers.push(native_cheers_mcp_server(
+                &task.channel_id,
+                gateway.local_url(),
+                &secret,
+            ));
+            return Value::Array(servers);
+        }
         let bearer = match provider.bearer(&task.channel_id).await {
             Ok(token) => token,
             Err(error) => {
@@ -3624,6 +3683,38 @@ fn silent_result(
     }
 }
 
+/// The directory a channel with no Backend-pinned cwd runs in:
+/// `<default_cwd>/.cheers/channels/<channel_id>`, created on first use. A
+/// `.gitignore` in `.cheers/` keeps these out of the repository `default_cwd`
+/// often is. This is not a sandbox (an Agent with a shell can still `cd`
+/// anywhere); it stops one channel's turn from starting among the files
+/// another channel's turn left behind.
+fn channel_cwd(default_cwd: &Path, channel_id: &str) -> anyhow::Result<PathBuf> {
+    if channel_id.is_empty()
+        || !channel_id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err(anyhow!(
+            "channel id {channel_id:?} cannot name a working directory"
+        ));
+    }
+    let cheers = default_cwd.join(".cheers");
+    let dir = cheers.join("channels").join(channel_id);
+    std::fs::create_dir_all(&dir).with_context(|| {
+        format!(
+            "could not create channel working directory {}",
+            dir.display()
+        )
+    })?;
+    let ignore = cheers.join(".gitignore");
+    if !ignore.exists() {
+        std::fs::write(&ignore, "*\n")
+            .with_context(|| format!("could not write {}", ignore.display()))?;
+    }
+    Ok(canonical_path(&dir))
+}
+
 /// Builds a trusted route only for a human-originated task. Bot/system work has
 /// no verified human identity and therefore cannot host request-scoped elicitation.
 fn request_route_for_task(task: &TaskCommand) -> Option<RequestRoute> {
@@ -4062,6 +4153,7 @@ max_concurrent = {max_concurrent}
             identity: test_identity(),
             mcp_url: "https://example.invalid/mcp".to_string(),
             mcp_token: None,
+            credential_gateway: None,
             state: Arc::new(Mutex::new(SessionStateStore::new(dir.join("state.json")))),
             adapter: Arc::new(Mutex::new(adapter)),
             io: handle,
@@ -4569,6 +4661,34 @@ max_concurrent = {max_concurrent}
         }
     }
 
+    #[test]
+    fn unpinned_channels_get_their_own_ignored_working_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = channel_cwd(dir.path(), "channel-a").unwrap();
+        let b = channel_cwd(dir.path(), "channel-b").unwrap();
+        assert_ne!(a, b);
+        assert!(a.is_dir() && b.is_dir());
+        assert_eq!(
+            a,
+            canonical_path(&dir.path().join(".cheers/channels/channel-a"))
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".cheers/.gitignore")).unwrap(),
+            "*\n"
+        );
+        // Re-use is idempotent.
+        assert_eq!(channel_cwd(dir.path(), "channel-a").unwrap(), a);
+    }
+
+    #[test]
+    fn channel_ids_that_are_not_plain_names_never_become_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for bad in ["", "..", "../escape", "a/b", "a\\b", "c d"] {
+            assert!(channel_cwd(dir.path(), bad).is_err(), "{bad:?}");
+        }
+        assert!(!dir.path().join(".cheers").exists());
+    }
+
     #[tokio::test]
     async fn desired_session_config_survives_new_load_and_connector_restart() {
         let dir = tempfile::tempdir().unwrap();
@@ -4576,7 +4696,7 @@ max_concurrent = {max_concurrent}
         let mut task = fixture_task("configured-channel");
         // This snapshot also covers a setting changed while the connector was offline.
         task.session_config = Some(session_override(3, "session-model"));
-        let options = runtime.session_start_options(&task).await;
+        let options = runtime.session_start_options(&task).await.unwrap();
         let id = runtime.ensure_acp_session(&task, options).await.unwrap();
         let applied = vec![
             "mode:session-mode",
@@ -4586,7 +4706,7 @@ max_concurrent = {max_concurrent}
         ];
         assert_eq!(&calls.lock().await[1..], &applied);
         calls.lock().await.clear();
-        let options = runtime.session_start_options(&task).await;
+        let options = runtime.session_start_options(&task).await.unwrap();
         assert_eq!(
             runtime.ensure_acp_session(&task, options).await.unwrap(),
             id
@@ -4598,7 +4718,7 @@ max_concurrent = {max_concurrent}
         // session-state file and the gateway's authoritative task snapshot.
         let (restarted, calls, _release2, _taps2) = config_runtime(dir.path()).await;
         restarted.state.lock().await.load().await.unwrap();
-        let options = restarted.session_start_options(&task).await;
+        let options = restarted.session_start_options(&task).await.unwrap();
         assert_eq!(
             restarted.ensure_acp_session(&task, options).await.unwrap(),
             id
@@ -4632,7 +4752,7 @@ max_concurrent = {max_concurrent}
             "pre-creation desired state needs no ACP request"
         );
         task.session_config = Some(session_override(4, "stale-model"));
-        let options = runtime.session_start_options(&task).await;
+        let options = runtime.session_start_options(&task).await.unwrap();
         runtime.ensure_acp_session(&task, options).await.unwrap();
         assert!(calls
             .lock()
@@ -4656,7 +4776,7 @@ max_concurrent = {max_concurrent}
             .config_options
             .insert("sandbox".into(), "unrestricted".into());
         task.session_config = Some(desired);
-        let options = runtime.session_start_options(&task).await;
+        let options = runtime.session_start_options(&task).await.unwrap();
         runtime.ensure_acp_session(&task, options).await.unwrap();
         let calls = calls.lock().await;
         assert!(calls.contains(&"mode:bot-mode".to_string()));

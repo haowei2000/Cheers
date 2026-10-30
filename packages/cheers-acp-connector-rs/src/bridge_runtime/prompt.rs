@@ -528,10 +528,12 @@ pub(super) fn is_cheers_mcp_server_name(name: &str) -> bool {
 
 /// Build the authoritative Cheers MCP entry for one channel.
 ///
-/// `bearer` is a host-bound, channel-narrowed access token the Connector minted
-/// for this session (see [`crate::mcp_token`]). Supplying it means the Agent
-/// only has to speak HTTP MCP — it needs no OAuth client of its own, no Client
-/// ID Metadata Document, and no consent round-trip.
+/// `bearer` is either the local secret for the connector's loopback credential
+/// gateway (with `mcp_url` its local URL; see [`crate::credential_gateway`]) or a
+/// host-bound, channel-narrowed access token the Connector minted for this
+/// session (see [`crate::mcp_token`]). Either way the Agent only has to speak
+/// HTTP MCP — it needs no OAuth client of its own, no Client ID Metadata
+/// Document, and no consent round-trip.
 pub(super) fn native_cheers_mcp_server(channel_id: &str, mcp_url: &str, bearer: &str) -> Value {
     json!({
         "type": "http",
