@@ -73,18 +73,28 @@ struct GatewayState {
 struct Routes {
     secret_by_channel: HashMap<String, String>,
     channel_by_digest: HashMap<[u8; 32], String>,
+    /// The task execution each channel's current turn runs, when its tokens
+    /// are task-bound. One ACP session per channel runs one prompt at a time,
+    /// so the channel identifies the task.
+    execution_by_channel: HashMap<String, String>,
 }
 
-impl CredentialGateway {
-    /// Binds `127.0.0.1` on an ephemeral port and starts serving.
-    pub(crate) async fn start(
+/// A bound but not yet serving gateway. Binding happens before the Bridge
+/// connects, so the `ready` frame can report the delivery mode the Agent will
+/// really get; serving needs the Gateway URL and token provider, which only
+/// arrive with the hello.
+pub(crate) struct BoundGateway {
+    listener: TcpListener,
+}
+
+impl BoundGateway {
+    /// Starts serving on the bound port, forwarding to `upstream`.
+    pub(crate) fn serve(
+        self,
         upstream: String,
         tokens: Arc<McpTokenProvider>,
-    ) -> anyhow::Result<Self> {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .context("failed to bind the MCP credential gateway on 127.0.0.1")?;
-        let port = listener.local_addr()?.port();
+    ) -> anyhow::Result<CredentialGateway> {
+        let port = self.listener.local_addr()?.port();
         // No overall timeout: request-scoped SSE responses stay open for as
         // long as the tool call runs.
         let http = reqwest::Client::builder()
@@ -98,12 +108,38 @@ impl CredentialGateway {
             http,
             routes: RwLock::new(Routes::default()),
         });
-        let accept = tokio::spawn(accept_loop(listener, state.clone())).abort_handle();
-        Ok(Self {
+        let accept = tokio::spawn(accept_loop(self.listener, state.clone())).abort_handle();
+        Ok(CredentialGateway {
             local_url: format!("http://127.0.0.1:{port}{LOCAL_PATH}"),
             state,
             accept,
         })
+    }
+}
+
+impl CredentialGateway {
+    /// Binds `127.0.0.1` on an ephemeral port.
+    pub(crate) async fn bind() -> anyhow::Result<BoundGateway> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .context("failed to bind the MCP credential gateway on 127.0.0.1")?;
+        Ok(BoundGateway { listener })
+    }
+
+    /// Binds `channel_id`'s tokens to the task execution its next turn runs,
+    /// or unbinds them with `None`.
+    pub(crate) async fn bind_execution(&self, channel_id: &str, execution_id: Option<&str>) {
+        let mut routes = self.state.routes.write().await;
+        match execution_id {
+            Some(execution_id) => {
+                routes
+                    .execution_by_channel
+                    .insert(channel_id.to_string(), execution_id.to_string());
+            }
+            None => {
+                routes.execution_by_channel.remove(channel_id);
+            }
+        }
     }
 
     /// The URL the Agent is given in place of the Gateway's `/mcp`.
@@ -200,10 +236,11 @@ async fn proxy(
     if !host_is_loopback(request.headers(), state.port) || !origin_is_loopback(request.headers()) {
         return Err(StatusCode::FORBIDDEN);
     }
-    let channel_id = state
-        .channel_for(request.headers())
+    let (channel_id, execution_id) = state
+        .route_for(request.headers())
         .await
         .ok_or(StatusCode::UNAUTHORIZED)?;
+    let execution_id = execution_id.as_deref();
     // The Gateway serves MCP over POST only (GET and DELETE are 405 there too),
     // so answer locally instead of spending a token on a known refusal.
     if request.method() != Method::POST {
@@ -222,37 +259,49 @@ async fn proxy(
         })?
         .to_bytes();
 
-    let (mut upstream, token) = state.send(&channel_id, &forwarded, body.clone()).await?;
+    let (mut upstream, token) = state
+        .send(&channel_id, execution_id, &forwarded, body.clone())
+        .await?;
     if upstream.status() == StatusCode::UNAUTHORIZED {
         // A cached token can be refused before its renewal point (credential
         // rotated, token revoked). Re-mint once; a second refusal is real.
-        state.tokens.invalidate(&channel_id, &token).await;
-        (upstream, _) = state.send(&channel_id, &forwarded, body).await?;
+        state
+            .tokens
+            .invalidate(&channel_id, execution_id, &token)
+            .await;
+        (upstream, _) = state
+            .send(&channel_id, execution_id, &forwarded, body)
+            .await?;
     }
     Ok(relay(upstream))
 }
 
 impl GatewayState {
-    async fn channel_for(&self, headers: &HeaderMap) -> Option<String> {
+    /// The channel a request's local secret belongs to, and the execution
+    /// its current turn is bound to.
+    async fn route_for(&self, headers: &HeaderMap) -> Option<(String, Option<String>)> {
         let secret = bearer(headers)?;
-        self.routes
-            .read()
-            .await
-            .channel_by_digest
-            .get(&digest(secret))
-            .cloned()
+        let routes = self.routes.read().await;
+        let channel = routes.channel_by_digest.get(&digest(secret))?.clone();
+        let execution = routes.execution_by_channel.get(&channel).cloned();
+        Some((channel, execution))
     }
 
     async fn send(
         &self,
         channel_id: &str,
+        execution_id: Option<&str>,
         forwarded: &HeaderMap,
         body: Bytes,
     ) -> Result<(reqwest::Response, String), StatusCode> {
-        let token = self.tokens.bearer(channel_id).await.map_err(|error| {
-            tracing::warn!(%error, channel_id, "MCP credential gateway could not mint a token");
-            StatusCode::BAD_GATEWAY
-        })?;
+        let token = self
+            .tokens
+            .bearer(channel_id, execution_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, channel_id, "MCP credential gateway could not mint a token");
+                StatusCode::BAD_GATEWAY
+            })?;
         let response = self
             .http
             .post(&self.upstream)
@@ -559,7 +608,11 @@ mod tests {
         let tokens = Arc::new(
             McpTokenProvider::new(upstream.clone(), "host-1".into(), "secret".into()).unwrap(),
         );
-        CredentialGateway::start(upstream, tokens).await.unwrap()
+        CredentialGateway::bind()
+            .await
+            .unwrap()
+            .serve(upstream, tokens)
+            .unwrap()
     }
 
     fn client() -> reqwest::Client {
@@ -709,12 +762,12 @@ mod tests {
         let gateway = gateway_for(&fake).await;
         let tokens = &gateway.state.tokens;
 
-        assert_eq!(tokens.bearer("channel-a").await.unwrap(), "token-1");
+        assert_eq!(tokens.bearer("channel-a", None).await.unwrap(), "token-1");
         // A late 401 for an older token must not evict the current one.
-        tokens.invalidate("channel-a", "token-0").await;
-        assert_eq!(tokens.bearer("channel-a").await.unwrap(), "token-1");
-        tokens.invalidate("channel-a", "token-1").await;
-        assert_eq!(tokens.bearer("channel-a").await.unwrap(), "token-2");
+        tokens.invalidate("channel-a", None, "token-0").await;
+        assert_eq!(tokens.bearer("channel-a", None).await.unwrap(), "token-1");
+        tokens.invalidate("channel-a", None, "token-1").await;
+        assert_eq!(tokens.bearer("channel-a", None).await.unwrap(), "token-2");
     }
 
     #[test]

@@ -187,22 +187,33 @@ pub struct BridgeSessionParts {
 }
 
 impl BridgeSession {
-    pub async fn connect(config: BridgeSessionConfig, ready: BridgeReady) -> anyhow::Result<Self> {
-        let (control, control_hello) = connect_control_stream(&config, &ready).await?;
+    /// Connects both streams. `build_ready` sees the control hello before the
+    /// `ready` frame goes out, so what `ready` reports can follow the
+    /// Gateway's policy; the built frame is returned for reconnects to resend.
+    pub async fn connect(
+        config: BridgeSessionConfig,
+        build_ready: impl FnOnce(&ControlHelloState) -> anyhow::Result<BridgeReady>,
+    ) -> anyhow::Result<(Self, BridgeReady)> {
+        let (mut control, control_hello) = open_control_stream(&config).await?;
+        let ready = build_ready(&control_hello)?;
+        send_ready(&mut control, &ready).await?;
         let (data, data_hello) = connect_data_stream(&config).await?;
         validate_hello_pair(&control_hello, &data_hello)?;
 
         let mut memberships = MembershipSnapshot::default();
         memberships.replace(control_hello.memberships.clone());
 
-        Ok(Self {
-            account_id: config.account_id,
-            control,
-            data,
-            control_hello,
-            data_hello,
-            memberships,
-        })
+        Ok((
+            Self {
+                account_id: config.account_id,
+                control,
+                data,
+                control_hello,
+                data_hello,
+                memberships,
+            },
+            ready,
+        ))
     }
 
     pub fn bot_id(&self) -> &str {
@@ -283,6 +294,14 @@ pub async fn connect_control_stream(
     config: &BridgeSessionConfig,
     ready: &BridgeReady,
 ) -> anyhow::Result<(BridgeWebSocket, ControlHelloState)> {
+    let (mut control, hello) = open_control_stream(config).await?;
+    send_ready(&mut control, ready).await?;
+    Ok((control, hello))
+}
+
+async fn open_control_stream(
+    config: &BridgeSessionConfig,
+) -> anyhow::Result<(BridgeWebSocket, ControlHelloState)> {
     let mut control = BridgeWebSocket::connect(&config.control_url, &config.bridge_credential)
         .await
         .with_context(|| {
@@ -292,6 +311,10 @@ pub async fn connect_control_stream(
             )
         })?;
     let hello = wait_control_hello(&mut control, config.hello_timeout, &config.account_id).await?;
+    Ok((control, hello))
+}
+
+async fn send_ready(control: &mut BridgeWebSocket, ready: &BridgeReady) -> anyhow::Result<()> {
     control
         .send_json(&ControlOutbound::Ready {
             v: BRIDGE_PROTOCOL_VERSION,
@@ -301,8 +324,7 @@ pub async fn connect_control_stream(
             connector_capabilities: ready.connector_capabilities.clone(),
         })
         .await
-        .context("failed to send Agent Bridge ready frame")?;
-    Ok((control, hello))
+        .context("failed to send Agent Bridge ready frame")
 }
 
 pub async fn connect_data_stream(

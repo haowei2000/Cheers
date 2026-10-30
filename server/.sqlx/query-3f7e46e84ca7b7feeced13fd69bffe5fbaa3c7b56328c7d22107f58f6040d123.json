@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.mcp_narrow_to_sender AS \"narrow!\",\n                  CASE WHEN m.sender_type = 'user' THEN m.sender_id\n                       WHEN root.sender_type = 'user' THEN root.sender_id END AS \"human?\"\n         FROM bot_runs r\n         JOIN bot_accounts b ON b.bot_id = r.bot_id\n         LEFT JOIN messages m ON m.msg_id = r.trigger_msg_id\n         LEFT JOIN task_chains c ON c.chain_id = r.chain_id\n         LEFT JOIN messages root ON root.msg_id = c.root_msg_id\n         WHERE r.execution_id = $1 AND r.bot_id = $2 AND r.channel_id = $3\n           AND r.status = 'accepted' AND r.terminal_committed_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "narrow!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "human?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "3f7e46e84ca7b7feeced13fd69bffe5fbaa3c7b56328c7d22107f58f6040d123"
+}

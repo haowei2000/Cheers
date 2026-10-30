@@ -55,7 +55,9 @@ pub(crate) const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-
 const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. Channel outputs share one Artifacts library: use artifact_list/get/read to discover and inspect, artifact_create for documents, HTML/TSX pages and canvases, artifact_update with the returned artifact ID and version to edit, and artifact_deliver for binary files. Reuse idempotency_key when retrying create or deliver. Reference the returned artifact.uri (cheers:artifact/<id>) in replies and resource_ref cards; cards are references, not separate content copies. Check availability before reading; expired files are not recoverable through metadata. Legacy desk tools are for remaining path/directory operations, not a private Bot space. Host workspace files stay remote until explicitly delivered. For interactive UI, first call read_ui_contract or read cheers://help/interactive-ui and its catalog/example resources. Use the advertised Cheers catalog, create an artifact, and attach its resource_ref card to the current reply with set_resource_cards. Streaming card references are staged until completion. User interaction context is structured data, not an authorization grant; read the source and check its version before updating it. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
 
 const MCP_TOKEN_USE: &str = "mcp_access";
+const GRANT_CLIENT_CREDENTIALS: &str = "client_credentials";
 pub(crate) const DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS: u64 = 86_400;
+pub(crate) const DEFAULT_MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS: u64 = 600;
 const MCP_CATALOG_TTL_MS: u64 = 30_000;
 const MCP_AUTH_CODE_TTL_MINUTES: i64 = 5;
 const MCP_REFRESH_TOKEN_TTL_DAYS: i64 = 30;
@@ -636,6 +638,18 @@ struct McpAccessClaims {
     /// endpoint refuses every channel-bearing call they make.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chan: Option<String>,
+    /// Task execution this token is bound to; it is refused once that
+    /// execution ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task: Option<String>,
+    /// The human whose task this is: channel checks use bot ∩ this user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    obo: Option<String>,
+    /// OAuth grant that minted the token. `client_credentials` tokens cannot
+    /// step up, so a missing scope is refused as a tool error instead of a
+    /// 403 challenge. Absent means a client that can step up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gty: Option<String>,
     aud: String,
     iss: String,
     token_use: String,
@@ -670,6 +684,10 @@ struct McpTokenRequest {
     /// role still decides every operation — so a token minted for the wrong
     /// channel can be refused, never mistaken for authority it does not have.
     cheers_channel: Option<String>,
+    /// Cheers extension: the task execution (from task acceptance) this token
+    /// serves. Requires `cheers_channel`; the token then dies with the task,
+    /// because every request re-checks that the execution is still running.
+    cheers_execution: Option<String>,
 }
 
 /// Exchange an active host credential for a narrowly scoped MCP token.
@@ -705,7 +723,7 @@ pub async fn issue_mcp_access_token(
     if grant_type == "refresh_token" {
         return exchange_refresh_token(&state, request).await;
     }
-    if grant_type != "client_credentials" {
+    if grant_type != GRANT_CLIENT_CREDENTIALS {
         return oauth_token_error("unsupported_grant_type", "unsupported OAuth grant type");
     }
     if request.resource.as_deref() != Some(state.config.mcp_resource_url().as_str()) {
@@ -804,6 +822,34 @@ pub async fn issue_mcp_access_token(
             "cheers_channel is required when channel scoping is enforced",
         );
     }
+    // Task binding: the execution must be this bot's, in this channel, and
+    // still running. The connector's host credential plus an execution id is
+    // the grant; neither alone mints a task-bound token.
+    let (task, on_behalf_of) = match request.cheers_execution.as_deref() {
+        None => (None, None),
+        Some(raw) => {
+            let (Ok(execution_id), Some(channel_id)) = (Uuid::parse_str(raw), channel.as_deref())
+            else {
+                return oauth_token_error(
+                    "invalid_request",
+                    "cheers_execution must be a uuid and needs cheers_channel",
+                );
+            };
+            match running_execution(&state, &bot_id, channel_id, &execution_id.to_string()).await {
+                Ok(Some(run)) => (Some(execution_id.to_string()), run.on_behalf_of),
+                Ok(None) => {
+                    return oauth_token_error(
+                        "invalid_grant",
+                        "cheers_execution is not a running task of this bot in cheers_channel",
+                    )
+                }
+                Err(error) => {
+                    tracing::error!(error = %error, "MCP token execution lookup failed");
+                    return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+                }
+            }
+        }
+    };
 
     let _ = mark_mcp_authorizing(&state, &host_id).await;
 
@@ -813,9 +859,73 @@ pub async fn issue_mcp_access_token(
         host_id,
         credential_hash,
         scope,
-        channel,
+        TokenBinding {
+            channel,
+            task,
+            on_behalf_of,
+        },
         None,
     )
+}
+
+/// A running execution's delegation: the human whose task it is.
+struct RunningExecution {
+    on_behalf_of: Option<String>,
+}
+
+/// The running execution `execution_id` of this bot in this channel, and the
+/// human it narrows to: the sender of its triggering message, or for a bot's
+/// message in a task chain, the human whose message started the chain. None
+/// when the bot's owner turned narrowing off, or no human started the work.
+/// Taken from the run record, never from the request.
+async fn running_execution(
+    state: &AppState,
+    bot_id: &str,
+    channel_id: &str,
+    execution_id: &str,
+) -> Result<Option<RunningExecution>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT b.mcp_narrow_to_sender AS "narrow!",
+                  CASE WHEN m.sender_type = 'user' THEN m.sender_id
+                       WHEN root.sender_type = 'user' THEN root.sender_id END AS "human?"
+         FROM bot_runs r
+         JOIN bot_accounts b ON b.bot_id = r.bot_id
+         LEFT JOIN messages m ON m.msg_id = r.trigger_msg_id
+         LEFT JOIN task_chains c ON c.chain_id = r.chain_id
+         LEFT JOIN messages root ON root.msg_id = c.root_msg_id
+         WHERE r.execution_id = $1 AND r.bot_id = $2 AND r.channel_id = $3
+           AND r.status = 'accepted' AND r.terminal_committed_at IS NULL"#,
+        execution_id,
+        bot_id,
+        channel_id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(row.map(|row| RunningExecution {
+        on_behalf_of: row.human.filter(|_| row.narrow),
+    }))
+}
+
+/// Whether `execution_id` is a task of this bot in this channel that has been
+/// accepted and has not committed a terminal result.
+async fn execution_is_running(
+    state: &AppState,
+    bot_id: &str,
+    channel_id: &str,
+    execution_id: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS(
+            SELECT 1 AS present FROM bot_runs
+            WHERE execution_id = $1 AND bot_id = $2 AND channel_id = $3
+              AND status = 'accepted' AND terminal_committed_at IS NULL
+         ) AS "value!" "#,
+        execution_id,
+        bot_id,
+        channel_id,
+    )
+    .fetch_one(&state.db)
+    .await
 }
 
 /// Whether this bot is a member of the channel, in any role.
@@ -836,23 +946,57 @@ async fn bot_is_channel_member(
     .await
 }
 
+/// What a token is narrowed to: its channel, and on a task, the execution and
+/// the human it acts for.
+struct TokenBinding {
+    channel: Option<String>,
+    task: Option<String>,
+    on_behalf_of: Option<String>,
+}
+
+impl TokenBinding {
+    fn channel(channel: Option<String>) -> Self {
+        Self {
+            channel,
+            task: None,
+            on_behalf_of: None,
+        }
+    }
+}
+
 fn mint_mcp_access_token(
     state: &AppState,
     bot_id: String,
     host_id: String,
     credential_hash: String,
     scope: String,
-    channel: Option<String>,
+    binding: TokenBinding,
     refresh_token: Option<String>,
 ) -> Response {
     let now = chrono::Utc::now().timestamp().max(0) as u64;
-    let ttl_secs = state.config.mcp_access_token_ttl_secs;
+    let ttl_secs = match Uuid::parse_str(&host_id)
+        .ok()
+        .and_then(|host| state.mcp_delivery.mode(host))
+    {
+        // The connector holds and renews these; nothing waits on them mid-turn.
+        Some(
+            cheers_bridge_protocol::McpDeliveryMode::Gateway
+            | cheers_bridge_protocol::McpDeliveryMode::Acp,
+        ) => state.config.mcp_gateway_access_token_ttl_secs,
+        _ => state.config.mcp_access_token_ttl_secs,
+    };
     let claims = McpAccessClaims {
         sub: bot_id,
         host_id,
         credential_hash,
         scope: scope.clone(),
-        chan: channel,
+        chan: binding.channel,
+        task: binding.task,
+        obo: binding.on_behalf_of,
+        // Only the client_credentials grant mints without a refresh token.
+        gty: refresh_token
+            .is_none()
+            .then(|| GRANT_CLIENT_CREDENTIALS.to_string()),
         aud: state.config.mcp_resource_url(),
         iss: state.config.mcp_authorization_issuer(),
         token_use: MCP_TOKEN_USE.to_string(),
@@ -871,6 +1015,17 @@ fn mint_mcp_access_token(
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
+    if let (Ok(host), Some(channel)) = (
+        Uuid::parse_str(&claims.host_id),
+        claims
+            .chan
+            .as_deref()
+            .and_then(|value| Uuid::parse_str(value).ok()),
+    ) {
+        state
+            .mcp_delivery
+            .record_mint(host, channel, claims.iat, std::time::Instant::now());
+    }
     private_json_response(
         StatusCode::OK,
         json!(McpTokenResponse {
@@ -978,7 +1133,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
         host_id,
         host.1,
         scope,
-        channel_id,
+        TokenBinding::channel(channel_id),
         Some(refresh_token),
     )
 }
@@ -1167,7 +1322,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
         host_id,
         host.1,
         scope,
-        original_channel_id,
+        TokenBinding::channel(original_channel_id),
         Some(replacement),
     )
 }
@@ -1225,6 +1380,12 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
         }
     };
     tracing::debug!(bot_id=%identity.bot_id, host_id=%identity.host_id, "authorized MCP request");
+    observe_mcp_delivery(&state, &identity);
+    // After the delivery check, so a stale Agent still presenting an ended
+    // task's token is judged before it is refused.
+    if let Some(refusal) = refuse_ended_task(&state, &identity).await {
+        return refusal;
+    }
 
     let host_id = identity.host_id;
     let request: Value = match serde_json::from_slice(&body) {
@@ -1368,6 +1529,24 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     if !identity.scopes.contains(required_scope) {
         let message = format!("Insufficient OAuth scope {required_scope}");
         record_mcp_rejection(&state, host_id, -32003, &message, None).await;
+        // A client_credentials token cannot step up, and most clients hide a
+        // 403 from the model, so tell the model as a tool error instead: a
+        // deliberate deviation from the spec's SHOULD (MCP_AUTH_ISOLATION.md §6).
+        if method == "tools/call" && identity.client_credentials {
+            let mut result = tool_error_result(
+                "SCOPE_REQUIRED",
+                &format!("This tool needs the {required_scope} scope, which your MCP token lacks."),
+            );
+            result["structuredContent"]["requiredScopes"] = json!([required_scope]);
+            let result = match era {
+                ProtocolEra::Modern => result,
+                ProtocolEra::Legacy => legacy_result(result),
+            };
+            return private_json_response(
+                StatusCode::OK,
+                json!({"jsonrpc": "2.0", "id": id, "result": result}),
+            );
+        }
         return insufficient_scope_response(&state, id, required_scope);
     }
 
@@ -1594,6 +1773,84 @@ pub async fn mcp_http(State(state): State<AppState>, headers: HeaderMap, body: B
     private_json_response(StatusCode::OK, final_response)
 }
 
+/// A task-bound token works only while its execution runs. Refused with 403,
+/// not 401: re-minting cannot help, so a client that re-authorizes on 401 must
+/// not be invited to.
+async fn refuse_ended_task(state: &AppState, identity: &McpIdentity) -> Option<Response> {
+    let task = identity.task.as_deref()?;
+    let Some(channel) = identity.channel_scope else {
+        return Some(mcp_http_error(
+            StatusCode::FORBIDDEN,
+            "task-bound token without a channel",
+        ));
+    };
+    match execution_is_running(
+        state,
+        &identity.bot_id.to_string(),
+        &channel.to_string(),
+        task,
+    )
+    .await
+    {
+        Ok(true) => None,
+        Ok(false) => Some(mcp_http_error(
+            StatusCode::FORBIDDEN,
+            "the task this token was minted for has ended",
+        )),
+        Err(error) => {
+            tracing::error!(error = %error, "MCP task-binding lookup failed");
+            Some(mcp_http_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error",
+            ))
+        }
+    }
+}
+
+/// Judge `direct` delivery from the token generation this request presents
+/// (`gateway::mcp_delivery`). The verdict is recorded on the host and pushed to
+/// the connector, which caches it per Agent build and, for a stale Agent, can
+/// move it to `gateway` delivery before the old token expires. Off the request
+/// path: neither write delays the call.
+fn observe_mcp_delivery(state: &AppState, identity: &McpIdentity) {
+    let Some(seen) = state.mcp_delivery.observe(
+        identity.host_id,
+        identity.channel_scope,
+        identity.issued_at,
+        std::time::Instant::now(),
+    ) else {
+        return;
+    };
+    let state = state.clone();
+    let (bot_id, host_id) = (identity.bot_id, identity.host_id);
+    tokio::spawn(async move {
+        let refreshes = seen.refresh == crate::gateway::mcp_delivery::HeaderRefresh::Refreshes;
+        tracing::info!(%host_id, agent = %seen.agent, refreshes, "MCP direct delivery judged");
+        if let Err(error) = sqlx::query!(
+            "UPDATE connector_hosts
+             SET mcp_header_refresh = $2, mcp_header_refresh_agent = $3,
+                 mcp_header_refresh_at = NOW()
+             WHERE host_id = $1",
+            host_id.to_string(),
+            refreshes,
+            truncated(&seen.agent, 160),
+        )
+        .execute(&state.db)
+        .await
+        {
+            tracing::warn!(%error, %host_id, "MCP header-refresh fact persist failed");
+        }
+        let frame = crate::gateway::bridge_frames::mcp_delivery_observed_frame(
+            seen.channel_id.to_string(),
+            seen.agent,
+            refreshes,
+        );
+        if !state.bot_locator.dispatch_task(bot_id, frame).await {
+            tracing::warn!(%bot_id, "could not deliver mcp_delivery_observed");
+        }
+    });
+}
+
 /// What a handled MCP request showed about the client that sent it.
 struct McpClientSeen<'a> {
     protocol_version: &'a str,
@@ -1803,6 +2060,10 @@ fn tool_error_guidance(code: &str) -> Option<ToolErrorGuidance> {
         ),
         "PERMISSION_DENIED" | "FORBIDDEN" => (
             "Your role does not allow this here. Tell the user what you could not do; a channel admin can change your role.",
+            false,
+        ),
+        "SCOPE_REQUIRED" => (
+            "Your connector's MCP token was issued without this permission, usually because the Gateway gained it after the connector started. Tell the user the bot's owner should restart the Cheers connector.",
             false,
         ),
         "NOT_FOUND" => (
@@ -2531,6 +2792,14 @@ struct McpIdentity {
     scopes: HashSet<String>,
     /// Channel this token was narrowed to at mint time, when it named one.
     channel_scope: Option<Uuid>,
+    /// Minted by `client_credentials`, so it cannot answer a step-up challenge.
+    client_credentials: bool,
+    /// The token's `iat`: its generation, for the `direct` delivery check.
+    issued_at: u64,
+    /// Task execution the token is bound to, re-checked on every request.
+    task: Option<String>,
+    /// The human this task acts for; channel checks narrow to bot ∩ them.
+    on_behalf_of: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2593,6 +2862,12 @@ async fn authenticate_mcp(
     }
     let bot_id = Uuid::parse_str(&claims.sub).map_err(|_| AuthMcpError::Unauthorized)?;
     let host_id = Uuid::parse_str(&claims.host_id).map_err(|_| AuthMcpError::Unauthorized)?;
+    // Unlike `chan`, a malformed `obo` rejects the token: dropping it would
+    // widen the token back to the bot's own role.
+    let on_behalf_of = match claims.obo.as_deref() {
+        None => None,
+        Some(value) => Some(Uuid::parse_str(value).map_err(|_| AuthMcpError::Unauthorized)?),
+    };
     let row = sqlx::query!(
         "SELECT b.is_disabled
          FROM connector_hosts i
@@ -2622,6 +2897,10 @@ async fn authenticate_mcp(
                 .chan
                 .as_deref()
                 .and_then(|value| Uuid::parse_str(value).ok()),
+            client_credentials: claims.gty.as_deref() == Some(GRANT_CLIENT_CREDENTIALS),
+            issued_at: claims.iat,
+            task: claims.task,
+            on_behalf_of,
         }),
         _ => Err(AuthMcpError::Unauthorized),
     }
@@ -2960,6 +3239,125 @@ fn enforce_channel_scope(
     })
 }
 
+/// The approval a destructive call needs, or `None` when it needs none: only
+/// on a human's task (a token with `task` and `obo`) do destructive resources
+/// ask that human first (`domain::mcp_approval`).
+fn approval_binding<'a>(
+    identity: &'a McpIdentity,
+    resource: &'a str,
+    params: &Map<String, Value>,
+) -> Result<Option<crate::domain::mcp_approval::Binding<'a>>, ToolCallFailure> {
+    let destructive =
+        cheers_mcp_server::registry::by_resource(resource).is_some_and(|spec| spec.destructive);
+    let (true, Some(task), Some(approver)) =
+        (destructive, identity.task.as_deref(), identity.on_behalf_of)
+    else {
+        return Ok(None);
+    };
+    let channel_id = params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| ToolCallFailure::Invalid("channel_id is required".into()))?;
+    Ok(Some(crate::domain::mcp_approval::Binding {
+        bot_id: identity.bot_id,
+        channel_id,
+        task,
+        approver,
+        resource,
+        args_hash: crate::domain::mcp_approval::args_hash(params),
+    }))
+}
+
+fn approval_refusal(tool: &str, refusal: crate::domain::mcp_approval::Refusal) -> ToolCallFailure {
+    use crate::domain::mcp_approval::Refusal;
+    let message = match refusal {
+        Refusal::Missing => format!(
+            "{tool} on this task needs the person's approval. Call request_approval with tool \"{tool}\" and these exact arguments as arguments_json, then call {tool} again with the returned approval_id."
+        ),
+        Refusal::NotApproved => {
+            "that approval was not granted; do not retry unless the person asks again".to_string()
+        }
+        Refusal::Mismatch => format!(
+            "that approval_id is not for this exact {tool} call on this task; request a new approval for these arguments"
+        ),
+        Refusal::Used => {
+            "that approval was already used; each approval allows one call".to_string()
+        }
+    };
+    ToolCallFailure::Domain {
+        code: "APPROVAL_REQUIRED".to_string(),
+        message,
+    }
+}
+
+/// `request_approval`: posts the approval card for one destructive call and
+/// waits for the person whose task this is.
+async fn request_approval(
+    state: &AppState,
+    identity: &McpIdentity,
+    params: &Map<String, Value>,
+) -> Result<Value, ToolCallFailure> {
+    let text = |name: &str| params.get(name).and_then(Value::as_str);
+    let tool = text("tool").unwrap_or_default();
+    let arguments: Map<String, Value> = text("arguments_json")
+        .and_then(|raw| serde_json::from_str(raw).ok())
+        .ok_or_else(|| ToolCallFailure::Invalid("arguments_json must be a JSON object".into()))?;
+    let call = build_tool_resource_call(tool, &arguments)
+        .map_err(|error| ToolCallFailure::Invalid(error.message))?;
+    if call.params.get("channel_id") != params.get("channel_id") {
+        return Err(ToolCallFailure::Invalid(
+            "arguments_json must name the same channel_id".into(),
+        ));
+    }
+    let Some(binding) = approval_binding(identity, call.resource, &call.params)? else {
+        return Err(ToolCallFailure::Domain {
+            code: "APPROVAL_NOT_NEEDED".to_string(),
+            message: format!(
+                "{tool} needs no approval here: it is not a destructive tool, or this is not a person's task. Call it directly."
+            ),
+        });
+    };
+    let summary = match text("reason") {
+        Some(reason) => format!(
+            "{}\n\nReason given by the bot: {reason}",
+            describe(&call.params)
+        ),
+        None => describe(&call.params),
+    };
+    let approval_id = crate::domain::mcp_approval::request(state, &binding, tool, &summary)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "mcp approval: card insert failed");
+            ToolCallFailure::Domain {
+                code: "INTERNAL_ERROR".to_string(),
+                message: "could not post the approval request".to_string(),
+            }
+        })?;
+    let decision =
+        crate::domain::mcp_approval::wait(state, &approval_id, crate::domain::mcp_approval::WAIT)
+            .await;
+    let decision = match decision {
+        crate::domain::mcp_approval::Decision::Approved => "approved",
+        crate::domain::mcp_approval::Decision::Denied => "denied",
+        crate::domain::mcp_approval::Decision::Expired => "expired",
+    };
+    Ok(json!({ "approval_id": approval_id, "decision": decision }))
+}
+
+/// The arguments of the call being approved, as the person will read them.
+fn describe(params: &Map<String, Value>) -> String {
+    params
+        .iter()
+        .filter(|(key, _)| key.as_str() != "channel_id")
+        .map(|(key, value)| match value {
+            Value::String(text) => format!("{key}: {text}"),
+            other => format!("{key}: {other}"),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// `set_status` writes the bot's single status card, which every channel shows.
 /// Written during a shared channel's turn, it can carry that channel's content
 /// into all the others, so only a token narrowed to the owner's DM with the bot
@@ -3010,13 +3408,26 @@ async fn call_tool(
     name: &str,
     arguments: &Map<String, Value>,
 ) -> Result<Value, ToolCallFailure> {
-    let call = build_tool_resource_call(name, arguments)
+    let mut call = build_tool_resource_call(name, arguments)
         .map_err(|error| ToolCallFailure::Invalid(error.message))?;
     if let Some(refusal) = enforce_channel_scope(identity, call.resource, &call.params) {
         return Err(refusal);
     }
     if call.resource == "bot.status.write" {
         enforce_status_channel(state, identity).await?;
+    }
+    if call.resource == "approval.request" {
+        return request_approval(state, identity, &call.params).await;
+    }
+    // Never forwarded: it is an argument to this gate, not to the resource.
+    let approval_id = call.params.remove("approval_id");
+    if let Some(binding) = approval_binding(identity, call.resource, &call.params)? {
+        let approval_id = approval_id.as_ref().and_then(Value::as_str);
+        if let Err(refusal) =
+            crate::domain::mcp_approval::consume(state, approval_id, &binding).await
+        {
+            return Err(approval_refusal(name, refusal));
+        }
     }
     let bot_id = identity.bot_id;
     let frame = json!({
@@ -3028,7 +3439,7 @@ async fn call_tool(
     });
     let response = crate::gateway::resource_effects::dispatch_with_effects(
         state,
-        Principal::bot(bot_id),
+        Principal::bot_for(bot_id, identity.on_behalf_of),
         &frame,
     )
     .await;
@@ -3117,7 +3528,7 @@ async fn read_resource(
     });
     let response = resource::dispatch(
         &state.db,
-        Principal::bot(bot_id),
+        Principal::bot_for(bot_id, identity.on_behalf_of),
         &frame,
         &state.bot_locator,
     )
@@ -3964,6 +4375,21 @@ mod tests {
         assert!(ChannelScopeVerdict::Unnarrowed.is_refused());
         assert!(!ChannelScopeVerdict::InScope.is_refused());
         assert!(!ChannelScopeVerdict::Channelless.is_refused());
+    }
+
+    /// task 声明可缺省：老 token 照常解析，新 token 不带 task 时也不序列化该字段。
+    #[test]
+    fn task_claim_is_optional_on_the_wire() {
+        let legacy: McpAccessClaims = serde_json::from_value(json!({
+            "sub": "b", "host_id": "h", "credential_hash": "c", "scope": "s",
+            "chan": "11111111-2222-4333-8444-555555555555",
+            "aud": "a", "iss": "i", "token_use": MCP_TOKEN_USE,
+            "exp": 2, "iat": 1, "nbf": 1
+        }))
+        .unwrap();
+        assert!(legacy.task.is_none());
+        let encoded = serde_json::to_value(&legacy).unwrap();
+        assert!(encoded.get("task").is_none());
     }
 
     #[test]

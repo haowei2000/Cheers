@@ -275,10 +275,14 @@ pub struct SessionUpdatePolicy {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum McpDelivery {
+    /// Decide per Agent build from the Gateway's observations: `direct` for an
+    /// Agent that picks up renewed tokens (tested on first use), `gateway`
+    /// for one that keeps old ones (`crate::mcp_delivery`).
+    #[default]
+    Auto,
     /// The Agent calls the Gateway's `/mcp` itself, with the real bearer in
     /// `mcpServers[].headers`. Needs an Agent that re-reads headers on
     /// `session/load` to pick up a renewed token.
-    #[default]
     Direct,
     /// The Agent calls the connector's loopback credential gateway with a
     /// per-channel local secret; the connector swaps in the real bearer.
@@ -1298,12 +1302,12 @@ fn default_acp_capability_algorithm() -> String {
 mod tests {
     use super::*;
 
-    /// `delivery` 缺省为 direct（现行行为）；未知值在加载时报错，不能悄悄回落。
+    /// `delivery` 缺省为 auto；未知值在加载时报错，不能悄悄回落。
     #[test]
-    fn mcp_delivery_defaults_to_direct_and_rejects_unknown_modes() {
+    fn mcp_delivery_defaults_to_auto_and_rejects_unknown_modes() {
         let empty: RawMcpPolicy = toml::from_str("").unwrap();
-        assert_eq!(empty.delivery, McpDelivery::Direct);
-        assert_eq!(RawMcpPolicy::default().delivery, McpDelivery::Direct);
+        assert_eq!(empty.delivery, McpDelivery::Auto);
+        assert_eq!(RawMcpPolicy::default().delivery, McpDelivery::Auto);
         let gateway: RawMcpPolicy = toml::from_str("delivery = \"gateway\"").unwrap();
         assert_eq!(gateway.delivery, McpDelivery::Gateway);
         assert!(toml::from_str::<RawMcpPolicy>("delivery = \"proxy\"").is_err());

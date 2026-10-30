@@ -465,6 +465,8 @@ mod tests {
             | "desk_append"
             | "desk_rm"
             | "desk_mv"
+            // Asks for the approval desk_rm / desk_mv need; same scope as them.
+            | "request_approval"
             | "report_code_workspace" => Some(SCOPE_WORKSPACE_WRITE),
             "set_status" => Some(SCOPE_PROFILE_WRITE),
             "leave_channel" | "open_direct_message" => Some(SCOPE_MEMBERSHIP_WRITE),

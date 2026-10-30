@@ -208,6 +208,22 @@ pub async fn resolve_permission(
 
         return Err(AppError::Conflict("approval already resolved".into()));
     }
+    // A server-enforced MCP approval (domain::mcp_approval) is answered only by
+    // the person whose task it is: neither the bot owner nor a delegate can
+    // approve a destructive call on someone else's behalf.
+    let mcp_approval = pending.content_data.get("kind").and_then(Value::as_str)
+        == Some(crate::domain::mcp_approval::KIND);
+    if mcp_approval
+        && pending
+            .content_data
+            .get("approver_user_id")
+            .and_then(Value::as_str)
+            != Some(uid.to_string().as_str())
+    {
+        return Err(AppError::Forbidden(
+            "only the person whose task this is can answer this approval".into(),
+        ));
+    }
     // The operation_kind being approved (opaque ACP toolCall.kind) scopes which
     // delegates may resolve it; the owner may always resolve. Default '*'.
     let op_kind = pending
@@ -219,8 +235,9 @@ pub async fn resolve_permission(
     // Who may answer a permission_request = bot owner OR a per-kind approver
     // (approval_delegations) OR a RESPOND grant in the event-policy matrix. All three
     // compose; default is owner/approver-only (no loosening). See ACP_EVENT_TAXONOMY.md.
-    let may_respond =
-        approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind).await? || {
+    let may_respond = mcp_approval
+        || approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind).await?
+        || {
             let role = channel_role(&state, channel_id, uid).await?;
             crate::domain::acp_policy::allows(
                 &state.db,
@@ -389,7 +406,9 @@ pub async fn resolve_permission(
         &uid.to_string(),
         &now,
     );
-    let delivered = state.bot_locator.dispatch_task(pending.bot_id, frame).await;
+    // An MCP approval has no ACP request waiting on the connector: the gated
+    // call reads the card itself.
+    let delivered = !mcp_approval && state.bot_locator.dispatch_task(pending.bot_id, frame).await;
 
     // Broadcast the resolved card so every client clears the pending state.
     let mut content_data = pending.content_data.clone();

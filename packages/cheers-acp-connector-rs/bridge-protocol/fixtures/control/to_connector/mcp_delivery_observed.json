@@ -1,0 +1,7 @@
+{
+  "agent": "codex-acp@2.3.0",
+  "channel_id": "11111111-2222-4333-8444-555555555555",
+  "header_refresh": false,
+  "type": "mcp_delivery_observed",
+  "v": 1
+}
