@@ -40,12 +40,12 @@ jobs:
       fail-fast: false # one target failing must not block the others
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             asset: cce-acp-connector-darwin-arm64
           # Intel macOS is cross-compiled from the arm64 runner: GitHub retired
           # the macos-13 (Intel) runner pool, so an x86_64 job queues forever.
-          - os: macos-14
+          - os: macos-15
             target: x86_64-apple-darwin
             asset: cce-acp-connector-darwin-amd64
           - os: ubuntu-latest
