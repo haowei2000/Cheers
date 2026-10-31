@@ -5,7 +5,7 @@ name: release-desktop
 # `desktop-v0.1.0` (the workflow runs from the tagged commit, so tagging a
 # feature-branch head works for preview releases).
 #
-# Apple-silicon only for now (macos-14 runner = arm64): an Intel build needs a
+# Apple-silicon only for now (macos-15 runner = arm64): an Intel build needs a
 # cross-compiled sidecar + universal bundle, deferred until someone asks.
 #
 # SIGNED (Gatekeeper): Developer ID Application signing + Apple notarization,
@@ -39,7 +39,7 @@ permissions:
 jobs:
   build:
     name: build macOS (arm64)
-    runs-on: macos-14
+    runs-on: macos-15
     environment: production
     steps:
       - uses: actions/checkout@v5
