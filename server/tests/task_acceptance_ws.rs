@@ -2210,3 +2210,369 @@ async fn a_finished_stream_refunds_prepaid_delta_uses(db: PgPool) {
     .await
     .unwrap_or_else(|_| panic!("use_count settles at frames actually sent"));
 }
+
+impl Fixture {
+    /// `client_credentials` for this fixture's channel, optionally bound to a
+    /// task execution.
+    async fn mint(&self, execution: Option<Uuid>) -> (StatusCode, Value) {
+        let metadata: Value = self
+            .client
+            .get(format!(
+                "{}/.well-known/oauth-protected-resource/mcp",
+                self.base
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let mut form = json!({
+            "grant_type":"client_credentials","client_id":self.bot.host,
+            "client_secret":self.bot.credential,"resource":metadata["resource"],
+            "scope":"cheers:read cheers:messages:write cheers:workspace:write","cheers_channel":self.channel,
+        });
+        if let Some(execution) = execution {
+            form["cheers_execution"] = json!(execution);
+        }
+        let response = self
+            .client
+            .post(format!("{}/oauth/token", self.base))
+            .json(&form)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        (status, response.json().await.unwrap())
+    }
+
+    async fn post_message_with(&self, token: &str, key: &str) -> Value {
+        let response = self
+            .client
+            .post(format!("{}/mcp", self.base))
+            .bearer_auth(token)
+            .header("MCP-Protocol-Version", "2025-11-25")
+            .header("Accept", "application/json, text/event-stream")
+            .json(
+                &json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+                "name":"post_message",
+                "arguments":{"channel_id":self.channel,"text":"narrowed?","idempotency_key":key}}}),
+            )
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let rpc: Value = response.json().await.unwrap();
+        assert!(status.is_success(), "{status}: {rpc}");
+        rpc["result"].clone()
+    }
+
+    async fn tools_list_status(&self, token: &str) -> StatusCode {
+        self.client
+            .post(format!("{}/mcp", self.base))
+            .bearer_auth(token)
+            .header("MCP-Protocol-Version", "2025-11-25")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+            .send()
+            .await
+            .unwrap()
+            .status()
+    }
+}
+
+#[sqlx::test]
+async fn a_task_bound_mcp_token_works_only_while_its_execution_runs(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let mut bridge = fixture.bridge(true).await;
+    let task = fixture.dispatch(&mut bridge.control).await;
+
+    // Not accepted yet: there is no running execution to bind to.
+    let execution = Uuid::new_v4();
+    let (status, body) = fixture.mint(Some(execution)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"], "invalid_grant", "{body}");
+
+    accept(&mut bridge.control, acceptance(&task, execution), "granted").await;
+    let (status, token) = fixture.mint(Some(execution)).await;
+    assert!(status.is_success(), "{status}: {token}");
+    let token = token["access_token"].as_str().unwrap().to_string();
+    assert_eq!(fixture.tools_list_status(&token).await, StatusCode::OK);
+
+    let ack = terminal_ack(
+        &mut bridge.data,
+        &terminal(&task, execution, Uuid::new_v4(), "done"),
+    )
+    .await;
+    assert_eq!(ack["ok"], true, "{ack}");
+
+    // The task ended: its token is refused (403, not a re-mint invitation),
+    // and no new token can be bound to it.
+    assert_eq!(
+        fixture.tools_list_status(&token).await,
+        StatusCode::FORBIDDEN
+    );
+    let (status, body) = fixture.mint(Some(execution)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"], "invalid_grant", "{body}");
+
+    // A channel-only token is unaffected.
+    let (status, plain) = fixture.mint(None).await;
+    assert!(status.is_success(), "{status}: {plain}");
+    assert_eq!(
+        fixture
+            .tools_list_status(plain["access_token"].as_str().unwrap())
+            .await,
+        StatusCode::OK
+    );
+}
+
+#[sqlx::test]
+async fn a_read_only_senders_task_cannot_write_through_mcp_until_the_owner_opts_out(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let mut bridge = fixture.bridge(true).await;
+    let task = fixture.dispatch(&mut bridge.control).await;
+    let execution = Uuid::new_v4();
+    accept(&mut bridge.control, acceptance(&task, execution), "granted").await;
+    // The human whose message started the task is read-only in the channel.
+    sqlx::query(
+        "UPDATE channel_memberships SET role='readonly'
+         WHERE channel_id=$1 AND member_id=$2 AND member_type='user'",
+    )
+    .bind(fixture.channel.to_string())
+    .bind(fixture.user.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let (status, token) = fixture.mint(Some(execution)).await;
+    assert!(status.is_success(), "{status}: {token}");
+    let narrowed = fixture
+        .post_message_with(token["access_token"].as_str().unwrap(), "narrow-1")
+        .await;
+    assert_eq!(narrowed["isError"], true, "{narrowed}");
+    let text = narrowed["content"][0]["text"].as_str().unwrap();
+    assert!(text.starts_with("[PERMISSION_DENIED]"), "{text}");
+
+    // A channel-only token acts with the bot's own role.
+    let (_, plain) = fixture.mint(None).await;
+    let own_role = fixture
+        .post_message_with(plain["access_token"].as_str().unwrap(), "narrow-2")
+        .await;
+    assert_eq!(own_role["isError"], false, "{own_role}");
+
+    // The owner opts this bot out; tokens minted from now on are not narrowed.
+    let response = fixture
+        .client
+        .put(format!(
+            "{}/api/v1/bots/{}/mcp-policy",
+            fixture.base, fixture.bot.id
+        ))
+        .bearer_auth(&fixture.token)
+        .json(&json!({"narrow_to_sender": false}))
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success(), "{}", response.status());
+    let (_, token) = fixture.mint(Some(execution)).await;
+    let opted_out = fixture
+        .post_message_with(token["access_token"].as_str().unwrap(), "narrow-3")
+        .await;
+    assert_eq!(opted_out["isError"], false, "{opted_out}");
+}
+
+impl Fixture {
+    async fn tool(&self, token: &str, name: &str, arguments: Value) -> Value {
+        let response = self
+            .client
+            .post(format!("{}/mcp", self.base))
+            .bearer_auth(token)
+            .header("MCP-Protocol-Version", "2025-11-25")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+                "params":{"name":name,"arguments":arguments}}))
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let rpc: Value = response.json().await.unwrap();
+        assert!(status.is_success(), "{status}: {rpc}");
+        rpc["result"].clone()
+    }
+}
+
+fn result_text(result: &Value) -> String {
+    result["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[sqlx::test]
+async fn a_destructive_call_on_a_persons_task_runs_once_per_approval(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let mut bridge = fixture.bridge(true).await;
+    let task = fixture.dispatch(&mut bridge.control).await;
+    let execution = Uuid::new_v4();
+    accept(&mut bridge.control, acceptance(&task, execution), "granted").await;
+    let (_, token) = fixture.mint(Some(execution)).await;
+    let token = token["access_token"].as_str().unwrap().to_string();
+    let channel = fixture.channel.to_string();
+    // The bot's own channel role needs workspace write, like the human's.
+    sqlx::query("UPDATE channel_memberships SET role='admin' WHERE channel_id=$1 AND member_id=$2")
+        .bind(&channel)
+        .bind(fixture.bot.id.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let written = fixture
+        .tool(
+            &token,
+            "desk_write",
+            json!({"channel_id":channel,"path":"notes/old.md","content":"x"}),
+        )
+        .await;
+    assert_eq!(written["isError"], false, "{written}");
+
+    let rm = json!({"channel_id":channel,"path":"notes/old.md"});
+    let refused = fixture.tool(&token, "desk_rm", rm.clone()).await;
+    assert_eq!(refused["isError"], true, "{refused}");
+    assert!(
+        result_text(&refused).starts_with("[APPROVAL_REQUIRED]"),
+        "{refused}"
+    );
+
+    // request_approval waits for the person; answer the card it posts.
+    let asked = {
+        let fixture = &fixture;
+        let token = token.clone();
+        let rm = rm.clone();
+        let channel = channel.clone();
+        async move {
+            fixture
+                .tool(
+                    &token,
+                    "request_approval",
+                    json!({"channel_id":channel,
+                    "tool":"desk_rm","arguments_json":rm.to_string(),"reason":"cleanup"}),
+                )
+                .await
+        }
+    };
+    let answer = async {
+        let approval_id: String = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let found: Option<String> = sqlx::query_scalar(
+                    "SELECT content_data->>'request_id' FROM messages
+                     WHERE channel_id=$1 AND msg_type='permission'
+                       AND content_data->>'kind'='mcp_approval'",
+                )
+                .bind(&channel)
+                .fetch_optional(&db)
+                .await
+                .unwrap();
+                if let Some(found) = found {
+                    return found;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("request_approval posts a card");
+        fixture
+            .post(
+                &format!("/channels/{channel}/permissions/{approval_id}/resolve"),
+                json!({"option_id":"allow_once"}),
+            )
+            .await;
+    };
+    let (asked, ()) = tokio::join!(asked, answer);
+    assert_eq!(asked["isError"], false, "{asked}");
+    let approved = &asked["structuredContent"];
+    assert_eq!(approved["decision"], "approved", "{asked}");
+    let approval_id = approved["approval_id"].as_str().unwrap();
+
+    // Different arguments are not what was approved.
+    let other = fixture
+        .tool(
+            &token,
+            "desk_rm",
+            json!({"channel_id":channel,"path":"notes/other.md","approval_id":approval_id}),
+        )
+        .await;
+    assert!(
+        result_text(&other).starts_with("[APPROVAL_REQUIRED]"),
+        "{other}"
+    );
+
+    let mut approved_rm = rm.clone();
+    approved_rm["approval_id"] = json!(approval_id);
+    let removed = fixture.tool(&token, "desk_rm", approved_rm.clone()).await;
+    assert_eq!(removed["isError"], false, "{removed}");
+
+    // One approval, one call.
+    let again = fixture.tool(&token, "desk_rm", approved_rm).await;
+    assert!(
+        result_text(&again).starts_with("[APPROVAL_REQUIRED]"),
+        "{again}"
+    );
+    assert!(result_text(&again).contains("already used"), "{again}");
+}
+
+/// A `client_credentials` token cannot step up, so a missing scope reaches the
+/// model as a tool error it can act on, not a 403 the client hides from it.
+#[sqlx::test]
+async fn a_connector_token_missing_a_scope_gets_an_actionable_tool_error(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let metadata: Value = fixture
+        .client
+        .get(format!(
+            "{}/.well-known/oauth-protected-resource/mcp",
+            fixture.base
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token: Value = fixture.client.post(format!("{}/oauth/token", fixture.base)).json(&json!({
+        "grant_type":"client_credentials","client_id":fixture.bot.host,"client_secret":fixture.bot.credential,
+        "resource":metadata["resource"],"scope":"cheers:read","cheers_channel":fixture.channel,
+    })).send().await.unwrap().json().await.unwrap();
+    let response = fixture
+        .client
+        .post(format!("{}/mcp", fixture.base))
+        .bearer_auth(token["access_token"].as_str().unwrap())
+        .header("MCP-Protocol-Version", "2025-11-25")
+        .header("Accept", "application/json, text/event-stream")
+        .json(
+            &json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"post_message",
+            "arguments":{"channel_id":fixture.channel,"text":"needs write"}}}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let rpc: Value = response.json().await.unwrap();
+    let result = &rpc["result"];
+    assert_eq!(result["isError"], true, "{rpc}");
+    assert_eq!(result["structuredContent"]["code"], "SCOPE_REQUIRED");
+    assert_eq!(result["structuredContent"]["retryable"], false);
+    assert_eq!(
+        result["structuredContent"]["requiredScopes"],
+        json!(["cheers:messages:write"])
+    );
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("Next:") && text.contains("restart the Cheers connector"),
+        "{text}"
+    );
+    let posted: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE content='needs write'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(posted, 0);
+}

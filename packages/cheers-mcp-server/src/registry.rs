@@ -465,6 +465,25 @@ pub fn catalog() -> &'static [ResourceSpec] {
                 ],
             ),
         },
+        // Answered by the Gateway's MCP endpoint itself (domain::mcp_approval): it
+        // posts an approval card and waits for the person's decision.
+        ResourceSpec {
+            resource: "approval.request",
+            routing: Routing::Brokered,
+            destructive: false,
+            tool: write_tool(
+                "request_approval",
+                "Ask for approval",
+                "Ask the person whose task this is to approve one destructive call (desk_rm, desk_mv) with these exact arguments. Waits for their answer (up to 10 minutes) and returns decision approved, denied or expired, plus approval_id to pass to that call.",
+                SCOPE_WORKSPACE_WRITE,
+                &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::req("tool", ParamKind::String),
+                    Param::req("arguments_json", ParamKind::String),
+                    Param::opt("reason", ParamKind::String),
+                ],
+            ),
+        },
         // Normalized into the call its `uri` names before `dispatch`'s match, so this
         // resource never routes under its own name. It exists so an MCP client that calls
         // tools rather than raw resources can act on a locator it read in a message
@@ -547,7 +566,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "set_status",
                 "Update Bot status",
-                "Update this Bot's own status/profile card.",
+                "Update this Bot's own status/profile card. It is shown in every channel, so it only works in your owner's direct message with you; elsewhere it is refused.",
                 SCOPE_PROFILE_WRITE,
                 &[
                     Param::opt("status_text", ParamKind::String),
@@ -665,7 +684,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                 discoverable: true,
                 name: "desk_rm",
                 title: "Remove a Desk path",
-                description: "Remove a Desk file or subtree.",
+                description: "Remove a Desk file or subtree. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
                 scope: SCOPE_WORKSPACE_WRITE,
                 read_only: false,
                 destructive_hint: true,
@@ -673,6 +692,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("channel_id", ParamKind::String),
                     Param::req("path", ParamKind::String),
                     Param::opt("recursive", ParamKind::Boolean),
+                    Param::opt("approval_id", ParamKind::String),
                 ],
                 constants: &[],
                 shaping: Shaping::None,
@@ -683,12 +703,13 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "desk_mv",
                 "Move a Desk path",
-                "Move or rename a Desk file or subtree.",
+                "Move or rename a Desk file or subtree. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
                 SCOPE_WORKSPACE_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
                     Param::req("from", ParamKind::String),
                     Param::req("to", ParamKind::String),
+                    Param::opt("approval_id", ParamKind::String),
                 ],
             ),
         ),
@@ -800,6 +821,7 @@ mod tests {
     fn brokered_resources_are_not_database_routed() {
         let db: BTreeSet<_> = database_resources().collect();
         assert!(!db.contains("workspace.read"));
+        assert!(!db.contains("approval.request"));
         assert!(db.contains("channel.info"));
     }
 }

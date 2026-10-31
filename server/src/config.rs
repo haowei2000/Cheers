@@ -170,14 +170,22 @@ pub struct Config {
     /// Canonical externally visible MCP protected-resource URL, including
     /// `/mcp`. Token audience binding and RFC 9728 metadata use this exact URL.
     pub mcp_public_url: Option<String>,
-    /// How strictly an MCP call must stay inside the channel its token was
-    /// minted for (`MCP_CHANNEL_SCOPE`: off | warn | enforce).
-    pub mcp_channel_scope: McpChannelScope,
+    /// MCP delivery modes connectors may use (`MCP_ALLOWED_DELIVERY_MODES`,
+    /// comma-separated `acp,direct,gateway`; unset = all). Leaving out
+    /// `direct` keeps real tokens out of Agent processes
+    /// (docs/arch/MCP_AUTH_ISOLATION.md §3.4.1).
+    pub mcp_allowed_delivery_modes: Option<Vec<cheers_bridge_protocol::McpDeliveryMode>>,
     /// OAuth authorization-server issuer advertised by RFC 9728 metadata.
     pub mcp_authorization_server_issuer: Option<String>,
     /// Lifetime of an MCP access token in seconds (`MCP_ACCESS_TOKEN_TTL_SECS`, default 86400 = 24h).
     /// Prevents premature expiration during long-running tasks and human-in-the-loop approval waits.
     pub mcp_access_token_ttl_secs: u64,
+    /// Lifetime for tokens minted to a host whose Agent uses `gateway` delivery
+    /// (`MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS`, default 600, at least 120). The
+    /// connector holds and renews these itself, so they never need to outlive
+    /// a turn; `direct` tokens keep `mcp_access_token_ttl_secs` because the
+    /// Agent cannot renew one mid-turn.
+    pub mcp_gateway_access_token_ttl_secs: u64,
 
     /// Public WS base the connector dials to reach this gateway's agent-bridge,
     /// e.g. `ws://localhost:30080` (via the frontend proxy for local kind) or
@@ -314,35 +322,59 @@ pub struct Config {
     pub task_claims_enabled: bool,
 }
 
-/// How strictly the MCP endpoint holds a call to the channel its token names.
-///
-/// A bot works in many channels at once through one agent process, and the
-/// channel an MCP call acts on arrives as a model-supplied argument. A token
-/// minted for one channel is the only per-turn thing the transport carries, so
-/// this decides what happens when a call names a different one.
-///
-/// Channel scoping is enforced by default. `Warn` and `Off` remain explicit
-/// rollout overrides for deployments that need to migrate legacy clients.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum McpChannelScope {
-    /// Never check. The pre-existing behaviour.
-    Off,
-    /// Check and log, allow either way. Explicit compatibility mode only.
-    Warn,
-    /// Refuse a call that leaves its token's channel, and refuse a token that
-    /// names no channel at all.
-    #[default]
-    Enforce,
+/// `MCP_CHANNEL_SCOPE` used to select off / warn / enforce. Channel scoping is
+/// now always enforced; `enforce` is still accepted for one release so existing
+/// deployments keep booting, and `off` / `warn` stop startup instead of being
+/// silently ignored. Remove this check (and the variable) in the next release.
+fn reject_removed_mcp_channel_scope(raw: Option<&str>) {
+    match raw.map(str::trim).unwrap_or_default() {
+        "" | "enforce" => {}
+        other => panic!(
+            "MCP_CHANNEL_SCOPE={other:?} was removed: MCP channel scoping is always enforced; unset MCP_CHANNEL_SCOPE"
+        ),
+    }
 }
 
-impl McpChannelScope {
-    fn from_env_value(raw: Option<&str>) -> Self {
-        match raw.map(str::trim).unwrap_or_default() {
-            "off" => Self::Off,
-            "" | "enforce" => Self::Enforce,
-            "warn" => Self::Warn,
-            other => panic!("MCP_CHANNEL_SCOPE must be off, warn or enforce (got {other:?})"),
-        }
+/// Parses `MCP_ALLOWED_DELIVERY_MODES`. Startup fails on an unknown mode, and
+/// on a list connectors could not satisfy: `acp` needs an Agent advertising
+/// `mcpCapabilities.acp`, so a list without `direct` or `gateway` would leave
+/// every other Agent without Cheers MCP.
+fn parse_mcp_allowed_delivery_modes(
+    raw: Option<&str>,
+) -> Option<Vec<cheers_bridge_protocol::McpDeliveryMode>> {
+    use cheers_bridge_protocol::McpDeliveryMode as Mode;
+    let raw = raw.map(str::trim).filter(|value| !value.is_empty())?;
+    let modes: Vec<Mode> = raw
+        .split(',')
+        .map(|item| match item.trim() {
+            "acp" => Mode::Acp,
+            "direct" => Mode::Direct,
+            "gateway" => Mode::Gateway,
+            other => panic!(
+                "MCP_ALLOWED_DELIVERY_MODES: unknown mode {other:?} (expected acp, direct, gateway)"
+            ),
+        })
+        .collect();
+    if !modes
+        .iter()
+        .any(|mode| matches!(mode, Mode::Direct | Mode::Gateway))
+    {
+        panic!("MCP_ALLOWED_DELIVERY_MODES={raw:?} allows neither direct nor gateway, which every Agent can use");
+    }
+    Some(modes)
+}
+
+/// Parses `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS`. The floor leaves the connector,
+/// which renews at 80% of the lifetime and never closer than 30 s to expiry,
+/// room to renew before a request goes out with an expiring token.
+fn gateway_access_token_ttl(raw: Option<&str>) -> u64 {
+    const MIN: u64 = 120;
+    match raw.map(str::trim).filter(|value| !value.is_empty()) {
+        None => crate::api::mcp::DEFAULT_MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS,
+        Some(value) => match value.parse::<u64>() {
+            Ok(secs) if secs >= MIN => secs,
+            _ => panic!("MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS must be a whole number of seconds >= {MIN} (got {value:?})"),
+        },
     }
 }
 
@@ -350,6 +382,7 @@ impl Config {
     /// 从环境变量读取配置，缺少必填项时 panic（启动时快速失败）。
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();
+        reject_removed_mcp_channel_scope(optional("MCP_CHANNEL_SCOPE").as_deref());
 
         // Fail fast on the JWT keypair: read AND parse both PEMs here, before
         // anything binds the listener, so `helm install` / `docker compose up`
@@ -509,8 +542,8 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
             mcp_public_url,
-            mcp_channel_scope: McpChannelScope::from_env_value(
-                optional("MCP_CHANNEL_SCOPE").as_deref(),
+            mcp_allowed_delivery_modes: parse_mcp_allowed_delivery_modes(
+                optional("MCP_ALLOWED_DELIVERY_MODES").as_deref(),
             ),
             mcp_authorization_server_issuer: optional("MCP_AUTHORIZATION_SERVER_ISSUER").map(
                 |value| {
@@ -522,6 +555,9 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(crate::api::mcp::DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS),
+            mcp_gateway_access_token_ttl_secs: gateway_access_token_ttl(
+                optional("MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS").as_deref(),
+            ),
             connector_public_base,
             connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
                 .ok()
@@ -888,20 +924,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mcp_channel_scope_defaults_to_enforce() {
-        assert_eq!(McpChannelScope::default(), McpChannelScope::Enforce);
+    fn mcp_channel_scope_accepts_only_enforce_or_unset() {
+        reject_removed_mcp_channel_scope(None);
+        reject_removed_mcp_channel_scope(Some(" enforce "));
+        for removed in ["off", "warn"] {
+            let result =
+                std::panic::catch_unwind(|| reject_removed_mcp_channel_scope(Some(removed)));
+            assert!(result.is_err(), "{removed} must stop startup");
+        }
+    }
+
+    #[test]
+    fn gateway_token_ttl_defaults_short_and_has_a_floor() {
+        assert_eq!(gateway_access_token_ttl(None), 600);
+        assert_eq!(gateway_access_token_ttl(Some("900")), 900);
+        for bad in ["60", "ten", "-5"] {
+            let result = std::panic::catch_unwind(|| gateway_access_token_ttl(Some(bad)));
+            assert!(result.is_err(), "{bad} must stop startup");
+        }
+    }
+
+    #[test]
+    fn mcp_allowed_delivery_modes_parse_and_reject_unservable_lists() {
+        use cheers_bridge_protocol::McpDeliveryMode as Mode;
+        assert_eq!(parse_mcp_allowed_delivery_modes(None), None);
+        assert_eq!(parse_mcp_allowed_delivery_modes(Some(" ")), None);
         assert_eq!(
-            McpChannelScope::from_env_value(None),
-            McpChannelScope::Enforce
+            parse_mcp_allowed_delivery_modes(Some("acp, gateway")),
+            Some(vec![Mode::Acp, Mode::Gateway])
         );
-        assert_eq!(
-            McpChannelScope::from_env_value(Some("warn")),
-            McpChannelScope::Warn
-        );
-        assert_eq!(
-            McpChannelScope::from_env_value(Some("off")),
-            McpChannelScope::Off
-        );
+        for bad in ["acp", "proxy", "direct,"] {
+            let result = std::panic::catch_unwind(|| parse_mcp_allowed_delivery_modes(Some(bad)));
+            assert!(result.is_err(), "{bad} must stop startup");
+        }
     }
 
     #[test]

@@ -923,14 +923,19 @@ async fn handle_peer_notification(
 /// (`default_client_capabilities()`),
 /// so a spec-compliant agent never calls `fs/read_text_file`, `fs/write_text_file`,
 /// or any `terminal/*`. The implemented agent→client requests are
-/// `session/request_permission` and ACP v1 `elicitation/create`; everything else is answered with JSON-RPC
+/// `session/request_permission`, ACP v1 `elicitation/create`, and MCP-over-ACP
+/// `mcp/message` (served only when the Cheers server was declared as `acp`;
+/// see [`crate::mcp_over_acp`]); everything else is answered with JSON-RPC
 /// `-32601`. This is intentional, not an oversight — see
 /// docs/arch/ACP_FS_PROXY.md (why ACP fs is not proxied) and
 /// docs/arch/ACP_APPROVAL_FLOW.md §0.5 (the permission model). Do NOT flip a
 /// capability to `true` without first implementing the corresponding handler
 /// here, or the connector would advertise a capability it cannot serve.
 fn peer_method_supported(method: &str) -> bool {
-    matches!(method, "session/request_permission" | "elicitation/create")
+    matches!(
+        method,
+        "session/request_permission" | "elicitation/create" | "mcp/message"
+    )
 }
 
 async fn handle_peer_request(
@@ -968,6 +973,36 @@ async fn handle_peer_request(
     }
 
     let params = value.get("params").cloned().unwrap_or(Value::Null);
+    if method == "mcp/message" {
+        let (tx, rx) = oneshot::channel();
+        let outcome = if event_tx
+            .send(RuntimeEvent::McpMessage {
+                params,
+                respond_to: tx,
+            })
+            .await
+            .is_ok()
+        {
+            rx.await.ok()
+        } else {
+            None
+        };
+        let reply = match outcome {
+            Some(Ok(result)) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+            Some(Err(error)) => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": error.code, "message": error.message}
+            }),
+            None => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32603, "message": "the connector stopped before answering"}
+            }),
+        };
+        write_json_line(writer, &reply).await?;
+        return Ok(());
+    }
     if method == "elicitation/create" {
         let acp_session_id = params
             .get("sessionId")
@@ -1183,6 +1218,7 @@ mod tests {
         // any to supported requires implementing its handler first.
         assert!(peer_method_supported("session/request_permission"));
         assert!(!peer_method_supported("fs/read_text_file"));
+        assert!(peer_method_supported("mcp/message"));
         assert!(!peer_method_supported("fs/write_text_file"));
         assert!(!peer_method_supported("terminal/create"));
         assert!(!peer_method_supported("terminal/output"));
@@ -1413,6 +1449,53 @@ mod tests {
         assert_eq!(request_id_key(&json!(12)).as_deref(), Some("12"));
         assert_eq!(request_id_key(&json!("12")).as_deref(), Some("\"12\""));
         assert_eq!(request_id_key(&Value::Null), None);
+    }
+
+    /// `mcp/message` goes to the runtime and its answer comes back on the
+    /// same JSON-RPC id: a result as `result`, an envelope error as `error`.
+    #[tokio::test]
+    async fn mcp_message_is_answered_by_the_runtime() {
+        let mut echo = tokio::process::Command::new("cat")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let writer: SharedWriter = Arc::new(Mutex::new(echo.stdin.take()));
+        let mut lines = BufReader::new(echo.stdout.take().unwrap()).lines();
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+        tokio::spawn(async move {
+            while let Some(RuntimeEvent::McpMessage { params, respond_to }) = event_rx.recv().await
+            {
+                let outcome = if params["serverId"] == "cheers:channel-a" {
+                    Ok(json!({"result": {"tools": []}}))
+                } else {
+                    Err(crate::mcp_over_acp::EnvelopeError {
+                        code: -32602,
+                        message: "unknown MCP server".into(),
+                    })
+                };
+                let _ = respond_to.send(outcome);
+            }
+        });
+        let routes: RequestRoutes = Arc::default();
+        for (id, server) in [(7, "cheers:channel-a"), (8, "other")] {
+            let request = json!({"jsonrpc": "2.0", "id": id, "method": "mcp/message",
+                "params": {"serverId": server, "requestId": "r", "method": "tools/list"}});
+            handle_peer_request("test", &writer, &event_tx, &routes, id, request)
+                .await
+                .unwrap();
+        }
+        let answered: Value =
+            serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert_eq!(
+            answered,
+            json!({"jsonrpc": "2.0", "id": 7, "result": {"result": {"tools": []}}})
+        );
+        let refused: Value =
+            serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert_eq!(refused["id"], 8);
+        assert_eq!(refused["error"]["code"], -32602);
+        let _ = echo.kill().await;
     }
 
     #[tokio::test]

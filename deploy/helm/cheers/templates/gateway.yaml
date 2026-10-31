@@ -155,13 +155,17 @@ spec:
             - name: MCP_PUBLIC_URL
               value: {{ .Values.gateway.mcpPublicUrl | quote }}
             {{- end }}
+            {{- if .Values.gateway.mcpGatewayAccessTokenTtlSecs }}
+            - name: MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS
+              value: {{ .Values.gateway.mcpGatewayAccessTokenTtlSecs | quote }}
+            {{- end }}
+            {{- if .Values.gateway.mcpAllowedDeliveryModes }}
+            - name: MCP_ALLOWED_DELIVERY_MODES
+              value: {{ .Values.gateway.mcpAllowedDeliveryModes | quote }}
+            {{- end }}
             {{- if .Values.gateway.mcpAuthorizationServerIssuer }}
             - name: MCP_AUTHORIZATION_SERVER_ISSUER
               value: {{ .Values.gateway.mcpAuthorizationServerIssuer | quote }}
-            {{- end }}
-            {{- if .Values.gateway.mcpChannelScope }}
-            - name: MCP_CHANNEL_SCOPE
-              value: {{ .Values.gateway.mcpChannelScope | quote }}
             {{- end }}
             - name: TRUST_PROXY_HEADERS
               value: {{ .Values.gateway.trustProxyHeaders | quote }}

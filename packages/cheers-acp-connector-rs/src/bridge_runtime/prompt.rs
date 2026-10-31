@@ -26,6 +26,7 @@ pub(super) fn pinned_digest(pinned: &[String]) -> String {
 pub(super) fn bridge_ready_from_initialize(
     initialize: &Value,
     policy: &LocalPolicy,
+    mcp_delivery: &McpDeliveryReport,
 ) -> BridgeReady {
     let runtime_name = initialize
         .get("agentInfo")
@@ -67,6 +68,7 @@ pub(super) fn bridge_ready_from_initialize(
         "session_update": policy.session_update.allow,
         "suggested_questions": true,
         "agent_capabilities": agent_caps,
+        "mcp_delivery": mcp_delivery,
     }));
     ready
 }
@@ -90,6 +92,7 @@ pub(super) fn agent_capability_summary(initialize: &Value) -> Value {
         "prompt_audio": cap_bool(&["promptCapabilities", "audio"]),
         "mcp_http": cap_bool(&["mcpCapabilities", "http"]),
         "mcp_sse": cap_bool(&["mcpCapabilities", "sse"]),
+        "mcp_acp": cap_bool(&["mcpCapabilities", "acp"]),
     })
 }
 
@@ -528,10 +531,12 @@ pub(super) fn is_cheers_mcp_server_name(name: &str) -> bool {
 
 /// Build the authoritative Cheers MCP entry for one channel.
 ///
-/// `bearer` is a host-bound, channel-narrowed access token the Connector minted
-/// for this session (see [`crate::mcp_token`]). Supplying it means the Agent
-/// only has to speak HTTP MCP — it needs no OAuth client of its own, no Client
-/// ID Metadata Document, and no consent round-trip.
+/// `bearer` is either the local secret for the connector's loopback credential
+/// gateway (with `mcp_url` its local URL; see [`crate::credential_gateway`]) or a
+/// host-bound, channel-narrowed access token the Connector minted for this
+/// session (see [`crate::mcp_token`]). Either way the Agent only has to speak
+/// HTTP MCP — it needs no OAuth client of its own, no Client ID Metadata
+/// Document, and no consent round-trip.
 pub(super) fn native_cheers_mcp_server(channel_id: &str, mcp_url: &str, bearer: &str) -> Value {
     json!({
         "type": "http",
@@ -1661,9 +1666,10 @@ mod tests {
             "agentCapabilities": {
                 "loadSession": true,
                 "promptCapabilities": { "image": true },
-                "mcpCapabilities": { "http": true, "sse": false }
+                "mcpCapabilities": { "http": true, "sse": false, "acp": true }
             }
         }));
+        assert_eq!(summary["mcp_acp"], true);
         assert_eq!(summary["load_session"], true);
         assert_eq!(summary["prompt_image"], true);
         assert_eq!(summary["mcp_http"], true);
@@ -1675,6 +1681,7 @@ mod tests {
         assert_eq!(empty["prompt_image"], false);
         assert_eq!(empty["mcp_http"], false);
         assert_eq!(empty["mcp_sse"], false);
+        assert_eq!(empty["mcp_acp"], false);
     }
 
     #[test]

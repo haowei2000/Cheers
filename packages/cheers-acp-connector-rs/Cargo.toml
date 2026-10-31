@@ -7,7 +7,7 @@ members = [".", "bridge-protocol"]
 
 [package]
 name = "cce-acp-connector"
-version = "0.1.57"
+version = "0.1.58"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
@@ -37,6 +37,12 @@ cheers-bridge-protocol = { path = "bridge-protocol" }
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
 futures-util = "0.3"
+# Loopback credential gateway server (src/credential_gateway.rs); already in the
+# tree through reqwest, so only the server features are new.
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 libc = "0.2"
 mime_guess = "2"
 # Filesystem watch for remote-workspace live-refresh (workspace_req watch/unwatch →
@@ -46,7 +52,7 @@ notify = "8"
 rand = "0.10"
 # Self-update downloads (signed manifest + binaries) through the gateway's
 # release proxy. rustls-only, matching tokio-tungstenite's TLS stack.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Content etags for safe remote writes: lowercase-hex SHA-256 of raw file bytes

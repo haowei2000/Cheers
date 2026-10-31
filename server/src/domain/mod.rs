@@ -24,6 +24,7 @@ pub mod dms;
 pub mod fleet;
 pub mod integrations;
 pub mod invitable;
+pub mod mcp_approval;
 pub mod mcp_check;
 pub mod mentions;
 pub mod message_policy;

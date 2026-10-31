@@ -17,10 +17,13 @@ mod bridge_runtime;
 mod bridge_session;
 mod cli;
 mod config;
+mod credential_gateway;
 mod daemon;
 #[cfg(test)]
 mod desktop_config_tests;
 mod extensions;
+mod mcp_delivery;
+mod mcp_over_acp;
 mod mcp_token;
 mod runtime_adapter;
 mod self_update;

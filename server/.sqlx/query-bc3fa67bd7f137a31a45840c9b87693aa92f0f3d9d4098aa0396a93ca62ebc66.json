@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bot_accounts SET mcp_narrow_to_sender = $1 WHERE bot_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bc3fa67bd7f137a31a45840c9b87693aa92f0f3d9d4098aa0396a93ca62ebc66"
+}

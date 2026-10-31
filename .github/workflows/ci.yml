@@ -397,10 +397,10 @@ jobs:
 
   desktop-check:
     name: Desktop Check
-    # macos-14: the Tauri crate needs Apple frameworks; no `tauri build` in CI
+    # macos-15: the Tauri crate needs Apple frameworks; no `tauri build` in CI
     # (slow, and unsigned artifacts aren't shippable anyway). Unit tests cover
     # the shell's local logic without launching an installed app or agent.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'

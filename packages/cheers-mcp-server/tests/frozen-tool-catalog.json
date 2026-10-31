@@ -631,6 +631,43 @@
   {
     "_meta": {
       "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Ask the person whose task this is to approve one destructive call (desk_rm, desk_mv) with these exact arguments. Waits for their answer (up to 10 minutes) and returns decision approved, denied or expired, plus approval_id to pass to that call.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments_json": {
+          "type": "string"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "tool",
+        "arguments_json"
+      ],
+      "type": "object"
+    },
+    "name": "request_approval",
+    "title": "Ask for approval"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
         "cheers:read"
       ]
     },
@@ -793,7 +830,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Update this Bot's own status/profile card.",
+    "description": "Update this Bot's own status/profile card. It is shown in every channel, so it only works in your owner's direct message with you; elsewhere it is refused.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1038,10 +1075,13 @@
       "destructiveHint": true,
       "readOnlyHint": false
     },
-    "description": "Remove a Desk file or subtree.",
+    "description": "Remove a Desk file or subtree. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "approval_id": {
+          "type": "string"
+        },
         "channel_id": {
           "type": "string"
         },
@@ -1071,10 +1111,13 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Move or rename a Desk file or subtree.",
+    "description": "Move or rename a Desk file or subtree. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "approval_id": {
+          "type": "string"
+        },
         "channel_id": {
           "type": "string"
         },

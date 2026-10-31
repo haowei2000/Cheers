@@ -326,6 +326,10 @@ pub struct ServerCapabilities {
     /// gateways that pin no release version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_connector_version: Option<String>,
+    /// MCP delivery modes this Gateway permits (deployment policy). Absent:
+    /// every mode. The connector never picks a mode outside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_allowed_modes: Option<Vec<McpDeliveryMode>>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }
@@ -381,6 +385,31 @@ pub struct SessionPolicy {
     pub on_missing: String,
     pub on_paused: String,
     pub after_task: String,
+}
+
+/// How an Agent reaches the Cheers MCP endpoint
+/// (docs/arch/MCP_AUTH_ISOLATION.md §3.4.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpDeliveryMode {
+    /// MCP-over-ACP: calls come back to the connector as `mcp/message`.
+    Acp,
+    /// The Agent calls `/mcp` itself with the bearer in `mcpServers` headers.
+    Direct,
+    /// The Agent calls the connector's loopback credential gateway.
+    Gateway,
+}
+
+/// The connector's MCP delivery choice for the current Agent process, sent as
+/// `connector_capabilities.mcp_delivery` in `ready`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpDeliveryReport {
+    /// Modes this connector build can serve.
+    pub modes: Vec<McpDeliveryMode>,
+    /// The mode the current Agent process uses.
+    pub mode: McpDeliveryMode,
+    /// Why this mode, in words an operator can act on.
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -790,6 +819,20 @@ pub enum ControlInbound {
         resolved_by: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_at: Option<String>,
+    },
+    /// The Gateway's verdict on `direct` delivery for this Agent process,
+    /// judged from the token generation the Agent presented on `channel_id`
+    /// after a renewal: `header_refresh` is true when it sent the newer token
+    /// and false when it kept the older one (so `direct` will fail once that
+    /// expires). Sent at most once per Agent process.
+    #[serde(rename = "mcp_delivery_observed")]
+    McpDeliveryObserved {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        channel_id: String,
+        /// `name@version` of the Agent the verdict applies to.
+        agent: String,
+        header_refresh: bool,
     },
     #[serde(rename = "pong")]
     Pong,

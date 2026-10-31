@@ -231,6 +231,7 @@ async fn main() -> anyhow::Result<()> {
         workspace_rpc,
         web_push,
         push,
+        mcp_delivery: Arc::default(),
     };
 
     // Recover admitted dispatches from the existing run ledger. Socket
