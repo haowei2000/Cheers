@@ -1,6 +1,6 @@
 # MCP Authorization and Channel Isolation
 
-Status: **plan agreed 2026-10-29, revised the same day to three delivery modes; M1 and M3 in review**
+Status: **M1–M5 shipped (platform 0.1.57, connector 0.1.58); M6 built, waiting for Agents to advertise `mcpCapabilities.acp`**
 Scope: the HTTP MCP endpoint (`POST /mcp`), its OAuth surface, and the
 connector path that hands MCP credentials to ACP Agents.
 Related: [MCP_HTTP_OAUTH_TOOL_SCOPE](./MCP_HTTP_OAUTH_TOOL_SCOPE.md) ·
@@ -474,17 +474,25 @@ stateless. Channel-only tokens and tasks without a person are not gated.
 | Channel-narrowed tokens, `enforce` default | ✅ |
 | ACP session per channel | ✅ |
 | Fresh token before every prompt via `session/load` (`direct`) | ⚠️ ignored by Codex (§3.4.4); `auto` moves such Agents to `gateway` (M2) |
-| Credential gateway pass-through, `policy.mcp.delivery` | 🚧 M1, PR #806 |
-| Host profile, `auto` negotiation, generation test | ❌ M2 |
-| Native MCP-over-ACP | 🚧 M6: connector serves `mcp/message`; no Agent advertises `acp: true` yet |
-| Domain errors as `isError` tool results with `Next:` guidance and `{code, retryable}` | 🚧 M4a, PR #813 |
-| Per-channel host working directory | 🚧 M3, PR #810 |
-| Channel-safe `set_status` (owner↔bot DM only) | ✅ M3, #809; own code `STATUS_OWNER_DM_ONLY` |
-| `off` / `warn` removed; scope always enforced | 🚧 M3, PR #809 |
-| Token lifetime per mode (10 min for `gateway`, 24h for `direct`) | 🚧 M4b, PR #814 |
-| Task-bound tokens (`cheers_execution` → `task` claim, per-request running check) | 🚧 M5a, PR #815 |
-| Delegated narrowing (bot ∩ sender, owner opt-out) | 🚧 M5b, PR #816 |
-| `request_approval` for destructive calls on a person's task | 🚧 M5c |
+| Credential gateway pass-through, `policy.mcp.delivery` | ✅ M1, #806 |
+| Host profile, `auto` negotiation, generation test | ✅ M2, #811, #812 |
+| Native MCP-over-ACP | 🟡 M6, #823: connector serves `mcp/message`; no Agent advertises `acp: true` yet |
+| Domain errors as `isError` tool results with `Next:` guidance and `{code, retryable}` | ✅ M4a, #813 |
+| Per-channel host working directory | ✅ M3, #810 |
+| Channel-safe `set_status` (owner↔bot DM only) | ✅ M3, #809; own code `STATUS_OWNER_DM_ONLY` (#820) |
+| `off` / `warn` removed; scope always enforced | ✅ M3, #809 |
+| Token lifetime per mode (10 min for `gateway`, 24h for `direct`) | ✅ M4b, #814 |
+| Scope refusals as tool errors for `client_credentials` tokens | ✅ M4c, #818 |
+| Task-bound tokens (`cheers_execution` → `task` claim, per-request running check) | ✅ M5a, #815 |
+| Delegated narrowing (bot ∩ sender, owner opt-out) | ✅ M5b, #816; owner toggle in the bot panel, #819 |
+| `request_approval` for destructive calls on a person's task | ✅ M5c, #816 |
+| Fleet shows each host's delivery mode and reason | ❌ M2 follow-up |
+| DPoP upstream | ❌ optional, M5 follow-up |
+
+Shipped in platform 0.1.57 and connector 0.1.58. Verified end to end on the
+local stack with `codex-acp` 2.2.2: `direct` → `header_refresh = false` verdict
+→ automatic restart into `gateway` → MCP through the gateway → approval card
+for `desk_rm` → one approved retry, card consumed.
 
 ## 8. Roadmap
 
@@ -496,8 +504,8 @@ alongside M1.
 | **M1 credential gateway** | Loopback pass-through (§3.4.2) with per-channel secrets, Host/Origin/body limits, 401 re-mint, SSE streaming, `NO_PROXY` for loopback; selected by `policy.mcp.delivery = "gateway"` (default stays `direct`); unit tests plus the Agent matrix end-to-end, including Codex across a token rotation; connector release | connector |
 | **M2 host profile and negotiation** | M2a: `McpDeliveryMode` and `McpDeliveryReport` in `bridge-protocol`; `ready` reports the mode; migration 0118 adds `mcp_header_refresh{,_agent,_at}`; `/mcp` tracks the newest `iat` per `(host, chan)`, records the verdict and sends `mcp_delivery_observed` (PR #811). M2b: `MCP_ALLOWED_DELIVERY_MODES` via hello; `delivery = "auto"` as default; verdict cache by Agent build; generation test; restart-when-idle to switch (PR #812). Later: Fleet shows mode and reason | connector, server, migration, frontend |
 | **M3 isolation** | Per-channel cwd under `default_cwd` (opt-out `shared_cwd`), #810; `set_status` only from the owner↔bot DM and `MCP_CHANNEL_SCOPE` off/warn removed, #809 | connector, server, mcp-server |
-| **M4 guidance and tightening** | M4a (#813): `Next:` guidance and `{code, retryable}` on refused tool calls; `OUT_OF_CHANNEL` / `CHANNEL_SCOPE_REQUIRED` codes. M4b (#814): `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS` (600 s) for `gateway`/`acp` hosts, 24h for `direct`. M4c: tool-error scope refusals for `client_credentials` tokens (§9.4) | server |
-| **M5 task, delegation, approval** | M5a (#815): `cheers_execution` → `task` claim with per-request running-task check, bound only where each token reaches the Agent. M5b: RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
+| **M4 guidance and tightening** | M4a (#813): `Next:` guidance and `{code, retryable}` on refused tool calls; `OUT_OF_CHANNEL` / `CHANNEL_SCOPE_REQUIRED` codes. M4b (#814): `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS` (600 s) for `gateway`/`acp` hosts, 24h for `direct`. M4c (#818): tool-error scope refusals for `client_credentials` tokens (§9.4). M4d (#820): `STATUS_OWNER_DM_ONLY` | server |
+| **M5 task, delegation, approval** | M5a (#815): `cheers_execution` → `task` claim with per-request running-task check, bound only where each token reaches the Agent. M5b/c (#816, #819): RFC 8693 exchange with `sub=U, act=bot` and role intersection; `request_approval` with one-time `approval_id`; optional DPoP upstream | server, connector, frontend, migration |
 | **M6 native MCP-over-ACP** | Enable `unstable_mcp_over_acp` after #805; provider with one `serverId` per session, declared on `session/load` too; switch per Agent via M2 negotiation; help `claude-agent-acp` advertise `mcpCapabilities.acp` | connector, upstream |
 
 Upstream, in parallel: share the §3.4.4 matrix on discussion #2584 after M1's
