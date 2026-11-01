@@ -162,82 +162,102 @@ impl TestGateway {
                 .expect("openssl is required for temporary test keys");
             assert!(output.status.success(), "temporary key generation failed");
         }
-        // Ask the OS for a free port rather than assume one shared by other stacks.
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let base = format!("http://127.0.0.1:{port}");
-        let log = std::fs::File::create(gateway.directory.join("gateway.log")).unwrap();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
-        if let Some(origin) = browser_origin {
-            // Do not accidentally send real emails or configure OAuth, push,
-            // object storage, or external agents from the developer's shell.
-            command.env_clear();
-            if let Some(path) = std::env::var_os("PATH") {
-                command.env("PATH", path);
+        // The OS-assigned port is released before the gateway binds it (after
+        // migrations and seeding), so a parallel test can take it in between.
+        // Ready therefore means *this* process logged that it is listening, and
+        // losing the port to another gateway retries on a fresh one.
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            let base = format!("http://127.0.0.1:{port}");
+            let log = std::fs::File::create(gateway.directory.join("gateway.log")).unwrap();
+            let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
+            if let Some(origin) = browser_origin {
+                // Do not accidentally send real emails or configure OAuth, push,
+                // object storage, or external agents from the developer's shell.
+                command.env_clear();
+                if let Some(path) = std::env::var_os("PATH") {
+                    command.env("PATH", path);
+                }
+                let home = gateway.directory.join("home");
+                std::fs::create_dir_all(&home).unwrap();
+                command
+                    .env("HOME", home)
+                    .env("OPEN_REGISTRATION", "true")
+                    .env("CORS_ALLOWED_ORIGINS", origin)
+                    .env("MCP_PUBLIC_URL", format!("{origin}/mcp"))
+                    .env(
+                        "CHEERS_CONNECTOR_PUBLIC_BASE",
+                        origin.replacen("http:", "ws:", 1),
+                    )
+                    .env("RUST_LOG", "server=info,cheers::email=info,sqlx=warn")
+                    .env("NO_COLOR", "1");
             }
-            let home = gateway.directory.join("home");
-            std::fs::create_dir(&home).unwrap();
             command
-                .env("HOME", home)
-                .env("OPEN_REGISTRATION", "true")
-                .env("CORS_ALLOWED_ORIGINS", origin)
-                .env("MCP_PUBLIC_URL", format!("{origin}/mcp"))
+                .current_dir(&gateway.directory)
+                .env("DATABASE_URL", db.connect_options().to_url_lossy().as_str())
+                .env("PORT", port.to_string())
+                .env("BIND_ADDRESS", "127.0.0.1")
                 .env(
-                    "CHEERS_CONNECTOR_PUBLIC_BASE",
-                    origin.replacen("http:", "ws:", 1),
+                    "JWT_PRIVATE_KEY",
+                    std::fs::read_to_string(&private).unwrap(),
                 )
-                .env("RUST_LOG", "server=info,cheers::email=info,sqlx=warn")
-                .env("NO_COLOR", "1");
+                .env("JWT_PUBLIC_KEY", std::fs::read_to_string(&public).unwrap())
+                .env("ADMIN_USERNAME", login)
+                .env("ADMIN_PASSWORD", password)
+                .env("S3_ENDPOINT", "http://127.0.0.1:1")
+                .env("S3_ACCESS_KEY", "integration-test")
+                .env("S3_SECRET_KEY", "integration-test")
+                .stdout(Stdio::from(log.try_clone().unwrap()))
+                .stderr(Stdio::from(log));
+            if webauthn {
+                command
+                    .env("WEBAUTHN_RP_ID", "localhost")
+                    .env("WEBAUTHN_RP_ORIGIN", "https://localhost");
+            }
+            gateway.process = Some(command.spawn().unwrap());
+            match gateway.wait_until_listening(&base, port).await {
+                Ok(()) => return (gateway, base),
+                Err(log) if attempts < 3 && log.contains("Address already in use") => {
+                    gateway.process = None;
+                }
+                Err(log) => panic!("test gateway did not become ready\n{log}"),
+            }
         }
-        command
-            .current_dir(&gateway.directory)
-            .env("DATABASE_URL", db.connect_options().to_url_lossy().as_str())
-            .env("PORT", port.to_string())
-            .env("BIND_ADDRESS", "127.0.0.1")
-            .env("JWT_PRIVATE_KEY", std::fs::read_to_string(private).unwrap())
-            .env("JWT_PUBLIC_KEY", std::fs::read_to_string(public).unwrap())
-            .env("ADMIN_USERNAME", login)
-            .env("ADMIN_PASSWORD", password)
-            .env("S3_ENDPOINT", "http://127.0.0.1:1")
-            .env("S3_ACCESS_KEY", "integration-test")
-            .env("S3_SECRET_KEY", "integration-test")
-            .stdout(Stdio::from(log.try_clone().unwrap()))
-            .stderr(Stdio::from(log));
-        if webauthn {
-            command
-                .env("WEBAUTHN_RP_ID", "localhost")
-                .env("WEBAUTHN_RP_ORIGIN", "https://localhost");
-        }
-        gateway.process = Some(command.spawn().unwrap());
+    }
+
+    async fn wait_until_listening(&mut self, base: &str, port: u16) -> Result<(), String> {
+        let log_path = self.directory.join("gateway.log");
+        let listening = format!("127.0.0.1:{port}");
         let client = Client::builder()
             .timeout(Duration::from_secs(2))
             .build()
             .unwrap();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
         loop {
-            let exited = gateway.process.as_mut().unwrap().try_wait().unwrap();
-            assert!(
-                exited.is_none(),
-                "test gateway exited: {:?}\n{}",
-                exited,
-                std::fs::read_to_string(gateway.directory.join("gateway.log")).unwrap()
-            );
-            if client
-                .get(format!("{base}/health"))
-                .send()
-                .await
-                .is_ok_and(|r| r.status().is_success())
-            {
-                break;
+            let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+            if let Some(exited) = self.process.as_mut().unwrap().try_wait().unwrap() {
+                return Err(format!("test gateway exited: {exited}\n{log}"));
             }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "test gateway did not become ready\n{}",
-                std::fs::read_to_string(gateway.directory.join("gateway.log")).unwrap()
-            );
+            let bound = log
+                .lines()
+                .any(|line| line.contains("listening") && line.contains(&listening));
+            if bound
+                && client
+                    .get(format!("{base}/health"))
+                    .send()
+                    .await
+                    .is_ok_and(|r| r.status().is_success())
+            {
+                return Ok(());
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(log);
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        (gateway, base)
     }
 }

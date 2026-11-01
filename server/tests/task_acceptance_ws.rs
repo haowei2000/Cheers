@@ -52,8 +52,9 @@ impl Fixture {
             .send()
             .await
             .unwrap();
-        assert!(response.status().is_success());
-        let auth: Value = response.json().await.unwrap();
+        let status = response.status();
+        let auth: Value = response.json().await.unwrap_or(Value::Null);
+        assert!(status.is_success(), "admin login failed: {status} {auth}");
         let mut fixture = Self {
             gateway: Some(gateway),
             base,
