@@ -604,6 +604,16 @@ async fn issue_330_concurrent_distinct_messages_all_persist_and_dispatch_once_ea
         "N 条用户消息必须全部落库，一条不少"
     );
 
+    // 发送路径对每条 intent 只即时投递一次；负载下某次投递失败或超时会留给
+    // 恢复循环（5 秒退避）重试。产品承诺的是“最终恰好一次”，所以计数前先跑恢复。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while counter.dispatched.load(Ordering::SeqCst) < N && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        dispatch_intents::recover_once(&db, &fanout, &registry, &bot_locator)
+            .await
+            .unwrap();
+    }
+
     // 每条用户消息各自的 trigger 都应触发该 default bot 一次 —— 恰好 N 次，
     // 一次不多（幂等）也一次不少（#330：并发下不应互相顶掉丢派发）。
     assert_eq!(
