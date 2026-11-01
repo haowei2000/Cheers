@@ -126,6 +126,14 @@ export async function getBotStatus(botId: string): Promise<BotStatus> {
   return apiJson<BotStatus>(`/bots/${botId}/status`);
 }
 
+export type McpDeliveryMode = "acp" | "direct" | "gateway";
+
+export interface McpDeliveryReport {
+  modes: McpDeliveryMode[];
+  mode: McpDeliveryMode;
+  reason: string;
+}
+
 export interface ConnectorHost {
   host_id: string;
   device_name: string;
@@ -144,6 +152,14 @@ export interface ConnectorHost {
   mcp_state_updated_at?: string | null;
   mcp_connected_at?: string | null;
   mcp_last_seen_at?: string | null;
+  /** How the Agent reaches Cheers MCP, as the connector last reported it. Absent
+   *  for connectors older than 0.1.58. */
+  mcp_delivery?: McpDeliveryReport | null;
+  /** The Gateway's verdict on whether this Agent build picks up renewed tokens
+   *  in `direct` delivery; null until it has been tested. */
+  mcp_header_refresh?: boolean | null;
+  mcp_header_refresh_agent?: string | null;
+  mcp_header_refresh_at?: string | null;
   agent_profile?: {
     id: string;
     display_name: string;

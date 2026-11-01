@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT host_id, device_name, agent_type, credential_prefix, status,\n                connector_version, capabilities, last_seen_at, connected_at,\n                credential_rotated_at, created_at, updated_at, revoked_at,\n                mcp_connection_state, mcp_state_updated_at, mcp_connected_at,\n                mcp_last_seen_at\n         FROM connector_hosts\n         WHERE bot_id = $1\n           AND NOT (status = 'pending' AND revoked_at IS NOT NULL)\n         ORDER BY created_at DESC",
+  "query": "SELECT host_id, device_name, agent_type, credential_prefix, status,\n                connector_version, capabilities, last_seen_at, connected_at,\n                credential_rotated_at, created_at, updated_at, revoked_at,\n                mcp_connection_state, mcp_state_updated_at, mcp_connected_at,\n                mcp_last_seen_at, mcp_header_refresh, mcp_header_refresh_agent,\n                mcp_header_refresh_at\n         FROM connector_hosts\n         WHERE bot_id = $1\n           AND NOT (status = 'pending' AND revoked_at IS NOT NULL)\n         ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -87,6 +87,21 @@
         "ordinal": 16,
         "name": "mcp_last_seen_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "mcp_header_refresh",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 18,
+        "name": "mcp_header_refresh_agent",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 19,
+        "name": "mcp_header_refresh_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -111,8 +126,11 @@
       false,
       false,
       true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "f1eb81e75929ffd94cb61c493099a57cd38ed169381dc5eee0664e08f2a20a73"
+  "hash": "615a16f665c6cf945c3733f210a2563956d997bd7f5c2d00ac93d936a3325432"
 }
