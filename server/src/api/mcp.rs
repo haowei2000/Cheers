@@ -773,7 +773,7 @@ pub async fn issue_mcp_access_token(
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
-    if row.is_disabled.clone() {
+    if row.is_disabled {
         return unauthorized_response();
     }
     let bot_id = row.bot_id.clone();
@@ -2886,7 +2886,7 @@ async fn authenticate_mcp(
         AuthMcpError::Internal
     })?;
     match row {
-        Some(row) if !row.is_disabled.clone() => Ok(McpIdentity {
+        Some(row) if !row.is_disabled => Ok(McpIdentity {
             bot_id,
             host_id,
             scopes: scopes.into_iter().map(str::to_string).collect(),
