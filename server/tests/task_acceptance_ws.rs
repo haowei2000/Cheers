@@ -2576,3 +2576,53 @@ async fn a_connector_token_missing_a_scope_gets_an_actionable_tool_error(db: PgP
             .unwrap();
     assert_eq!(posted, 0);
 }
+
+#[sqlx::test]
+async fn the_host_list_shows_how_the_agent_reaches_cheers_mcp(db: PgPool) {
+    let fixture = Fixture::start(&db).await;
+    let mut control = fixture.socket(&fixture.bot, "control").await;
+    let _data = fixture.socket(&fixture.bot, "data").await;
+    let reason = "Agent keeps old MCP tokens; using the loopback gateway";
+    send(
+        &mut control,
+        json!({"type":"ready","v":1,"connector_capabilities":{
+            "task_acceptance":true,"terminal_replay":true,
+            "mcp_delivery":{"modes":["direct","gateway"],"mode":"gateway","reason":reason}}}),
+    )
+    .await;
+    assert_no_task_before_pong(&mut control).await;
+    sqlx::query(
+        "UPDATE connector_hosts SET mcp_header_refresh = FALSE,
+             mcp_header_refresh_agent = 'codex-acp@2.2.2', mcp_header_refresh_at = NOW()
+         WHERE host_id = $1",
+    )
+    .bind(fixture.bot.host.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let listed: Value = fixture
+        .client
+        .get(format!(
+            "{}/api/v1/bots/{}/hosts",
+            fixture.base, fixture.bot.id
+        ))
+        .bearer_auth(&fixture.token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let host = listed["hosts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|host| host["host_id"] == fixture.bot.host.to_string())
+        .unwrap();
+    assert_eq!(host["mcp_delivery"]["mode"], "gateway");
+    assert_eq!(host["mcp_delivery"]["reason"], reason);
+    assert_eq!(host["mcp_header_refresh"], false);
+    assert_eq!(host["mcp_header_refresh_agent"], "codex-acp@2.2.2");
+    assert!(host["mcp_header_refresh_at"].is_string());
+}
