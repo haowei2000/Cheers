@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "re
 import { Check, LayoutGrid, Settings, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ControlTrigger } from "@/components/ui/control-trigger";
+import { controlIconClasses, useControlSize } from "@/components/ui/control-size";
 import { usePopoverDismiss } from "@/components/ui/popover";
 import { MembersPopover } from "./MembersPopover";
 import { PopoverPanel } from "@/components/ui/popover";
@@ -37,6 +38,9 @@ type Props = {
 };
 
 export function ChannelToolbar(props: Props) {
+  // Size comes from the host bar (window titlebar or inline channel header), so
+  // these controls match its navigation buttons instead of picking their own.
+  const iconClass = controlIconClasses[useControlSize()];
   const [membersOpen, setMembersOpen] = useState(false);
   const membersRootRef = useRef<HTMLDivElement>(null);
   const closeMembers = useCallback(() => setMembersOpen(false), []);
@@ -148,7 +152,6 @@ export function ChannelToolbar(props: Props) {
       <div className="relative hidden md:block" ref={membersRootRef}>
         <ControlTrigger
           controlWidth="content"
-          controlSize="compact"
           type="button"
           onClick={() => setMembersOpen((open) => !open)}
           title={
@@ -165,8 +168,8 @@ export function ChannelToolbar(props: Props) {
           aria-haspopup="dialog"
           selected={membersOpen}
         >
-          <Users className="h-4 w-4 text-content-muted" aria-hidden="true" />
-          <span className="font-code text-compact tabular-nums font-medium text-content-primary">
+          <Users className={iconClass} aria-hidden="true" />
+          <span className="font-code text-compact tabular-nums">
             {props.memberCount || 0}
           </span>
         </ControlTrigger>
@@ -205,10 +208,9 @@ export function ChannelToolbar(props: Props) {
           aria-expanded={panelsOpen}
           aria-haspopup="menu"
           content="icon"
-          controlSize="compact"
           selected={panelsOpen || openCount > 0}
         >
-          <LayoutGrid className="w-4 h-4" aria-hidden="true" />
+          <LayoutGrid className={iconClass} aria-hidden="true" />
         </Button>
         {panelsOpen && (
           <PopoverPanel
@@ -281,10 +283,9 @@ export function ChannelToolbar(props: Props) {
           title="Channel settings"
           aria-label="Channel settings"
           content="icon"
-          controlSize="compact"
           className="ml-2"
         >
-          <Settings className="w-4 h-4" aria-hidden="true" />
+          <Settings className={iconClass} aria-hidden="true" />
         </Button>
       )}
     </>

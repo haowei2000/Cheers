@@ -1,9 +1,9 @@
 # ACP v1 Elicitation in Cheers
 
 Cheers advertises ACP stable wire v1 `clientCapabilities.elicitation.form` and
-`.url`. The Rust SDK currently exposes those v1 types behind its
-`unstable_elicitation` compile-time feature; enabling that feature does not
-change the negotiated `ProtocolVersion::V1` or enable ACP v2.
+`.url`. Since `agent-client-protocol` 3.0 the Rust SDK exposes those v1 types
+without an unstable feature; the negotiated version stays `ProtocolVersion::V1`
+and ACP v2 is not enabled.
 
 ## Data flow
 

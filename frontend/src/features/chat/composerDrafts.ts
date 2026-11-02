@@ -49,6 +49,28 @@ export function persistComposerText(channelId: string, text: string): void {
 }
 
 const bindingKey = (channelId: string) => `cheers.draft.suggestionBindings.${channelId}`;
+const mentionsKey = (channelId: string) => `cheers.draft.mentions.${channelId}`;
+
+/** Preserve stable routing identities alongside the existing per-channel draft text. */
+export function restoreComposerMentions(channelId?: string): MentionCandidate[] {
+  if (!channelId) return [];
+  const memory = draftsByChannel.get(channelId)?.picked;
+  if (memory) return memory;
+  try {
+    const raw: unknown = JSON.parse(sessionStorage.getItem(mentionsKey(channelId)) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((item): item is MentionCandidate =>
+      item && typeof item.id === "string" && typeof item.label === "string" &&
+      ["user", "bot", "group"].includes(item.type),
+    ) : [];
+  } catch { return []; }
+}
+
+export function persistComposerMentions(channelId: string, picked: MentionCandidate[]): void {
+  try {
+    if (picked.length) sessionStorage.setItem(mentionsKey(channelId), JSON.stringify(picked));
+    else sessionStorage.removeItem(mentionsKey(channelId));
+  } catch { /* The in-memory draft still preserves mention identities. */ }
+}
 
 export function restoreSuggestionBindings(channelId?: string): SuggestionBinding[] {
   if (!channelId) return [];

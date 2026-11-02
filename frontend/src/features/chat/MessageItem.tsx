@@ -45,6 +45,7 @@ import {
   type PresentationLevel,
 } from "@/components/ui/presentation";
 import { MessageRecordInspector } from "./MessageRecordInspector";
+import { AgentRunOverview } from "./AgentRunOverview";
 import { identityRailWidthClasses } from "@/components/ui/content-size";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import {
@@ -767,11 +768,8 @@ function RegularMessageItem({
       ? `${detailsMeta.contextCount} context${detailsMeta.contextCount === 1 ? "" : "s"}`
       : null,
   ].filter(Boolean).join(" · ");
-  // One operational status owns the inline surface. A pending approval is more
-  // urgent than an earlier failed trace step, so failure history stays in the
-  // Message Record until the approval is resolved.
-  const showFailureInline = detailsMeta.hasFailure && actionableApprovalCount === 0;
-  const hasOperationalDetails = showFailureInline || keepTraceInline;
+  const showRunOverview = isBot && detailsMeta.hasTrace;
+  const hasOperationalDetails = showRunOverview || keepTraceInline;
   const folio = detailsMeta.hasDetails && !hasOperationalDetails ? (
     <UiButton variant="plain"
       type="button"
@@ -788,20 +786,14 @@ function RegularMessageItem({
   ) : null;
   const detailsSection = detailsMeta.hasDetails && hasOperationalDetails ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
-      {showFailureInline && (
-        <div role="alert" className={cn("flex min-h-7 items-center gap-2 text-danger-400", controlTextClasses.compact)}>
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          <span>Agent step failed</span>
-          <IconButton
-            label="Open message record"
-            controlSize="compact"
-            type="button"
-            onClick={(event) => openInspector(event.currentTarget)}
-            className="text-danger-300 hover:bg-red-950/30 hover:text-danger-200"
-          >
-            <ListTree className={controlIconClasses.compact} aria-hidden />
-          </IconButton>
-        </div>
+      {showRunOverview && (
+        <AgentRunOverview
+          message={message}
+          channelId={channelId}
+          approvalCount={actionableApprovalCount}
+          expanded={inspectorOpen}
+          onOpen={openInspector}
+        />
       )}
       {tracePanel && <div className="mt-1 w-full min-w-0 text-left md:min-w-[18rem]">{tracePanel}</div>}
     </div>
@@ -987,7 +979,7 @@ function RegularMessageItem({
           {message._status && (
             <SendStatus message={message} onRetry={actions?.onRetry} />
           )}
-          {(presentationLevel !== "minimal" || actionableApprovalCount > 0) && detailsSection}
+          {(presentationLevel !== "minimal" || showRunOverview || actionableApprovalCount > 0) && detailsSection}
         </div>
         {showActions && (
           <ActionBar
@@ -1063,7 +1055,7 @@ function RegularMessageItem({
         {message._status && (
           <SendStatus message={message} onRetry={actions?.onRetry} />
         )}
-        {(presentationLevel !== "minimal" || actionableApprovalCount > 0) && detailsSection}
+        {(presentationLevel !== "minimal" || showRunOverview || actionableApprovalCount > 0) && detailsSection}
       </div>
       {showActions && (
         <ActionBar
