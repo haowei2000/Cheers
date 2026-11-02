@@ -469,7 +469,6 @@ export function AnnotationsLauncher() {
   return surface ? (
     <IconButton
       label={`Annotations (${surface.notes.length})`}
-      controlSize="comfortable"
       onClick={() => surface.open()}
     >
       <EditorialIcon name="annotation" />
