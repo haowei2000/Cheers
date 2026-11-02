@@ -4,10 +4,10 @@
 
 ## 决策
 
-- 核心依赖为 `agent-client-protocol = "2.0.0"`，协议类型只通过主 crate 的
-  `schema` re-export 使用。唯一支持的 wire 版本是 stable ACP v1；仅启用 SDK
-  暴露 v1 Elicitation 类型所需的 `unstable_elicitation` 编译 feature，不启用
-  ACP v2 或其他 `unstable_*` 能力。
+- 核心依赖为 `agent-client-protocol = "3.6.0"`，协议类型只通过主 crate 的
+  `schema` re-export 使用。唯一支持的 wire 版本是 stable ACP v1；3.0 起 v1
+  Elicitation 类型已稳定，不再启用任何 `unstable_*` 编译 feature，也不启用
+  ACP v2。3.x 默认 `ClientCapabilities` 新增 `auth.terminal: false`，不放宽权限。
 - connector 只启动本地 stdio ACP agent。不引入远程 ACP HTTP/SSE/WebSocket、
   conductor、polyfill 或 MCP-over-ACP。
 - 保留 Tokio 子进程层，以继续支持 `cwd`、`env_clear`、精确环境继承和 stderr
