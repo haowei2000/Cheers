@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-03",
+  "base_commit": "84ec98bc1cc33a59cd6f873c34d60b34d556411a",
+  "application_files_sha256": {
+    "frontend/DESIGN.md": "669c5f4ed3d4ff27820fd5ad606dfe7962bf404799f021055e16c6c7453947cf",
+    "frontend/src/features/chat/AgentRunOverview.preview.tsx": "88a077720f54ea6ad8951a0269ad174e7892b1cddb5de4a326fe2690a48d00b8",
+    "frontend/src/features/chat/AgentRunOverview.tsx": "def577abb231daa8e20d80623454088b2e47d1da69b39853b8d1f4a5b1a1ac3f",
+    "frontend/src/features/chat/BotTracePanel.test.tsx": "7ff9cbfb060953d592f8377d414ba41f553e65f1a3459b477dab78077b625160",
+    "frontend/src/features/chat/BotTracePanel.tsx": "643f9946ad38a0629f6250e4da32259e070e71331020a5de5ec36a878cdf9934",
+    "frontend/src/features/chat/MessageItem.test.tsx": "90198ce9fd9551c723da64eaeeb780e1dbd6be547cf2d7e5db61377a32ef6558",
+    "frontend/src/features/chat/MessageItem.tsx": "4260fe5016cb5e83acccfef219b35851473b4c87e58725577b1522fecf5343b8",
+    "frontend/src/features/chat/PermissionCard.test.tsx": "85123b3ed1c2508a4a9f02ff78f3dfb0e9fbea2123d8d2abfa398f30000038ef",
+    "frontend/src/features/chat/PermissionCard.tsx": "3cbabb6be40091ae4ab2111b1362e27d221436030714b0cf559b6ac5898232a5",
+    "frontend/src/features/chat/hooks/useChannelMessages.ts": "a88a2ceeadb4f86a2760266d4236aa6f0c79f622a4cfd07b6c18cdb82bfb476c",
+    "frontend/src/types/index.ts": "ab26154ab49916c4d6c9dff9ca64244076e335190f4c43672cd29b4e74c84664"
+  },
+  "evidence_sha256": {
+    "README.md": "400f819459e4dbdc814204ca4a55af8eca2d215a12b52705aa0b644468de9cba",
+    "browser-driver.mjs": "8c39cbf5d86d204a44fcf7b5fdb9eff4589be43a5a15e570fc06a8d12fcf3a99",
+    "build-output.txt": "f21a54cf8a5cb7c35adb0331327b1d5713e468e547cc1dd26066121699414ffa",
+    "e2e-report.json": "f3a762c6cdfe80c9af41a05b0ff95cdec107093b333bd59c6af7593525af933a",
+    "screenshots/02-live-progress.png": "dd6411d37570856afa87e432f4fa92dc1c5b8115d1b5ffd270d9e415f7c81bdf",
+    "screenshots/03-approval.png": "96b499922d02eb00a82f43a6e5e168343ea8b768e34f3c6267cd858ab9522fa6",
+    "screenshots/04-persisted-record.png": "a376dcf6835857fafc9ed05703f7e33e6377e987adc4fcc70fe0faa1ea0166bd",
+    "screenshots/05-dark-1280.png": "85b5402f684b0374d6f080f80c024a637af908729fa5644005d3d98b76e08975",
+    "screenshots/05-dark-390.png": "f46a25a306fa598c2ee41a532889479e584bc165298ed96eaa0940cf76c46337",
+    "screenshots/05-dark-768.png": "632542c2f5314669e3144499db5efc991346f8a1a50f672ec729e4d949699d06",
+    "screenshots/05-light-1280.png": "b0ff777a6929cbfcd346089872db5ddc734bf6b9d59c8a31f0b4fff6a6aa8c95",
+    "screenshots/05-light-390.png": "803b74bf81caa5e4bd19bc481630c493bf197ab0dda0b21c0185fca69b7af00c",
+    "screenshots/05-light-768.png": "a8f9030f160cd02627e31ef70ea8b033d1e4562a952104fc4cb3504775468079",
+    "validation-output.txt": "4360ddcf5d72c89fd13783dd408d2179fdd3b564e11d028d88d87519155c099e"
+  }
+}

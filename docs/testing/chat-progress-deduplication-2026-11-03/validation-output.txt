@@ -1,0 +1,37 @@
+Focused frontend validation; working directory: frontend/
+
+$ pnpm exec vitest run src/features/chat/MessageItem.test.tsx src/features/chat/BotTracePanel.test.tsx src/features/chat/PermissionCard.test.tsx src/features/chat/agentRunSummary.test.ts src/features/chat/traceEvent.test.ts src/features/chat/hooks/useChannelMessages.test.ts
+
+ RUN  v5.0.4 <repo>/frontend
+
+
+ Test Files  6 passed (6)
+      Tests  54 passed (54)
+   Start at  10:46:37
+   Duration  2.03s (import 47%, transform 38%, tests 14%, worker 1%)
+
+Exit status: 0
+
+$ pnpm typecheck
+
+> cheers-frontend@0.1.0 typecheck <repo>/frontend
+> tsc --noEmit
+
+Exit status: 0
+
+$ pnpm exec eslint src/features/chat/AgentRunOverview.tsx src/features/chat/AgentRunOverview.preview.tsx src/features/chat/MessageItem.tsx src/features/chat/MessageItem.test.tsx src/features/chat/BotTracePanel.tsx src/features/chat/BotTracePanel.test.tsx src/features/chat/PermissionCard.tsx src/features/chat/PermissionCard.test.tsx src/features/chat/hooks/useChannelMessages.ts src/types/index.ts
+(no diagnostics)
+Exit status: 0
+
+$ pnpm design-system:check
+
+> cheers-frontend@0.1.0 design-system:check <repo>/frontend
+> node ../scripts/check-design-system.mjs
+
+design-system: valid (47 item kinds, 3 presentation levels, 3 control sizes, 3 content sizes, 4 typography sizes)
+web native production: button=8, input=6, select=1, textarea=2
+web native business: button=0, input=2, select=0, textarea=1
+web unexempted business native: button=0, input=0, select=0, textarea=0
+web visual debt: radius=5, full=0, border=0, hardcoded-size=0, shared-size=0, shared-padding=0, local-padding=0, shared-width=0, shared-content=0, row-height=0, identity-size=0, icon-size=0, spacing=0, spinner-size=0, typography=0, button-typography=0, detached-edit=0, action-key=0, legacy-size=0
+website visual debt: files=21, violations=0
+Exit status: 0

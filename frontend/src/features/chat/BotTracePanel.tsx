@@ -410,7 +410,6 @@ function eventPreview(event: TraceEvent): string | null {
   if (filePath) return filePath;
   if (event.kind === "approval" && event.decision) return event.decision;
   if (event.message && event.message !== event.title) return event.message;
-  if (event.status) return statusLabel(event.status);
   return null;
 }
 
@@ -692,6 +691,22 @@ function TraceItem({
     return () => document.removeEventListener("keydown", onKey);
   }, [active, onToggle]);
 
+  if (view === "inline" && needsAction && pendingApproval) {
+    return (
+      <div className="w-full min-w-0" id={`trace-source-${event.msg_id}-${event.event_id ?? event.id}`}>
+        <PermissionCard
+          message={pendingApproval}
+          channelId={channelId}
+          currentUserId={currentUserId}
+          onResolved={onApprovalResolved}
+          embedded
+          compact
+        />
+        <EventAnnotationButton event={event} />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full min-w-0" id={`trace-source-${event.msg_id}-${event.event_id ?? event.id}`}>
       <div className="flex items-center gap-2">
@@ -704,7 +719,7 @@ function TraceItem({
         controlSize="compact" className="justify-start gap-2 text-left"
       >
         <Icon className={cn("h-3.5 w-3.5 shrink-0", tone)} />
-        <span className="min-w-0 max-w-[45%] shrink truncate text-compact font-medium text-content-secondary">
+        <span className={cn("min-w-0 shrink truncate text-compact font-medium text-content-secondary", preview ? "max-w-[45%]" : "flex-1")}>
           {displayTitle}
         </span>
         {preview && (
@@ -866,7 +881,7 @@ export function BotTracePanel({
     ];
   }, [displayedEvents, orphanPending, msgId]);
 
-  // The message surface is an operational glance: pending approvals plus the
+  // The message surface is an operational glance: pending approvals or the
   // latest running step only. Message Record is the sole owner of durable
   // history, preventing the same trace timeline from appearing twice.
   const visibleTimeline = useMemo(() => {
@@ -879,8 +894,11 @@ export function BotTracePanel({
           !(approval.content_data as PermissionContentData | null | undefined)?.resolved,
         );
       });
-      if (!streaming) return pending;
+      if (!streaming || pending.length > 0) return pending;
       const latest = [...timeline].reverse().find((event) => !pending.includes(event));
+      // The overview owns the run lifecycle; repeating Start/Done/Failed here
+      // creates a second status row for the same turn.
+      if (latest && ["prompt_started", "prompt_finished", "prompt_failed"].includes(latest.phase)) return pending;
       return latest ? [...pending, latest] : pending;
     }
     if (!streaming || showAll || timeline.length <= 1) return timeline;
