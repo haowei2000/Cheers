@@ -167,25 +167,77 @@ pub fn package_name_unversioned(spec: &str) -> String {
     spec.to_string()
 }
 
-/// Best-effort binary name for a global npm install of `spec`.
-pub fn infer_bin_name(package_spec: &str) -> String {
-    let pkg = package_name_unversioned(package_spec);
-    let base = pkg.rsplit('/').next().unwrap_or(&pkg);
-    match pkg.as_str() {
-        "@google/gemini-cli" => "gemini".into(),
-        "@github/copilot" => "copilot".into(),
-        "@xai-official/grok" => "grok".into(),
-        "@qwen-code/qwen-code" => "qwen".into(),
-        "@qoder-ai/qodercli" => "qoder".into(),
-        "@tencent-ai/codebuddy-code" => "codebuddy".into(),
-        "@kilocode/cli" => "kilo".into(),
-        "@compass-ai/nova" => "nova".into(),
-        "@augmentcode/auggie" => "auggie".into(),
-        "@autohandai/autohand-acp" => "autohand-acp".into(),
-        "@agentclientprotocol/claude-agent-acp" => "claude-agent-acp".into(),
-        "@agentclientprotocol/codex-acp" => "codex-acp".into(),
-        _ => base.to_string(),
+/// The version part of an npm spec (`@scope/pkg@1.2.3` → `1.2.3`), if pinned.
+pub fn package_version(spec: &str) -> Option<&str> {
+    let spec = spec.trim();
+    let idx = spec.rfind('@').filter(|idx| *idx > 0)?;
+    Some(&spec[idx + 1..]).filter(|v| !v.is_empty())
+}
+
+/// The package name without its npm scope (`@scope/pkg@1` → `pkg`). npm uses
+/// it as the command name for a string `bin`, and npx prefers the `bin` entry
+/// with this name.
+pub fn unscoped_package_name(spec: &str) -> String {
+    let pkg = package_name_unversioned(spec);
+    pkg.rsplit('/').next().unwrap_or(&pkg).to_string()
+}
+
+/// npm registry URL of the manifest for exactly this spec (`latest` if unpinned).
+pub fn npm_manifest_url(spec: &str) -> String {
+    format!(
+        "https://registry.npmjs.org/{}/{}",
+        package_name_unversioned(spec),
+        package_version(spec).unwrap_or("latest")
+    )
+}
+
+/// The command an npm package installs, per its manifest `bin` field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NpmBin {
+    Command(String),
+    /// Several commands for different files, none named after the package.
+    Ambiguous(Vec<String>),
+    /// The package installs no command.
+    Missing,
+}
+
+/// Reads the command from an npm manifest (registry version document or an
+/// installed `package.json`). Follows npx: a single entry, else the entry named
+/// after the unscoped package. Entries that all point at one file are aliases,
+/// so the shortest name is taken.
+pub fn parse_npm_bin(spec: &str, manifest: &str) -> Result<NpmBin, String> {
+    let manifest: serde_json::Value =
+        serde_json::from_str(manifest).map_err(|e| format!("npm manifest json: {e}"))?;
+    let name = unscoped_package_name(spec);
+    let bins: Vec<(String, String)> = match manifest.get("bin") {
+        Some(serde_json::Value::String(path)) => vec![(name.clone(), path.clone())],
+        Some(serde_json::Value::Object(map)) => map
+            .iter()
+            .filter_map(|(cmd, path)| Some((cmd.clone(), path.as_str()?.to_string())))
+            .collect(),
+        _ => vec![],
+    };
+    if let [(cmd, _)] = bins.as_slice() {
+        return Ok(NpmBin::Command(cmd.clone()));
     }
+    if bins.iter().any(|(cmd, _)| *cmd == name) {
+        return Ok(NpmBin::Command(name));
+    }
+    let target = |path: &str| path.trim_start_matches("./").to_string();
+    let Some((_, first)) = bins.first() else {
+        return Ok(NpmBin::Missing);
+    };
+    if bins.iter().all(|(_, path)| target(path) == target(first)) {
+        let alias = bins
+            .iter()
+            .map(|(cmd, _)| cmd)
+            .min_by_key(|cmd| (cmd.len(), cmd.as_str()))
+            .expect("non-empty");
+        return Ok(NpmBin::Command(alias.clone()));
+    }
+    let mut cmds: Vec<String> = bins.into_iter().map(|(cmd, _)| cmd).collect();
+    cmds.sort();
+    Ok(NpmBin::Ambiguous(cmds))
 }
 
 /// Basename of a registry binary `cmd` (`./dist-package/cursor-agent` → `cursor-agent`).
@@ -210,10 +262,17 @@ pub fn adapter_args_for(launch: &PackageLaunch) -> Vec<String> {
 }
 
 /// `adapter.command` for a package launch (`gemini` / `claude-agent-acp` / `uvx`).
-pub fn adapter_command_for(launch: &PackageLaunch) -> String {
+/// `npm_bin` is the npm manifest's answer, or `None` when it could not be read;
+/// the unscoped package name then stands in. Returns `None` when the manifest
+/// leaves the command unclear.
+pub fn adapter_command_for(launch: &PackageLaunch, npm_bin: Option<&NpmBin>) -> Option<String> {
     match launch.kind {
-        DistKind::Npx => infer_bin_name(&launch.package),
-        DistKind::Uvx => "uvx".into(),
+        DistKind::Uvx => Some("uvx".into()),
+        DistKind::Npx => match npm_bin {
+            Some(NpmBin::Command(cmd)) => Some(cmd.clone()),
+            Some(NpmBin::Ambiguous(_) | NpmBin::Missing) => None,
+            None => Some(unscoped_package_name(&launch.package)),
+        },
     }
 }
 
@@ -456,17 +515,81 @@ mod tests {
     }
 
     #[test]
-    fn infers_bin_with_overrides() {
+    fn reads_npm_bin_like_npx() {
+        let bin = |spec: &str, manifest: &str| parse_npm_bin(spec, manifest).unwrap();
+        let cmd = |name: &str| NpmBin::Command(name.into());
+        // Single entry, whatever its name.
         assert_eq!(
-            infer_bin_name("@agentclientprotocol/claude-agent-acp@0.61.0"),
-            "claude-agent-acp"
+            bin(
+                "@google/gemini-cli@0.52.0",
+                r#"{"bin":{"gemini":"bundle/gemini.js"}}"#
+            ),
+            cmd("gemini")
         );
-        assert_eq!(infer_bin_name("@google/gemini-cli@0.52.0"), "gemini");
-        assert_eq!(infer_bin_name("cline@3.0.46"), "cline");
+        // String form: npm names the command after the unscoped package.
+        assert_eq!(bin("@scope/tool@1", r#"{"bin":"./cli.js"}"#), cmd("tool"));
+        // Several entries: the one named after the package wins.
+        assert_eq!(
+            bin(
+                "@qoder-ai/qodercli@0.2.14",
+                r#"{"bin":{"qoder":"bundle/d.cjs","qodercli":"bundle/qodercli.js"}}"#
+            ),
+            cmd("qodercli")
+        );
+        // Aliases of one file: the shortest name.
+        assert_eq!(
+            bin(
+                "@kilocode/cli@7.8.18",
+                r#"{"bin":{"kilocode":"bin/kilo","kilo":"./bin/kilo"}}"#
+            ),
+            cmd("kilo")
+        );
+        assert_eq!(
+            bin("x@1", r#"{"bin":{"b":"b.js","a":"a.js"}}"#),
+            NpmBin::Ambiguous(vec!["a".into(), "b".into()])
+        );
+        assert_eq!(bin("x@1", r#"{"name":"x"}"#), NpmBin::Missing);
         assert_eq!(
             bin_name_from_cmd("./dist-package/cursor-agent"),
             "cursor-agent"
         );
+    }
+
+    #[test]
+    fn builds_npm_manifest_urls() {
+        assert_eq!(
+            npm_manifest_url("@google/gemini-cli@0.52.0"),
+            "https://registry.npmjs.org/@google/gemini-cli/0.52.0"
+        );
+        assert_eq!(
+            npm_manifest_url("cline"),
+            "https://registry.npmjs.org/cline/latest"
+        );
+        assert_eq!(package_version("@scope/pkg"), None);
+    }
+
+    #[test]
+    fn package_command_falls_back_only_when_npm_is_unreadable() {
+        let launch = PackageLaunch {
+            id: "gemini".into(),
+            name: "Gemini".into(),
+            version: "0.52.0".into(),
+            package: "@google/gemini-cli@0.52.0".into(),
+            args: vec![],
+            env_keys: vec![],
+            kind: DistKind::Npx,
+        };
+        let known = NpmBin::Command("gemini".into());
+        assert_eq!(
+            adapter_command_for(&launch, Some(&known)).as_deref(),
+            Some("gemini")
+        );
+        assert_eq!(
+            adapter_command_for(&launch, None).as_deref(),
+            Some("gemini-cli")
+        );
+        let unclear = NpmBin::Ambiguous(vec!["a".into(), "b".into()]);
+        assert_eq!(adapter_command_for(&launch, Some(&unclear)), None);
     }
 
     #[test]

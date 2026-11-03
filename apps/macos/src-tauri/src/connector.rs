@@ -544,12 +544,14 @@ pub fn detect_agents() -> Vec<DetectedAgent> {
     }
 
     let uvx_path = resolve_on_login_path("uvx");
-    for launch in crate::acp_registry::list_package_agents() {
+    let package_agents = crate::acp_registry::list_package_agents();
+    let mut commands = crate::acp_registry::adapter_commands_for(&package_agents);
+    for launch in package_agents {
         let key = crate::acp_registry::cheers_key_for(&launch.id).to_string();
         if !seen.insert(key.clone()) {
             continue;
         }
-        let cmd = crate::acp_registry::adapter_command_for(&launch);
+        let cmd = commands.remove(&launch.package).unwrap_or_default();
         let args = crate::acp_registry::adapter_args_for(&launch);
         let (installed, path) = match launch.kind {
             crate::acp_registry::DistKind::Npx => {

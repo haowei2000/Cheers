@@ -97,14 +97,20 @@ fn preset_from_package(launch: &PackageLaunch) -> AgentPreset {
             env_allow.push(k.clone());
         }
     }
+    // An npm package with several unrelated commands: render the package-name
+    // guess but flag it so the user confirms which command speaks ACP.
+    let (command, needs_edit) = match acp_registry::adapter_command_for(launch) {
+        Some(command) => (command, false),
+        None => (acp_registry::unscoped_package_name(&launch.package), true),
+    };
     AgentPreset {
-        command: acp_registry::adapter_command_for(launch),
+        command,
         args: acp_registry::adapter_args_for(launch),
         env_allow,
         permission_mode: None,
         allowed_modes: vec![],
         allowed_config_options: strings(&["model"]),
-        needs_edit: false,
+        needs_edit,
     }
 }
 
@@ -158,8 +164,16 @@ fn preset_for(agent_type: &str) -> AgentPreset {
 /// the dropdown — it mirrors the same per-agent `preset_for` source of truth that
 /// renders the connector TOML, so platform and connector agree on selectable modes.
 pub fn posture_preset(agent_type: &str) -> (Option<String>, Vec<String>) {
-    let p = preset_for(agent_type);
-    (p.permission_mode, p.allowed_modes)
+    // Only builtins carry a mode envelope; registry-derived presets never do, so
+    // this stays a pure catalog read (callers are async handlers — no registry
+    // or npm fetch here).
+    match agent_catalog::lookup(agent_type).and_then(|a| a.launch.as_ref()) {
+        Some(launch) => (
+            launch.permission_mode.map(str::to_string),
+            strings(launch.allowed_modes),
+        ),
+        None => (None, vec![]),
+    }
 }
 
 /// Drop the `mode` config option for agents whose permission mode is a first-class
@@ -348,6 +362,9 @@ fn toml_str(value: &str) -> String {
 /// connector's parser exactly; a missing `~/.cheers/workspace` (referenced by
 /// the workspace policy) must be created before start — the install script and
 /// manual docs both do this.
+///
+/// Blocking: registry-derived presets may fetch the ACP and npm registries, so
+/// async callers must run this on a blocking thread.
 pub fn render_toml(params: &RenderParams) -> String {
     let id = sanitize_account_id(params.account_id);
     let preset = preset_for(params.agent_type);
@@ -762,6 +779,10 @@ mod tests {
               }]
             }"#,
         );
+        crate::domain::acp_registry::seed_npm_manifest_for_test(
+            "@google/gemini-cli@0.52.0",
+            r#"{"bin":{"gemini":"bundle/gemini.js"}}"#,
+        );
         let toml = render_toml(&RenderParams {
             account_id: "gem",
             agent_type: "gemini",
@@ -771,6 +792,33 @@ mod tests {
         assert!(toml.contains("command = \"gemini\""));
         assert!(toml.contains(r#"args    = ["--acp"]"#));
         assert!(!toml.contains("PLACEHOLDER"));
+    }
+
+    #[test]
+    fn flags_npx_agent_whose_npm_command_is_unclear() {
+        let _lock = crate::domain::acp_registry::test_registry_lock();
+        crate::domain::acp_registry::seed_cache_for_test(
+            r#"{
+              "agents": [{
+                "id": "multi",
+                "name": "Multi",
+                "version": "1.0.0",
+                "distribution": { "npx": { "package": "@acme/multi-tool@1.0.0" } }
+              }]
+            }"#,
+        );
+        crate::domain::acp_registry::seed_npm_manifest_for_test(
+            "@acme/multi-tool@1.0.0",
+            r#"{"bin":{"multi":"cli.js","multi-acp":"acp.js"}}"#,
+        );
+        let toml = render_toml(&RenderParams {
+            account_id: "multi",
+            agent_type: "multi",
+            public_base: "ws://localhost:30080",
+            token_ref: TokenRef::HostFile("secrets/multi.token".into()),
+        });
+        assert!(toml.contains("command = \"multi-tool\""));
+        assert!(toml.contains("PLACEHOLDER"));
     }
 
     #[test]
