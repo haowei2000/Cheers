@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT client_type, device_name FROM auth_sessions WHERE session_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "client_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "device_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "379199768c4da891dd72437d4459588d178bd3d3e928a1d1ee64b1690babff5c"
+}

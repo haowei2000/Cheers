@@ -388,24 +388,36 @@ final class AppModel {
         clearSession(forgetDevice: true)
     }
 
-    /// Changes the password and replaces the locally held token. The gateway
-    /// revokes every older session and push registration as part of this flow.
+    /// Changes the password and adopts the reissued session (access + refresh
+    /// token). The gateway revokes every older session and push registration.
     func changePassword(
         currentPassword: String,
         newPassword: String,
         twoFactorCode: String? = nil
     ) async throws {
-        guard let api else { throw APIError.unauthorized }
-        let response = try await api.changePassword(
-            currentPassword: currentPassword,
-            newPassword: newPassword,
-            twoFactorCode: twoFactorCode
-        )
-        token = response.accessToken
-        _ = KeychainStore.set(response.accessToken, for: Keys.token)
+        guard let api, let base = baseURL else { throw APIError.unauthorized }
+        // The gateway kicks this user's sockets before it answers. Hold the refresh
+        // gate so the socket's auth failure cannot spend the refresh token the
+        // server is revoking; the response carries this session's replacement.
+        isRefreshingSession = true
+        let response: LoginResponse
+        do {
+            response = try await api.changePassword(
+                currentPassword: currentPassword,
+                newPassword: newPassword,
+                twoFactorCode: twoFactorCode
+            )
+        } catch {
+            isRefreshingSession = false
+            if needsSocketAuthenticationRefresh {
+                await refreshSessionIfNeeded(force: true)
+            }
+            throw error
+        }
+        isRefreshingSession = false
         socket.disconnect()
         socketConnected = false
-        connectSocket()
+        try finishLogin(base: base, response: response)
         if let refreshedAPI = self.api {
             await PushRouter.reregisterCurrentDevice(using: refreshedAPI)
         }

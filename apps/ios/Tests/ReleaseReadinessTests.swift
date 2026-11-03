@@ -165,6 +165,20 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertEqual(paths, ["notes.md"])
     }
 
+    func testPasswordChangeReissuesANativeSession() throws {
+        // POST /auth/change-password answers with the login contract so the
+        // caller can adopt the reissued refresh token.
+        let response = try JSONDecoder().decode(LoginResponse.self, from: Data("""
+        {"status":"authenticated","requires_2fa":false,"access_token":"a2",
+         "refresh_token":"r2","expires_in":600,"token_type":"bearer",
+         "user_id":"u1","username":"ada","role":"member"}
+        """.utf8))
+        XCTAssertFalse(response.needsFactor)
+        XCTAssertEqual(response.accessToken, "a2")
+        XCTAssertEqual(response.refreshToken, "r2")
+        XCTAssertEqual(response.userId, "u1")
+    }
+
     func testProductionServerIdentity() {
         let identity = ServerIdentity.resolve("https://www.tocheers.com/api/v1")
 

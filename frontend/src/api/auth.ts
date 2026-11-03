@@ -600,7 +600,7 @@ export async function changePassword(input: {
   current_password: string;
   new_password: string;
   two_factor_code?: string;
-}): Promise<{ ok: boolean; access_token: string }> {
+}): Promise<{ access_token: string }> {
   return apiJson("/auth/change-password", {
     method: "POST",
     body: JSON.stringify(input),
@@ -610,7 +610,7 @@ export async function changePassword(input: {
 /** Set an initial password for accounts without one (e.g. OAuth-only). */
 export async function setPassword(input: {
   new_password: string;
-}): Promise<{ ok: boolean; access_token: string }> {
+}): Promise<{ access_token: string }> {
   return apiJson("/auth/set-password", {
     method: "POST",
     body: JSON.stringify(input),

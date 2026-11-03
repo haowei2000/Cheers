@@ -538,7 +538,7 @@ struct APIClient: Sendable {
         currentPassword: String,
         newPassword: String,
         twoFactorCode: String? = nil
-    ) async throws -> ChangePasswordResponse {
+    ) async throws -> LoginResponse {
         try await postJSON(
             "/auth/change-password",
             body: ChangePasswordRequest(
@@ -546,7 +546,7 @@ struct APIClient: Sendable {
                 newPassword: newPassword,
                 twoFactorCode: twoFactorCode
             ),
-            as: ChangePasswordResponse.self
+            as: LoginResponse.self
         )
     }
 

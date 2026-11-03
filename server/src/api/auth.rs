@@ -547,13 +547,13 @@ pub struct ChangePasswordRequest {
 
 /// POST /api/v1/auth/change-password — the authenticated user rotates their own
 /// password. Verifies the current password, stores the new hash, and bumps
-/// `token_version` so every OTHER session is force-logged-out; a fresh token is
-/// returned so THIS session keeps working.
+/// `token_version` so every OTHER session is force-logged-out; THIS session is
+/// reissued (see `reissue_caller_session`) so it keeps working.
 pub async fn change_password(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Json(body): Json<ChangePasswordRequest>,
-) -> Result<Json<Value>, AppError> {
+) -> Result<Response, AppError> {
     if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "new password must be at least {MIN_PASSWORD_CHARS} characters"
@@ -618,20 +618,41 @@ pub async fn change_password(
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
     crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
 
+    reissue_caller_session(&state, &claims).await
+}
+
+/// Credential rotations revoke every session, the caller's included. Reissue the
+/// caller's session for the same client and device: native clients need the new
+/// refresh token in the body and browsers need fresh session cookies, or the
+/// caller is signed out at its next refresh.
+async fn reissue_caller_session(state: &AppState, claims: &Claims) -> Result<Response, AppError> {
+    let caller = sqlx::query!(
+        "SELECT client_type, device_name FROM auth_sessions WHERE session_id = $1",
+        &claims.sid,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("session not found".into()))?;
+    let client = client_type(Some(&caller.client_type))?;
+
     auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
     let user = auth::load_auth_user(&state.db, &claims.sub).await?;
     let session = auth_sessions::finalize_login(
         &state.db,
         &state.config,
         &user,
-        auth_sessions::ClientType::Web,
-        None,
+        client,
+        caller.device_name.as_deref(),
     )
     .await?;
-
-    Ok(Json(
-        json!({ "ok": true, "access_token": session.access_token, "expires_in": session.expires_in }),
-    ))
+    let refresh = session.refresh_token.clone();
+    let csrf = session.csrf_token.clone();
+    let body = session_response(&user, session, client)?;
+    Ok(if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(body).into_response()
+    })
 }
 
 #[derive(Deserialize)]
@@ -645,7 +666,7 @@ pub async fn set_password(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Json(body): Json<SetInitialPasswordRequest>,
-) -> Result<Json<Value>, AppError> {
+) -> Result<Response, AppError> {
     if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "password must be at least {MIN_PASSWORD_CHARS} characters"
@@ -683,23 +704,7 @@ pub async fn set_password(
     }
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
     crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
-    auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
-
-    let user = auth::load_auth_user(&state.db, &claims.sub).await?;
-    let session = auth_sessions::finalize_login(
-        &state.db,
-        &state.config,
-        &user,
-        auth_sessions::ClientType::Web,
-        None,
-    )
-    .await?;
-
-    Ok(Json(json!({
-        "ok": true,
-        "access_token": session.access_token,
-        "expires_in": session.expires_in,
-    })))
+    reissue_caller_session(&state, &claims).await
 }
 
 #[derive(Deserialize)]
