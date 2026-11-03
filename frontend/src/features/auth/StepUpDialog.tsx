@@ -126,7 +126,7 @@ export function StepUpDialog() {
           {methods.includes("password") && <MethodButton icon={KeyRound} action="changePassword" onClick={() => setMethod("password")} />}
           {methods.includes("totp") && <MethodButton icon={ShieldCheck} action="authenticator" onClick={() => setMethod("totp")} />}
           {methods.includes("email") && <MethodButton icon={Mail} action="emailCode" onClick={() => setMethod("email")} />}
-          {methods.includes("recovery_code") && <Button variant="secondary" controlWidth="fill" onClick={() => setMethod("recovery_code")}>Recovery code</Button>}
+          {methods.includes("recovery_code") && <Button action="recoveryCode" variant="secondary" controlWidth="fill" onClick={() => setMethod("recovery_code")} />}
         </div>
       )}
 

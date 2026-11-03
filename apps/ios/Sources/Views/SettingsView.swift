@@ -692,7 +692,7 @@ struct IdentityConfirmationSheet: View {
                     Text("Confirm your identity to continue. Your current work stays open.")
                     if let flow {
                         ForEach(flow.methods ?? [], id: \.self) { candidate in
-                            Button(label(candidate)) {
+                            CheersItemButton(row: CheersItemRow(title: label(candidate), selected: method == candidate)) {
                                 value = ""
                                 emailSent = false
                                 method = candidate
@@ -706,7 +706,7 @@ struct IdentityConfirmationSheet: View {
                 if !method.isEmpty && method != "passkey" {
                     Section(label(method)) {
                         if method == "email" && !emailSent {
-                            Button("Send verification code", action: sendEmail).disabled(busy)
+                            CheersItemButton(row: CheersItemRow(title: "Send verification code"), action: sendEmail).disabled(busy)
                         } else {
                             if method == "password" {
                                 SecureField("Password", text: $value).textContentType(.password)
@@ -716,7 +716,7 @@ struct IdentityConfirmationSheet: View {
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                             }
-                            Button("Continue", action: confirm).disabled(value.isEmpty || busy)
+                            CheersItemButton(row: CheersItemRow(title: "Continue"), action: confirm).disabled(value.isEmpty || busy)
                         }
                     }
                 }
