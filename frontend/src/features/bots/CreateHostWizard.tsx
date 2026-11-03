@@ -44,13 +44,6 @@ import { Button } from "@/components/ui/button";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import type { BotItem } from "@/types";
 
-const FALLBACK_AGENTS: AcpAgentInfo[] = [
-  { id: "claude", name: "Claude", source: "builtin", installable: true },
-  { id: "codex", name: "Codex", source: "builtin", installable: true },
-  { id: "opencode", name: "OpenCode", source: "builtin", installable: true },
-  { id: "generic", name: "Something else", source: "builtin", installable: false },
-];
-
 function botLabel(bot: BotItem | undefined): string {
   if (!bot) return "—";
   return `${bot.display_name || bot.username} (@${bot.username})`;
@@ -250,7 +243,8 @@ export function CreateHostWizard({
 
   // Step 0 — choose an existing bot and this host's agent.
   const [agentType, setAgentType] = useState<AgentType>("codex");
-  const [agentCatalog, setAgentCatalog] = useState<AcpAgentInfo[]>(FALLBACK_AGENTS);
+  const [agentCatalog, setAgentCatalog] = useState<AcpAgentInfo[]>([]);
+  const [agentCatalogError, setAgentCatalogError] = useState<string | null>(null);
   const [existingId, setExistingId] = useState(initialBotId ?? bots[0]?.bot_id ?? "");
   const [bot, setBot] = useState<BotItem | null>(() => {
     if (initialBotId) {
@@ -283,10 +277,8 @@ export function CreateHostWizard({
 
   useEffect(() => {
     listAcpAgents()
-      .then((agents) => {
-        if (agents.length) setAgentCatalog(agents);
-      })
-      .catch(() => {});
+      .then(setAgentCatalog)
+      .catch((e) => setAgentCatalogError(messageOf(e)));
   }, []);
 
   useEffect(() => {
@@ -481,6 +473,7 @@ export function CreateHostWizard({
               label="Agent type"
               htmlFor={agentFieldId}
               hint="The ACP adapter this device will run. It is fixed when the pending host is created."
+              error={agentCatalogError && `Couldn't load agents: ${agentCatalogError}`}
             >
               <UiSelect
                 id={agentFieldId}
