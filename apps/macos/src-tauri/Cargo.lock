@@ -522,10 +522,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cheers-acp-registry"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cheers-desktop"
 version = "0.1.47"
 dependencies = [
  "base64 0.22.1",
+ "cheers-acp-registry",
  "chrono",
  "dirs 5.0.1",
  "hex",

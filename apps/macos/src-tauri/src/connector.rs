@@ -545,7 +545,7 @@ pub fn detect_agents() -> Vec<DetectedAgent> {
 
     let uvx_path = resolve_on_login_path("uvx");
     for launch in crate::acp_registry::list_package_agents() {
-        let key = crate::acp_registry::cheers_key_for(&launch.id);
+        let key = crate::acp_registry::cheers_key_for(&launch.id).to_string();
         if !seen.insert(key.clone()) {
             continue;
         }
@@ -576,7 +576,7 @@ pub fn detect_agents() -> Vec<DetectedAgent> {
     }
 
     for launch in crate::acp_registry::list_binary_agents() {
-        let key = crate::acp_registry::cheers_key_for(&launch.id);
+        let key = crate::acp_registry::cheers_key_for(&launch.id).to_string();
         if !seen.insert(key.clone()) {
             continue;
         }
@@ -608,15 +608,9 @@ pub fn detect_agents() -> Vec<DetectedAgent> {
         });
     }
 
-    // Stable order: builtins-ish first, Cursor next, then A–Z.
+    // Stable order: featured agents first, then A–Z.
     out.sort_by(|a, b| {
-        let rank = |k: &str| match k {
-            "claude" => 0,
-            "codex" => 1,
-            "opencode" => 2,
-            "cursor" => 3,
-            _ => 10,
-        };
+        let rank = crate::acp_registry::featured_rank;
         rank(&a.key).cmp(&rank(&b.key)).then_with(|| {
             a.label
                 .to_ascii_lowercase()
@@ -964,7 +958,7 @@ pub async fn check_agent_updates() -> Result<Vec<AgentUpdate>, String> {
             if launch.kind != crate::acp_registry::DistKind::Npx {
                 continue; // uvx version checks are a follow-up
             }
-            let key = crate::acp_registry::cheers_key_for(&launch.id);
+            let key = crate::acp_registry::cheers_key_for(&launch.id).to_string();
             let pkg = crate::acp_registry::package_name_unversioned(&launch.package);
             entries.push((key, launch.name, pkg));
         }

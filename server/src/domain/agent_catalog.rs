@@ -38,8 +38,6 @@ pub struct CatalogAgent {
     pub profile: AgentProfile,
     /// Other ids naming the same agent (ACP registry id, adapter binary name).
     pub aliases: &'static [&'static str],
-    /// ACP registry id when it differs from `profile.id`.
-    pub registry_id: Option<&'static str>,
     /// Hand-tuned launch; None derives the launch from the ACP registry.
     pub launch: Option<BuiltinLaunch>,
     /// Env keys the agent needs that its registry entry does not advertise.
@@ -70,7 +68,6 @@ const AGENTS: &[CatalogAgent] = &[
             verified_version_range: None,
         },
         aliases: &["claude-acp", "claude-agent-acp"],
-        registry_id: Some("claude-acp"),
         launch: Some(BuiltinLaunch {
             command: "claude-agent-acp",
             args: &[],
@@ -94,7 +91,6 @@ const AGENTS: &[CatalogAgent] = &[
             verified_version_range: None,
         },
         aliases: &["codex-acp"],
-        registry_id: Some("codex-acp"),
         launch: Some(BuiltinLaunch {
             command: "codex-acp",
             args: &[],
@@ -114,7 +110,6 @@ const AGENTS: &[CatalogAgent] = &[
             verified_version_range: None,
         },
         aliases: &[],
-        registry_id: None,
         // OpenCode ships ACP as a subcommand of its main binary (`opencode acp`) —
         // there is no separate adapter, and the registry lists it binary-only.
         launch: Some(BuiltinLaunch {
@@ -136,7 +131,6 @@ const AGENTS: &[CatalogAgent] = &[
             verified_version_range: None,
         },
         aliases: &[],
-        registry_id: None,
         launch: None,
         extra_env_allow: &[],
         api_key_env: None,
@@ -149,7 +143,6 @@ const AGENTS: &[CatalogAgent] = &[
             verified_version_range: None,
         },
         aliases: &[],
-        registry_id: None,
         launch: None,
         // Cursor Agent CLI needs its auth env when not already logged in.
         extra_env_allow: &["CURSOR_API_KEY", "CURSOR_API_ENDPOINT"],
@@ -181,10 +174,8 @@ pub fn profile(agent_type: &str) -> AgentProfile {
 
 /// The ACP registry id for an agent type (Cheers short names map to theirs).
 pub fn registry_id(agent_type: &str) -> String {
-    match lookup(agent_type) {
-        Some(a) => a.registry_id.unwrap_or(a.profile.id).to_string(),
-        None => normalize(agent_type),
-    }
+    let id = lookup(agent_type).map_or_else(|| normalize(agent_type), |a| a.profile.id.into());
+    cheers_acp_registry::registry_id_for(&id).to_string()
 }
 
 #[cfg(test)]
