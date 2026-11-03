@@ -25,7 +25,7 @@ pub struct BuiltinLaunch {
     pub args: &'static [&'static str],
     /// policy.env.allow beyond the base `HOME` / `PATH`.
     pub env_allow: &'static [&'static str],
-    /// adapter.permission_mode (session/set_mode stopgap); None omits the key.
+    /// adapter.permission_mode — host default the bot posture overrides; None omits it.
     pub permission_mode: Option<&'static str>,
     /// policy.permission.allowed_modes — empty = any mode the agent advertises.
     pub allowed_modes: &'static [&'static str],

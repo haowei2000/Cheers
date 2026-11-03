@@ -48,7 +48,7 @@ struct AgentPreset {
     /// policy.env.allow — only these are copied from the connector env into the
     /// child (env.inherit stays false, the safe default).
     env_allow: Vec<String>,
-    /// adapter.permission_mode (session/set_mode stopgap); None omits the key.
+    /// adapter.permission_mode — host default the bot posture overrides; None omits it.
     permission_mode: Option<String>,
     /// policy.permission.allowed_modes — opaque ACP modeIds the platform may select
     /// at runtime (L0 set-mode envelope). Agent-SPECIFIC. Empty = any mode the

@@ -320,15 +320,16 @@ agent 是否「会问权限」由 **ACP session mode** 决定，与模型选择�
 
 claude-code-acp 的 `availableModes` 常见为 `default`(放行白名单、其余询问) / `acceptEdits` / `bypassPermissions` / `plan`。
 
-### 临时方案（已落地）
-连接器 `adapter.permission_mode`（toml）→ 在 `new_session`/`load_session` 后调
-`session/set_mode`（best-effort，未知 modeId 仅告警）。让你现在就能强制 agent 的模式
-（`acp_adapter.rs::apply_permission_mode`）。
+### 主机默认值
+连接器 `adapter.permission_mode`（toml）是该主机的默认 mode：在 `new_session`/`load_session`
+后调 `session/set_mode`（best-effort，未知 modeId 仅告警）。网关按 `agent_catalog` 的预设
+生成该值。
 
-### 真正的方案（待做）：mode & model 作为平台 bot config
-- bot config（binding_config）持 `default_mode` + `default_model`。
-- 连接器读 session/new 的 `availableModes/Models` → 上报平台 → bot 设置 UI 渲染下拉。
-- 按 bot 配置的默认值经 `set_mode`/`set_model` 应用；监听 `current_*_update` 回写。
+### 平台 bot posture（已落地，覆盖主机默认值）
+- `PUT /api/v1/bots/:bot_id/permissions/posture` 写入
+  `binding_config.connector_control.agentNativePermissionMode`，并以 `config_update`
+  推送给在线连接器；连接器经 `policy.permission.allowed_modes` 再次收窄后应用。
+- 会话级 config options（含 model）同样走平台期望状态，连接器上报 agent 实际公布的选项。
 - 概念锁定：**mode/model 是 bot 的设置项**，运行时落为 ACP session-state，平台不硬编码选项。
 
 > 这与本审批流正交但相邻：mode 决定「**是否产生**审批请求」，本文其余部分决定「**谁能裁决**」。

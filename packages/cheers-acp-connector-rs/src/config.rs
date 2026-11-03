@@ -390,10 +390,10 @@ struct RawAdapter {
     command: String,
     #[serde(default)]
     args: Vec<String>,
-    /// Temporary stopgap: force the agent's ACP session mode on session start
+    /// Host default for the agent's ACP session mode, applied on session start
     /// via `session/set_mode` (e.g. "default" to make it ask for permissions).
-    /// The full design moves this into platform bot config — see
-    /// docs/arch/ACP_APPROVAL_FLOW.md.
+    /// The bot's platform posture (`PUT /bots/:id/permissions/posture`) arrives
+    /// as a `config_update` and overrides it — see docs/arch/ACP_APPROVAL_FLOW.md.
     #[serde(default)]
     permission_mode: Option<String>,
 }
