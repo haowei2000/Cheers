@@ -774,3 +774,109 @@ final class ReleaseReadinessTests: XCTestCase {
         try JSONDecoder().decode(TraceEventDto.self, from: Data(json.utf8))
     }
 }
+
+// MARK: - Expired access token recovery
+
+/// Answers by bearer token: "fresh" succeeds, anything else is the gateway's
+/// empty auth-middleware 401 unless a body is configured.
+private final class AuthStubProtocol: URLProtocol {
+    nonisolated(unsafe) static var rejectionBody = Data()
+    nonisolated(unsafe) static var seenTokens: [String] = []
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let bearer = request.value(forHTTPHeaderField: "Authorization") ?? ""
+        let token = String(bearer.dropFirst("Bearer ".count))
+        Self.seenTokens.append(token)
+        let ok = token == "fresh"
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: ok ? 200 : 401, httpVersion: nil, headerFields: nil
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: ok ? Data("{}".utf8) : Self.rejectionBody)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+final class APIClientReauthenticationTests: XCTestCase {
+    private let base = URL(string: "https://example.test/api/v1")!
+
+    private var session: URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [AuthStubProtocol.self]
+        return URLSession(configuration: config)
+    }
+
+    override func setUp() {
+        AuthStubProtocol.rejectionBody = Data()
+        AuthStubProtocol.seenTokens = []
+    }
+
+    func testExpiredTokenRefreshesOnceAndRetries() async throws {
+        let rejected = LockedBox<[String]>([])
+        let api = APIClient(baseURL: base, token: "stale", session: session) { token in
+            rejected.mutate { $0.append(token) }
+            return "fresh"
+        }
+        _ = try await api.getJSON("/ping", as: JSONValue.self)
+        XCTAssertEqual(rejected.value, ["stale"])
+        XCTAssertEqual(AuthStubProtocol.seenTokens, ["stale", "fresh"])
+    }
+
+    func testRejectedRetryIsNotRefreshedAgain() async {
+        let calls = LockedBox(0)
+        let api = APIClient(baseURL: base, token: "stale", session: session) { _ in
+            calls.mutate { $0 += 1 }
+            return "also-stale"
+        }
+        await assertUnauthorized { _ = try await api.getJSON("/ping", as: JSONValue.self) }
+        XCTAssertEqual(calls.value, 1)
+    }
+
+    func testUnrenewableSessionSurfacesUnauthorized() async {
+        let api = APIClient(baseURL: base, token: "stale", session: session) { _ in nil }
+        await assertUnauthorized { _ = try await api.getJSON("/ping", as: JSONValue.self) }
+    }
+
+    func testCredentialErrorsWithDetailAreNotSessionExpiry() async {
+        AuthStubProtocol.rejectionBody = Data(#"{"detail":"current password is incorrect"}"#.utf8)
+        let api = APIClient(baseURL: base, token: "stale", session: session) { _ in
+            XCTFail("a 401 with a detail is a credential error, not an expired session")
+            return "fresh"
+        }
+        do {
+            _ = try await api.getJSON("/ping", as: JSONValue.self)
+            XCTFail("expected a credential error")
+        } catch APIError.http(let status, let detail) {
+            XCTAssertEqual(status, 401)
+            XCTAssertEqual(detail, "current password is incorrect")
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+    }
+
+    private func assertUnauthorized(_ operation: () async throws -> Void) async {
+        do {
+            try await operation()
+            XCTFail("expected APIError.unauthorized")
+        } catch APIError.unauthorized {
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+    }
+}
+
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+
+    init(_ value: Value) { stored = value }
+
+    var value: Value { lock.withLock { stored } }
+
+    func mutate(_ body: (inout Value) -> Void) { lock.withLock { body(&stored) } }
+}

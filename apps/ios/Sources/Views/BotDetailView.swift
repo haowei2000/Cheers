@@ -298,7 +298,6 @@ struct BotDetailView: View {
             onChanged()
             dismiss()
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
@@ -349,7 +348,6 @@ struct BotDetailView: View {
             onChanged()
             dismiss()
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
@@ -364,7 +362,6 @@ struct BotDetailView: View {
             onChanged()
             dismiss()
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription

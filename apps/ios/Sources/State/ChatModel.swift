@@ -805,11 +805,11 @@ final class ChatModel {
 
     func resolveTaskClaim(claimId: String, decision: String) async throws {
         guard let app, let api = app.api else { throw APIError.unauthorized }
-        let token = api.token
+        let userId = app.session?.userId
         let result = try await api.resolveTaskClaim(
             channelId: channel.channelId, claimId: claimId, decision: decision
         )
-        guard app.api?.baseURL == api.baseURL, app.token == token else {
+        guard app.api?.baseURL == api.baseURL, app.session?.userId == userId else {
             throw CancellationError()
         }
         applyTaskClaimUpdate(result)
@@ -850,6 +850,7 @@ final class ChatModel {
     private func scheduleClaimRevalidation() {
         claimRevalidationTask?.cancel()
         guard let app, let api = app.api, let attachment = listenerId else { return }
+        let userId = app.session?.userId
         var seen = Set<String>()
         let candidates = knownClaimMessages.filter {
             TaskClaimProjection.needsRevalidation($0) && seen.insert($0.msgId).inserted
@@ -877,7 +878,7 @@ final class ChatModel {
                 while let snapshot = await group.next() {
                     guard !Task.isCancelled, let self,
                           self.listenerId == attachment,
-                          app.api?.baseURL == api.baseURL, app.token == api.token
+                          app.api?.baseURL == api.baseURL, app.session?.userId == userId
                     else { group.cancelAll(); return }
                     if let snapshot {
                         self.patchClaimMessages { TaskClaimProjection.applyingSnapshot(snapshot, to: $0) }
@@ -1082,14 +1083,6 @@ final class ChatModel {
                || (underlying as? URLError)?.code == .cancelled) {
             return
         }
-        if let apiError = error as? APIError {
-            if case .unauthorized = apiError {
-                app?.clearSession()
-                return
-            }
-            errorMessage = apiError.errorDescription
-        } else {
-            errorMessage = error.localizedDescription
-        }
+        errorMessage = error.localizedDescription
     }
 }
