@@ -3,13 +3,12 @@ import SwiftUI
 @main
 struct CheersApp: App {
     @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
-    @State private var appModel = AppModel()
     @State private var shellModel = ShellModel()
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(appModel)
+                .environment(pushDelegate.appModel)
                 .environment(shellModel)
         }
     }
