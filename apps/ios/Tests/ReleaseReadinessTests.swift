@@ -629,6 +629,29 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertNil(ChatSocket.taskClaimUpdate(from: wrongChannel))
     }
 
+    func testElicitationFormParsesFieldsAndRequiredValues() throws {
+        let data = try JSONDecoder().decode(JSONValue.self, from: Data("""
+        {"request_id":"e1","mode":"form","message":"Pick a target","initiating_user_id":"u1",
+         "requested_schema":{"type":"object","required":["env","notes"],"properties":{
+           "env":{"type":"string","title":"Environment","oneOf":[{"const":"prod","title":"Production"},{"const":"dev"}]},
+           "notes":{"type":"string"},
+           "count":{"type":"integer","default":3},
+           "tags":{"type":"array","items":{"enum":["a","b"]}}}}}
+        """.utf8))
+        let request = try XCTUnwrap(ElicitationRequest(contentData: data))
+        XCTAssertEqual(request.fields.map(\.name), ["count", "env", "notes", "tags"])
+        let env = try XCTUnwrap(request.fields.first { $0.name == "env" })
+        XCTAssertEqual(env.choices?.map(\.title), ["Production", "dev"])
+        XCTAssertEqual(env.choices?.first?.value, .string("prod"))
+        XCTAssertEqual(request.fields.first { $0.name == "tags" }?.choices?.count, 2)
+        XCTAssertEqual(request.fields.first { $0.name == "count" }?.defaultValue, .number(3))
+
+        XCTAssertEqual(request.missingRequiredField(in: ["env": .string("prod")])?.name, "notes")
+        XCTAssertNil(request.missingRequiredField(in: ["env": .string("prod"), "notes": .string("ok")]))
+        XCTAssertTrue(request.canRespond(userId: "u1"))
+        XCTAssertFalse(request.canRespond(userId: "u2"))
+    }
+
     @MainActor
     func testResourceErrorFrameCarriesServerCodeAndMessage() throws {
         let failed = Data("""

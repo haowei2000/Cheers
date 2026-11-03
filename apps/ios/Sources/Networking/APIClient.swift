@@ -1342,6 +1342,21 @@ struct APIClient: Sendable {
         )
     }
 
+    /// Answer an ACP form / URL elicitation. `content` only for an accepted form.
+    func resolveElicitation(
+        channelId: String,
+        requestId: String,
+        action: String,
+        content: [String: JSONValue]? = nil
+    ) async throws -> ResolveElicitationResponse {
+        let encoded = requestId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? requestId
+        return try await postJSON(
+            "/channels/\(channelId)/elicitations/\(encoded)/resolve",
+            body: ResolveElicitationRequest(action: action, content: content),
+            as: ResolveElicitationResponse.self
+        )
+    }
+
     /// Durable per-turn agent trace (incl. interleaved approvals). Used by the
     /// lazy "Agent steps" reveal — never fetch until the user expands.
     func fetchMessageTrace(
