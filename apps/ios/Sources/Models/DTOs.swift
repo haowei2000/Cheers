@@ -673,6 +673,19 @@ struct OAuthStartResponse: Decodable {
     }
 }
 
+/// POST /auth/flows/* (server/src/api/auth_flow.rs). `status` moves from
+/// `method_required` through an optional `factor_required` to `verified`.
+struct AuthFlowResponse: Decodable {
+    let transactionId: String
+    let status: String
+    let methods: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case transactionId = "transaction_id"
+        case status, methods
+    }
+}
+
 struct OkResponse: Decodable {
     let ok: Bool?
 }

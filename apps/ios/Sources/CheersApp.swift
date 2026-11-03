@@ -54,5 +54,10 @@ struct RootView: View {
                 }
             }
         }
+        .onChange(of: app.pendingStepUp) { _, request in
+            if let request {
+                StepUpPresenter.present(request, app: app)
+            }
+        }
     }
 }

@@ -782,6 +782,8 @@ final class ReleaseReadinessTests: XCTestCase {
 private final class AuthStubProtocol: URLProtocol {
     nonisolated(unsafe) static var rejectionBody = Data()
     nonisolated(unsafe) static var seenTokens: [String] = []
+    /// While true, an otherwise-valid request answers the gateway's step-up 428.
+    nonisolated(unsafe) static var requiresStepUp = false
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -791,11 +793,16 @@ private final class AuthStubProtocol: URLProtocol {
         let token = String(bearer.dropFirst("Bearer ".count))
         Self.seenTokens.append(token)
         let ok = token == "fresh"
+        let stepUp = ok && Self.requiresStepUp
+        let status = stepUp ? 428 : ok ? 200 : 401
+        let body = stepUp
+            ? Data(#"{"code":"recent_authentication_required","detail":"Confirm your identity"}"#.utf8)
+            : ok ? Data("{}".utf8) : Self.rejectionBody
         let response = HTTPURLResponse(
-            url: request.url!, statusCode: ok ? 200 : 401, httpVersion: nil, headerFields: nil
+            url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: ok ? Data("{}".utf8) : Self.rejectionBody)
+        client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
     }
 
@@ -814,6 +821,33 @@ final class APIClientReauthenticationTests: XCTestCase {
     override func setUp() {
         AuthStubProtocol.rejectionBody = Data()
         AuthStubProtocol.seenTokens = []
+        AuthStubProtocol.requiresStepUp = false
+    }
+
+    func testRecentAuthRequirementConfirmsIdentityThenRetries() async throws {
+        AuthStubProtocol.requiresStepUp = true
+        let prompts = LockedBox(0)
+        let api = APIClient(baseURL: base, token: "fresh", session: session, confirmIdentity: {
+            prompts.mutate { $0 += 1 }
+            AuthStubProtocol.requiresStepUp = false
+            return true
+        })
+        _ = try await api.getJSON("/passkeys", as: JSONValue.self)
+        XCTAssertEqual(prompts.value, 1)
+        XCTAssertEqual(AuthStubProtocol.seenTokens, ["fresh", "fresh"])
+    }
+
+    func testCancelledIdentityConfirmationDoesNotRetry() async {
+        AuthStubProtocol.requiresStepUp = true
+        let api = APIClient(baseURL: base, token: "fresh", session: session, confirmIdentity: { false })
+        do {
+            _ = try await api.getJSON("/passkeys", as: JSONValue.self)
+            XCTFail("expected cancellation")
+        } catch APIError.identityConfirmationCancelled {
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        XCTAssertEqual(AuthStubProtocol.seenTokens, ["fresh"])
     }
 
     func testExpiredTokenRefreshesOnceAndRetries() async throws {

@@ -10,6 +10,7 @@ enum APIError: LocalizedError {
     case transport(Error)
     case decoding(Error)
     case aiConsentRequired([AIDataDisclosure])
+    case identityConfirmationCancelled
 
     var errorDescription: String? {
         switch self {
@@ -26,6 +27,8 @@ enum APIError: LocalizedError {
             return "Unexpected server response."
         case .aiConsentRequired:
             return "Review the external AI data notice before sending this message."
+        case .identityConfirmationCancelled:
+            return "Identity confirmation was cancelled."
         }
     }
 }
@@ -39,10 +42,15 @@ struct APIClient: Sendable {
     /// 401 (expired or revoked JWT). Returns a fresh token to retry once with,
     /// or nil when the session cannot be renewed.
     typealias Reauthenticate = @Sendable (_ rejectedToken: String) async -> String?
+    /// Called when a security-sensitive request answers 428
+    /// `recent_authentication_required`. Returns true once the user has confirmed
+    /// their identity (the request is then retried once), false if they cancelled.
+    typealias ConfirmIdentity = @Sendable () async -> Bool
 
     let baseURL: URL
     let token: String?
     private let reauthenticate: Reauthenticate?
+    private let confirmIdentity: ConfirmIdentity?
     private let session: URLSession
 
     static let defaultSession: URLSession = {
@@ -57,12 +65,14 @@ struct APIClient: Sendable {
         baseURL: URL,
         token: String?,
         session: URLSession = APIClient.defaultSession,
-        reauthenticate: Reauthenticate? = nil
+        reauthenticate: Reauthenticate? = nil,
+        confirmIdentity: ConfirmIdentity? = nil
     ) {
         self.baseURL = baseURL
         self.token = token
         self.session = session
         self.reauthenticate = reauthenticate
+        self.confirmIdentity = confirmIdentity
     }
 
     /// Normalizes user input like "localhost:30080" or a trailing-slash URL
@@ -130,7 +140,11 @@ struct APIClient: Sendable {
         return request
     }
 
-    private func send(_ request: URLRequest, mayReauthenticate: Bool = true) async throws -> Data {
+    private func send(
+        _ request: URLRequest,
+        mayReauthenticate: Bool = true,
+        mayConfirmIdentity: Bool = true
+    ) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -158,6 +172,16 @@ struct APIClient: Sendable {
                required.code == "ai_consent_required" {
                 throw APIError.aiConsentRequired(required.disclosures)
             }
+            if http.statusCode == 428, mayConfirmIdentity, let confirmIdentity,
+               (try? JSONDecoder().decode(ErrorCodeBody.self, from: data))?.code
+                   == "recent_authentication_required" {
+                guard await confirmIdentity() else { throw APIError.identityConfirmationCancelled }
+                return try await send(
+                    request,
+                    mayReauthenticate: mayReauthenticate,
+                    mayConfirmIdentity: false
+                )
+            }
             // 401 means "session revoked/expired" only when the body is empty.
             // Authenticated management calls (change-password, 2FA enable/disable)
             // also use 401 for wrong credentials / codes — surface that detail.
@@ -170,7 +194,11 @@ struct APIClient: Sendable {
                    let fresh = await reauthenticate(token) {
                     var retry = request
                     retry.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
-                    return try await send(retry, mayReauthenticate: false)
+                    return try await send(
+                        retry,
+                        mayReauthenticate: false,
+                        mayConfirmIdentity: mayConfirmIdentity
+                    )
                 }
                 throw APIError.unauthorized
             }
@@ -180,6 +208,10 @@ struct APIClient: Sendable {
             throw APIError.http(status: http.statusCode, detail: detail)
         }
         return data
+    }
+
+    private struct ErrorCodeBody: Decodable {
+        let code: String?
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
@@ -692,6 +724,64 @@ struct APIClient: Sendable {
             "remember_device": rememberDevice,
         ]
         return try await postRawJSON("/auth/2fa/passkey/verify", object: body, as: LoginResponse.self)
+    }
+
+    // MARK: Step-up (server/src/api/auth_flow.rs)
+
+    func startStepUpFlow(actionClass: String = "sensitive_action") async throws -> AuthFlowResponse {
+        struct Body: Encodable {
+            let purpose = "step_up"
+            let client = "ios"
+            let actionClass: String
+            enum CodingKeys: String, CodingKey {
+                case purpose, client
+                case actionClass = "action_class"
+            }
+        }
+        return try await postJSON("/auth/flows/start", body: Body(actionClass: actionClass), as: AuthFlowResponse.self)
+    }
+
+    func verifyStepUpPassword(transactionId: String, password: String) async throws -> AuthFlowResponse {
+        try await postJSON(
+            "/auth/flows/\(transactionId)/password",
+            body: ["password": password],
+            as: AuthFlowResponse.self
+        )
+    }
+
+    /// `method` is `email`, `totp`, or `recovery_code`; the TOTP endpoint also
+    /// accepts recovery codes.
+    func verifyStepUpCode(transactionId: String, method: String, code: String) async throws -> AuthFlowResponse {
+        let suffix = method == "email" ? "email/verify" : "totp/verify"
+        return try await postJSON(
+            "/auth/flows/\(transactionId)/\(suffix)",
+            body: ["code": code],
+            as: AuthFlowResponse.self
+        )
+    }
+
+    func sendStepUpEmail(transactionId: String) async throws {
+        try await postEmpty("/auth/flows/\(transactionId)/email/send")
+    }
+
+    func stepUpPasskeyOptions(transactionId: String) async throws -> PasskeyAssertOptionsResponse {
+        try await postJSON(
+            "/auth/flows/\(transactionId)/passkey/options",
+            body: EmptyRequest(),
+            as: PasskeyAssertOptionsResponse.self
+        )
+    }
+
+    func verifyStepUpPasskey(transactionId: String, credential: [String: Any]) async throws -> AuthFlowResponse {
+        try await postRawJSON(
+            "/auth/flows/\(transactionId)/passkey/verify",
+            object: ["credential": credential],
+            as: AuthFlowResponse.self
+        )
+    }
+
+    func cancelStepUpFlow(transactionId: String) async throws {
+        try await postEmpty("/auth/flows/\(transactionId)/cancel")
     }
 
     private func postRawJSON<T: Decodable>(_ path: String, object: [String: Any], as type: T.Type) async throws -> T {
