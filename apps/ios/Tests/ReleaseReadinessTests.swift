@@ -629,6 +629,25 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertNil(ChatSocket.taskClaimUpdate(from: wrongChannel))
     }
 
+    @MainActor
+    func testResourceErrorFrameCarriesServerCodeAndMessage() throws {
+        let failed = Data("""
+        {"type":"resource_res","v":1,"req_id":"r1","ok":false,
+         "error":{"code":"VERSION_CONFLICT","message":"Plan changed"}}
+        """.utf8)
+        let response = try XCTUnwrap(ChatSocket.resourceResponse(from: failed))
+        XCTAssertEqual(response.reqId, "r1")
+        guard case .failure(.server(let code, let message)) = response.result else {
+            return XCTFail("expected a server error, got \(response.result)")
+        }
+        XCTAssertEqual(code, "VERSION_CONFLICT")
+        XCTAssertEqual(message, "Plan changed")
+
+        let ok = Data(#"{"type":"resource_res","v":1,"req_id":"r2","ok":true,"data":{"n":1}}"#.utf8)
+        let success = try XCTUnwrap(ChatSocket.resourceResponse(from: ok))
+        guard case .success = success.result else { return XCTFail("expected success") }
+    }
+
     func testTaskClaimHttpAndSocketProjectionsCannotDowngradeEachOther() {
         let pending = claimConfirmation(status: "pending", revision: 1)
         let cancelled = TaskClaimUpdate(

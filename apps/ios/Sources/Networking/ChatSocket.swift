@@ -39,6 +39,16 @@ private struct VoiceTranscriptPayload: Decodable {
     let data: VoiceTranscriptSegment
 }
 
+private struct BotUnavailablePayload: Decodable {
+    let botId: String
+    let placeholderMsgId: String
+
+    enum CodingKeys: String, CodingKey {
+        case botId = "bot_id"
+        case placeholderMsgId = "placeholder_msg_id"
+    }
+}
+
 private struct MemberUpdatedPayload: Decodable {
     let memberId: String?
 
@@ -52,10 +62,16 @@ enum SocketEvent {
     case connected
     case authFailed(String)
     case subscribed(channelId: String)
+    /// The gateway refused (or dropped) one channel subscription; the socket
+    /// and every other subscription stay up.
+    case subscriptionDenied(channelId: String, code: String?, reason: String?)
     case message(channelId: String, MessageDto)
     case messageStream(channelId: String, msgId: String, delta: String)
     case messageDone(channelId: String, MessageDto)
     case messageDeleted(channelId: String, msgId: String)
+    /// The addressed bot was offline: the server already deleted the reply
+    /// placeholder (no `message_deleted` follows).
+    case botUnavailable(channelId: String, botId: String, placeholderMsgId: String)
     case taskClaimUpdated(TaskClaimUpdate)
     case botTrace(channelId: String, TraceEventDto)
     case memberUpdated(channelId: String, memberId: String?)
@@ -90,7 +106,8 @@ enum ResourceError: Error, LocalizedError {
 //   1. connect, send {"type":"auth","token":...} within 10 s
 //   2. on {"type":"auth_ok"} send {"type":"subscribe","channel_id":...} per channel
 //   3. on {"type":"subscribed"} the app RESTs ?since_seq= to heal any gap
-// Close codes: 4401 auth, 4403 not member, 4408 backpressure (catch up + resubscribe).
+// Close codes: 4401 auth, 4408 backpressure (catch up + resubscribe). A refused
+// channel subscription is a `subscription_error` frame, not a close.
 // Reconnect: exponential backoff 1 s → 30 s. Unlike the web client's 10-retry
 // budget (masked there by natural page reloads), attempts are NOT capped —
 // a phone offline for a few minutes must pick realtime back up on its own.
@@ -330,12 +347,6 @@ final class ChatSocket: NSObject {
                     if task.closeCode.rawValue == 4401 {
                         pauseForAuthenticationRefresh(reason: "session token expired or revoked")
                         return
-                    } else if task.closeCode.rawValue == 4403 {
-                        // "not a channel member": one stale subscription would
-                        // otherwise be replayed after every reconnect, closing
-                        // the socket in a loop. Drop the set — attached models
-                        // re-subscribe what they still need on .connected.
-                        subscriptions.removeAll()
                     }
                     scheduleReconnect()
                 }
@@ -364,16 +375,32 @@ final class ChatSocket: NSObject {
         let data: T
     }
 
+    /// `resource_res` (server/src/resource/mod.rs `ok_res` / `err_res`).
     private struct ResourceResFrame: Decodable {
         let reqId: String
         let ok: Bool
         let data: JSONValue?
-        let code: String?
-        let error: String?
+        let error: ErrorBody?
+
+        struct ErrorBody: Decodable {
+            let code: String?
+            let message: String?
+        }
 
         enum CodingKeys: String, CodingKey {
             case reqId = "req_id"
-            case ok, data, code, error
+            case ok, data, error
+        }
+    }
+
+    private struct SubscriptionErrorFrame: Decodable {
+        let channelId: String
+        let code: String?
+        let reason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case channelId = "channel_id"
+            case code, reason
         }
     }
 
@@ -402,6 +429,14 @@ final class ChatSocket: NSObject {
             from: data
         ), payload.data.kind == "dm" else { return nil }
         return payload.data.channelId
+    }
+
+    static func resourceResponse(from data: Data) -> (reqId: String, result: Result<JSONValue, ResourceError>)? {
+        guard let frame = try? JSONDecoder().decode(ResourceResFrame.self, from: data) else { return nil }
+        if frame.ok {
+            return (frame.reqId, .success(frame.data ?? .null))
+        }
+        return (frame.reqId, .failure(.server(code: frame.error?.code, message: frame.error?.message)))
     }
 
     static func taskClaimUpdate(from data: Data) -> TaskClaimUpdate? {
@@ -438,6 +473,14 @@ final class ChatSocket: NSObject {
             if let channelId = head.channelId {
                 onEvent?(.subscribed(channelId: channelId))
             }
+        case "subscription_error":
+            if let frame = try? JSONDecoder().decode(SubscriptionErrorFrame.self, from: data) {
+                Self.logger.notice("Realtime subscription refused code=\(frame.code ?? "unknown", privacy: .public)")
+                // Don't replay a refused channel after every reconnect; a model
+                // that regains access subscribes again.
+                subscriptions.remove(frame.channelId)
+                onEvent?(.subscriptionDenied(channelId: frame.channelId, code: frame.code, reason: frame.reason))
+            }
         case "unsubscribed", "pong":
             break
         case "error":
@@ -463,6 +506,15 @@ final class ChatSocket: NSObject {
             if let channelId = head.channelId,
                let payload = try? JSONDecoder().decode(DataEnvelope<DeletedPayload>.self, from: data) {
                 onEvent?(.messageDeleted(channelId: channelId, msgId: payload.data.msgId))
+            }
+        case "bot_unavailable":
+            if let channelId = head.channelId,
+               let payload = try? JSONDecoder().decode(DataEnvelope<BotUnavailablePayload>.self, from: data) {
+                onEvent?(.botUnavailable(
+                    channelId: channelId,
+                    botId: payload.data.botId,
+                    placeholderMsgId: payload.data.placeholderMsgId
+                ))
             }
         case "task_claim_updated":
             if let update = Self.taskClaimUpdate(from: data) {
@@ -503,13 +555,9 @@ final class ChatSocket: NSObject {
                 onEvent?(.dmCreated(channelId: payload.data.channelId))
             }
         case "resource_res":
-            if let frame = try? JSONDecoder().decode(ResourceResFrame.self, from: data),
-               let continuation = pendingResources.removeValue(forKey: frame.reqId) {
-                if frame.ok {
-                    continuation.resume(returning: frame.data ?? .null)
-                } else {
-                    continuation.resume(throwing: ResourceError.server(code: frame.code, message: frame.error))
-                }
+            if let response = Self.resourceResponse(from: data),
+               let continuation = pendingResources.removeValue(forKey: response.reqId) {
+                continuation.resume(with: response.result.mapError { $0 as Error })
             }
         case "board_signal":
             if let channelId = head.channelId,
