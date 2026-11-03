@@ -6,7 +6,7 @@
 //! and the hand-written examples; this is the single place the gateway produces
 //! that file so the manual / script / agent modes can never drift apart.
 //!
-//! Agent presets: Claude / Codex / OpenCode stay finely tuned here. Every other
+//! Agent presets: builtins come from [`crate::domain::agent_catalog`]. Every other
 //! id is resolved from the live ACP registry's **npx** distribution (see
 //! [`crate::domain::acp_registry`]) so new registry agents need no gateway
 //! release to get a usable config. Unknown / unreachable ids fall back to a
@@ -18,6 +18,7 @@
 //! keeping the secret out of the (potentially copied / committed) config body.
 
 use crate::domain::acp_registry::{self, BinaryLaunch, PackageLaunch};
+use crate::domain::agent_catalog::{self, BuiltinLaunch};
 
 /// WS sub-paths the connector dials on the gateway's agent-bridge.
 const CONTROL_PATH: &str = "/ws/agent-bridge/control";
@@ -63,55 +64,16 @@ fn strings(xs: &[&str]) -> Vec<String> {
     xs.iter().map(|s| (*s).to_string()).collect()
 }
 
-fn claude_preset() -> AgentPreset {
+fn preset_from_builtin(launch: &BuiltinLaunch) -> AgentPreset {
+    let mut env_allow = strings(&["HOME", "PATH"]);
+    env_allow.extend(strings(launch.env_allow));
     AgentPreset {
-        command: "claude-agent-acp".into(),
-        args: vec![],
-        env_allow: strings(&[
-            "HOME",
-            "PATH",
-            "ANTHROPIC_API_KEY",
-            "CLAUDE_CODE_OAUTH_TOKEN",
-        ]),
-        // "default" = Claude's "prompts for dangerous operations" mode, which
-        // routes un-pre-approved tools through ACP request_permission → an
-        // in-channel approval card.
-        permission_mode: Some("default".into()),
-        // Claude's advertised modes minus "bypassPermissions".
-        allowed_modes: strings(&["default", "plan", "acceptEdits", "dontAsk", "auto"]),
-        allowed_config_options: strings(&["model", "reasoning_effort", "thinking_mode"]),
-        needs_edit: false,
-    }
-}
-
-fn codex_preset() -> AgentPreset {
-    AgentPreset {
-        command: "codex-acp".into(),
-        args: vec![],
-        env_allow: strings(&["HOME", "PATH", "OPENAI_API_KEY", "CODEX_API_KEY"]),
-        permission_mode: None,
-        allowed_modes: vec![],
-        allowed_config_options: strings(&[
-            "model",
-            "reasoning_effort",
-            "approval_policy",
-            "sandbox",
-        ]),
-        needs_edit: false,
-    }
-}
-
-fn opencode_preset() -> AgentPreset {
-    // OpenCode ships ACP as a subcommand of its main binary (`opencode acp`) —
-    // there is no separate `opencode-acp` adapter (and the registry lists it as
-    // binary-only, not npx).
-    AgentPreset {
-        command: "opencode".into(),
-        args: vec!["acp".into()],
-        env_allow: strings(&["HOME", "PATH"]),
-        permission_mode: None,
-        allowed_modes: vec![],
-        allowed_config_options: strings(&["model"]),
+        command: launch.command.into(),
+        args: strings(launch.args),
+        env_allow,
+        permission_mode: launch.permission_mode.map(str::to_string),
+        allowed_modes: strings(launch.allowed_modes),
+        allowed_config_options: strings(launch.allowed_config_options),
         needs_edit: false,
     }
 }
@@ -156,11 +118,10 @@ fn preset_from_binary(launch: &BinaryLaunch) -> AgentPreset {
             env_allow.push(k.clone());
         }
     }
-    // Cursor Agent CLI needs its auth env when not already logged in.
-    if launch.id == "cursor" {
-        for k in ["CURSOR_API_KEY", "CURSOR_API_ENDPOINT"] {
+    if let Some(agent) = agent_catalog::lookup(&launch.id) {
+        for k in agent.extra_env_allow {
             if !env_allow.iter().any(|e| e == k) {
-                env_allow.push(k.into());
+                env_allow.push((*k).into());
             }
         }
     }
@@ -176,14 +137,12 @@ fn preset_from_binary(launch: &BinaryLaunch) -> AgentPreset {
 }
 
 fn preset_for(agent_type: &str) -> AgentPreset {
-    let id = acp_registry::canonicalize_agent_id(agent_type);
-    match id.as_str() {
-        // Fine-tuned builtins (also cover registry ids claude-acp / codex-acp).
-        "claude" | "claude-acp" => return claude_preset(),
-        "codex" | "codex-acp" => return codex_preset(),
-        "opencode" => return opencode_preset(),
-        "generic" => return generic_preset(),
-        _ => {}
+    if let Some(launch) = agent_catalog::lookup(agent_type).and_then(|a| a.launch.as_ref()) {
+        return preset_from_builtin(launch);
+    }
+    let id = agent_catalog::registry_id(agent_type);
+    if id == agent_catalog::GENERIC_ID {
+        return generic_preset();
     }
     if let Some(launch) = acp_registry::package_launch_for(&id) {
         return preset_from_package(&launch);

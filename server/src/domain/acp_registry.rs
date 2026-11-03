@@ -6,8 +6,8 @@
 //! Prefer package managers when an agent advertises both.
 //!
 //! Network is best-effort: a cache miss or fetch failure falls back to the
-//! hardcoded Claude/Codex/OpenCode presets in `connector_config`. Tests never
-//! hit the network — they use [`parse_registry_json`] on fixtures.
+//! builtin presets in `agent_catalog`. Tests never hit the network — they use
+//! [`parse_registry_json`] on fixtures.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -131,15 +131,6 @@ struct RegistryCache {
 
 static CACHE: LazyLock<Mutex<RegistryCache>> =
     LazyLock::new(|| Mutex::new(RegistryCache::default()));
-
-/// Legacy Cheers short names → registry ids (and vice-versa for lookup).
-pub fn canonicalize_agent_id(raw: &str) -> String {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "claude" => "claude-acp".into(),
-        "codex" => "codex-acp".into(),
-        other => other.to_string(),
-    }
-}
 
 /// Strip a trailing version from an npm (`@ver`) or PyPI (`==ver` / `@ver`) spec.
 pub fn package_name_unversioned(spec: &str) -> String {
@@ -379,13 +370,13 @@ fn cache_snapshot() -> RegistryCache {
 
 /// Look up a package launch by Cheers agent id or legacy short name.
 pub fn package_launch_for(agent_type: &str) -> Option<PackageLaunch> {
-    let id = canonicalize_agent_id(agent_type);
+    let id = crate::domain::agent_catalog::registry_id(agent_type);
     cache_snapshot().packages.get(&id).cloned()
 }
 
 /// Look up a binary launch by Cheers agent id.
 pub fn binary_launch_for(agent_type: &str) -> Option<BinaryLaunch> {
-    let id = canonicalize_agent_id(agent_type);
+    let id = crate::domain::agent_catalog::registry_id(agent_type);
     cache_snapshot().binaries.get(&id).cloned()
 }
 
@@ -552,12 +543,5 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.packages["both"].kind, DistKind::Npx);
         assert_eq!(parsed.packages["both"].package, "npx-pkg");
-    }
-
-    #[test]
-    fn canonicalize_legacy_short_names() {
-        assert_eq!(canonicalize_agent_id("Claude"), "claude-acp");
-        assert_eq!(canonicalize_agent_id("codex"), "codex-acp");
-        assert_eq!(canonicalize_agent_id("gemini"), "gemini");
     }
 }

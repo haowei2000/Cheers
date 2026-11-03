@@ -413,15 +413,7 @@ export function CreateHostWizard({
   const terminalCommand = pairing
     ? `CHEERS_PAIRING_CODE='${pairing.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
-  const needsApiKeyHint =
-    agentType === "claude" ||
-    agentType === "claude-acp" ||
-    agentType === "codex" ||
-    agentType === "codex-acp";
-  const apiKeyVar =
-    agentType === "codex" || agentType === "codex-acp"
-      ? "OPENAI_API_KEY"
-      : "ANTHROPIC_API_KEY";
+  const apiKeyVar = agentCatalog.find((a) => a.id === agentType)?.api_key_env;
   const commandWithKey = pairing
     ? `${apiKeyVar}='…' CHEERS_PAIRING_CODE='${pairing.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
@@ -543,7 +535,7 @@ export function CreateHostWizard({
                       pair it with @{bot.username}, and keep it running in the background as a system
                       service (launchd/systemd) that restarts on reboot.
                     </p>
-                    {needsApiKeyHint && (
+                    {apiKeyVar && (
                       <div className="rounded-sm bg-amber-500/10 p-2 space-y-2">
                         <p className="text-minimal font-medium text-warning-200">
                           Headless API-key auth

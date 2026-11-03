@@ -59,7 +59,7 @@ pub async fn list_hosts(
             "host_id": row.host_id.clone(),
             "device_name": row.device_name.clone(),
             "agent_type": agent_type,
-            "agent_profile": crate::domain::agent_profile::profile(&agent_type),
+            "agent_profile": crate::domain::agent_catalog::profile(&agent_type),
             "credential_prefix": row.credential_prefix.clone().unwrap_or_default(),
             "status": status,
             "online": bot_online && status == "active" && revoked_at.is_none(),
@@ -118,7 +118,7 @@ pub async fn check_host_mcp(
         online,
         connector_version: row.connector_version.clone(),
         last_seen_at: row.last_seen_at.clone(),
-        agent: crate::domain::agent_profile::profile(&agent_type),
+        agent: crate::domain::agent_catalog::profile(&agent_type),
         mcp_state: if revoked {
             "revoked".into()
         } else {
