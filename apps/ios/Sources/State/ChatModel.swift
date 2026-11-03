@@ -589,6 +589,13 @@ final class ChatModel {
                 sinceSeq: highestSeq,
                 limit: 200
             )
+            if response.meta?.hasMoreAfter == true {
+                // More was missed than one page holds. Appending this page would
+                // leave a hole between it and the newest rows; jump to the latest
+                // page instead (older history stays reachable via loadOlder).
+                await loadLatest()
+                return
+            }
             guard !response.messages.isEmpty else { return }
             for message in response.messages {
                 upsert(message)
