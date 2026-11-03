@@ -405,7 +405,8 @@ export function CreateHostWizard({
   const terminalCommand = pairing
     ? `CHEERS_PAIRING_CODE='${pairing.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
-  const apiKeyVar = agentCatalog.find((a) => a.id === agentType)?.api_key_env;
+  const selectedAgent = agentCatalog.find((a) => a.id === agentType);
+  const apiKeyVar = selectedAgent?.api_key_env;
   const commandWithKey = pairing
     ? `${apiKeyVar}='…' CHEERS_PAIRING_CODE='${pairing.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
@@ -480,7 +481,11 @@ export function CreateHostWizard({
                 value={agentType}
                 onChange={(e) => repick({ agent: e.target.value })}
                 controlSize="regular"
+                disabled={!agentCatalog.length}
               >
+                {!agentCatalog.length && (
+                  <option value={agentType}>{agentCatalogError ? "Unavailable" : "Loading agents…"}</option>
+                )}
                 {agentCatalog.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
@@ -492,11 +497,11 @@ export function CreateHostWizard({
 
             <div className="flex justify-end items-center gap-2">
               {localDesktop && (
-                <Button action="installHere" content="iconText" variant="secondary" onClick={setupLocally} loading={busy}>
+                <Button action="installHere" content="iconText" variant="secondary" onClick={setupLocally} loading={busy} disabled={!selectedAgent}>
                   <Laptop className="w-4 h-4" />
                 </Button>
               )}
-              <Button action="continue" onClick={validateAndAdvance} loading={busy} disabled={!bots.length} />
+              <Button action="continue" onClick={validateAndAdvance} loading={busy} disabled={!bots.length || !selectedAgent} />
             </div>
           </div>
         )}

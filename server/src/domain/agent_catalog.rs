@@ -36,7 +36,8 @@ pub struct BuiltinLaunch {
 #[derive(Debug, Clone, Copy)]
 pub struct CatalogAgent {
     pub profile: AgentProfile,
-    /// Other ids naming the same agent (ACP registry id, adapter binary name).
+    /// Other ids naming the same agent (e.g. its adapter binary). ACP registry
+    /// ids that differ from the catalog id come from `cheers_acp_registry`.
     pub aliases: &'static [&'static str],
     /// Hand-tuned launch; None derives the launch from the ACP registry.
     pub launch: Option<BuiltinLaunch>,
@@ -67,7 +68,7 @@ const AGENTS: &[CatalogAgent] = &[
             login_hint: "Open `/mcp`, select Cheers, and choose Authenticate.",
             verified_version_range: None,
         },
-        aliases: &["claude-acp", "claude-agent-acp"],
+        aliases: &["claude-agent-acp"],
         launch: Some(BuiltinLaunch {
             command: "claude-agent-acp",
             args: &[],
@@ -90,7 +91,7 @@ const AGENTS: &[CatalogAgent] = &[
             login_hint: "Run `codex mcp login cheers` on the Agent host, then retry.",
             verified_version_range: None,
         },
-        aliases: &["codex-acp"],
+        aliases: &[],
         launch: Some(BuiltinLaunch {
             command: "codex-acp",
             args: &[],
@@ -154,12 +155,13 @@ fn normalize(raw: &str) -> String {
     raw.trim().to_ascii_lowercase()
 }
 
-/// Exact lookup by catalog id or alias (case-insensitive).
+/// Exact lookup by catalog id, ACP registry id, or alias (case-insensitive).
 pub fn lookup(raw: &str) -> Option<&'static CatalogAgent> {
     let id = normalize(raw);
+    let key = cheers_acp_registry::cheers_key_for(&id);
     AGENTS
         .iter()
-        .find(|a| a.profile.id == id || a.aliases.contains(&id.as_str()))
+        .find(|a| a.profile.id == key || a.aliases.contains(&id.as_str()))
 }
 
 /// Agents with a hand-tuned launch, in setup-UI order.
@@ -185,6 +187,7 @@ mod tests {
     #[test]
     fn profiles_resolve_by_exact_id_or_alias() {
         assert_eq!(profile("codex-acp").id, "codex");
+        assert_eq!(profile("claude-acp").id, "claude");
         assert_eq!(profile("claude-agent-acp").id, "claude");
         assert_eq!(profile(" Claude ").id, "claude");
         assert_eq!(profile("unknown").id, "generic");

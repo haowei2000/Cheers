@@ -521,9 +521,18 @@ pub struct DetectedAgent {
 /// Which ACP agents are available: every **npx/uvx/binary** entry from the live
 /// registry, plus OpenCode (binary/npm). Login-PATH lookup marks what's already
 /// installed (for uvx agents: whether `uvx` itself is on PATH; for binary:
-/// PATH or `~/.cheers/agents/<id>/`).
+/// PATH or `~/.cheers/agents/<id>/`). An npx agent whose command is unknown
+/// (npm unreachable, or unclear `bin`) gets an empty `command`.
+///
+/// Async so the registry/npm fetches and shell probes stay off the main thread.
 #[tauri::command]
-pub fn detect_agents() -> Vec<DetectedAgent> {
+pub async fn detect_agents() -> Result<Vec<DetectedAgent>, String> {
+    tauri::async_runtime::spawn_blocking(detect_agents_blocking)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn detect_agents_blocking() -> Vec<DetectedAgent> {
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -544,18 +553,24 @@ pub fn detect_agents() -> Vec<DetectedAgent> {
     }
 
     let uvx_path = resolve_on_login_path("uvx");
-    let package_agents = crate::acp_registry::list_package_agents();
-    let mut commands = crate::acp_registry::adapter_commands_for(&package_agents);
+    let package_agents: Vec<_> = crate::acp_registry::list_package_agents()
+        .into_iter()
+        .filter(|launch| seen.insert(crate::acp_registry::cheers_key_for(&launch.id).to_string()))
+        .collect();
+    let mut commands =
+        crate::acp_registry::adapter_commands_for(&package_agents.iter().collect::<Vec<_>>());
     for launch in package_agents {
         let key = crate::acp_registry::cheers_key_for(&launch.id).to_string();
-        if !seen.insert(key.clone()) {
-            continue;
-        }
-        let cmd = commands.remove(&launch.package).unwrap_or_default();
+        let cmd = commands
+            .remove(&launch.package)
+            .flatten()
+            .unwrap_or_default();
         let args = crate::acp_registry::adapter_args_for(&launch);
         let (installed, path) = match launch.kind {
             crate::acp_registry::DistKind::Npx => {
-                let path = resolve_on_login_path(&cmd);
+                let path = Some(cmd.as_str())
+                    .filter(|c| !c.is_empty())
+                    .and_then(resolve_on_login_path);
                 (
                     path.is_some(),
                     path.map(|p| p.to_string_lossy().into_owned()),
@@ -637,7 +652,13 @@ pub async fn install_agent(key: String) -> Result<String, String> {
                         launch.package
                     ));
                 }
-                run_login_shell_install(format!("npm install -g {}", launch.package)).await
+                let out =
+                    run_login_shell_install(format!("npm install -g {}", launch.package)).await;
+                // npm is evidently reachable again: let detection retry failed lookups.
+                if out.is_ok() {
+                    crate::acp_registry::forget_npm_failures();
+                }
+                out
             }
             crate::acp_registry::DistKind::Uvx => {
                 if !is_safe_uv_spec(&launch.package) {

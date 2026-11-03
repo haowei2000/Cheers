@@ -18,6 +18,8 @@ pub const REGISTRY_URL: &str =
     "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 pub const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 pub const FETCH_TIMEOUT: Duration = Duration::from_secs(8);
+/// How long a failed npm manifest lookup is remembered before it is retried.
+pub const NPM_RETRY_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// Cheers short names for agents whose ACP registry id differs.
 const SHORT_NAMES: &[(&str, &str)] = &[("claude", "claude-acp"), ("codex", "codex-acp")];
@@ -262,17 +264,66 @@ pub fn adapter_args_for(launch: &PackageLaunch) -> Vec<String> {
 }
 
 /// `adapter.command` for a package launch (`gemini` / `claude-agent-acp` / `uvx`).
-/// `npm_bin` is the npm manifest's answer, or `None` when it could not be read;
-/// the unscoped package name then stands in. Returns `None` when the manifest
-/// leaves the command unclear.
+/// `npm_bin` is the npm manifest's answer, or `None` when it could not be read.
+/// Returns `None` whenever the command is not known — never a guess, since the
+/// package name is often not the command (`@google/gemini-cli` runs `gemini`).
 pub fn adapter_command_for(launch: &PackageLaunch, npm_bin: Option<&NpmBin>) -> Option<String> {
     match launch.kind {
         DistKind::Uvx => Some("uvx".into()),
-        DistKind::Npx => match npm_bin {
-            Some(NpmBin::Command(cmd)) => Some(cmd.clone()),
-            Some(NpmBin::Ambiguous(_) | NpmBin::Missing) => None,
-            None => Some(unscoped_package_name(&launch.package)),
+        DistKind::Npx => match npm_bin? {
+            NpmBin::Command(cmd) => Some(cmd.clone()),
+            NpmBin::Ambiguous(_) | NpmBin::Missing => None,
         },
+    }
+}
+
+/// npm `bin` answers by exact package spec. Pinned specs never change, so
+/// answers never expire; failures are retried after [`NPM_RETRY_AFTER`].
+#[derive(Debug, Clone, Default)]
+pub struct NpmBinCache {
+    found: HashMap<String, NpmBin>,
+    failed: HashMap<String, Instant>,
+}
+
+/// What [`NpmBinCache::get`] knows about a spec.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NpmLookup {
+    Found(NpmBin),
+    /// A recent fetch failed; don't retry yet.
+    Failed,
+    /// Not cached — fetch it.
+    Unknown,
+}
+
+impl NpmBinCache {
+    pub fn get(&self, spec: &str) -> NpmLookup {
+        if let Some(bin) = self.found.get(spec) {
+            return NpmLookup::Found(bin.clone());
+        }
+        match self.failed.get(spec) {
+            Some(at) if at.elapsed() < NPM_RETRY_AFTER => NpmLookup::Failed,
+            _ => NpmLookup::Unknown,
+        }
+    }
+
+    /// Records a fetch result and returns the answer, if any.
+    pub fn record(&mut self, spec: &str, result: Result<NpmBin, String>) -> Option<NpmBin> {
+        match result {
+            Ok(bin) => {
+                self.failed.remove(spec);
+                self.found.insert(spec.to_string(), bin.clone());
+                Some(bin)
+            }
+            Err(_) => {
+                self.failed.insert(spec.to_string(), Instant::now());
+                None
+            }
+        }
+    }
+
+    /// Drops remembered failures so the next lookup retries (e.g. after an install).
+    pub fn forget_failures(&mut self) {
+        self.failed.clear();
     }
 }
 
@@ -569,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn package_command_falls_back_only_when_npm_is_unreadable() {
+    fn package_command_is_never_guessed() {
         let launch = PackageLaunch {
             id: "gemini".into(),
             name: "Gemini".into(),
@@ -584,12 +635,23 @@ mod tests {
             adapter_command_for(&launch, Some(&known)).as_deref(),
             Some("gemini")
         );
-        assert_eq!(
-            adapter_command_for(&launch, None).as_deref(),
-            Some("gemini-cli")
-        );
+        // npm unreachable: the package name (`gemini-cli`) is not the command.
+        assert_eq!(adapter_command_for(&launch, None), None);
         let unclear = NpmBin::Ambiguous(vec!["a".into(), "b".into()]);
         assert_eq!(adapter_command_for(&launch, Some(&unclear)), None);
+    }
+
+    #[test]
+    fn npm_cache_remembers_failures_until_forgotten() {
+        let mut cache = NpmBinCache::default();
+        assert_eq!(cache.get("a@1"), NpmLookup::Unknown);
+        assert_eq!(cache.record("a@1", Err("offline".into())), None);
+        assert_eq!(cache.get("a@1"), NpmLookup::Failed);
+        cache.forget_failures();
+        assert_eq!(cache.get("a@1"), NpmLookup::Unknown);
+        let bin = NpmBin::Command("a".into());
+        assert_eq!(cache.record("a@1", Ok(bin.clone())), Some(bin.clone()));
+        assert_eq!(cache.get("a@1"), NpmLookup::Found(bin));
     }
 
     #[test]

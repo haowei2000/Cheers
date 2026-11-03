@@ -97,8 +97,8 @@ fn preset_from_package(launch: &PackageLaunch) -> AgentPreset {
             env_allow.push(k.clone());
         }
     }
-    // An npm package with several unrelated commands: render the package-name
-    // guess but flag it so the user confirms which command speaks ACP.
+    // npm unreachable, or a package with several unrelated commands: render the
+    // package-name guess but flag it so the user sets the real ACP command.
     let (command, needs_edit) = match acp_registry::adapter_command_for(launch) {
         Some(command) => (command, false),
         None => (acp_registry::unscoped_package_name(&launch.package), true),
@@ -307,14 +307,14 @@ pub fn advertised_config_options(
 
 /// Inputs for [`render_toml`]. `account_id` is the TOML table key under
 /// `[accounts.<id>...]` and the daemon `--name`; it is sanitized for you.
-pub struct RenderParams<'a> {
+pub struct RenderParams {
     /// Bot display/login name; sanitized into a TOML bare key.
-    pub account_id: &'a str,
-    /// One of claude | codex | opencode | generic (anything else → generic).
-    pub agent_type: &'a str,
+    pub account_id: String,
+    /// Catalog id, ACP registry id, or generic (drives adapter.command).
+    pub agent_type: String,
     /// Public WS base, e.g. `ws://localhost:30080` or `wss://host`. No trailing
     /// path — the control/data sub-paths are appended here.
-    pub public_base: &'a str,
+    pub public_base: String,
     /// How the config should reference the bot token.
     pub token_ref: TokenRef,
 }
@@ -366,10 +366,10 @@ fn toml_str(value: &str) -> String {
 /// Blocking: registry-derived presets may fetch the ACP and npm registries, so
 /// async callers must run this on a blocking thread.
 pub fn render_toml(params: &RenderParams) -> String {
-    let id = sanitize_account_id(params.account_id);
-    let preset = preset_for(params.agent_type);
-    let control = control_url(params.public_base);
-    let data = data_url(params.public_base);
+    let id = sanitize_account_id(&params.account_id);
+    let preset = preset_for(&params.agent_type);
+    let control = control_url(&params.public_base);
+    let data = data_url(&params.public_base);
 
     let token_line = match &params.token_ref {
         TokenRef::HostFile(path) => {
@@ -669,9 +669,9 @@ mod tests {
     #[test]
     fn renders_codex_with_file_token() {
         let toml = render_toml(&RenderParams {
-            account_id: "Codex",
-            agent_type: "codex",
-            public_base: "ws://localhost:30080",
+            account_id: "Codex".into(),
+            agent_type: "codex".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/codex.token".into()),
         });
         assert!(toml.contains("[accounts.codex.bridge]"));
@@ -697,9 +697,9 @@ mod tests {
     #[test]
     fn renders_opencode_as_a_subcommand_of_its_own_binary() {
         let toml = render_toml(&RenderParams {
-            account_id: "OpenCode",
-            agent_type: "opencode",
-            public_base: "wss://example.test",
+            account_id: "OpenCode".into(),
+            agent_type: "opencode".into(),
+            public_base: "wss://example.test".into(),
             token_ref: TokenRef::HostFile("secrets/opencode.token".into()),
         });
         assert!(toml.contains(r#"command = "opencode""#));
@@ -714,9 +714,9 @@ mod tests {
     fn renders_empty_args_for_dedicated_adapters() {
         for agent_type in ["claude", "codex", "generic"] {
             let toml = render_toml(&RenderParams {
-                account_id: "bot",
-                agent_type,
-                public_base: "wss://example.test",
+                account_id: "bot".into(),
+                agent_type: agent_type.into(),
+                public_base: "wss://example.test".into(),
                 token_ref: TokenRef::HostFile("secrets/bot.token".into()),
             });
             assert!(
@@ -729,9 +729,9 @@ mod tests {
     #[test]
     fn renders_claude_with_env_token_and_permission_mode() {
         let toml = render_toml(&RenderParams {
-            account_id: "claude",
-            agent_type: "claude",
-            public_base: "wss://cheers.example.com",
+            account_id: "claude".into(),
+            agent_type: "claude".into(),
+            public_base: "wss://cheers.example.com".into(),
             token_ref: TokenRef::HostEnv("CHEERS_CLAUDE_HOST_CREDENTIAL".into()),
         });
         assert!(toml.contains("host_credential_env  = \"CHEERS_CLAUDE_HOST_CREDENTIAL\""));
@@ -752,9 +752,9 @@ mod tests {
     #[test]
     fn generic_agent_is_marked_for_edit() {
         let toml = render_toml(&RenderParams {
-            account_id: "mybot",
-            agent_type: "something-else",
-            public_base: DEFAULT_PUBLIC_BASE,
+            account_id: "mybot".into(),
+            agent_type: "something-else".into(),
+            public_base: DEFAULT_PUBLIC_BASE.into(),
             token_ref: TokenRef::HostFile("secrets/mybot.token".into()),
         });
         assert!(toml.contains("PLACEHOLDER"));
@@ -784,9 +784,9 @@ mod tests {
             r#"{"bin":{"gemini":"bundle/gemini.js"}}"#,
         );
         let toml = render_toml(&RenderParams {
-            account_id: "gem",
-            agent_type: "gemini",
-            public_base: "ws://localhost:30080",
+            account_id: "gem".into(),
+            agent_type: "gemini".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/gem.token".into()),
         });
         assert!(toml.contains("command = \"gemini\""));
@@ -812,9 +812,9 @@ mod tests {
             r#"{"bin":{"multi":"cli.js","multi-acp":"acp.js"}}"#,
         );
         let toml = render_toml(&RenderParams {
-            account_id: "multi",
-            agent_type: "multi",
-            public_base: "ws://localhost:30080",
+            account_id: "multi".into(),
+            agent_type: "multi".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/multi.token".into()),
         });
         assert!(toml.contains("command = \"multi-tool\""));
@@ -840,9 +840,9 @@ mod tests {
             }"#,
         );
         let toml = render_toml(&RenderParams {
-            account_id: "fast",
-            agent_type: "fast-agent",
-            public_base: "ws://localhost:30080",
+            account_id: "fast".into(),
+            agent_type: "fast-agent".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/fast.token".into()),
         });
         assert!(toml.contains("command = \"uvx\""));
@@ -872,9 +872,9 @@ mod tests {
             }"#,
         );
         let toml = render_toml(&RenderParams {
-            account_id: "cur",
-            agent_type: "cursor",
-            public_base: "ws://localhost:30080",
+            account_id: "cur".into(),
+            agent_type: "cursor".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/cur.token".into()),
         });
         assert!(toml.contains("command = \"cursor-agent\""));

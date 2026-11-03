@@ -11,27 +11,32 @@ pub use cheers_acp_registry::{
     package_name_unversioned, registry_id_for, BinaryLaunch, BinaryTarget, DistKind, PackageLaunch,
 };
 use cheers_acp_registry::{
-    npm_manifest_url, parse_npm_bin, unscoped_package_name, NpmBin, ParsedRegistry, RegistryCache,
+    npm_manifest_url, parse_npm_bin, NpmBinCache, NpmLookup, ParsedRegistry, RegistryCache,
     FETCH_TIMEOUT, REGISTRY_URL,
 };
 
 static CACHE: LazyLock<Mutex<RegistryCache>> =
     LazyLock::new(|| Mutex::new(RegistryCache::default()));
 
-/// npm `bin` answers by exact package spec; failed fetches are not cached.
-static NPM_BINS: LazyLock<Mutex<HashMap<String, NpmBin>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static NPM_BINS: LazyLock<Mutex<NpmBinCache>> =
+    LazyLock::new(|| Mutex::new(NpmBinCache::default()));
+
+/// At most this many npm manifest fetches run at once.
+const NPM_FETCH_CONCURRENCY: usize = 8;
 
 pub fn binary_target_for_host(launch: &BinaryLaunch) -> Option<&BinaryTarget> {
     launch.targets.get(host_platform())
 }
 
 fn fetch_text(url: &str) -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .user_agent(concat!("cheers-desktop/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| e.to_string())?;
+    static CLIENT: LazyLock<Result<reqwest::blocking::Client, String>> = LazyLock::new(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(FETCH_TIMEOUT)
+            .user_agent(concat!("cheers-desktop/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .map_err(|e| e.to_string())
+    });
+    let client = CLIENT.as_ref().map_err(Clone::clone)?;
     let resp = client.get(url).send().map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {} for {url}", resp.status()));
@@ -64,43 +69,63 @@ pub fn binary_launch_by_cheers_key(key: &str) -> Option<BinaryLaunch> {
     cache_snapshot().binaries.get(registry_id_for(key)).cloned()
 }
 
-/// `adapter.command` for each package launch, keyed by package spec. npm
-/// manifests are fetched concurrently and cached; when npm is unreachable or a
-/// package's commands are unclear, the unscoped package name stands in.
-pub fn adapter_commands_for(launches: &[PackageLaunch]) -> HashMap<String, String> {
-    let missing: Vec<&str> = {
-        let cache = NPM_BINS.lock().unwrap_or_else(|p| p.into_inner());
+fn npm_cache() -> std::sync::MutexGuard<'static, NpmBinCache> {
+    NPM_BINS.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Lets the next lookup retry npm manifests that failed (call after an install).
+pub fn forget_npm_failures() {
+    npm_cache().forget_failures();
+}
+
+/// `adapter.command` for each package launch, keyed by package spec; `None`
+/// when npm is unreachable or the package's commands are unclear. Uncached npm
+/// manifests are fetched a few at a time, without holding the cache lock.
+pub fn adapter_commands_for(launches: &[&PackageLaunch]) -> HashMap<String, Option<String>> {
+    let unknown: Vec<&str> = {
+        let cache = npm_cache();
         launches
             .iter()
-            .filter(|l| l.kind == DistKind::Npx && !cache.contains_key(&l.package))
+            .filter(|l| l.kind == DistKind::Npx && cache.get(&l.package) == NpmLookup::Unknown)
             .map(|l| l.package.as_str())
             .collect()
     };
-    let fetched: Vec<(String, NpmBin)> = std::thread::scope(|scope| {
-        let handles: Vec<_> = missing
-            .iter()
-            .map(|spec| {
-                scope.spawn(move || {
-                    fetch_text(&npm_manifest_url(spec))
-                        .and_then(|body| parse_npm_bin(spec, &body))
-                        .ok()
-                        .map(|bin| (spec.to_string(), bin))
+    for batch in unknown.chunks(NPM_FETCH_CONCURRENCY) {
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = batch
+                .iter()
+                .map(|spec| {
+                    scope.spawn(move || {
+                        fetch_text(&npm_manifest_url(spec))
+                            .and_then(|body| parse_npm_bin(spec, &body))
+                    })
                 })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .filter_map(|h| h.join().ok().flatten())
-            .collect()
-    });
-    let mut cache = NPM_BINS.lock().unwrap_or_else(|p| p.into_inner());
-    cache.extend(fetched);
+                .collect();
+            batch
+                .iter()
+                .zip(handles)
+                .map(|(spec, h)| {
+                    let result = h
+                        .join()
+                        .unwrap_or_else(|_| Err("npm fetch panicked".into()));
+                    (*spec, result)
+                })
+                .collect()
+        });
+        let mut cache = npm_cache();
+        for (spec, result) in results {
+            cache.record(spec, result);
+        }
+    }
+    let cache = npm_cache();
     launches
         .iter()
         .map(|launch| {
-            let command =
-                cheers_acp_registry::adapter_command_for(launch, cache.get(&launch.package))
-                    .unwrap_or_else(|| unscoped_package_name(&launch.package));
+            let npm_bin = match cache.get(&launch.package) {
+                NpmLookup::Found(bin) => Some(bin),
+                NpmLookup::Failed | NpmLookup::Unknown => None,
+            };
+            let command = cheers_acp_registry::adapter_command_for(launch, npm_bin.as_ref());
             (launch.package.clone(), command)
         })
         .collect()

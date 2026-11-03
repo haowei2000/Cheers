@@ -94,28 +94,10 @@ fn is_agent_id(s: &str) -> bool {
 
 /// Renders the connector TOML off the async runtime: registry-derived presets
 /// may make blocking ACP/npm registry fetches.
-async fn render_config_toml(
-    account_id: &str,
-    agent_type: &str,
-    public_base: &str,
-    token_file: &str,
-) -> Result<String, AppError> {
-    let (account_id, agent_type, public_base, token_file) = (
-        account_id.to_string(),
-        agent_type.to_string(),
-        public_base.to_string(),
-        token_file.to_string(),
-    );
-    tokio::task::spawn_blocking(move || {
-        connector_config::render_toml(&RenderParams {
-            account_id: &account_id,
-            agent_type: &agent_type,
-            public_base: &public_base,
-            token_ref: TokenRef::HostFile(token_file),
-        })
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("render connector config: {e}")))
+async fn render_config_toml(params: RenderParams) -> Result<String, AppError> {
+    tokio::task::spawn_blocking(move || connector_config::render_toml(&params))
+        .await
+        .map_err(|e| AppError::Internal(format!("render connector config: {e}")))
 }
 
 #[derive(Deserialize)]
@@ -357,6 +339,18 @@ pub async fn redeem_host_pairing(
     let username: String = bot_row.username.clone();
     let account_id = connector_config::sanitize_account_id(&username);
 
+    // Render before committing: if it fails, the transaction rolls back and the
+    // pairing code stays usable instead of being spent without a credential.
+    let (public_base, configured) = resolve_public_base(&state);
+    let token_file = token_file_path(&account_id);
+    let config_toml = render_config_toml(RenderParams {
+        account_id: username,
+        agent_type: agent_type.clone(),
+        public_base: public_base.clone(),
+        token_ref: TokenRef::HostFile(token_file.clone()),
+    })
+    .await?;
+
     // Active/passive v1: pairing is an owner-authorized takeover. Preserve
     // old hosts for audit/reactivation, but only the new one may connect.
     sqlx::query!(
@@ -400,10 +394,6 @@ pub async fn redeem_host_pairing(
     if let Ok(id) = Uuid::parse_str(&bot_id) {
         state.bot_registry.kick(id);
     }
-
-    let (public_base, configured) = resolve_public_base(&state);
-    let token_file = token_file_path(&account_id);
-    let config_toml = render_config_toml(&username, &agent_type, &public_base, &token_file).await?;
 
     limiter.reset(&rl_key);
     tracing::info!(%bot_id, %host_id, %account_id, %agent_type, credential_prefix = %credential_prefix, "host pairing code redeemed");
@@ -459,7 +449,13 @@ pub async fn get_connector_config(
 
     let (public_base, configured) = resolve_public_base(&state);
     let token_file = token_file_path(&account_id);
-    let config_toml = render_config_toml(&username, &agent_type, &public_base, &token_file).await?;
+    let config_toml = render_config_toml(RenderParams {
+        account_id: username,
+        agent_type: agent_type.clone(),
+        public_base: public_base.clone(),
+        token_ref: TokenRef::HostFile(token_file.clone()),
+    })
+    .await?;
 
     Ok(Json(json!({
         "bot_id": bot_id,

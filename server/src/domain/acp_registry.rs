@@ -3,11 +3,10 @@
 //! Parsing and launch recipes live in the shared `cheers-acp-registry` crate
 //! (also used by the desktop shell); this module only fetches and caches.
 //! Network is best-effort: a cache miss or fetch failure falls back to the
-//! builtin presets in `agent_catalog`, and an unreachable npm registry falls
-//! back to the unscoped package name as the command. Tests never hit the
-//! network — they seed both caches from fixtures.
+//! builtin presets in `agent_catalog`, and an unreachable npm registry leaves
+//! the command unknown (the config is flagged for editing). Tests never hit
+//! the network — they seed both caches from fixtures.
 
-use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
 pub use cheers_acp_registry::{
@@ -15,24 +14,26 @@ pub use cheers_acp_registry::{
     BinaryLaunch, PackageLaunch,
 };
 use cheers_acp_registry::{
-    npm_manifest_url, parse_npm_bin, DistKind, NpmBin, ParsedRegistry, RegistryCache, REGISTRY_URL,
+    npm_manifest_url, parse_npm_bin, DistKind, NpmBin, NpmBinCache, NpmLookup, ParsedRegistry,
+    RegistryCache, REGISTRY_URL,
 };
 
 static CACHE: LazyLock<Mutex<RegistryCache>> =
     LazyLock::new(|| Mutex::new(RegistryCache::default()));
 
-/// npm `bin` answers by exact package spec. Pinned specs never change, so
-/// entries never expire; failed fetches are not cached.
-static NPM_BINS: LazyLock<Mutex<HashMap<String, NpmBin>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static NPM_BINS: LazyLock<Mutex<NpmBinCache>> =
+    LazyLock::new(|| Mutex::new(NpmBinCache::default()));
 
 #[cfg(not(test))]
 fn fetch_text(url: &str) -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(cheers_acp_registry::FETCH_TIMEOUT)
-        .user_agent(concat!("cheers-gateway/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| e.to_string())?;
+    static CLIENT: LazyLock<Result<reqwest::blocking::Client, String>> = LazyLock::new(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(cheers_acp_registry::FETCH_TIMEOUT)
+            .user_agent(concat!("cheers-gateway/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .map_err(|e| e.to_string())
+    });
+    let client = CLIENT.as_ref().map_err(Clone::clone)?;
     let resp = client.get(url).send().map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {} for {url}", resp.status()));
@@ -50,22 +51,23 @@ fn fetch_registry_body() -> Result<String, String> {
     fetch_text(REGISTRY_URL)
 }
 
+fn npm_cache() -> std::sync::MutexGuard<'static, NpmBinCache> {
+    NPM_BINS.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 /// What the npm manifest says `spec` installs, or `None` when npm is unreachable.
+/// The fetch runs without the cache lock, so cached lookups never wait on it.
 fn npm_bin_for(spec: &str) -> Option<NpmBin> {
-    let mut cache = NPM_BINS.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some(bin) = cache.get(spec) {
-        return Some(bin.clone());
+    match npm_cache().get(spec) {
+        NpmLookup::Found(bin) => return Some(bin),
+        NpmLookup::Failed => return None,
+        NpmLookup::Unknown => {}
     }
-    match fetch_text(&npm_manifest_url(spec)).and_then(|body| parse_npm_bin(spec, &body)) {
-        Ok(bin) => {
-            cache.insert(spec.to_string(), bin.clone());
-            Some(bin)
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, package = %spec, "npm bin lookup failed; guessing from package name");
-            None
-        }
+    let result = fetch_text(&npm_manifest_url(spec)).and_then(|body| parse_npm_bin(spec, &body));
+    if let Err(e) = &result {
+        tracing::warn!(error = %e, package = %spec, "npm bin lookup failed; adapter.command needs editing");
     }
+    npm_cache().record(spec, result)
 }
 
 /// `adapter.command` for a package launch, or `None` when the package's npm
@@ -123,8 +125,7 @@ pub fn seed_cache_for_test(raw: &str) {
 /// Seed the npm `bin` answer for one package spec from a manifest fixture.
 #[cfg(test)]
 pub fn seed_npm_manifest_for_test(spec: &str, manifest: &str) {
-    let bin = parse_npm_bin(spec, manifest).expect("fixture");
-    NPM_BINS.lock().unwrap().insert(spec.to_string(), bin);
+    npm_cache().record(spec, parse_npm_bin(spec, manifest));
 }
 
 /// Serialize registry-seeded tests (they share process-wide CACHE).
