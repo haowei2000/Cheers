@@ -742,14 +742,6 @@ struct UpdateBotProfileRequest: Encodable {
     }
 }
 
-struct ChangePasswordResponse: Decodable {
-    let accessToken: String
-
-    enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-    }
-}
-
 // MARK: - Workspaces (server/src/api/workspaces.rs)
 
 struct WorkspaceDto: Codable, Identifiable, Hashable {

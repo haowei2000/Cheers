@@ -45,7 +45,12 @@ struct AppShellView: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
-                Task { await refreshDurableState() }
+                Task {
+                    // Rotate a token that aged in the background first (shared with
+                    // RootView's foreground refresh) so these reads don't start on it.
+                    await app.refreshSessionIfNeeded()
+                    await refreshDurableState()
+                }
             }
     }
 

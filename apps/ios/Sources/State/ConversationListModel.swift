@@ -212,12 +212,6 @@ final class ConversationListModel {
                 }
             }
             persistCache()
-        } catch let error as APIError {
-            if case .unauthorized = error {
-                app.clearSession()
-                return
-            }
-            errorMessage = error.errorDescription
         } catch {
             errorMessage = error.localizedDescription
         }

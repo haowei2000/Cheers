@@ -16,7 +16,7 @@ enum APIError: LocalizedError {
         case .invalidBaseURL:
             return "Invalid server URL."
         case .unauthorized:
-            return "Session expired. Please sign in again."
+            return "Couldn't renew your session. Check your connection and try again."
         case .http(let status, let detail):
             if let detail, !detail.isEmpty { return detail }
             return "HTTP \(status)"
@@ -35,10 +35,17 @@ enum APIError: LocalizedError {
 /// Thin async/await REST client for the Cheers Rust gateway.
 /// `baseURL` includes the `/api/v1` prefix (e.g. http://localhost:30080/api/v1).
 struct APIClient: Sendable {
+    /// Called with the rejected access token when the gateway answers an empty
+    /// 401 (expired or revoked JWT). Returns a fresh token to retry once with,
+    /// or nil when the session cannot be renewed.
+    typealias Reauthenticate = @Sendable (_ rejectedToken: String) async -> String?
+
     let baseURL: URL
     let token: String?
+    private let reauthenticate: Reauthenticate?
+    private let session: URLSession
 
-    private static let session: URLSession = {
+    static let defaultSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.waitsForConnectivity = false
@@ -46,9 +53,16 @@ struct APIClient: Sendable {
     }()
     private static let logger = Logger(subsystem: "app.cheers.ios", category: "HTTP")
 
-    init(baseURL: URL, token: String?) {
+    init(
+        baseURL: URL,
+        token: String?,
+        session: URLSession = APIClient.defaultSession,
+        reauthenticate: Reauthenticate? = nil
+    ) {
         self.baseURL = baseURL
         self.token = token
+        self.session = session
+        self.reauthenticate = reauthenticate
     }
 
     /// Normalizes user input like "localhost:30080" or a trailing-slash URL
@@ -116,11 +130,11 @@ struct APIClient: Sendable {
         return request
     }
 
-    private func send(_ request: URLRequest) async throws -> Data {
+    private func send(_ request: URLRequest, mayReauthenticate: Bool = true) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await Self.session.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as URLError where error.code == .cancelled {
@@ -147,10 +161,16 @@ struct APIClient: Sendable {
             // 401 means "session revoked/expired" only when the body is empty.
             // Authenticated management calls (change-password, 2FA enable/disable)
             // also use 401 for wrong credentials / codes — surface that detail.
-            if http.statusCode == 401, token != nil {
+            if http.statusCode == 401, let token {
                 let detail = (try? JSONDecoder().decode(ApiErrorBody.self, from: data))?.detail
                 if let detail, !detail.isEmpty {
                     throw APIError.http(status: 401, detail: detail)
+                }
+                if mayReauthenticate, let reauthenticate,
+                   let fresh = await reauthenticate(token) {
+                    var retry = request
+                    retry.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
+                    return try await send(retry, mayReauthenticate: false)
                 }
                 throw APIError.unauthorized
             }
@@ -538,7 +558,7 @@ struct APIClient: Sendable {
         currentPassword: String,
         newPassword: String,
         twoFactorCode: String? = nil
-    ) async throws -> ChangePasswordResponse {
+    ) async throws -> LoginResponse {
         try await postJSON(
             "/auth/change-password",
             body: ChangePasswordRequest(
@@ -546,7 +566,7 @@ struct APIClient: Sendable {
                 newPassword: newPassword,
                 twoFactorCode: twoFactorCode
             ),
-            as: ChangePasswordResponse.self
+            as: LoginResponse.self
         )
     }
 

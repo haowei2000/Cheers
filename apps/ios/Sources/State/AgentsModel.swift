@@ -39,7 +39,6 @@ final class AgentsModel {
             hosts = (try? await loadedHosts) ?? []
             auditEvents = (try? await loadedAudit) ?? []
         } catch let error as APIError {
-            if case .unauthorized = error { app?.clearSession(); return }
             errorMessage = error.errorDescription
         } catch {
             errorMessage = error.localizedDescription

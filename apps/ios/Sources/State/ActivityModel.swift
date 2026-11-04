@@ -60,8 +60,6 @@ final class ActivityModel {
         do {
             invites = try await api.listNotifications()
             shell?.pendingInvites = invites.count
-        } catch let error as APIError {
-            if case .unauthorized = error { app?.clearSession() }
         } catch {
             // Non-fatal.
         }
