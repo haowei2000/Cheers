@@ -375,6 +375,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         // DM: a type='dm' channel. Static segment → matches before :channel_id.
         .route(
+            "/api/v1/channels/latest-messages",
+            post(api::messages::latest_messages),
+        )
+        .route(
             "/api/v1/channels/dm",
             get(api::channels::list_dms).post(api::channels::create_dm),
         )

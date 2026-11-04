@@ -473,6 +473,26 @@ final class AppModel {
         newPassword: String,
         twoFactorCode: String? = nil
     ) async throws {
+        try await rotateCredentials { client in
+            try await client.changePassword(
+                currentPassword: currentPassword,
+                newPassword: newPassword,
+                twoFactorCode: twoFactorCode
+            )
+        }
+    }
+
+    /// Adds the first password to an Apple-only account. Same session reissue as
+    /// a password change.
+    func setPassword(_ password: String, apple: AppleAuthorizationPayload) async throws {
+        try await rotateCredentials { client in
+            try await client.setPassword(password, apple: apple)
+        }
+    }
+
+    private func rotateCredentials(
+        _ rotate: @Sendable @escaping (APIClient) async throws -> LoginResponse
+    ) async throws {
         for attempt in 0..<2 {
             guard let base = baseURL, let token else { throw APIError.unauthorized }
             // The gateway kicks this user's sockets before it answers. Run inside the
@@ -481,11 +501,7 @@ final class AppModel {
             // The client has no 401 hook: reauthenticating would wait on this gate.
             let outcome: Result<Void, Error> = await withCredentialGate {
                 do {
-                    let response = try await APIClient(baseURL: base, token: token).changePassword(
-                        currentPassword: currentPassword,
-                        newPassword: newPassword,
-                        twoFactorCode: twoFactorCode
-                    )
+                    let response = try await rotate(APIClient(baseURL: base, token: token))
                     self.socket.disconnect()
                     self.socketConnected = false
                     try self.finishLogin(base: base, response: response)

@@ -667,7 +667,18 @@ pub async fn set_password(
     Extension(claims): Extension<Claims>,
     Json(body): Json<SetInitialPasswordRequest>,
 ) -> Result<Response, AppError> {
-    if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
+    install_initial_password(&state, &claims, body.new_password).await
+}
+
+/// Adds the first password to an account that has none. Credentials changed, so
+/// like a password change this revokes every session and reissues the caller's.
+/// Callers authorize the request first (`/users/me/password` needs a fresh Apple proof).
+pub(crate) async fn install_initial_password(
+    state: &AppState,
+    claims: &Claims,
+    new_password: String,
+) -> Result<Response, AppError> {
+    if new_password.chars().count() < MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "password must be at least {MIN_PASSWORD_CHARS} characters"
         )));
@@ -686,11 +697,11 @@ pub async fn set_password(
             "account already has a password; use change-password instead".into(),
         ));
     }
-    let new_hash = crate::infra::crypto::hash_password(body.new_password.clone())
+    let new_hash = crate::infra::crypto::hash_password(new_password)
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
 
-    sqlx::query!(
+    let updated = sqlx::query!(
         "UPDATE users SET password_hash = $2, token_version = token_version + 1
          WHERE user_id = $1 AND password_hash IS NULL",
         &claims.sub,
@@ -698,13 +709,18 @@ pub async fn set_password(
     )
     .execute(&state.db)
     .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::BadRequest(
+            "account already has a password; use change-password instead".into(),
+        ));
+    }
 
     if let Ok(uid) = claims.sub.parse::<Uuid>() {
         state.fanout.kick_user(uid);
     }
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
     crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
-    reissue_caller_session(&state, &claims).await
+    reissue_caller_session(state, claims).await
 }
 
 #[derive(Deserialize)]

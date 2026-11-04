@@ -1372,7 +1372,10 @@ struct MessageFileRef: Codable, Hashable, Identifiable {
     let expiresAt: String?
     let previewUrl: String?
     let downloadUrl: String?
-    let summary: String?
+    /// Short derived text; today the audio transcript snippet.
+    var summary: String?
+    /// done | pending | failed, nil when never requested. Kept live by `file_transcribed`.
+    var transcriptStatus: String? = nil
 
     var id: String { fileId }
 
@@ -1394,6 +1397,7 @@ struct MessageFileRef: Codable, Hashable, Identifiable {
         case previewUrl = "preview_url"
         case downloadUrl = "download_url"
         case summary
+        case transcriptStatus = "transcript_status"
     }
 }
 
@@ -1538,6 +1542,18 @@ struct DiscussionDetailResponseDto: Codable, Hashable {
     let root: MessageDto
     let replies: [MessageDto]
     let meta: DiscussionDetailMetaDto
+}
+
+struct LatestMessagesRequest: Encodable {
+    let channelIds: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case channelIds = "channel_ids"
+    }
+}
+
+struct LatestMessagesResponse: Decodable {
+    let messages: [MessageDto]
 }
 
 struct ListMessagesMeta: Decodable {

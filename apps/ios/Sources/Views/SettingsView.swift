@@ -757,8 +757,7 @@ private struct SignInMethodsView: View {
                                 detail: "Passwords must match and contain at least 12 characters."
                             )
                         }
-                        guard let api = app.api else { throw APIError.unauthorized }
-                        try await api.setPassword(newPassword, apple: payload)
+                        try await app.setPassword(newPassword, apple: payload)
                         newPassword = ""
                         confirmation = ""
                         await load()

@@ -477,8 +477,12 @@ struct APIClient: Sendable {
         )
     }
 
-    func setPassword(_ password: String, apple: AppleAuthorizationPayload) async throws {
-        try await postEmptyJSON("/users/me/password", body: SetPasswordRequest(newPassword: password, apple: apple))
+    func setPassword(_ password: String, apple: AppleAuthorizationPayload) async throws -> LoginResponse {
+        try await postJSON(
+            "/users/me/password",
+            body: SetPasswordRequest(newPassword: password, apple: apple),
+            as: LoginResponse.self
+        )
     }
 
     func report(targetType: String, targetId: String, channelId: String?, reason: String, details: String?) async throws {
@@ -883,6 +887,16 @@ struct APIClient: Sendable {
             query.append(URLQueryItem(name: "workspace_id", value: workspaceId))
         }
         return try await getJSON("/channels", query: query, as: [ChannelDto].self)
+    }
+
+    /// Newest message per channel, for conversation-list previews. Channels with
+    /// no visible message (or that the caller hasn't joined) are absent.
+    func latestMessages(channelIds: [String]) async throws -> [MessageDto] {
+        try await postJSON(
+            "/channels/latest-messages",
+            body: LatestMessagesRequest(channelIds: channelIds),
+            as: LatestMessagesResponse.self
+        ).messages
     }
 
     func listDMs() async throws -> [ChannelDto] {
