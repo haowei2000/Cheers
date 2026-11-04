@@ -51,7 +51,7 @@ struct StepUpSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { cancel() }
+                    CheersContentActionButton(action: .cancel) { cancel() }
                         .disabled(isBusy)
                 }
             }
@@ -112,7 +112,7 @@ struct StepUpSheet: View {
     private func entrySections(_ method: Method) -> some View {
         Section {
             if method == .email && !emailSent {
-                Button("Send code") { Task { await sendEmail() } }
+                CheersContentActionButton(action: .sendCode) { Task { await sendEmail() } }
                     .disabled(isBusy)
             } else {
                 if method == .password {
@@ -140,7 +140,7 @@ struct StepUpSheet: View {
             }
         }
         Section {
-            Button("Use another method") {
+            CheersContentActionButton(action: .useAnotherMethod) {
                 self.method = nil
                 value = ""
                 emailSent = false
