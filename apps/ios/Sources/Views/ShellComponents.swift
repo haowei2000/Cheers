@@ -160,14 +160,17 @@ struct CheersConfirmationButton: View {
 /// Shared actions for native artifact lists and detail toolbars. Navigation and
 /// disclosure labels stay with their native controls rather than borrowing verbs.
 enum CheersContentAction {
-    case done, retry, loadMore, addContext, attach
+    case done, retry, loadMore, addContext, attach, cancel, sendCode, useAnotherMethod
     var title: String {
         switch self {
-        case .done: return "Done"
-        case .retry: return "Retry"
-        case .loadMore: return "Load more"
-        case .addContext: return "Add to context"
-        case .attach: return "Attach"
+        case .done: return String(localized: "Done")
+        case .retry: return String(localized: "Retry")
+        case .loadMore: return String(localized: "Load more")
+        case .addContext: return String(localized: "Add to context")
+        case .attach: return String(localized: "Attach")
+        case .cancel: return String(localized: "Cancel")
+        case .sendCode: return String(localized: "Send code")
+        case .useAnotherMethod: return String(localized: "Use another method")
         }
     }
     var symbol: String {
@@ -177,6 +180,9 @@ enum CheersContentAction {
         case .loadMore: return "ellipsis"
         case .addContext: return "text.badge.plus"
         case .attach: return "paperclip"
+        case .cancel: return "xmark"
+        case .sendCode: return "paperplane"
+        case .useAnotherMethod: return "arrow.left.arrow.right"
         }
     }
 }
