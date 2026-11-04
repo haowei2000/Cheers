@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=$1 AND user_id=$2\n         AND revoked_at IS NULL AND absolute_expires_at > clock_timestamp()\n         AND GREATEST(authenticated_at, COALESCE(step_up_at, authenticated_at))\n             >= clock_timestamp() - INTERVAL '15 minutes') AS \"recent!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "recent!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d710b37c78630ff4385ad726ba2dd2fda61f97f621c7b85c3dd6f38102ed4330"
+}

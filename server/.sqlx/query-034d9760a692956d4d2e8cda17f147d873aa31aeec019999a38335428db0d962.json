@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET password_hash=$2, token_version=token_version+1 WHERE user_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "034d9760a692956d4d2e8cda17f147d873aa31aeec019999a38335428db0d962"
+}

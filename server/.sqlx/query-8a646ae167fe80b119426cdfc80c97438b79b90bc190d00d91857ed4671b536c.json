@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_transactions SET status='verified', consumed_at=NULL,\n                handoff_code_hash=$2, context_json=context_json || jsonb_build_object('account_link_required', $3::text),\n                updated_at=NOW() WHERE transaction_id=$1 AND status='consumed'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8a646ae167fe80b119426cdfc80c97438b79b90bc190d00d91857ed4671b536c"
+}

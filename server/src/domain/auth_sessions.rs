@@ -998,6 +998,7 @@ pub(crate) async fn revoke_other_sessions_and_trusted_devices_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: &str,
     current_session_id: &str,
+    reason: &str,
 ) -> Result<RevokedSessions, AppError> {
     let rows = sqlx::query!(
         "SELECT session_id FROM auth_sessions
@@ -1013,7 +1014,7 @@ pub(crate) async fn revoke_other_sessions_and_trusted_devices_tx(
         rows.into_iter().map(|row| row.session_id).collect(),
     )?;
     for session_id in &revoked.session_ids {
-        revoke_session_in_tx(tx, session_id, "identity_changed").await?;
+        revoke_session_in_tx(tx, session_id, reason).await?;
     }
     sqlx::query!(
         "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW())

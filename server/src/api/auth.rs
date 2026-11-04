@@ -539,7 +539,8 @@ pub async fn register(
 
 #[derive(Deserialize)]
 pub struct ChangePasswordRequest {
-    pub current_password: String,
+    #[serde(default)]
+    pub current_password: Option<String>,
     pub new_password: String,
     #[serde(default)]
     pub two_factor_code: Option<String>,
@@ -554,6 +555,7 @@ pub async fn change_password(
     Extension(claims): Extension<Claims>,
     Json(body): Json<ChangePasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "new password must be at least {MIN_PASSWORD_CHARS} characters"
@@ -570,68 +572,23 @@ pub async fn change_password(
 
     let hashed: Option<String> = row.password_hash.clone();
     let hashed = hashed.ok_or_else(|| {
-        AppError::BadRequest(
-            "this account has no password; add one from Sign in with Apple settings".into(),
-        )
+        AppError::BadRequest("this account has no password; use set-password instead".into())
     })?;
-    if !crate::infra::crypto::verify_password(body.current_password.clone(), hashed)
-        .await
-        .unwrap_or(false)
-    {
-        return Err(AppError::Unauthorized(
-            "current password is incorrect".into(),
-        ));
+    if let Some(current) = body.current_password {
+        if !crate::infra::crypto::verify_password(current, hashed)
+            .await
+            .unwrap_or(false)
+        {
+            return Err(AppError::Unauthorized(
+                "current password is incorrect".into(),
+            ));
+        }
     }
-    let master_key = two_factor::master_key(
-        state.config.secret_store_key.as_deref(),
-        &state.config.jwt_private_key_pem,
-    );
-    two_factor::ensure_valid_code_if_enabled(
-        &state.db,
-        &state.config,
-        &claims.sub,
-        body.two_factor_code.as_deref(),
-        &master_key,
-    )
-    .await?;
     let new_hash = crate::infra::crypto::hash_password(body.new_password.clone())
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
 
-    // Revoke all existing tokens (other devices) by bumping the version.
-    sqlx::query!(
-        "UPDATE users SET password_hash = $2, token_version = token_version + 1
-         WHERE user_id = $1",
-        &claims.sub,
-        &new_hash,
-    )
-    .execute(&state.db)
-    .await?;
-    // Tear down live WS sessions authenticated with the now-stale version; the
-    // caller's own client reconnects with the fresh token returned below.
-    if let Ok(uid) = claims.sub.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
-    }
-    // Push subscriptions belong to devices, not sessions — a password change
-    // (typically "device lost/compromised") must silence them all; the user's
-    // own device re-enables via the Settings toggle.
-    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
-    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
-
-    auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
-    let user = auth::load_auth_user(&state.db, &claims.sub).await?;
-    let session = auth_sessions::finalize_login(
-        &state.db,
-        &state.config,
-        &user,
-        auth_sessions::ClientType::Web,
-        None,
-    )
-    .await?;
-
-    Ok(Json(
-        json!({ "ok": true, "access_token": session.access_token, "expires_in": session.expires_in }),
-    ))
+    finish_password_update(&state, &claims, &new_hash, Some(row.token_version)).await
 }
 
 #[derive(Deserialize)]
@@ -646,6 +603,7 @@ pub async fn set_password(
     Extension(claims): Extension<Claims>,
     Json(body): Json<SetInitialPasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
+    auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?;
     if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "password must be at least {MIN_PASSWORD_CHARS} characters"
@@ -669,37 +627,93 @@ pub async fn set_password(
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
 
-    sqlx::query!(
-        "UPDATE users SET password_hash = $2, token_version = token_version + 1
-         WHERE user_id = $1 AND password_hash IS NULL",
-        &claims.sub,
-        &new_hash,
-    )
-    .execute(&state.db)
-    .await?;
+    finish_password_update(&state, &claims, &new_hash, None).await
+}
 
-    if let Ok(uid) = claims.sub.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
+/// Commit the credential change and other-session revocation together. Retain
+/// this session's client type, cookies, Keychain refresh token and device name.
+async fn finish_password_update(
+    state: &AppState,
+    claims: &Claims,
+    new_hash: &str,
+    expected_version: Option<i32>,
+) -> Result<Json<Value>, AppError> {
+    let mut tx = state.db.begin().await?;
+    let user = sqlx::query!(
+        r#"SELECT password_hash IS NOT NULL AS "has_password!", token_version, role FROM users
+         WHERE user_id = $1 AND is_deleted = FALSE AND is_suspended = FALSE
+         FOR NO KEY UPDATE"#,
+        &claims.sub,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let version = user.token_version;
+    if version as u64 != claims.token_version
+        || expected_version.is_some_and(|expected| expected != version)
+        || (expected_version.is_none() && user.has_password)
+    {
+        return Err(AppError::Conflict(
+            "Credentials changed; please try again.".into(),
+        ));
     }
+    // Recheck after the user lock: logout/reset may have won the race while
+    // password hashing yielded. Lock sessions in the same order as revokers.
+    sqlx::query!(
+        "SELECT session_id FROM auth_sessions WHERE user_id=$1 ORDER BY session_id FOR UPDATE",
+        &claims.sub,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let recent = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE session_id=$1 AND user_id=$2
+         AND revoked_at IS NULL AND absolute_expires_at > clock_timestamp()
+         AND GREATEST(authenticated_at, COALESCE(step_up_at, authenticated_at))
+             >= clock_timestamp() - INTERVAL '15 minutes') AS "recent!""#,
+        &claims.sid,
+        &claims.sub,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if !recent {
+        return Err(AppError::PreconditionRequired(json!({
+            "code": "recent_authentication_required", "detail": "Confirm your identity to update your password."
+        }).to_string()));
+    }
+    sqlx::query!(
+        "UPDATE users SET password_hash=$2, token_version=token_version+1 WHERE user_id=$1",
+        &claims.sub,
+        new_hash,
+    )
+    .execute(&mut *tx)
+    .await?;
+    let revoked = auth_sessions::revoke_other_sessions_and_trusted_devices_tx(
+        &mut tx,
+        &claims.sub,
+        &claims.sid,
+        "password_changed",
+    )
+    .await?;
+    let access_token = auth::create_access_token(
+        &state.config,
+        claims
+            .sub
+            .parse()
+            .map_err(|_| AppError::Internal("invalid user id".into()))?,
+        &user.role,
+        i64::from(version) + 1,
+        &claims.sid,
+    )?;
+    tx.commit().await?;
+    // Device push credentials outlive sessions. Keep the existing password
+    // change policy: silence registered devices after commit; the caller can
+    // re-register its own device with the new access token.
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
     crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
-    auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
-
-    let user = auth::load_auth_user(&state.db, &claims.sub).await?;
-    let session = auth_sessions::finalize_login(
-        &state.db,
-        &state.config,
-        &user,
-        auth_sessions::ClientType::Web,
-        None,
-    )
-    .await?;
-
-    Ok(Json(json!({
-        "ok": true,
-        "access_token": session.access_token,
-        "expires_in": session.expires_in,
-    })))
+    apply_session_revocations(state, &revoked);
+    Ok(Json(
+        json!({"ok": true, "access_token": access_token, "expires_in": 600}),
+    ))
 }
 
 #[derive(Deserialize)]

@@ -102,6 +102,7 @@ export const fillActionLabels = {
   continueWithGitHub: "Continue with GitHub",
   continueWithGoogle: "Continue with Google",
   emailCode: "Email code",
+  recoveryCode: "Recovery code",
   sendCode: "Send code",
   upgradeAll: "Upgrade all",
   usePasskey: "Use passkey",
