@@ -29,7 +29,7 @@ Every goal follows from that sentence, because each one already has machinery at
 
 | Goal | What serves it | New work |
 |---|---|---|
-| 1. Bidirectional editing | [`FilePanel`](../../frontend/src/features/chat/workbench/panels/FilePanel.tsx:135) already runs `mode: "auto" \| "preview" \| "raw"` over one file: a lens on one side, CodeMirror on the other, one `if_version` lock, one comment-preserving write-back | the lens |
+| 1. Bidirectional editing | [`FilePanel`](../../frontend/src/features/chat/workbench/panels/FilePanel.tsx#L135) already runs `mode: "auto" \| "preview" \| "raw"` over one file: a lens on one side, CodeMirror on the other, one `if_version` lock, one comment-preserving write-back | the lens |
 | 2. Human and agent editable | An ordinary channel file under the `fs.*` verbs, authorized by channel-role. A bot could always write it | **none** |
 | 3. Multiple canvases | Several files. Switching is the file tree | a nicer picker |
 | 4. Round-trippable addressing | `cheers:` locators, `sourcePathLineRange`, granular context picking — see [Addressing](#addressing) | one inverse function |
@@ -109,7 +109,7 @@ fourth spelling here would undo that refactor within a release of landing it.
 
 **Canvas edits must go through `fs.patch`, not `fs.write`.**
 
-[`fs.patch`](../../server/src/resource/fs.rs:626) already exists on the gateway: `set` /
+[`fs.patch`](../../server/src/resource/fs.rs#L626) already exists on the gateway: `set` /
 `insert` / `move` / `remove` ops over a path array (`["nodes", 3, "rect", "x"]`), 1–100 per
 call, applied atomically under `SELECT … FOR UPDATE`, preserving YAML formatting. The web
 client had never used it: it wrapped four of the gateway's eight file verbs, so `fs.patch`,
@@ -177,7 +177,7 @@ Already present:
 ### The four gaps
 
 1. **The Workbench deep-link drops the line.**
-   [`ChannelView.tsx:885`](../../frontend/src/features/chat/ChannelView.tsx:885) is
+   [`ChannelView.tsx:885`](../../frontend/src/features/chat/ChannelView.tsx#L885) is
    `setWbTarget(loc.path)` — `loc.line` is parsed and thrown away. Remote workspace passes
    `scrollToLine`; the Workbench does not. Small.
 
@@ -215,7 +215,7 @@ A declarative canvas can only look like the lens vocabulary allows — five lens
 The wanted effect is an agent producing a node that looks like *anything*: a styled report,
 a diagram, an illustrated summary. That is reachable now, because the constraint was never
 "no agent-authored rendering" but "nothing agent-authored evaluated with ambient authority",
-and [`SandboxRenderer`](../../frontend/src/features/chat/workbench/sandbox/SandboxRenderer.tsx:379)
+and [`SandboxRenderer`](../../frontend/src/features/chat/workbench/sandbox/SandboxRenderer.tsx#L379)
 already removes that authority:
 
 - `<iframe sandbox="allow-scripts" srcDoc=…>` with **no `allow-same-origin`** — an opaque
@@ -271,14 +271,14 @@ desktop, a safe fallback on the web" is only sound for one of the two kinds of c
 *this* client execute *this* code?" is answered correctly by the client refusing: an
 attacker who could forge `window.isTauri` would already need script execution in the app's
 origin, which is the thing they were trying to obtain. "May this user perform this
-privileged operation?" is the other kind, and there [`isTauri()`](../../frontend/src/lib/serverConfig.ts:14)
+privileged operation?" is the other kind, and there [`isTauri()`](../../frontend/src/lib/serverConfig.ts#L14)
 is worth nothing — which is why the gateway holds its own half with `allow_code = false`
 at every install path.
 
 Today: **one bundle, runtime detection, a single refusal point.**
-[`WorkbenchDrawer`](../../frontend/src/features/chat/workbench/WorkbenchDrawer.tsx:378)
+[`WorkbenchDrawer`](../../frontend/src/features/chat/workbench/WorkbenchDrawer.tsx)
 passes `isTauri() ? "temporary" : "global"` and
-[`package.ts`](../../frontend/src/features/chat/workbench/extensions/package.ts:496) refuses
+[`package.ts`](../../frontend/src/features/chat/workbench/extensions/package.ts#L496) refuses
 code at global scope. Tauri plugin modules are dynamically imported and genuinely absent
 from the web bundle; `SandboxRenderer` is present but unreachable.
 
@@ -360,7 +360,7 @@ ship. Do not smuggle one in as an implementation detail.
 
 | Work | Size | Notes |
 |---|---|---|
-| `builtin:canvas` lens | **large** | Node rendering, drag, connect, marquee, pan/zoom. `CodemapLens` ([builtins.tsx:730](../../frontend/src/features/chat/workbench/lens/builtins.tsx:730)) already implements pan/zoom with a movement-threshold guard; copy it |
+| `builtin:canvas` lens | **large** | Node rendering, drag, connect, marquee, pan/zoom. `CodemapLens` ([builtins.tsx:730](../../frontend/src/features/chat/workbench/lens/builtins.tsx#L730)) already implements pan/zoom with a movement-threshold guard; copy it |
 | `onOps` + `fsClient.patch` | small | Independently useful to `table`/`kanban` |
 | `sourcePathAtLine` + `focusPath` + line-carrying deep link | small | Independently useful to every lens |
 | Auto-layout engine (`dag`, `grid`) | medium | Pure function, testable, touches no boundary |

@@ -40,4 +40,4 @@ This directory contains user-facing, administrator-facing, and operations-facing
 
 - [User Manual](使用说明书.md)
 - [Documentation Index](../INDEX.md)
-- [Release Notes](../release_note/README.md)
+- [Release Notes](../release/notes/README.md)
