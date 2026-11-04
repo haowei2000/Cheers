@@ -353,6 +353,12 @@ struct AttachmentChipView: View {
                         .font(.caption)
                         .opacity(0.7)
                 }
+                if let transcriptLine {
+                    Text(transcriptLine)
+                        .font(.caption)
+                        .opacity(0.7)
+                        .lineLimit(3)
+                }
             }
         }
         .foregroundStyle(Theme.textBody)
@@ -360,6 +366,15 @@ struct AttachmentChipView: View {
         .padding(.vertical, 6)
         .background(Theme.bgSelected.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var transcriptLine: String? {
+        if let summary = file.summary, !summary.isEmpty { return summary }
+        switch file.transcriptStatus {
+        case "pending": return String(localized: "Transcribing…")
+        case "failed": return String(localized: "Transcription failed")
+        default: return nil
+        }
     }
 }
 

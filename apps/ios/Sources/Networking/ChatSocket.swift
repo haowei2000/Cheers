@@ -49,6 +49,27 @@ private struct BotUnavailablePayload: Decodable {
     }
 }
 
+private struct ContentDataPayload: Decodable {
+    let msgId: String
+    let contentData: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case msgId = "msg_id"
+        case contentData = "content_data"
+    }
+}
+
+private struct FileTranscribedPayload: Decodable {
+    let fileId: String
+    let status: String?
+    let summary: String?
+
+    enum CodingKeys: String, CodingKey {
+        case fileId = "file_id"
+        case status, summary
+    }
+}
+
 private struct MemberUpdatedPayload: Decodable {
     let memberId: String?
 
@@ -72,6 +93,10 @@ enum SocketEvent {
     /// The addressed bot was offline: the server already deleted the reply
     /// placeholder (no `message_deleted` follows).
     case botUnavailable(channelId: String, botId: String, placeholderMsgId: String)
+    /// A bot added suggested questions or resource cards to a finished message.
+    case contentDataUpdated(channelId: String, msgId: String, contentData: JSONValue?)
+    case fileTranscribed(channelId: String, fileId: String, status: String?, summary: String?)
+    case taskClaimCreated(channelId: String)
     case taskClaimUpdated(TaskClaimUpdate)
     case botTrace(channelId: String, TraceEventDto)
     case memberUpdated(channelId: String, memberId: String?)
@@ -515,6 +540,29 @@ final class ChatSocket: NSObject {
                     botId: payload.data.botId,
                     placeholderMsgId: payload.data.placeholderMsgId
                 ))
+            }
+        case "suggestions_updated", "cards_updated":
+            if let channelId = head.channelId,
+               let payload = try? JSONDecoder().decode(DataEnvelope<ContentDataPayload>.self, from: data) {
+                onEvent?(.contentDataUpdated(
+                    channelId: channelId,
+                    msgId: payload.data.msgId,
+                    contentData: payload.data.contentData
+                ))
+            }
+        case "file_transcribed":
+            if let channelId = head.channelId,
+               let payload = try? JSONDecoder().decode(DataEnvelope<FileTranscribedPayload>.self, from: data) {
+                onEvent?(.fileTranscribed(
+                    channelId: channelId,
+                    fileId: payload.data.fileId,
+                    status: payload.data.status,
+                    summary: payload.data.summary
+                ))
+            }
+        case "task_claim_created":
+            if let channelId = head.channelId {
+                onEvent?(.taskClaimCreated(channelId: channelId))
             }
         case "task_claim_updated":
             if let update = Self.taskClaimUpdate(from: data) {

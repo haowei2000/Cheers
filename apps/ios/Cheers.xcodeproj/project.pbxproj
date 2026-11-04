@@ -59,6 +59,7 @@
 		CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000426 /* PasskeySettingsView.swift */; };
 		CE0000000000000000000601 /* StepUpSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000600 /* StepUpSheet.swift */; };
 		CE0000000000000000000611 /* ElicitationCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000610 /* ElicitationCardView.swift */; };
+		CE0000000000000000000621 /* AgentSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000620 /* AgentSuggestions.swift */; };
 		CE0000000000000000000435 /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000427 /* ForgotPasswordView.swift */; };
 		CE0000000000000000000436 /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000428 /* FriendsView.swift */; };
 		CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000429 /* GoogleOAuthSession.swift */; };
@@ -149,6 +150,7 @@
 		CE0000000000000000000426 /* PasskeySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeySettingsView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000600 /* StepUpSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepUpSheet.swift; sourceTree = "<group>"; };
 		CE0000000000000000000610 /* ElicitationCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElicitationCardView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000620 /* AgentSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSuggestions.swift; sourceTree = "<group>"; };
 		CE0000000000000000000427 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000428 /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000429 /* GoogleOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuthSession.swift; sourceTree = "<group>"; };
@@ -257,6 +259,7 @@
 				CE0000000000000000000454 /* ToolPresentation.swift */,
 				CE0000000000000000000456 /* MessageTree.swift */,
 				CE0000000000000000000115 /* Approval.swift */,
+				CE0000000000000000000620 /* AgentSuggestions.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -533,6 +536,7 @@
 				CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */,
 				CE0000000000000000000601 /* StepUpSheet.swift in Sources */,
 				CE0000000000000000000611 /* ElicitationCardView.swift in Sources */,
+				CE0000000000000000000621 /* AgentSuggestions.swift in Sources */,
 				CE0000000000000000000431 /* NewWorkspaceSheet.swift in Sources */,
 				CE0000000000000000000433 /* PasskeyController.swift in Sources */,
 				CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */,

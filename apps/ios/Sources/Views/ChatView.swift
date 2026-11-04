@@ -436,6 +436,9 @@ struct ChatView: View {
             if let error = model.errorMessage {
                 errorBanner(error)
             }
+            if let active = model.activeSuggestions {
+                suggestionBar(active.questions) { model.dismissSuggestions(msgId: active.msgId) }
+            }
             pendingAttachmentBar
             ComposerView(
                 initialText: model.composerText,
@@ -461,6 +464,30 @@ struct ChatView: View {
                 }
             )
         }
+    }
+
+    private func suggestionBar(_ questions: [SuggestedQuestion], onDismiss: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(questions, id: \.self) { question in
+                        Button {
+                            model.useSuggestion(question)
+                        } label: {
+                            Text(question.displayText).lineLimit(1)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+            Button("Dismiss suggestions", systemImage: "xmark", action: onDismiss)
+                .labelStyle(.iconOnly)
+                .font(.caption)
+                .frame(minWidth: 44, minHeight: 44)
+                .foregroundStyle(Theme.textMuted)
+        }
+        .padding(.leading, Theme.space5)
     }
 
     @ViewBuilder

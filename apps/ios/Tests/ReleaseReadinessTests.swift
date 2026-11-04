@@ -629,6 +629,34 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertNil(ChatSocket.taskClaimUpdate(from: wrongChannel))
     }
 
+    func testSuggestedQuestionsMatchTheWebValidation() throws {
+        let value = try JSONDecoder().decode(JSONValue.self, from: Data("""
+        [{"text":"Ask {{mention:who}} about it","slots":[{"key":"who","kind":"mention"}]},
+         {"text":"Plain follow-up"},
+         {"text":"Undeclared {{file:x}}"},
+         {"text":"Broken {{oops}}"}]
+        """.utf8))
+        let questions = SuggestedQuestion.parse(value)
+        XCTAssertEqual(questions.map(\.displayText), ["Ask [mention] about it", "Plain follow-up"])
+    }
+
+    func testSuggestionsOnlyFollowTheCurrentUsersOwnTurn() {
+        func message(_ id: String, _ type: String, _ sender: String, suggestions: Bool = false) -> MessageDto {
+            MessageDto(
+                msgId: id, channelId: "c1", senderType: type, senderId: sender, content: "x",
+                contentData: suggestions
+                    ? .object(["suggested_questions": .array([.object(["text": .string("Next?")])])])
+                    : nil
+            )
+        }
+        let mine = message("u1", "user", "me")
+        let theirs = message("u2", "user", "someone")
+        let reply = message("b1", "bot", "bot", suggestions: true)
+        XCTAssertEqual(SuggestedQuestion.active(in: [mine, reply], currentUserId: "me")?.msgId, "b1")
+        XCTAssertNil(SuggestedQuestion.active(in: [theirs, reply], currentUserId: "me"))
+        XCTAssertNil(SuggestedQuestion.active(in: [mine, reply, mine], currentUserId: "me"))
+    }
+
     func testElicitationFormParsesFieldsAndRequiredValues() throws {
         let data = try JSONDecoder().decode(JSONValue.self, from: Data("""
         {"request_id":"e1","mode":"form","message":"Pick a target","initiating_user_id":"u1",
