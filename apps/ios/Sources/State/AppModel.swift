@@ -122,8 +122,50 @@ final class AppModel {
     var api: APIClient? {
         guard let baseURL, let token else { return nil }
         let userId = session?.userId
-        return APIClient(baseURL: baseURL, token: token) { [weak self] rejected in
-            await self?.reauthenticate(rejectedToken: rejected, userId: userId)
+        return APIClient(
+            baseURL: baseURL,
+            token: token,
+            reauthenticate: { [weak self] rejected in
+                await self?.reauthenticate(rejectedToken: rejected, userId: userId)
+            },
+            confirmIdentity: { [weak self] in
+                await self?.confirmIdentity() ?? false
+            }
+        )
+    }
+
+    // MARK: Step-up
+
+    /// A security-sensitive request is waiting for the user to confirm their
+    /// identity (gateway 428 `recent_authentication_required`). RootView presents
+    /// StepUpSheet while this is set.
+    struct StepUpRequest: Identifiable, Equatable {
+        let id = UUID()
+    }
+
+    private(set) var pendingStepUp: StepUpRequest?
+
+    @ObservationIgnored
+    private var stepUpWaiters: [CheckedContinuation<Bool, Never>] = []
+
+    /// APIClient's 428 hook. Concurrent sensitive requests share one prompt and
+    /// all retry once it is confirmed.
+    func confirmIdentity() async -> Bool {
+        guard session != nil else { return false }
+        return await withCheckedContinuation { continuation in
+            stepUpWaiters.append(continuation)
+            if pendingStepUp == nil {
+                pendingStepUp = StepUpRequest()
+            }
+        }
+    }
+
+    func finishStepUp(confirmed: Bool) {
+        let waiters = stepUpWaiters
+        stepUpWaiters = []
+        pendingStepUp = nil
+        for waiter in waiters {
+            waiter.resume(returning: confirmed)
         }
     }
 
@@ -473,6 +515,7 @@ final class AppModel {
 
     /// Local sign-out (used on 401 / invalidated token).
     func clearSession(forgetDevice: Bool = false) {
+        finishStepUp(confirmed: false)
         NavigationCache.removeAll(userId: session?.userId, server: serverURLString)
         socket.disconnect()
         socketConnected = false
