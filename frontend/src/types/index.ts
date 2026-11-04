@@ -335,8 +335,6 @@ export interface Message {
   trace_count?: number;
   trace_has_failure?: boolean;
   _streaming?: boolean;
-  /** Latest agent progress (trace) title shown while streaming. */
-  _trace?: string | null;
   /** Canonical live lifecycle events retained until durable REST replay arrives. */
   _trace_events?: TraceEvent[];
   /** Client-only: lifecycle of an outgoing message the server hasn't confirmed.

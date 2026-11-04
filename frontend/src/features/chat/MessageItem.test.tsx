@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Message } from "@/types";
 import { MessageItem } from "./MessageItem";
 import { LocatorOpenContext } from "./messageLinks";
+import { PresentationProvider } from "@/components/ui/presentation";
 
 const source: Message = {
   msg_id: "source-message",
@@ -150,6 +151,39 @@ describe("MessageItem identity anatomy", () => {
 describe("MessageItem run overview", () => {
   const failedTool = { v: 1, id: "tool-failed", msg_id: reply.msg_id, trace_seq: 1, kind: "trace", phase: "tool_call", tool_call_id: "tool-1", status: "failed", is_terminal: true, created_at: "2026-10-29T00:00:00Z" };
   const finished = { ...failedTool, id: "finished", trace_seq: 2, phase: "prompt_finished", tool_call_id: undefined, status: "completed" };
+
+  it.each(["max", "medium", "minimal"] as const)("renders one progress surface in %s presentation", level => {
+    const markup = renderToStaticMarkup(
+      <PresentationProvider level={level}>
+        <MessageItem channelId="channel-1" message={{ ...reply, content: "", _streaming: true,
+          _trace_events: [{ ...failedTool, status: "in_progress", is_terminal: false, title: "pnpm typecheck" }],
+        }} />
+      </PresentationProvider>,
+    );
+    expect(markup.match(/>pnpm typecheck</g)).toHaveLength(1);
+    expect(markup.match(/aria-label="Stop response"/g)).toHaveLength(1);
+    expect(markup.match(/aria-label="Open message record:/g)).toHaveLength(1);
+    expect(markup).toContain("Running · 1 tool");
+    expect(markup).not.toContain("Agent thinking");
+    expect(markup).not.toContain("Typewriter cursor");
+  });
+
+  it("keeps streamed text visible without repeating progress controls", () => {
+    const markup = renderToStaticMarkup(<MessageItem channelId="channel-1" message={{ ...reply,
+      _streaming: true, _trace_events: [failedTool],
+    }} />);
+    expect(markup).toContain(reply.content);
+    expect(markup.match(/aria-label="Stop response"/g)).toHaveLength(1);
+    expect(markup).not.toContain("Typewriter cursor");
+  });
+
+  it("keeps thinking feedback and Stop available before the first trace arrives", () => {
+    const markup = renderToStaticMarkup(<MessageItem channelId="channel-1" message={{ ...reply,
+      content: "", is_partial: true,
+    }} />);
+    expect(markup).toContain("Agent thinking");
+    expect(markup.match(/aria-label="Stop response"/g)).toHaveLength(1);
+  });
 
   it("summarizes completion with tool errors without announcing a failed run", () => {
     const markup = renderToStaticMarkup(<MessageItem message={{ ...reply, trace_has_failure: true, _trace_events: [failedTool, finished] }} />);
