@@ -59,6 +59,8 @@
 		CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000426 /* PasskeySettingsView.swift */; };
 		CE0000000000000000000601 /* StepUpSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000600 /* StepUpSheet.swift */; };
 		CE0000000000000000000611 /* ElicitationCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000610 /* ElicitationCardView.swift */; };
+		CE0000000000000000000631 /* ScheduledMessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000630 /* ScheduledMessagesView.swift */; };
+		CE0000000000000000000641 /* BotAccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000640 /* BotAccessView.swift */; };
 		CE0000000000000000000621 /* AgentSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000620 /* AgentSuggestions.swift */; };
 		CE0000000000000000000435 /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000427 /* ForgotPasswordView.swift */; };
 		CE0000000000000000000436 /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000428 /* FriendsView.swift */; };
@@ -150,6 +152,8 @@
 		CE0000000000000000000426 /* PasskeySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeySettingsView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000600 /* StepUpSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepUpSheet.swift; sourceTree = "<group>"; };
 		CE0000000000000000000610 /* ElicitationCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElicitationCardView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000630 /* ScheduledMessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledMessagesView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000640 /* BotAccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotAccessView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000620 /* AgentSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSuggestions.swift; sourceTree = "<group>"; };
 		CE0000000000000000000427 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000428 /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
@@ -320,6 +324,8 @@
 				CE0000000000000000000426 /* PasskeySettingsView.swift */,
 				CE0000000000000000000600 /* StepUpSheet.swift */,
 				CE0000000000000000000610 /* ElicitationCardView.swift */,
+				CE0000000000000000000630 /* ScheduledMessagesView.swift */,
+				CE0000000000000000000640 /* BotAccessView.swift */,
 				CE0000000000000000000423 /* NewWorkspaceSheet.swift */,
 				CE000000000000000000011D /* ApprovalCardView.swift */,
 				CE0000000000000000000453 /* BotTracePanelView.swift */,
@@ -536,6 +542,8 @@
 				CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */,
 				CE0000000000000000000601 /* StepUpSheet.swift in Sources */,
 				CE0000000000000000000611 /* ElicitationCardView.swift in Sources */,
+				CE0000000000000000000631 /* ScheduledMessagesView.swift in Sources */,
+				CE0000000000000000000641 /* BotAccessView.swift in Sources */,
 				CE0000000000000000000621 /* AgentSuggestions.swift in Sources */,
 				CE0000000000000000000431 /* NewWorkspaceSheet.swift in Sources */,
 				CE0000000000000000000433 /* PasskeyController.swift in Sources */,

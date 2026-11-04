@@ -629,6 +629,23 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertNil(ChatSocket.taskClaimUpdate(from: wrongChannel))
     }
 
+    func testScheduledMessageDecodesAndResumesAnIntervalFromNow() throws {
+        let task = try JSONDecoder().decode(ScheduledMessageDto.self, from: Data("""
+        {"id":"t1","title":"Standup","channelId":"c1","channelName":"team","content":"Hi",
+         "mentionIds":["b1"],"schedule":{"kind":"interval","everyMinutes":60},
+         "nextRunAt":null,"enabled":false,"sourceExtensionId":null,"sourceAutomationId":null,
+         "lastRunAt":null,"lastError":null,"consecutiveFailures":0,"retryAttempt":0,
+         "createdAt":"2026-11-04T08:00:00Z","updatedAt":"2026-11-04T08:00:00Z"}
+        """.utf8))
+        XCTAssertEqual(task.statusLabel, "Paused")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let resumed = task.input(enabled: true, now: now)
+        XCTAssertTrue(resumed.enabled)
+        let startAt = try XCTUnwrap(resumed.schedule.startAt.flatMap(TimeFormat.parse))
+        XCTAssertEqual(startAt, now.addingTimeInterval(3600))
+        XCTAssertNil(task.input(enabled: false).schedule.startAt)
+    }
+
     func testSuggestedQuestionsMatchTheWebValidation() throws {
         let value = try JSONDecoder().decode(JSONValue.self, from: Data("""
         [{"text":"Ask {{mention:who}} about it","slots":[{"key":"who","kind":"mention"}]},

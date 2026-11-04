@@ -260,8 +260,8 @@ struct APIClient: Sendable {
         _ = try await send(request)
     }
 
-    func deleteEmpty(_ path: String) async throws {
-        let request = try makeRequest("DELETE", path)
+    func deleteEmpty(_ path: String, query: [URLQueryItem] = []) async throws {
+        let request = try makeRequest("DELETE", path, query: query)
         _ = try await send(request)
     }
 
@@ -1354,6 +1354,84 @@ struct APIClient: Sendable {
             body: AuthAckRequest(action: action),
             as: AuthAckResponse.self
         )
+    }
+
+    // MARK: Scheduled messages
+
+    func listScheduledMessages() async throws -> [ScheduledMessageDto] {
+        try await getJSON("/scheduled-messages", as: ScheduledMessagesResponse.self).tasks
+    }
+
+    func createScheduledMessage(_ input: ScheduledMessageInput) async throws -> ScheduledMessageDto {
+        try await postJSON("/scheduled-messages", body: input, as: ScheduledMessageDto.self)
+    }
+
+    func updateScheduledMessage(id: String, _ input: ScheduledMessageInput) async throws -> ScheduledMessageDto {
+        try await putJSON("/scheduled-messages/\(id)", body: input, as: ScheduledMessageDto.self)
+    }
+
+    func deleteScheduledMessage(id: String) async throws {
+        try await deleteEmpty("/scheduled-messages/\(id)")
+    }
+
+    func runScheduledMessageNow(id: String) async throws {
+        try await postEmpty("/scheduled-messages/\(id)/run")
+    }
+
+    func listScheduledMessageRuns(id: String) async throws -> [ScheduledMessageRunDto] {
+        try await getJSON("/scheduled-messages/\(id)/runs", as: ScheduledMessageRunsResponse.self).runs
+    }
+
+    // MARK: Email change
+
+    func requestEmailUpdateCode(email: String) async throws {
+        try await postEmptyJSON("/auth/email/request-code", body: ["email": email])
+    }
+
+    func updateEmail(email: String, code: String) async throws {
+        try await postEmptyJSON("/auth/email/update", body: ["email": email, "code": code])
+    }
+
+    // MARK: Bot access (owner/admin)
+
+    func listApprovers(botId: String) async throws -> [ApproverDto] {
+        try await getJSON("/bots/\(botId)/approvers", as: ApproversResponse.self).delegates
+    }
+
+    func revokeApprover(botId: String, approver: ApproverDto) async throws {
+        try await deleteEmpty("/bots/\(botId)/approvers/\(approver.userId)", query: [
+            URLQueryItem(name: "channel_id", value: approver.channelId),
+            URLQueryItem(name: "operation_kind", value: approver.operationKind ?? "*"),
+        ])
+    }
+
+    func eventAccess(botId: String) async throws -> EventAccessDto {
+        try await getJSON("/bots/\(botId)/event-access", as: EventAccessDto.self)
+    }
+
+    func upsertEventRule(botId: String, rule: EventRuleInput) async throws {
+        _ = try await putJSON("/bots/\(botId)/event-access", body: rule, as: JSONValue.self)
+    }
+
+    func deleteEventRule(botId: String, rule: EventRuleDto) async throws {
+        var query = [
+            URLQueryItem(name: "subject_kind", value: rule.subjectKind),
+            URLQueryItem(name: "subject_id", value: rule.subjectId),
+            URLQueryItem(name: "event_class", value: rule.eventClass),
+            URLQueryItem(name: "capability", value: rule.capability),
+        ]
+        if !rule.channelId.isEmpty {
+            query.append(URLQueryItem(name: "channel_id", value: rule.channelId))
+        }
+        try await deleteEmpty("/bots/\(botId)/event-access", query: query)
+    }
+
+    func acpEvents(botId: String, limit: Int = 100) async throws -> [AcpEventDto] {
+        try await getJSON(
+            "/bots/\(botId)/acp-events",
+            query: [URLQueryItem(name: "limit", value: String(limit))],
+            as: AcpEventsResponse.self
+        ).events
     }
 
     /// Answer an ACP form / URL elicitation. `content` only for an accepted form.
