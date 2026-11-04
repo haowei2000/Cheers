@@ -565,6 +565,7 @@ struct MeProfileDto: Decodable {
     let userId: String
     let username: String
     let displayName: String?
+    let email: String?
     let role: String?
     let avatarURL: String?
     let bio: String?
@@ -575,6 +576,7 @@ struct MeProfileDto: Decodable {
         case userId = "user_id"
         case username
         case displayName = "display_name"
+        case email
         case role
         case avatarURL = "avatar_url"
         case bio
@@ -1372,7 +1374,10 @@ struct MessageFileRef: Codable, Hashable, Identifiable {
     let expiresAt: String?
     let previewUrl: String?
     let downloadUrl: String?
-    let summary: String?
+    /// Short derived text; today the audio transcript snippet.
+    var summary: String?
+    /// done | pending | failed, nil when never requested. Kept live by `file_transcribed`.
+    var transcriptStatus: String? = nil
 
     var id: String { fileId }
 
@@ -1394,6 +1399,7 @@ struct MessageFileRef: Codable, Hashable, Identifiable {
         case previewUrl = "preview_url"
         case downloadUrl = "download_url"
         case summary
+        case transcriptStatus = "transcript_status"
     }
 }
 
@@ -1538,6 +1544,219 @@ struct DiscussionDetailResponseDto: Codable, Hashable {
     let root: MessageDto
     let replies: [MessageDto]
     let meta: DiscussionDetailMetaDto
+}
+
+// MARK: - Scheduled messages (server/src/domain/scheduled_messages.rs, camelCase wire)
+
+struct ScheduledSchedule: Codable, Hashable {
+    /// once | interval | daily
+    var kind: String
+    var runAt: String? = nil
+    var everyMinutes: Int? = nil
+    var startAt: String? = nil
+    var localTime: String? = nil
+    var timezone: String? = nil
+}
+
+struct ScheduledMessageInput: Encodable {
+    let title: String
+    let channelId: String
+    let content: String
+    let mentionIds: [String]
+    let schedule: ScheduledSchedule
+    let enabled: Bool
+    let sourceExtensionId: String?
+    let sourceAutomationId: String?
+}
+
+struct ScheduledMessageDto: Decodable, Identifiable, Hashable {
+    let id: String
+    let title: String
+    let channelId: String
+    let channelName: String
+    let content: String
+    let mentionIds: [String]
+    let schedule: ScheduledSchedule
+    let nextRunAt: String?
+    let enabled: Bool
+    let sourceExtensionId: String?
+    let sourceAutomationId: String?
+    let lastRunAt: String?
+    let lastError: String?
+    let consecutiveFailures: Int
+    let retryAttempt: Int
+
+    /// Same wording as the web `scheduleLabel`.
+    var statusLabel: String {
+        let next = nextRunAt.flatMap(TimeFormat.parse).map {
+            $0.formatted(date: .abbreviated, time: .shortened)
+        }
+        if retryAttempt > 0, let next {
+            return String(localized: "Retry \(retryAttempt)/3 · \(next)")
+        }
+        if schedule.kind == "once", nextRunAt == nil, lastRunAt != nil {
+            return lastError == nil ? String(localized: "Completed") : String(localized: "Failed")
+        }
+        if !enabled {
+            return lastError == nil ? String(localized: "Paused") : String(localized: "Failed")
+        }
+        guard let next else { return String(localized: "Completed") }
+        let cadence: String
+        switch schedule.kind {
+        case "interval": cadence = String(localized: "Every \(schedule.everyMinutes ?? 0) min")
+        case "daily": cadence = String(localized: "Daily \(schedule.localTime ?? "") · \(schedule.timezone ?? "")")
+        default: cadence = String(localized: "Once")
+        }
+        return String(localized: "\(cadence) · Next \(next)")
+    }
+
+    /// The same task with `enabled` changed; an interval restarts one period from now.
+    func input(enabled: Bool, now: Date = Date()) -> ScheduledMessageInput {
+        var schedule = schedule
+        if schedule.kind == "interval", enabled {
+            let minutes = Double(schedule.everyMinutes ?? 0)
+            schedule.startAt = TimeFormat.iso.string(from: now.addingTimeInterval(minutes * 60))
+        }
+        return ScheduledMessageInput(
+            title: title, channelId: channelId, content: content, mentionIds: mentionIds,
+            schedule: schedule, enabled: enabled,
+            sourceExtensionId: sourceExtensionId, sourceAutomationId: sourceAutomationId
+        )
+    }
+}
+
+struct ScheduledMessagesResponse: Decodable {
+    let tasks: [ScheduledMessageDto]
+}
+
+struct ScheduledMessageRunDto: Decodable, Identifiable {
+    let id: String
+    let scheduledFor: String
+    /// schedule | manual
+    let trigger: String
+    /// running | succeeded | failed
+    let status: String
+    let attempt: Int
+    let error: String?
+}
+
+struct ScheduledMessageRunsResponse: Decodable {
+    let runs: [ScheduledMessageRunDto]
+}
+
+// MARK: - Bot access (approvers, event-access matrix, ACP event log)
+
+struct ApproverDto: Decodable, Identifiable {
+    let userId: String
+    /// Absent on a bot-wide delegation, which can't be revoked per channel.
+    let channelId: String?
+    let operationKind: String?
+    let username: String?
+    let displayName: String?
+    let channelName: String?
+
+    var id: String { "\(userId):\(channelId ?? ""):\(operationKind ?? "")" }
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case channelId = "channel_id"
+        case operationKind = "operation_kind"
+        case username
+        case displayName = "display_name"
+        case channelName = "channel_name"
+    }
+}
+
+struct ApproversResponse: Decodable {
+    let delegates: [ApproverDto]
+}
+
+struct EventRuleDto: Decodable, Identifiable {
+    /// Empty means bot-wide.
+    let channelId: String
+    /// role | user | group
+    let subjectKind: String
+    let subjectId: String
+    let eventClass: String
+    /// initiate | see | respond
+    let capability: String
+    /// allow | deny
+    let decision: String
+    let expired: Bool?
+
+    var id: String { "\(channelId):\(subjectKind):\(subjectId):\(eventClass):\(capability)" }
+
+    enum CodingKeys: String, CodingKey {
+        case channelId = "channel_id"
+        case subjectKind = "subject_kind"
+        case subjectId = "subject_id"
+        case eventClass = "event_class"
+        case capability, decision, expired
+    }
+}
+
+struct EventRuleInput: Encodable {
+    let subjectKind: String
+    let subjectId: String
+    let eventClass: String
+    let capability: String
+    let decision: String
+
+    enum CodingKeys: String, CodingKey {
+        case subjectKind = "subject_kind"
+        case subjectId = "subject_id"
+        case eventClass = "event_class"
+        case capability, decision
+    }
+}
+
+struct EventAccessDto: Decodable {
+    let rules: [EventRuleDto]
+    let initiateEvents: [String]
+    let seeEvents: [String]
+    let respondEvents: [String]
+
+    func events(for capability: String) -> [String] {
+        switch capability {
+        case "initiate": return initiateEvents
+        case "see": return seeEvents
+        default: return respondEvents
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case rules
+        case initiateEvents = "initiate_events"
+        case seeEvents = "see_events"
+        case respondEvents = "respond_events"
+    }
+}
+
+struct AcpEventDto: Decodable {
+    let name: String
+    let home: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case name, home
+        case createdAt = "created_at"
+    }
+}
+
+struct AcpEventsResponse: Decodable {
+    let events: [AcpEventDto]
+}
+
+struct LatestMessagesRequest: Encodable {
+    let channelIds: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case channelIds = "channel_ids"
+    }
+}
+
+struct LatestMessagesResponse: Decodable {
+    let messages: [MessageDto]
 }
 
 struct ListMessagesMeta: Decodable {

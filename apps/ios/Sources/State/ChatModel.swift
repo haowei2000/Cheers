@@ -82,6 +82,8 @@ final class ChatModel {
     var errorMessage: String?
     var pendingAIConsent: [AIDataDisclosure] = []
     var composerText = ""
+    /// Bot turn whose suggestions the reader closed; a new turn shows its own.
+    private(set) var dismissedSuggestionMsgId: String?
     /// Explicit reset signal for the leaf composer. The draft deliberately
     /// lives outside ChatModel while typing, so model text changes must not be
     /// observed on every keystroke; this increments only after a confirmed send.
@@ -740,6 +742,23 @@ final class ChatModel {
         }
     }
 
+    /// Follow-ups for the turn the current user just triggered, unless dismissed.
+    var activeSuggestions: (msgId: String, questions: [SuggestedQuestion])? {
+        guard let active = SuggestedQuestion.active(in: messages, currentUserId: app?.session?.userId),
+              active.msgId != dismissedSuggestionMsgId else { return nil }
+        return active
+    }
+
+    func useSuggestion(_ question: SuggestedQuestion) {
+        composerText = question.displayText
+        composerPrefillMention = nil
+        composerPrefillTick += 1
+    }
+
+    func dismissSuggestions(msgId: String) {
+        dismissedSuggestionMsgId = msgId
+    }
+
     func addPendingFile(_ file: MessageFileRef) {
         guard !pendingFiles.contains(where: { $0.fileId == file.fileId }) else { return }
         pendingFiles.append(file)
@@ -807,7 +826,7 @@ final class ChatModel {
     /// They neither insert timeline rows nor alter scroll/read state.
     func applyTaskClaimUpdate(_ update: TaskClaimUpdate) {
         guard update.channelId == channel.channelId else { return }
-        patchClaimMessages { TaskClaimProjection.applying(update, to: $0) }
+        patchLoadedMessages { TaskClaimProjection.applying(update, to: $0) }
         if update.status != "pending" {
             pendingTaskClaims.removeAll { $0.claimId == update.claimId }
         }
@@ -837,7 +856,7 @@ final class ChatModel {
         }
     }
 
-    private func patchClaimMessages(_ patch: (MessageDto) -> MessageDto) {
+    private func patchLoadedMessages(_ patch: (MessageDto) -> MessageDto) {
         var changed = false
         func project(_ message: MessageDto) -> MessageDto {
             let projected = preservingClaimProjection(patch(message))
@@ -891,7 +910,7 @@ final class ChatModel {
                           app.api?.baseURL == api.baseURL, app.session?.userId == userId
                     else { group.cancelAll(); return }
                     if let snapshot {
-                        self.patchClaimMessages { TaskClaimProjection.applyingSnapshot(snapshot, to: $0) }
+                        self.patchLoadedMessages { TaskClaimProjection.applyingSnapshot(snapshot, to: $0) }
                     }
                     if let candidate = iterator.next() { enqueue(candidate) }
                 }
@@ -1014,6 +1033,28 @@ final class ChatModel {
             errorMessage = code == "PERMISSION_DENIED"
                 ? "You no longer have access to this channel."
                 : "Live updates for this channel stopped. Reopen it to try again."
+        case .contentDataUpdated(let channelId, let msgId, let contentData) where channelId == channel.channelId:
+            patchLoadedMessages { message in
+                guard message.msgId == msgId else { return message }
+                var updated = message
+                updated.contentData = contentData
+                return updated
+            }
+        case .fileTranscribed(let channelId, let fileId, let status, let summary) where channelId == channel.channelId:
+            patchLoadedMessages { message in
+                guard message.files?.contains(where: { $0.fileId == fileId }) == true else { return message }
+                var updated = message
+                updated.files = message.files?.map { file in
+                    guard file.fileId == fileId else { return file }
+                    var patched = file
+                    patched.transcriptStatus = status
+                    patched.summary = summary ?? file.summary
+                    return patched
+                }
+                return updated
+            }
+        case .taskClaimCreated(let channelId) where channelId == channel.channelId:
+            Task { await refreshTaskClaims() }
         case .taskClaimUpdated(let update) where update.channelId == channel.channelId:
             applyTaskClaimUpdate(update)
         default:

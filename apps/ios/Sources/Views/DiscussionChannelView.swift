@@ -408,6 +408,7 @@ struct DiscussionChannelView<Footer: View>: View {
             message: message,
             isOwn: isOwn,
             showAvatar: true,
+            identityLayout: .avatar,
             formattedTime: formattedTime(message),
             repliedTo: row.parentInView ? nil : message.replyToMsgId.flatMap { parent in
                 threadMessages.first { $0.msgId == parent }

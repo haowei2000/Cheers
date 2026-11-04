@@ -3,6 +3,7 @@
 
 use axum::{
     extract::{Path, State},
+    response::Response,
     Extension, Json,
 };
 use serde::Deserialize;
@@ -11,7 +12,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
-    api::{apple_auth, middleware::Claims},
+    api::{apple_auth, auth, middleware::Claims},
     app_state::AppState,
     domain::auth_sessions,
     errors::AppError,
@@ -293,7 +294,8 @@ pub async fn set_password(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Json(body): Json<SetPasswordRequest>,
-) -> Result<Json<Value>, AppError> {
+) -> Result<Response, AppError> {
+    // Before the Apple check: verifying spends the one-time authorization code.
     if body.new_password.chars().count() < crypto::MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "password must be at least {} characters",
@@ -301,15 +303,7 @@ pub async fn set_password(
         )));
     }
     apple_auth::verify_recent_for_user(&state, &claims.sub, &body.apple).await?;
-    let hash = crypto::hash_password(body.new_password)
-        .await
-        .map_err(|e| AppError::Internal(format!("hash password: {e}")))?;
-    sqlx::query!(
-        "UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE user_id = $1 AND password_hash IS NULL",
-        &claims.sub,
-        hash,
-    ).execute(&state.db).await?;
-    Ok(Json(json!({"password_set": true})))
+    auth::install_initial_password(&state, &claims, body.new_password).await
 }
 
 #[derive(Deserialize)]

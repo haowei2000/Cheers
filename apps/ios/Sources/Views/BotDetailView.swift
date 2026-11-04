@@ -116,6 +116,12 @@ struct BotDetailView: View {
                     }
 
                     Section {
+                        NavigationLink("Approvers and event access") {
+                            BotAccessView(botId: bot.botId)
+                        }
+                    }
+
+                    Section {
                         if isDisabled {
                             Button {
                                 Task { await setDisabled(false) }

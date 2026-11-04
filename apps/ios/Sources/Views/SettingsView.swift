@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var showPasskeys = false
     @State private var showBlockedUsers = false
     @State private var showAIConsents = false
+    @State private var showScheduled = false
+    @State private var showChangeEmail = false
     @State private var showDeleteAccount = false
     @State private var showWorkspaceAdmin = false
     @State private var showAccountSessions = false
@@ -69,6 +71,8 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showBlockedUsers) { BlockedUsersSheet() }
         .sheet(isPresented: $showAIConsents) { AIConsentSettingsSheet() }
+        .sheet(isPresented: $showScheduled) { ScheduledMessagesView() }
+        .sheet(isPresented: $showChangeEmail) { ChangeEmailSheet() }
         .sheet(isPresented: $showDeleteAccount) { DeleteAccountSheet() }
         .sheet(isPresented: $showWorkspaceAdmin) {
             if let workspace = shell.selectedWorkspace {
@@ -214,6 +218,12 @@ struct SettingsView: View {
                 settingsNavRow("Manage \(workspace.name)", systemImage: "building.2") {
                     showWorkspaceAdmin = true
                 }
+            }
+            settingsNavRow("Scheduled tasks", systemImage: "calendar.badge.clock") {
+                showScheduled = true
+            }
+            settingsNavRow("Change email", systemImage: "envelope") {
+                showChangeEmail = true
             }
             settingsNavRow("Change password", systemImage: "key") {
                 showChangePassword = true
@@ -757,8 +767,7 @@ private struct SignInMethodsView: View {
                                 detail: "Passwords must match and contain at least 12 characters."
                             )
                         }
-                        guard let api = app.api else { throw APIError.unauthorized }
-                        try await api.setPassword(newPassword, apple: payload)
+                        try await app.setPassword(newPassword, apple: payload)
                         newPassword = ""
                         confirmation = ""
                         await load()
@@ -1008,6 +1017,90 @@ private struct BlockedUsersSheet: View {
     }
     private func load() async { do { users = try await app.api?.blockedUsers() ?? [] } catch { errorText = error.localizedDescription } }
     private func unblock(_ user: BlockedUserDto) async { do { try await app.api?.unblockUser(user.userId); await load() } catch { errorText = error.localizedDescription } }
+}
+
+/// Links or changes the account email: a code goes to the new address, and
+/// entering it confirms the change (`/auth/email/request-code`, `/auth/email/update`).
+private struct ChangeEmailSheet: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var currentEmail: String?
+    @State private var email = ""
+    @State private var code = ""
+    @State private var codeSentTo: String?
+    @State private var isBusy = false
+    @State private var errorText: String?
+
+    private var trimmedEmail: String { email.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Current email", value: currentEmail ?? String(localized: "None"))
+                }
+                Section {
+                    TextField("New email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    CheersContentActionButton(action: codeSentTo == nil ? .sendCode : .resendCode) {
+                        Task { await sendCode() }
+                    }
+                    .disabled(isBusy || trimmedEmail.isEmpty)
+                }
+                if let codeSentTo, codeSentTo == trimmedEmail {
+                    Section {
+                        TextField("Verification code", text: $code)
+                            .textContentType(.oneTimeCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                        CheersContentActionButton(action: .confirmEmail) { Task { await confirm() } }
+                            .disabled(isBusy || code.trimmingCharacters(in: .whitespaces).isEmpty)
+                    } footer: {
+                        Text("We sent a code to \(codeSentTo).")
+                    }
+                }
+                if let errorText {
+                    Section { Text(errorText).foregroundStyle(Theme.danger) }
+                }
+            }
+            .navigationTitle("Change email")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { CheersContentActionButton(action: .cancel) { dismiss() } }
+            }
+            .task { currentEmail = (try? await app.api?.getMe())?.email }
+        }
+    }
+
+    private func sendCode() async {
+        await run {
+            try await $0.requestEmailUpdateCode(email: trimmedEmail)
+            codeSentTo = trimmedEmail
+            code = ""
+        }
+    }
+
+    private func confirm() async {
+        await run {
+            try await $0.updateEmail(email: trimmedEmail, code: code.trimmingCharacters(in: .whitespaces))
+            dismiss()
+        }
+    }
+
+    private func run(_ work: (APIClient) async throws -> Void) async {
+        guard let api = app.api, !isBusy else { return }
+        isBusy = true
+        errorText = nil
+        defer { isBusy = false }
+        do {
+            try await work(api)
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
 }
 
 private struct AIConsentSettingsSheet: View {

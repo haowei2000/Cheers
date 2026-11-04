@@ -187,29 +187,22 @@ final class ConversationListModel {
             // not create a realtime blind spot.
             app.socket.resetSubscriptions(to: Set(newRows.map { $0.channel.channelId }))
 
-            // Last-message previews (limit 1), fetched concurrently and applied
-            // progressively. Preview failures keep the cached value and remain
-            // non-fatal.
-            await withTaskGroup(of: (String, MessageDto?, Bool).self) { group in
-                for (channel, _) in channels {
-                    group.addTask {
-                        do {
-                            let response = try await api.listMessages(channelId: channel.channelId, limit: 1)
-                            return (channel.channelId, response.messages.last, true)
-                        } catch {
-                            return (channel.channelId, nil, false)
-                        }
-                    }
-                }
-                for await (channelId, message, succeeded) in group {
-                    guard succeeded else { continue }
+            // Last-message previews, one batch per 500 channels (the gateway's cap).
+            // Preview failures keep the cached value and remain non-fatal. A channel
+            // absent from a successful batch has no visible message.
+            let channelIds = channels.map { $0.0.channelId }
+            for start in stride(from: 0, to: channelIds.count, by: 500) {
+                let batch = Array(channelIds[start..<min(start + 500, channelIds.count)])
+                guard let latest = try? await api.latestMessages(channelIds: batch) else { continue }
+                let byChannel = Dictionary(latest.map { ($0.channelId, $0) }) { first, _ in first }
+                for channelId in batch {
                     guard let index = rows.firstIndex(where: { $0.channel.channelId == channelId }) else {
                         continue
                     }
-                    rows[index].lastMessage = message
-                    rows[index].lastActivityAt = message?.createdDate
-                    sortRows(&rows)
+                    rows[index].lastMessage = byChannel[channelId]
+                    rows[index].lastActivityAt = byChannel[channelId]?.createdDate
                 }
+                sortRows(&rows)
             }
             persistCache()
         } catch {
