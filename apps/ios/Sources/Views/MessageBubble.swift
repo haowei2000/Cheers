@@ -50,6 +50,12 @@ struct SystemMessageView: View {
                 ? String(localized: "Agent sign-in (resolved)")
                 : String(localized: "Agent sign-in required")
         }
+        if message.msgType == "elicitation" {
+            let resolved = message.contentData?["resolved"]?.boolValue == true
+            return resolved
+                ? String(localized: "Agent question (answered)")
+                : String(localized: "Agent question")
+        }
         return message.content
     }
 }

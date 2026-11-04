@@ -144,9 +144,9 @@ struct CheersItemButton: View {
     }
 }
 
-/// Native confirmation-dialog action with one shared call shape for semantic
-/// roles. Keeping this primitive separate also prevents feature screens from
-/// inventing button styling inside system-owned dialogs.
+/// Native confirmation-dialog or swipe action with one shared call shape for
+/// semantic roles. Keeping this primitive separate also prevents feature screens from
+/// inventing button styling inside system-owned surfaces.
 struct CheersConfirmationButton: View {
     let title: String
     var role: ButtonRole?
@@ -160,7 +160,7 @@ struct CheersConfirmationButton: View {
 /// Shared actions for native artifact lists and detail toolbars. Navigation and
 /// disclosure labels stay with their native controls rather than borrowing verbs.
 enum CheersContentAction {
-    case done, retry, loadMore, addContext, attach, cancel, sendCode, useAnotherMethod
+    case done, retry, loadMore, addContext, attach, cancel, sendCode, useAnotherMethod, review, answer
     var title: String {
         switch self {
         case .done: return String(localized: "Done")
@@ -171,6 +171,8 @@ enum CheersContentAction {
         case .cancel: return String(localized: "Cancel")
         case .sendCode: return String(localized: "Send code")
         case .useAnotherMethod: return String(localized: "Use another method")
+        case .review: return String(localized: "Review")
+        case .answer: return String(localized: "Answer")
         }
     }
     var symbol: String {
@@ -183,6 +185,8 @@ enum CheersContentAction {
         case .cancel: return "xmark"
         case .sendCode: return "paperplane"
         case .useAnotherMethod: return "arrow.left.arrow.right"
+        case .review: return "chevron.right"
+        case .answer: return "chevron.right"
         }
     }
 }

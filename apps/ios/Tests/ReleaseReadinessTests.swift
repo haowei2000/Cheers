@@ -629,6 +629,48 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertNil(ChatSocket.taskClaimUpdate(from: wrongChannel))
     }
 
+    func testElicitationFormParsesFieldsAndRequiredValues() throws {
+        let data = try JSONDecoder().decode(JSONValue.self, from: Data("""
+        {"request_id":"e1","mode":"form","message":"Pick a target","initiating_user_id":"u1",
+         "requested_schema":{"type":"object","required":["env","notes"],"properties":{
+           "env":{"type":"string","title":"Environment","oneOf":[{"const":"prod","title":"Production"},{"const":"dev"}]},
+           "notes":{"type":"string"},
+           "count":{"type":"integer","default":3},
+           "tags":{"type":"array","items":{"enum":["a","b"]}}}}}
+        """.utf8))
+        let request = try XCTUnwrap(ElicitationRequest(contentData: data))
+        XCTAssertEqual(request.fields.map(\.name), ["count", "env", "notes", "tags"])
+        let env = try XCTUnwrap(request.fields.first { $0.name == "env" })
+        XCTAssertEqual(env.choices?.map(\.title), ["Production", "dev"])
+        XCTAssertEqual(env.choices?.first?.value, .string("prod"))
+        XCTAssertEqual(request.fields.first { $0.name == "tags" }?.choices?.count, 2)
+        XCTAssertEqual(request.fields.first { $0.name == "count" }?.defaultValue, .number(3))
+
+        XCTAssertEqual(request.missingRequiredField(in: ["env": .string("prod")])?.name, "notes")
+        XCTAssertNil(request.missingRequiredField(in: ["env": .string("prod"), "notes": .string("ok")]))
+        XCTAssertTrue(request.canRespond(userId: "u1"))
+        XCTAssertFalse(request.canRespond(userId: "u2"))
+    }
+
+    @MainActor
+    func testResourceErrorFrameCarriesServerCodeAndMessage() throws {
+        let failed = Data("""
+        {"type":"resource_res","v":1,"req_id":"r1","ok":false,
+         "error":{"code":"VERSION_CONFLICT","message":"Plan changed"}}
+        """.utf8)
+        let response = try XCTUnwrap(ChatSocket.resourceResponse(from: failed))
+        XCTAssertEqual(response.reqId, "r1")
+        guard case .failure(.server(let code, let message)) = response.result else {
+            return XCTFail("expected a server error, got \(response.result)")
+        }
+        XCTAssertEqual(code, "VERSION_CONFLICT")
+        XCTAssertEqual(message, "Plan changed")
+
+        let ok = Data(#"{"type":"resource_res","v":1,"req_id":"r2","ok":true,"data":{"n":1}}"#.utf8)
+        let success = try XCTUnwrap(ChatSocket.resourceResponse(from: ok))
+        guard case .success = success.result else { return XCTFail("expected success") }
+    }
+
     func testTaskClaimHttpAndSocketProjectionsCannotDowngradeEachOther() {
         let pending = claimConfirmation(status: "pending", revision: 1)
         let cancelled = TaskClaimUpdate(

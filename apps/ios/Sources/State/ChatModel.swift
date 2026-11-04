@@ -317,9 +317,6 @@ final class ChatModel {
             forceBottomTick += 1
             markRead()
             schedulePersist()
-        } catch APIError.aiConsentRequired(let disclosures) {
-            pendingAIConsent = disclosures
-            errorMessage = nil
         } catch {
             report(error)
         }
@@ -592,6 +589,13 @@ final class ChatModel {
                 sinceSeq: highestSeq,
                 limit: 200
             )
+            if response.meta?.hasMoreAfter == true {
+                // More was missed than one page holds. Appending this page would
+                // leave a hole between it and the newest rows; jump to the latest
+                // page instead (older history stays reachable via loadOlder).
+                await loadLatest()
+                return
+            }
             guard !response.messages.isEmpty else { return }
             for message in response.messages {
                 upsert(message)
@@ -724,6 +728,12 @@ final class ChatModel {
             }
             forceBottomTick += 1
             return true
+        } catch APIError.aiConsentRequired(let disclosures) {
+            // The message was refused, not sent: keep the draft and ask; the
+            // consent sheet's Allow resends it via grantPendingAIConsentAndRetry.
+            pendingAIConsent = disclosures
+            errorMessage = nil
+            return false
         } catch {
             report(error)
             return false
@@ -943,9 +953,9 @@ final class ChatModel {
     private func handle(_ event: SocketEvent) {
         switch event {
         case .connected:
-            // Re-assert our subscription: the socket's replay set may have
-            // been cleared after a 4403 (stale channel) close. The server
-            // treats repeat subscribes as idempotent.
+            // Re-assert our subscription: the socket drops a channel from its
+            // replay set after a subscription_error. The server treats repeat
+            // subscribes as idempotent.
             app?.socket.subscribe(channelId: channel.channelId)
             scheduleMemberRefresh()
         case .subscribed(let channelId) where channelId == channel.channelId:
@@ -990,6 +1000,20 @@ final class ChatModel {
                 Task { await store.delete(msgId: msgId) }
             }
             scheduleDiscussionRefresh()
+        case .botUnavailable(let channelId, let botId, let placeholderMsgId) where channelId == channel.channelId:
+            // The server already deleted the placeholder; without this the
+            // "thinking…" bubble stays forever (and in the cache).
+            messages.removeAll { $0.msgId == placeholderMsgId }
+            liveTraceEvents[placeholderMsgId] = nil
+            if let store = app?.messageStore {
+                Task { await store.delete(msgId: placeholderMsgId) }
+            }
+            let botName = channelMembers.first { $0.memberId == botId }?.displayName ?? "This bot"
+            errorMessage = "\(botName) is offline and couldn't receive your message."
+        case .subscriptionDenied(let channelId, let code, _) where channelId == channel.channelId:
+            errorMessage = code == "PERMISSION_DENIED"
+                ? "You no longer have access to this channel."
+                : "Live updates for this channel stopped. Reopen it to try again."
         case .taskClaimUpdated(let update) where update.channelId == channel.channelId:
             applyTaskClaimUpdate(update)
         default:
