@@ -44,7 +44,7 @@ struct ElicitationCardView: View {
                     .lineLimit(2)
                 Spacer()
                 if request.canRespond(userId: app.session?.userId) {
-                    Button(request.mode == "url" ? "Review" : "Answer", systemImage: "chevron.right") {
+                    CheersContentActionButton(action: request.mode == "url" ? .review : .answer) {
                         showSheet = true
                     }
                     .buttonStyle(.bordered)
@@ -148,7 +148,7 @@ private struct ElicitationSheetView: View {
             }
         } actions: {
             HStack(spacing: 12) {
-                Button("Decline", role: .destructive) {
+                CheersConfirmationButton(title: String(localized: "Decline"), role: .destructive) {
                     Task { await resolve("decline") }
                 }
                 .buttonStyle(.bordered)
