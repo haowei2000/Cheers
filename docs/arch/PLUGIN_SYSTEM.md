@@ -63,7 +63,7 @@ ignore renderer contributions entirely. The execution boundary is enforced in co
 convention.
 
 **LiveKit is a half-citizen.** It uses the shared verification primitive
-(`webhook::verify_body_sha256_b64`, called from [api/voice.rs:1560](../../server/src/api/voice.rs:1560))
+(`webhook::verify_body_sha256_b64`, called from [api/voice.rs:1560](../../server/src/api/voice.rs#L1560))
 but keeps its own route, its own dedupe table (`voice_webhook_events`), and its own event
 semantics. Only verification was generalised — deliberately.
 
@@ -72,7 +72,7 @@ semantics. Only verification was generalised — deliberately.
 Six stages, each a separate module, each replaceable without touching the others.
 
 1. **Ingress** — `POST /api/v1/integrations/:integration_id/:installation_id/events`
-   ([router.rs:985](../../server/src/router.rs:985)). Unauthenticated by necessity, so it
+   ([router.rs:985](../../server/src/router.rs#L985)). Unauthenticated by necessity, so it
    does the minimum: verify the signature, store the event, answer `202`. A provider that
    waited on our fan-out would time out and start redelivering.
 2. **Verification** — [`webhook.rs`](../../server/src/domain/integrations/webhook.rs). The
@@ -279,11 +279,11 @@ together they are why the system reads as chaotic.
 
 1. ~~**"Installation" means two unrelated things.**~~ **Resolved.** The machine running
    a connector daemon is now a *host*: `connector_hosts`, `/hosts` and
-   `/bots/:bot_id/hosts` ([:593](../../server/src/router.rs:593)), `host_id` on the wire
+   `/bots/:bot_id/hosts` ([:593](../../server/src/router.rs#L593)), `host_id` on the wire
    ([0088](../../server/migrations/0088_connector_hosts.sql)). `integration_installations`
    deliberately keeps its name — GitHub's own API returns `installation.id`, so renaming it
    would make the code disagree with the provider it models. The remaining `/installations`
-   route ([:329](../../server/src/router.rs:329)) is that provider-side concept and is
+   route ([:329](../../server/src/router.rs#L329)) is that provider-side concept and is
    correctly named.
 2. **Four permission vocabularies, two of which should not converge.** A manifest says
    `file.write`; a bot has capability delegations; an integration projects channel roles;
@@ -305,9 +305,9 @@ together they are why the system reads as chaotic.
    still worth doing; it is now an improvement rather than a prerequisite.
 3. **Personal scope has no server record.** The bytes are not lost — the desktop shell
    persists each one to `~/.cheers/extensions/{id}.cheers-extension`, written atomically
-   at `0o600` ([plugins.rs:197](../../apps/macos/src-tauri/src/plugins.rs:197)), with
+   at `0o600` ([plugins.rs:197](../../apps/macos/src-tauri/src/plugins.rs#L197)), with
    enable/disable in `localStorage`
-   ([runtime.ts:11](../../frontend/src/features/chat/workbench/extensions/runtime.ts:11)).
+   ([runtime.ts:11](../../frontend/src/features/chat/workbench/extensions/runtime.ts#L11)).
    What is missing is the *server's* copy: the `origin` check allows only `'system'`, while
    the client's `InstallScope` is `"personal" | "temporary"`.
    So a personal install is invisible to admins and does not follow the user to a second
@@ -328,7 +328,7 @@ credentials, role projection, or any other gateway authority.
 Giving personal scope a server record (inconsistency 3) waits on one product question,
 because the answer changes the architecture rather than the schema: **does the server store
 the bytes?** If it does, the invariant at
-[desktop.ts:28](../../frontend/src/lib/desktop.ts:28) — that personal-extension bytes never
+[desktop.ts:28](../../frontend/src/lib/desktop.ts#L28) — that personal-extension bytes never
 leave the device — dies, and with it the justification for validating on the client at all.
 If it does not, a record of `{user_id, extension_id, version, sha256, installed_at}` buys
 admin visibility and cross-device *discovery* but not cross-device *install*: the second
