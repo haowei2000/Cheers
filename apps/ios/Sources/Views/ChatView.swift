@@ -481,10 +481,8 @@ struct ChatView: View {
                     }
                 }
             }
-            Button("Dismiss suggestions", systemImage: "xmark", action: onDismiss)
+            CheersContentActionButton(action: .dismiss, perform: onDismiss)
                 .labelStyle(.iconOnly)
-                .font(.caption)
-                .frame(minWidth: 44, minHeight: 44)
                 .foregroundStyle(Theme.textMuted)
         }
         .padding(.leading, Theme.space5)

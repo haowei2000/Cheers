@@ -37,7 +37,7 @@ struct BotAccessView: View {
                     }
                     .swipeActions {
                         if approver.channelId != nil {
-                            Button("Revoke", role: .destructive) { pendingRevoke = approver }
+                            CheersConfirmationButton(title: String(localized: "Revoke"), role: .destructive) { pendingRevoke = approver }
                         }
                     }
                 }
@@ -60,10 +60,10 @@ struct BotAccessView: View {
                                 .foregroundStyle(rule.decision == "deny" ? Theme.danger : Theme.textSecondary)
                         }
                         .swipeActions {
-                            Button("Delete", role: .destructive) { pendingRuleDelete = rule }
+                            CheersConfirmationButton(title: String(localized: "Delete"), role: .destructive) { pendingRuleDelete = rule }
                         }
                     }
-                    Button("Add rule", systemImage: "plus") { showAddRule = true }
+                    CheersContentActionButton(action: .add) { showAddRule = true }
                 } header: {
                     Text("Event access")
                         .helpExplanation("Rules override what each channel role can start, see or answer for this bot.")
@@ -100,7 +100,7 @@ struct BotAccessView: View {
             titleVisibility: .visible,
             presenting: pendingRevoke
         ) { approver in
-            Button("Revoke", role: .destructive) {
+            CheersConfirmationButton(title: String(localized: "Revoke"), role: .destructive) {
                 Task { await act { try await $0.revokeApprover(botId: botId, approver: approver) } }
             }
         }
@@ -110,7 +110,7 @@ struct BotAccessView: View {
             titleVisibility: .visible,
             presenting: pendingRuleDelete
         ) { rule in
-            Button("Delete", role: .destructive) {
+            CheersConfirmationButton(title: String(localized: "Delete"), role: .destructive) {
                 Task { await act { try await $0.deleteEventRule(botId: botId, rule: rule) } }
             }
         }
@@ -206,9 +206,9 @@ private struct EventRuleEditor: View {
             .navigationTitle("Add rule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { CheersContentActionButton(action: .cancel) { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
+                    CheersContentActionButton(action: .save) { Task { await save() } }
                         .disabled(eventClass.isEmpty || isSaving)
                 }
             }

@@ -1045,7 +1045,7 @@ private struct ChangeEmailSheet: View {
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Button(codeSentTo == nil ? "Send code" : "Send a new code") {
+                    CheersContentActionButton(action: codeSentTo == nil ? .sendCode : .resendCode) {
                         Task { await sendCode() }
                     }
                     .disabled(isBusy || trimmedEmail.isEmpty)
@@ -1056,7 +1056,7 @@ private struct ChangeEmailSheet: View {
                             .textContentType(.oneTimeCode)
                             .textInputAutocapitalization(.characters)
                             .autocorrectionDisabled()
-                        Button("Confirm email") { Task { await confirm() } }
+                        CheersContentActionButton(action: .confirmEmail) { Task { await confirm() } }
                             .disabled(isBusy || code.trimmingCharacters(in: .whitespaces).isEmpty)
                     } footer: {
                         Text("We sent a code to \(codeSentTo).")
@@ -1069,7 +1069,7 @@ private struct ChangeEmailSheet: View {
             .navigationTitle("Change email")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { CheersContentActionButton(action: .cancel) { dismiss() } }
             }
             .task { currentEmail = (try? await app.api?.getMe())?.email }
         }

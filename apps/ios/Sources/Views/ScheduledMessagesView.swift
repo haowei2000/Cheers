@@ -42,12 +42,12 @@ struct ScheduledMessagesView: View {
                 ForEach(tasks) { task in
                     Button { editing = .existing(task) } label: { row(task) }
                         .swipeActions(edge: .trailing) {
-                            Button("Delete", role: .destructive) { pendingDelete = task }
+                            CheersConfirmationButton(title: String(localized: "Delete"), role: .destructive) { pendingDelete = task }
                         }
                         .swipeActions(edge: .leading) {
-                            Button("Run now") { Task { await act { try await $0.runScheduledMessageNow(id: task.id) } } }
+                            CheersConfirmationButton(title: String(localized: "Run now")) { Task { await act { try await $0.runScheduledMessageNow(id: task.id) } } }
                                 .tint(Theme.accent)
-                            Button(task.enabled ? "Pause" : "Resume") {
+                            CheersConfirmationButton(title: task.enabled ? String(localized: "Pause") : String(localized: "Resume")) {
                                 Task {
                                     await act {
                                         _ = try await $0.updateScheduledMessage(
@@ -63,9 +63,9 @@ struct ScheduledMessagesView: View {
             .navigationTitle("Scheduled tasks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { CheersContentActionButton(action: .done) { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Add task", systemImage: "plus") { editing = .new }
+                    CheersContentActionButton(action: .add) { editing = .new }
                 }
             }
             .task { await load() }
@@ -87,7 +87,7 @@ struct ScheduledMessagesView: View {
                 titleVisibility: .visible,
                 presenting: pendingDelete
             ) { task in
-                Button("Delete", role: .destructive) {
+                CheersConfirmationButton(title: String(localized: "Delete"), role: .destructive) {
                     Task { await act { try await $0.deleteScheduledMessage(id: task.id) } }
                 }
             }
@@ -218,9 +218,9 @@ private struct ScheduledMessageEditor: View {
             .navigationTitle(task == nil ? "New task" : "Edit task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { CheersContentActionButton(action: .cancel) { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }.disabled(!canSave)
+                    CheersContentActionButton(action: .save) { Task { await save() } }.disabled(!canSave)
                 }
             }
             .task { await prepare() }
