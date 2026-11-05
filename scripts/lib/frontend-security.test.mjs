@@ -55,6 +55,37 @@ test("web deployment CSPs reject inline scripts", async () => {
   }
 });
 
+test("nginx body limits follow the gateway's settings", async () => {
+  const [gateway, image, values, nginx, chart] = await Promise.all(
+    [
+      "server/src/config.rs",
+      "frontend/Dockerfile",
+      "deploy/helm/cheers/values.yaml",
+      "frontend/nginx.conf",
+      "deploy/helm/cheers/templates/frontend.yaml",
+    ].map(read),
+  );
+  const limits = [
+    ["location /api", "MAX_REQUEST_BODY_MIB", "maxRequestBodyMib"],
+    ["location = /mcp", "MCP_MAX_BODY_MIB", "mcpMaxBodyMib"],
+  ];
+  const blockOf = (config, location) => config.match(new RegExp(`${location} \\{[\\s\\S]*?proxy_pass`))?.[0] ?? "";
+  for (const [location, env, value] of limits) {
+    const fallback = gateway.match(new RegExp(`const DEFAULT_${env}: usize = (\\d+);`))?.[1];
+    assert.ok(fallback, `server/src/config.rs has no default for ${env}`);
+    assert.match(image, new RegExp(`\\b${env}=${fallback}\\b`), `frontend/Dockerfile: ${env} must default to ${fallback}`);
+    assert.match(values, new RegExp(`\\b${value}: ${fallback}\\b`), `values.yaml: ${value} must default to ${fallback}`);
+    assert.ok(
+      blockOf(nginx, location).includes(`client_max_body_size \${${env}}m;`),
+      `frontend/nginx.conf: ${location} must use ${env}`,
+    );
+    assert.ok(
+      blockOf(chart, location).includes(`client_max_body_size {{ .Values.gateway.${value} }}m;`),
+      `the chart's ${location} must use ${value}`,
+    );
+  }
+});
+
 test("desktop CSP rejects inline scripts", async () => {
   const config = JSON.parse(await read("apps/macos/src-tauri/tauri.conf.json"));
   const policy = config.app.security.csp;
