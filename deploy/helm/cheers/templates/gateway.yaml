@@ -151,6 +151,10 @@ spec:
             {{- end }}
             - name: CORS_ALLOWED_ORIGINS
               value: {{ .Values.gateway.corsAllowedOrigins | quote }}
+            - name: MAX_REQUEST_BODY_MIB
+              value: {{ .Values.gateway.maxRequestBodyMib | quote }}
+            - name: MCP_MAX_BODY_MIB
+              value: {{ .Values.gateway.mcpMaxBodyMib | quote }}
             {{- if .Values.gateway.mcpPublicUrl }}
             - name: MCP_PUBLIC_URL
               value: {{ .Values.gateway.mcpPublicUrl | quote }}

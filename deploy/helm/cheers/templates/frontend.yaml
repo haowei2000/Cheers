@@ -69,10 +69,10 @@ server {
     include /etc/nginx/security-headers.conf;
   }
 
-  # Body limits match the gateway's (server/src/router.rs). nginx's 1 MiB default
-  # would refuse larger requests with a 413 before the gateway ever saw them.
+  # Body limits share the gateway's values. nginx's 1 MiB default would refuse
+  # larger requests with a 413 before the gateway ever saw them.
   location /api {
-    client_max_body_size 16m;
+    client_max_body_size {{ .Values.gateway.maxRequestBodyMib }}m;
     proxy_pass http://{{ $gw }};
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -81,7 +81,7 @@ server {
   }
 
   location = /mcp {
-    client_max_body_size 12m;
+    client_max_body_size {{ .Values.gateway.mcpMaxBodyMib }}m;
     proxy_pass http://{{ $gw }};
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -192,6 +192,11 @@ spec:
             capabilities:
               drop: ["ALL"]
               add: ["CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"]
+          env:
+            # The ConfigMap below replaces the image's rendered config, and
+            # rendering over that read-only mount would stop nginx starting.
+            - name: NGINX_ENVSUBST_TEMPLATE_DIR
+              value: /nonexistent
           ports:
             - name: http
               containerPort: 80

@@ -55,20 +55,34 @@ test("web deployment CSPs reject inline scripts", async () => {
   }
 });
 
-test("nginx body limits match the gateway's", async () => {
-  const router = await read("server/src/router.rs");
-  const mebibytes = (pattern) => Number(router.match(pattern)?.[1]);
-  const limits = {
-    "location /api": mebibytes(/DefaultBodyLimit::max\((\d+) \* 1024 \* 1024\)\)\s*\n/),
-    "location = /mcp": mebibytes(/mcp_http\)\.layer\(DefaultBodyLimit::max\((\d+) \* 1024 \* 1024\)/),
-  };
-  for (const path of ["frontend/nginx.conf", "deploy/helm/cheers/templates/frontend.yaml"]) {
-    const config = await read(path);
-    for (const [location, limit] of Object.entries(limits)) {
-      const block = config.match(new RegExp(`${location} \\{[^}]*\\}`))?.[0];
-      assert.ok(block, `${path} has no "${location}" block`);
-      assert.match(block, new RegExp(`client_max_body_size ${limit}m;`), `${path}: ${location} must allow ${limit} MiB`);
-    }
+test("nginx body limits follow the gateway's settings", async () => {
+  const [gateway, image, values, nginx, chart] = await Promise.all(
+    [
+      "server/src/config.rs",
+      "frontend/Dockerfile",
+      "deploy/helm/cheers/values.yaml",
+      "frontend/nginx.conf",
+      "deploy/helm/cheers/templates/frontend.yaml",
+    ].map(read),
+  );
+  const limits = [
+    ["location /api", "MAX_REQUEST_BODY_MIB", "maxRequestBodyMib"],
+    ["location = /mcp", "MCP_MAX_BODY_MIB", "mcpMaxBodyMib"],
+  ];
+  const blockOf = (config, location) => config.match(new RegExp(`${location} \\{[\\s\\S]*?proxy_pass`))?.[0] ?? "";
+  for (const [location, env, value] of limits) {
+    const fallback = gateway.match(new RegExp(`const DEFAULT_${env}: usize = (\\d+);`))?.[1];
+    assert.ok(fallback, `server/src/config.rs has no default for ${env}`);
+    assert.match(image, new RegExp(`\\b${env}=${fallback}\\b`), `frontend/Dockerfile: ${env} must default to ${fallback}`);
+    assert.match(values, new RegExp(`\\b${value}: ${fallback}\\b`), `values.yaml: ${value} must default to ${fallback}`);
+    assert.ok(
+      blockOf(nginx, location).includes(`client_max_body_size \${${env}}m;`),
+      `frontend/nginx.conf: ${location} must use ${env}`,
+    );
+    assert.ok(
+      blockOf(chart, location).includes(`client_max_body_size {{ .Values.gateway.${value} }}m;`),
+      `the chart's ${location} must use ${value}`,
+    );
   }
 });
 
