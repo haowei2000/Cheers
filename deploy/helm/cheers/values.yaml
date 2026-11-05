@@ -46,6 +46,9 @@ gateway:
   maxRequestBodyMib: 16
   # Same for /mcp; at least 11, which artifact_deliver's 8 MiB files need.
   mcpMaxBodyMib: 12
+  # Largest file an agent can upload. Each of up to 4 concurrent uploads is held
+  # in gateway memory, so size the gateway's memory limit to match.
+  agentUploadMaxMib: 32
   # Rate-limit client identity: in this chart the gateway is ClusterIP-only and
   # every client request passes the bundled frontend nginx (which sets
   # X-Real-IP) or the ingress, so proxy headers are trustworthy. Set false if

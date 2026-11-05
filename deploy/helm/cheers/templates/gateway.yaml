@@ -155,6 +155,8 @@ spec:
               value: {{ .Values.gateway.maxRequestBodyMib | quote }}
             - name: MCP_MAX_BODY_MIB
               value: {{ .Values.gateway.mcpMaxBodyMib | quote }}
+            - name: AGENT_UPLOAD_MAX_MIB
+              value: {{ .Values.gateway.agentUploadMaxMib | quote }}
             {{- if .Values.gateway.mcpPublicUrl }}
             - name: MCP_PUBLIC_URL
               value: {{ .Values.gateway.mcpPublicUrl | quote }}

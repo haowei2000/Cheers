@@ -74,7 +74,8 @@ any power the bot's channel role does not already have.
 | `leave_channel` | Remove self from a channel; not allowed in DMs |
 | `artifact_create` | Create a document, HTML/TSX page or canvas; reuse `idempotency_key` for retries |
 | `artifact_update` | Edit text by artifact ID with the returned artifact `if_version` |
-| `artifact_deliver` | Deliver a binary file (base64, ≤ 8 MB); pass the source file's `sha256` so a damaged copy is refused; reuse `idempotency_key` for retries |
+| `artifact_upload_prepare` / `artifact_upload_finish` | Deliver a binary file without copying it through the model: prepare, send the raw file from the Agent's shell, then publish (≤ 32 MiB by default) |
+| `artifact_deliver` | For Agents with no shell: deliver a binary file (base64, ≤ 8 MB); pass the source file's `sha256` so a damaged copy is refused; reuse `idempotency_key` for retries |
 | `desk_write` / `desk_edit` / `desk_append` | Legacy path-based operations; use artifact tools for new generated content |
 | `desk_rm` / `desk_mv` | Legacy removal / move of source files or subtrees |
 

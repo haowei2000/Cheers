@@ -154,6 +154,10 @@ async fn main() -> anyhow::Result<()> {
     }
     // Let the resource layer (channel.files.read / inbox_open) read chat-file bytes.
     server::resource::files::init_s3(s3.clone(), config.s3_bucket.clone());
+    server::resource::uploads::init(
+        config.agent_upload_url_base(),
+        config.agent_upload_max_mib as i64 * 1024 * 1024,
+    );
 
     // Single-instance deployment (R1-A): in-process fan-out + bot registry.
     // Redis is NOT a startup dependency on the realtime path. The Redis impls
@@ -353,6 +357,18 @@ async fn main() -> anyhow::Result<()> {
     // Scheduled bot self-status refresh (audit item 6). The connector was
     // historically meant to run this loop but ships no implementation, so the
     // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).
+    let uploads_db = state.db.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            match server::resource::uploads::sweep_expired(&uploads_db).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(removed = n, "agent upload retention sweep"),
+                Err(e) => tracing::warn!(err = %e, "agent upload retention sweep failed"),
+            }
+        }
+    });
     tokio::spawn(server::domain::bot_status_scheduler::run(state.clone()));
 
     // Verified inbound webhooks are stored by the ingress handler and turned

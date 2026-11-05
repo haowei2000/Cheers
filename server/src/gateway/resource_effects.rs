@@ -200,6 +200,7 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
             | "channel.artifacts.update"
             | "channel.artifacts.patch"
             | "channel.artifacts.deliver"
+            | "channel.artifacts.upload_finish"
             | "channel.files.create",
         ) => {
             if let Some(cid) = resp

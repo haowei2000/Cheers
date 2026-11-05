@@ -1008,6 +1008,12 @@ fn build_public_routes(state: &AppState) -> Router<AppState> {
                 state.config.mcp_max_body_mib * 1024 * 1024,
             )),
         )
+        // Authenticated by its single-file ticket. The handler reads the body itself, up
+        // to the size the ticket allows, so the body limit above does not apply.
+        .route(
+            "/api/v1/agent-uploads/:upload_id",
+            put(api::agent_uploads::receive_upload),
+        )
         .route(
             "/oauth/token",
             post(api::mcp::issue_mcp_access_token).layer(DefaultBodyLimit::max(16 * 1024)),

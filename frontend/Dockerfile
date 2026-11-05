@@ -32,7 +32,7 @@ COPY --from=builder /repo/frontend/dist /usr/share/nginx/html
 # Rendered to conf.d/default.conf at startup. The filter keeps nginx's own
 # $variables intact. The Helm chart mounts its own config instead.
 COPY frontend/nginx.conf /etc/nginx/templates/default.conf.template
-ENV NGINX_ENVSUBST_FILTER=_BODY_MIB MAX_REQUEST_BODY_MIB=16 MCP_MAX_BODY_MIB=12
+ENV NGINX_ENVSUBST_FILTER=_MIB MAX_REQUEST_BODY_MIB=16 MCP_MAX_BODY_MIB=12 AGENT_UPLOAD_MAX_MIB=32
 COPY frontend/security-headers.conf /etc/nginx/security-headers.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

@@ -208,9 +208,21 @@ impl TestGateway {
                 .env("JWT_PUBLIC_KEY", std::fs::read_to_string(&public).unwrap())
                 .env("ADMIN_USERNAME", login)
                 .env("ADMIN_PASSWORD", password)
-                .env("S3_ENDPOINT", "http://127.0.0.1:1")
-                .env("S3_ACCESS_KEY", "integration-test")
-                .env("S3_SECRET_KEY", "integration-test")
+                .env(
+                    "S3_ENDPOINT",
+                    std::env::var("INTEGRATION_S3_ENDPOINT")
+                        .unwrap_or_else(|_| "http://127.0.0.1:1".into()),
+                )
+                .env(
+                    "S3_ACCESS_KEY",
+                    std::env::var("INTEGRATION_S3_ACCESS_KEY")
+                        .unwrap_or_else(|_| "integration-test".into()),
+                )
+                .env(
+                    "S3_SECRET_KEY",
+                    std::env::var("INTEGRATION_S3_SECRET_KEY")
+                        .unwrap_or_else(|_| "integration-test".into()),
+                )
                 .stdout(Stdio::from(log.try_clone().unwrap()))
                 .stderr(Stdio::from(log));
             if webauthn {

@@ -69,6 +69,16 @@ pub async fn put_object(
     Ok(())
 }
 
+pub async fn delete_object(client: &Client, bucket: &str, key: &str) -> anyhow::Result<()> {
+    client
+        .delete_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await?;
+    Ok(())
+}
+
 /// Fetch an object's bytes (gateway-proxied download/preview).
 pub async fn get_object(client: &Client, bucket: &str, key: &str) -> anyhow::Result<Vec<u8>> {
     let out = client.get_object().bucket(bucket).key(key).send().await?;
