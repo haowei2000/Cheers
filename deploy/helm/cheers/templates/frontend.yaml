@@ -69,7 +69,10 @@ server {
     include /etc/nginx/security-headers.conf;
   }
 
+  # Body limits match the gateway's (server/src/router.rs). nginx's 1 MiB default
+  # would refuse larger requests with a 413 before the gateway ever saw them.
   location /api {
+    client_max_body_size 16m;
     proxy_pass http://{{ $gw }};
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -78,6 +81,7 @@ server {
   }
 
   location = /mcp {
+    client_max_body_size 12m;
     proxy_pass http://{{ $gw }};
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;

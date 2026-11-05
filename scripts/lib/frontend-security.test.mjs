@@ -55,6 +55,23 @@ test("web deployment CSPs reject inline scripts", async () => {
   }
 });
 
+test("nginx body limits match the gateway's", async () => {
+  const router = await read("server/src/router.rs");
+  const mebibytes = (pattern) => Number(router.match(pattern)?.[1]);
+  const limits = {
+    "location /api": mebibytes(/DefaultBodyLimit::max\((\d+) \* 1024 \* 1024\)\)\s*\n/),
+    "location = /mcp": mebibytes(/mcp_http\)\.layer\(DefaultBodyLimit::max\((\d+) \* 1024 \* 1024\)/),
+  };
+  for (const path of ["frontend/nginx.conf", "deploy/helm/cheers/templates/frontend.yaml"]) {
+    const config = await read(path);
+    for (const [location, limit] of Object.entries(limits)) {
+      const block = config.match(new RegExp(`${location} \\{[^}]*\\}`))?.[0];
+      assert.ok(block, `${path} has no "${location}" block`);
+      assert.match(block, new RegExp(`client_max_body_size ${limit}m;`), `${path}: ${location} must allow ${limit} MiB`);
+    }
+  }
+});
+
 test("desktop CSP rejects inline scripts", async () => {
   const config = JSON.parse(await read("apps/macos/src-tauri/tauri.conf.json"));
   const policy = config.app.security.csp;
