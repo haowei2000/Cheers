@@ -495,7 +495,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Deliver binary or exported content as a channel artifact. Supply base64 bytes and filename; reuse idempotency_key for retries. Reference the returned artifact.uri. The response includes the actual expiry policy.",
+    "description": "Deliver binary or exported content as a channel artifact. Supply base64 bytes and filename; reuse idempotency_key for retries. Copying long base64 can silently damage it, so compute the source file's SHA-256 with a command and pass the hex digest as sha256: a damaged copy is then refused instead of stored. Reference the returned artifact.uri. The response includes the actual expiry policy.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -512,6 +512,9 @@
           "type": "string"
         },
         "idempotency_key": {
+          "type": "string"
+        },
+        "sha256": {
           "type": "string"
         }
       },
