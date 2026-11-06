@@ -186,6 +186,12 @@ pub struct Config {
     /// a turn; `direct` tokens keep `mcp_access_token_ttl_secs` because the
     /// Agent cannot renew one mid-turn.
     pub mcp_gateway_access_token_ttl_secs: u64,
+    /// Request-body cap in MiB (`MAX_REQUEST_BODY_MIB`, default 16). The proxy in
+    /// front of the gateway must allow the same size; the Helm chart and the
+    /// frontend image read the same setting.
+    pub max_request_body_mib: usize,
+    /// `/mcp` request-body cap in MiB (`MCP_MAX_BODY_MIB`, default 12, at least 11).
+    pub mcp_max_body_mib: usize,
 
     /// Public WS base the connector dials to reach this gateway's agent-bridge,
     /// e.g. `ws://localhost:30080` (via the frontend proxy for local kind) or
@@ -332,6 +338,23 @@ fn reject_removed_mcp_channel_scope(raw: Option<&str>) {
         other => panic!(
             "MCP_CHANNEL_SCOPE={other:?} was removed: MCP channel scoping is always enforced; unset MCP_CHANNEL_SCOPE"
         ),
+    }
+}
+
+const DEFAULT_MAX_REQUEST_BODY_MIB: usize = 16;
+const DEFAULT_MCP_MAX_BODY_MIB: usize = 12;
+/// `artifact_deliver` sends up to 8 MiB as base64 (about 10.7 MiB) plus its JSON envelope.
+const MIN_MCP_MAX_BODY_MIB: usize = 11;
+
+/// Parses a body limit. Startup fails on a bad value rather than silently running
+/// with a limit that no longer matches the proxy in front of the gateway.
+fn body_limit_mib(key: &str, raw: Option<&str>, default: usize, minimum: usize) -> usize {
+    let Some(raw) = raw else {
+        return default;
+    };
+    match raw.parse() {
+        Ok(mib) if mib >= minimum => mib,
+        _ => panic!("{key}: expected a whole number of MiB, at least {minimum}, got {raw:?}"),
     }
 }
 
@@ -557,6 +580,18 @@ impl Config {
                 .unwrap_or(crate::api::mcp::DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS),
             mcp_gateway_access_token_ttl_secs: gateway_access_token_ttl(
                 optional("MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS").as_deref(),
+            ),
+            max_request_body_mib: body_limit_mib(
+                "MAX_REQUEST_BODY_MIB",
+                optional("MAX_REQUEST_BODY_MIB").as_deref(),
+                DEFAULT_MAX_REQUEST_BODY_MIB,
+                1,
+            ),
+            mcp_max_body_mib: body_limit_mib(
+                "MCP_MAX_BODY_MIB",
+                optional("MCP_MAX_BODY_MIB").as_deref(),
+                DEFAULT_MCP_MAX_BODY_MIB,
+                MIN_MCP_MAX_BODY_MIB,
             ),
             connector_public_base,
             connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
@@ -922,6 +957,28 @@ fn require_any(keys: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn body_limit_uses_the_default_when_unset() {
+        assert_eq!(body_limit_mib("LIMIT", None, 16, 1), 16);
+    }
+
+    #[test]
+    fn body_limit_accepts_the_minimum() {
+        assert_eq!(body_limit_mib("LIMIT", Some("11"), 12, 11), 11);
+    }
+
+    #[test]
+    #[should_panic(expected = "LIMIT: expected a whole number of MiB, at least 11")]
+    fn body_limit_refuses_a_value_below_the_minimum() {
+        body_limit_mib("LIMIT", Some("10"), 12, 11);
+    }
+
+    #[test]
+    #[should_panic(expected = "LIMIT: expected a whole number of MiB")]
+    fn body_limit_refuses_a_value_that_is_not_a_number() {
+        body_limit_mib("LIMIT", Some("16m"), 16, 1);
+    }
 
     #[test]
     fn mcp_channel_scope_accepts_only_enforce_or_unset() {
