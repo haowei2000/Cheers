@@ -414,9 +414,9 @@ pub fn catalog() -> &'static [ResourceSpec] {
         db(
             "channel.artifacts.deliver",
             write_tool("artifact_deliver", "Deliver an artifact file",
-                "Deliver binary or exported content as a channel artifact. Supply base64 bytes and filename; reuse idempotency_key for retries. Reference the returned artifact.uri. The response includes the actual expiry policy.",
+                "Deliver binary or exported content as a channel artifact. Supply base64 bytes and filename; reuse idempotency_key for retries. Copying long base64 can silently damage it, so compute the source file's SHA-256 with a command and pass the hex digest as sha256: a damaged copy is then refused instead of stored. Reference the returned artifact.uri. The response includes the actual expiry policy.",
                 SCOPE_FILES_WRITE,
-                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("data_b64", ParamKind::String), Param::opt("content_type", ParamKind::String), Param::opt("idempotency_key", ParamKind::String)]),
+                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("data_b64", ParamKind::String), Param::opt("sha256", ParamKind::String), Param::opt("content_type", ParamKind::String), Param::opt("idempotency_key", ParamKind::String)]),
         ),
         db(
             "channel.artifacts.get",
@@ -602,6 +602,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("channel_id", ParamKind::String),
                     Param::req("filename", ParamKind::String),
                     Param::req("data_b64", ParamKind::String),
+                    Param::opt("sha256", ParamKind::String),
                     Param::opt("content_type", ParamKind::String),
                     Param::opt("idempotency_key", ParamKind::String),
                 ],

@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use aws_sdk_s3::Client;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -16,8 +17,8 @@ use super::{
 /// `MAX_DELIVER_BYTES`). `download_url` is a human-UI endpoint the agent cannot authenticate.
 const TEXT_CAP: usize = 256 * 1024;
 
-/// Largest file an agent may deliver inline (base64) via `inbox_deliver`. Bigger files should go
-/// through the chunked upload path, not a single resource frame.
+/// Largest file an agent may deliver inline (base64) via `artifact_deliver` / `inbox_deliver`.
+/// Agents have no other upload path, so bigger files are refused.
 const MAX_DELIVER_BYTES: usize = 8 * 1024 * 1024;
 
 /// Process-global S3 handle (client + default bucket), injected at startup by main.rs.
@@ -297,6 +298,49 @@ fn safe_attachment_name(raw: &str) -> Result<String, (String, String)> {
     Ok(name.to_string())
 }
 
+/// Decode a delivery's `data_b64`. The model copies this text into the tool call by hand, so a
+/// damaged copy can still be valid base64: only the caller's `sha256` of the source file proves
+/// the decoded bytes are the file. Line breaks are ignored because wrapped base64 is common.
+fn decode_delivery(params: &Value) -> Result<Vec<u8>, (String, String)> {
+    let data_b64 = params
+        .get("data_b64")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "data_b64 required"))?;
+    let compact: String = data_b64.split_ascii_whitespace().collect();
+    let bytes = STANDARD.decode(compact).map_err(|_| {
+        super::resource_error(
+            "INVALID_PARAMS",
+            "data_b64 is not valid base64; it may have been damaged while copying the file",
+        )
+    })?;
+    if bytes.is_empty() {
+        return Err(super::resource_error("INVALID_PARAMS", "empty file"));
+    }
+    if bytes.len() > MAX_DELIVER_BYTES {
+        return Err(super::resource_error(
+            "E_TOO_LARGE",
+            "file exceeds the 8MB inline delivery limit",
+        ));
+    }
+    let expected = match params.get("sha256") {
+        None | Some(Value::Null) => return Ok(bytes),
+        Some(value) => value.as_str().ok_or_else(|| {
+            super::resource_error("INVALID_PARAMS", "sha256 must be a hex string")
+        })?,
+    };
+    let actual = hex::encode(Sha256::digest(&bytes));
+    if !actual.eq_ignore_ascii_case(expected.trim()) {
+        return Err(super::resource_error(
+            "E_CONTENT_MISMATCH",
+            format!(
+                "data_b64 decodes to {} bytes with sha256 {actual}, which does not match the supplied sha256; nothing was stored",
+                bytes.len()
+            ),
+        ));
+    }
+    Ok(bytes)
+}
+
 /// channel.files.create (Inbox `inbox_deliver`): store an agent-delivered file as a channel
 /// attachment. Mirrors `api::files::upload_file`: decode the inline base64, `put_object` to S3
 /// (via the `init_s3` handle), and INSERT a `file_records` row as `status='uploaded'` with a
@@ -323,22 +367,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "filename required"))?;
     let filename = safe_attachment_name(filename)?;
 
-    let data_b64 = params
-        .get("data_b64")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "data_b64 required"))?;
-    let bytes = STANDARD
-        .decode(data_b64.trim())
-        .map_err(|_| super::resource_error("INVALID_PARAMS", "data_b64 is not valid base64"))?;
-    if bytes.is_empty() {
-        return Err(super::resource_error("INVALID_PARAMS", "empty file"));
-    }
-    if bytes.len() > MAX_DELIVER_BYTES {
-        return Err(super::resource_error(
-            "E_TOO_LARGE",
-            "file exceeds the 8MB inline delivery limit; use the chunked upload path",
-        ));
-    }
+    let bytes = decode_delivery(params)?;
     let size_bytes = i32::try_from(bytes.len())
         .map_err(|_| super::resource_error("E_TOO_LARGE", "file too large"))?;
 
@@ -434,7 +463,39 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
 
 #[cfg(test)]
 mod tests {
-    use super::is_text;
+    use super::{decode_delivery, is_text};
+    use serde_json::json;
+
+    // sha256("hello"), the bytes behind "aGVsbG8=".
+    const HELLO_SHA256: &str = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+    #[test]
+    fn delivery_with_a_matching_sha256_decodes() {
+        let params = json!({"data_b64": "aGVsbG8=", "sha256": HELLO_SHA256.to_uppercase()});
+        assert_eq!(decode_delivery(&params).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn delivery_refuses_valid_base64_that_is_not_the_source_file() {
+        // Characters lost in copying: still valid base64, but different bytes.
+        let params = json!({"data_b64": "aGVsbA==", "sha256": HELLO_SHA256});
+        assert_eq!(
+            decode_delivery(&params).unwrap_err().0,
+            "E_CONTENT_MISMATCH"
+        );
+    }
+
+    #[test]
+    fn delivery_ignores_line_breaks_in_base64() {
+        let params = json!({"data_b64": "aGVs\nbG8=\r\n", "sha256": HELLO_SHA256});
+        assert_eq!(decode_delivery(&params).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn delivery_sha256_must_be_a_string() {
+        let params = json!({"data_b64": "aGVsbG8=", "sha256": 42});
+        assert_eq!(decode_delivery(&params).unwrap_err().0, "INVALID_PARAMS");
+    }
 
     #[test]
     fn is_text_by_content_type() {

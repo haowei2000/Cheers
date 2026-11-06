@@ -2076,6 +2076,10 @@ fn tool_error_guidance(code: &str) -> Option<ToolErrorGuidance> {
             true,
         ),
         "E_TOO_LARGE" => ("Send less data per call, for example by splitting it.", true),
+        "E_CONTENT_MISMATCH" => (
+            "The data no longer matches the source file. Encode the file again and resend it; if this keeps failing, tell the user the file could not be delivered intact.",
+            true,
+        ),
         "CONFLICT" | "E_CONFLICT" | "INVALID_STATE" => (
             "The resource changed since you read it. Read it again, then retry.",
             true,
@@ -4350,6 +4354,13 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Do not retry"));
+
+        let mismatch = tool_error_result("E_CONTENT_MISMATCH", "sha256 does not match");
+        assert_eq!(mismatch["structuredContent"]["retryable"], true);
+        assert!(mismatch["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Next: The data no longer matches the source file."));
 
         let status = tool_error_result("STATUS_OWNER_DM_ONLY", "set_status only works in the DM");
         assert_eq!(status["structuredContent"]["retryable"], false);

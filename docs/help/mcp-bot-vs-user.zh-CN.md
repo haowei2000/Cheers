@@ -70,7 +70,7 @@ Rust 网关（唯一后端）
 | `leave_channel` | 退出频道；DM 不允许 |
 | `artifact_create` | 创建文档、HTML/TSX 页面或画布；重试复用 `idempotency_key` |
 | `artifact_update` | 按产物 ID 编辑文本，使用读取结果中的产物版本作为 `if_version` |
-| `artifact_deliver` | 投递二进制文件（base64，≤ 8 MB）；重试复用 `idempotency_key` |
+| `artifact_deliver` | 投递二进制文件（base64，≤ 8 MB）；传入源文件的 `sha256`，损坏的副本会被拒绝；重试复用 `idempotency_key` |
 | `desk_write` / `desk_edit` / `desk_append` | 旧版路径操作；新生成内容使用产物工具 |
 | `desk_rm` / `desk_mv` | 旧版源文件或子树删除、移动操作 |
 
