@@ -116,6 +116,12 @@ struct BotDetailView: View {
                     }
 
                     Section {
+                        NavigationLink("Approvers and event access") {
+                            BotAccessView(botId: bot.botId)
+                        }
+                    }
+
+                    Section {
                         if isDisabled {
                             Button {
                                 Task { await setDisabled(false) }
@@ -298,7 +304,6 @@ struct BotDetailView: View {
             onChanged()
             dismiss()
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
@@ -349,7 +354,6 @@ struct BotDetailView: View {
             onChanged()
             dismiss()
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
@@ -364,7 +368,6 @@ struct BotDetailView: View {
             onChanged()
             dismiss()
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription

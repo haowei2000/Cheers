@@ -414,9 +414,23 @@ pub fn catalog() -> &'static [ResourceSpec] {
         db(
             "channel.artifacts.deliver",
             write_tool("artifact_deliver", "Deliver an artifact file",
-                "Deliver binary or exported content as a channel artifact. Supply base64 bytes and filename; reuse idempotency_key for retries. Reference the returned artifact.uri. The response includes the actual expiry policy.",
+                "Deliver binary or exported content as a channel artifact when you have no shell; otherwise use artifact_upload_prepare, which keeps file bytes out of the conversation. Supply base64 bytes and filename; reuse idempotency_key for retries. Copying long base64 can silently damage it, so compute the source file's SHA-256 with a command and pass the hex digest as sha256: a damaged copy is then refused instead of stored. Reference the returned artifact.uri. The response includes the actual expiry policy.",
                 SCOPE_FILES_WRITE,
-                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("data_b64", ParamKind::String), Param::opt("content_type", ParamKind::String), Param::opt("idempotency_key", ParamKind::String)]),
+                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("data_b64", ParamKind::String), Param::opt("sha256", ParamKind::String), Param::opt("content_type", ParamKind::String), Param::opt("idempotency_key", ParamKind::String)]),
+        ),
+        db(
+            "channel.artifacts.upload_prepare",
+            write_tool("artifact_upload_prepare", "Prepare a file upload",
+                "Start delivering a file as a channel artifact. Use this for any file you did not just type yourself. Compute size_bytes and the hex sha256 with a command, then run the returned command in your shell to send the raw file, and call artifact_upload_finish. The upload expires after 15 minutes and needs network access to Cheers from your shell.",
+                SCOPE_FILES_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("size_bytes", ParamKind::Integer), Param::req("sha256", ParamKind::String), Param::opt("content_type", ParamKind::String)]),
+        ),
+        db(
+            "channel.artifacts.upload_finish",
+            write_tool("artifact_upload_finish", "Publish an uploaded file",
+                "Publish a file sent with artifact_upload_prepare's command as a channel artifact. Safe to repeat: it returns the same artifact. Reference the returned artifact.uri.",
+                SCOPE_FILES_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("upload_id", ParamKind::String)]),
         ),
         db(
             "channel.artifacts.get",
@@ -602,6 +616,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("channel_id", ParamKind::String),
                     Param::req("filename", ParamKind::String),
                     Param::req("data_b64", ParamKind::String),
+                    Param::opt("sha256", ParamKind::String),
                     Param::opt("content_type", ParamKind::String),
                     Param::opt("idempotency_key", ParamKind::String),
                 ],

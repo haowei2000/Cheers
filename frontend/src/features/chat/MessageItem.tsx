@@ -461,6 +461,9 @@ function RegularMessageItem({
   }, [focusRequestId]);
 
   const active = message._streaming || message.is_partial;
+  // Structured events own progress and status. Do not also render a second
+  // progress cursor or Stop control in the message body.
+  const showRunOverview = isBot && detailsMeta.hasTrace;
   // Agent steps only exist when the list DTO or live frame proves that content
   // exists. This prevents empty completed bot turns from showing disclosure
   // chrome such as "Agent steps · 0".
@@ -768,7 +771,6 @@ function RegularMessageItem({
       ? `${detailsMeta.contextCount} context${detailsMeta.contextCount === 1 ? "" : "s"}`
       : null,
   ].filter(Boolean).join(" · ");
-  const showRunOverview = isBot && detailsMeta.hasTrace;
   const hasOperationalDetails = showRunOverview || keepTraceInline;
   const folio = detailsMeta.hasDetails && !hasOperationalDetails ? (
     <UiButton variant="plain"
@@ -787,13 +789,16 @@ function RegularMessageItem({
   const detailsSection = detailsMeta.hasDetails && hasOperationalDetails ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
       {showRunOverview && (
-        <AgentRunOverview
-          message={message}
-          channelId={channelId}
-          approvalCount={actionableApprovalCount}
-          expanded={inspectorOpen}
-          onOpen={openInspector}
-        />
+        <div className="flex min-w-0 max-w-full items-center gap-1">
+          <AgentRunOverview
+            message={message}
+            channelId={channelId}
+            approvalCount={actionableApprovalCount}
+            expanded={inspectorOpen}
+            onOpen={openInspector}
+          />
+          {active && channelId && <StopButton channelId={channelId} msgId={message.msg_id} />}
+        </div>
       )}
       {tracePanel && <div className="mt-1 w-full min-w-0 text-left md:min-w-[18rem]">{tracePanel}</div>}
     </div>
@@ -966,7 +971,7 @@ function RegularMessageItem({
           )}
         >
           {quote}
-          <MessageBody message={message} channelId={channelId} isBot={isBot} />
+          <MessageBody message={message} channelId={channelId} isBot={isBot} progressInOverview={showRunOverview} />
           {presentationLevel !== "minimal" && folio}
           {message.msg_type === "task_claim_confirmation" && (
             <TaskClaimConfirmationCard
@@ -1042,7 +1047,7 @@ function RegularMessageItem({
         )}
       >
         {quote}
-        <MessageBody message={message} channelId={channelId} isBot={isBot} />
+        <MessageBody message={message} channelId={channelId} isBot={isBot} progressInOverview={showRunOverview} />
         {presentationLevel !== "minimal" && folio}
         {message.msg_type === "task_claim_confirmation" && (
           <TaskClaimConfirmationCard
@@ -1118,10 +1123,12 @@ function MessageBody({
   message,
   channelId,
   isBot,
+  progressInOverview = false,
 }: {
   message: Message;
   channelId?: string;
   isBot?: boolean;
+  progressInOverview?: boolean;
 }) {
   const resolveRefClick = useContext(ResolveRefContext);
   // Bind a clicked reference to THIS message's bot + its own attachments, so the
@@ -1140,14 +1147,10 @@ function MessageBody({
   const active = message._streaming || message.is_partial;
 
   if (active && !content && files.length === 0) {
+    if (progressInOverview) return null;
     return (
       <div className="flex items-center gap-2 py-1">
         <TypewriterCursor label="Agent thinking" />
-        {message._trace && (
-          <span className="text-caption-italic truncate">
-            {message._trace}
-          </span>
-        )}
         {isBot && channelId && (
           <StopButton channelId={channelId} msgId={message.msg_id} />
         )}
@@ -1185,13 +1188,10 @@ function MessageBody({
           </p>
         ))}
       <ResourceRefCards cards={cards} />
-      {message._streaming && (
+      {message._streaming && !progressInOverview && (
         <TypewriterCursor className="ml-1" />
       )}
-      {active && message._trace && (
-        <p className="text-caption-italic mt-1">{message._trace}</p>
-      )}
-      {active && isBot && channelId && (
+      {active && isBot && channelId && !progressInOverview && (
         <div className="mt-1">
           <StopButton channelId={channelId} msgId={message.msg_id} />
         </div>

@@ -165,6 +165,20 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertEqual(paths, ["notes.md"])
     }
 
+    func testPasswordChangeReissuesANativeSession() throws {
+        // POST /auth/change-password answers with the login contract so the
+        // caller can adopt the reissued refresh token.
+        let response = try JSONDecoder().decode(LoginResponse.self, from: Data("""
+        {"status":"authenticated","requires_2fa":false,"access_token":"a2",
+         "refresh_token":"r2","expires_in":600,"token_type":"bearer",
+         "user_id":"u1","username":"ada","role":"member"}
+        """.utf8))
+        XCTAssertFalse(response.needsFactor)
+        XCTAssertEqual(response.accessToken, "a2")
+        XCTAssertEqual(response.refreshToken, "r2")
+        XCTAssertEqual(response.userId, "u1")
+    }
+
     func testProductionServerIdentity() {
         let identity = ServerIdentity.resolve("https://www.tocheers.com/api/v1")
 
@@ -615,6 +629,93 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertNil(ChatSocket.taskClaimUpdate(from: wrongChannel))
     }
 
+    func testScheduledMessageDecodesAndResumesAnIntervalFromNow() throws {
+        let task = try JSONDecoder().decode(ScheduledMessageDto.self, from: Data("""
+        {"id":"t1","title":"Standup","channelId":"c1","channelName":"team","content":"Hi",
+         "mentionIds":["b1"],"schedule":{"kind":"interval","everyMinutes":60},
+         "nextRunAt":null,"enabled":false,"sourceExtensionId":null,"sourceAutomationId":null,
+         "lastRunAt":null,"lastError":null,"consecutiveFailures":0,"retryAttempt":0,
+         "createdAt":"2026-11-04T08:00:00Z","updatedAt":"2026-11-04T08:00:00Z"}
+        """.utf8))
+        XCTAssertEqual(task.statusLabel, "Paused")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let resumed = task.input(enabled: true, now: now)
+        XCTAssertTrue(resumed.enabled)
+        let startAt = try XCTUnwrap(resumed.schedule.startAt.flatMap(TimeFormat.parse))
+        XCTAssertEqual(startAt, now.addingTimeInterval(3600))
+        XCTAssertNil(task.input(enabled: false).schedule.startAt)
+    }
+
+    func testSuggestedQuestionsMatchTheWebValidation() throws {
+        let value = try JSONDecoder().decode(JSONValue.self, from: Data("""
+        [{"text":"Ask {{mention:who}} about it","slots":[{"key":"who","kind":"mention"}]},
+         {"text":"Plain follow-up"},
+         {"text":"Undeclared {{file:x}}"},
+         {"text":"Broken {{oops}}"}]
+        """.utf8))
+        let questions = SuggestedQuestion.parse(value)
+        XCTAssertEqual(questions.map(\.displayText), ["Ask [mention] about it", "Plain follow-up"])
+    }
+
+    func testSuggestionsOnlyFollowTheCurrentUsersOwnTurn() {
+        func message(_ id: String, _ type: String, _ sender: String, suggestions: Bool = false) -> MessageDto {
+            MessageDto(
+                msgId: id, channelId: "c1", senderType: type, senderId: sender, content: "x",
+                contentData: suggestions
+                    ? .object(["suggested_questions": .array([.object(["text": .string("Next?")])])])
+                    : nil
+            )
+        }
+        let mine = message("u1", "user", "me")
+        let theirs = message("u2", "user", "someone")
+        let reply = message("b1", "bot", "bot", suggestions: true)
+        XCTAssertEqual(SuggestedQuestion.active(in: [mine, reply], currentUserId: "me")?.msgId, "b1")
+        XCTAssertNil(SuggestedQuestion.active(in: [theirs, reply], currentUserId: "me"))
+        XCTAssertNil(SuggestedQuestion.active(in: [mine, reply, mine], currentUserId: "me"))
+    }
+
+    func testElicitationFormParsesFieldsAndRequiredValues() throws {
+        let data = try JSONDecoder().decode(JSONValue.self, from: Data("""
+        {"request_id":"e1","mode":"form","message":"Pick a target","initiating_user_id":"u1",
+         "requested_schema":{"type":"object","required":["env","notes"],"properties":{
+           "env":{"type":"string","title":"Environment","oneOf":[{"const":"prod","title":"Production"},{"const":"dev"}]},
+           "notes":{"type":"string"},
+           "count":{"type":"integer","default":3},
+           "tags":{"type":"array","items":{"enum":["a","b"]}}}}}
+        """.utf8))
+        let request = try XCTUnwrap(ElicitationRequest(contentData: data))
+        XCTAssertEqual(request.fields.map(\.name), ["count", "env", "notes", "tags"])
+        let env = try XCTUnwrap(request.fields.first { $0.name == "env" })
+        XCTAssertEqual(env.choices?.map(\.title), ["Production", "dev"])
+        XCTAssertEqual(env.choices?.first?.value, .string("prod"))
+        XCTAssertEqual(request.fields.first { $0.name == "tags" }?.choices?.count, 2)
+        XCTAssertEqual(request.fields.first { $0.name == "count" }?.defaultValue, .number(3))
+
+        XCTAssertEqual(request.missingRequiredField(in: ["env": .string("prod")])?.name, "notes")
+        XCTAssertNil(request.missingRequiredField(in: ["env": .string("prod"), "notes": .string("ok")]))
+        XCTAssertTrue(request.canRespond(userId: "u1"))
+        XCTAssertFalse(request.canRespond(userId: "u2"))
+    }
+
+    @MainActor
+    func testResourceErrorFrameCarriesServerCodeAndMessage() throws {
+        let failed = Data("""
+        {"type":"resource_res","v":1,"req_id":"r1","ok":false,
+         "error":{"code":"VERSION_CONFLICT","message":"Plan changed"}}
+        """.utf8)
+        let response = try XCTUnwrap(ChatSocket.resourceResponse(from: failed))
+        XCTAssertEqual(response.reqId, "r1")
+        guard case .failure(.server(let code, let message)) = response.result else {
+            return XCTFail("expected a server error, got \(response.result)")
+        }
+        XCTAssertEqual(code, "VERSION_CONFLICT")
+        XCTAssertEqual(message, "Plan changed")
+
+        let ok = Data(#"{"type":"resource_res","v":1,"req_id":"r2","ok":true,"data":{"n":1}}"#.utf8)
+        let success = try XCTUnwrap(ChatSocket.resourceResponse(from: ok))
+        guard case .success = success.result else { return XCTFail("expected success") }
+    }
+
     func testTaskClaimHttpAndSocketProjectionsCannotDowngradeEachOther() {
         let pending = claimConfirmation(status: "pending", revision: 1)
         let cancelled = TaskClaimUpdate(
@@ -759,4 +860,144 @@ final class ReleaseReadinessTests: XCTestCase {
     private func traceEvent(_ json: String) throws -> TraceEventDto {
         try JSONDecoder().decode(TraceEventDto.self, from: Data(json.utf8))
     }
+}
+
+// MARK: - Expired access token recovery
+
+/// Answers by bearer token: "fresh" succeeds, anything else is the gateway's
+/// empty auth-middleware 401 unless a body is configured.
+private final class AuthStubProtocol: URLProtocol {
+    nonisolated(unsafe) static var rejectionBody = Data()
+    nonisolated(unsafe) static var seenTokens: [String] = []
+    /// While true, an otherwise-valid request answers the gateway's step-up 428.
+    nonisolated(unsafe) static var requiresStepUp = false
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let bearer = request.value(forHTTPHeaderField: "Authorization") ?? ""
+        let token = String(bearer.dropFirst("Bearer ".count))
+        Self.seenTokens.append(token)
+        let ok = token == "fresh"
+        let stepUp = ok && Self.requiresStepUp
+        let status = stepUp ? 428 : ok ? 200 : 401
+        let body = stepUp
+            ? Data(#"{"code":"recent_authentication_required","detail":"Confirm your identity"}"#.utf8)
+            : ok ? Data("{}".utf8) : Self.rejectionBody
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+final class APIClientReauthenticationTests: XCTestCase {
+    private let base = URL(string: "https://example.test/api/v1")!
+
+    private var session: URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [AuthStubProtocol.self]
+        return URLSession(configuration: config)
+    }
+
+    override func setUp() {
+        AuthStubProtocol.rejectionBody = Data()
+        AuthStubProtocol.seenTokens = []
+        AuthStubProtocol.requiresStepUp = false
+    }
+
+    func testRecentAuthRequirementConfirmsIdentityThenRetries() async throws {
+        AuthStubProtocol.requiresStepUp = true
+        let prompts = LockedBox(0)
+        let api = APIClient(baseURL: base, token: "fresh", session: session, confirmIdentity: {
+            prompts.mutate { $0 += 1 }
+            AuthStubProtocol.requiresStepUp = false
+            return true
+        })
+        _ = try await api.getJSON("/passkeys", as: JSONValue.self)
+        XCTAssertEqual(prompts.value, 1)
+        XCTAssertEqual(AuthStubProtocol.seenTokens, ["fresh", "fresh"])
+    }
+
+    func testCancelledIdentityConfirmationDoesNotRetry() async {
+        AuthStubProtocol.requiresStepUp = true
+        let api = APIClient(baseURL: base, token: "fresh", session: session, confirmIdentity: { false })
+        do {
+            _ = try await api.getJSON("/passkeys", as: JSONValue.self)
+            XCTFail("expected cancellation")
+        } catch APIError.identityConfirmationCancelled {
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        XCTAssertEqual(AuthStubProtocol.seenTokens, ["fresh"])
+    }
+
+    func testExpiredTokenRefreshesOnceAndRetries() async throws {
+        let rejected = LockedBox<[String]>([])
+        let api = APIClient(baseURL: base, token: "stale", session: session) { token in
+            rejected.mutate { $0.append(token) }
+            return "fresh"
+        }
+        _ = try await api.getJSON("/ping", as: JSONValue.self)
+        XCTAssertEqual(rejected.value, ["stale"])
+        XCTAssertEqual(AuthStubProtocol.seenTokens, ["stale", "fresh"])
+    }
+
+    func testRejectedRetryIsNotRefreshedAgain() async {
+        let calls = LockedBox(0)
+        let api = APIClient(baseURL: base, token: "stale", session: session) { _ in
+            calls.mutate { $0 += 1 }
+            return "also-stale"
+        }
+        await assertUnauthorized { _ = try await api.getJSON("/ping", as: JSONValue.self) }
+        XCTAssertEqual(calls.value, 1)
+    }
+
+    func testUnrenewableSessionSurfacesUnauthorized() async {
+        let api = APIClient(baseURL: base, token: "stale", session: session) { _ in nil }
+        await assertUnauthorized { _ = try await api.getJSON("/ping", as: JSONValue.self) }
+    }
+
+    func testCredentialErrorsWithDetailAreNotSessionExpiry() async {
+        AuthStubProtocol.rejectionBody = Data(#"{"detail":"current password is incorrect"}"#.utf8)
+        let api = APIClient(baseURL: base, token: "stale", session: session) { _ in
+            XCTFail("a 401 with a detail is a credential error, not an expired session")
+            return "fresh"
+        }
+        do {
+            _ = try await api.getJSON("/ping", as: JSONValue.self)
+            XCTFail("expected a credential error")
+        } catch APIError.http(let status, let detail) {
+            XCTAssertEqual(status, 401)
+            XCTAssertEqual(detail, "current password is incorrect")
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+    }
+
+    private func assertUnauthorized(_ operation: () async throws -> Void) async {
+        do {
+            try await operation()
+            XCTFail("expected APIError.unauthorized")
+        } catch APIError.unauthorized {
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+    }
+}
+
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+
+    init(_ value: Value) { stored = value }
+
+    var value: Value { lock.withLock { stored } }
+
+    func mutate(_ body: (inout Value) -> Void) { lock.withLock { body(&stored) } }
 }

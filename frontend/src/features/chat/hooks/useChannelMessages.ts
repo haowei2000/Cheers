@@ -373,7 +373,7 @@ export function useChannelMessages({
       pendingDeltas.current.delete(update.msg_id);
       streamSenderIds.current.delete(update.msg_id);
       setMessages((prev) =>
-        upsertMessage(prev, { ...update, _streaming: false, _trace: null }),
+        upsertMessage(prev, { ...update, _streaming: false }),
       );
     },
     [],
@@ -397,7 +397,6 @@ export function useChannelMessages({
         );
         return upsertMessage(prev, {
           msg_id: event.msg_id,
-          _trace: event.title ?? event.status ?? null,
           _trace_events: traceEvents,
         });
       });

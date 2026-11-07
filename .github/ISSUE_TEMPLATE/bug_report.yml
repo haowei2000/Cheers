@@ -36,7 +36,8 @@ body:
         - Docker / deployment
         - Agent Bridge
         - File preview / storage
-        - Memory
+        - ACP connector
+        - Desktop / mobile apps
         - Documentation
         - Other
   - type: textarea

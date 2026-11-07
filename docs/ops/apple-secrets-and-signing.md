@@ -28,7 +28,7 @@ Recommended GitHub placement:
 - Public identifiers and callback URLs: `production` Environment variables.
 - Non-Apple repository-wide automation secrets: repository-level secrets.
 
-Chinese mirror: [Cheers-Apple-Secrets-and-Signing-Keys-2026-08-16.zh-CN.md](Cheers-Apple-Secrets-and-Signing-Keys-2026-08-16.zh-CN.md)
+Chinese mirror: [Cheers-Apple-Secrets-and-Signing-Keys-2026-08-16.zh-CN.md](apple-secrets-and-signing.zh-CN.md)
 
 ## GitHub Secrets
 

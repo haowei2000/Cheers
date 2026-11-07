@@ -392,6 +392,33 @@ pub async fn list_messages(
     })))
 }
 
+// ── POST /api/v1/channels/latest-messages ───────────────────────────────────
+
+const MAX_LATEST_MESSAGE_CHANNELS: usize = 500;
+
+#[derive(Deserialize)]
+pub struct LatestMessagesRequest {
+    pub channel_ids: Vec<String>,
+}
+
+/// One round trip for conversation-list previews, instead of a `limit=1` history
+/// read per channel. A POST because the id list can outgrow a query string.
+pub async fn latest_messages(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<LatestMessagesRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if body.channel_ids.len() > MAX_LATEST_MESSAGE_CHANNELS {
+        return Err(AppError::BadRequest(format!(
+            "at most {MAX_LATEST_MESSAGE_CHANNELS} channels per request"
+        )));
+    }
+    let user_id =
+        Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("bad user id".into()))?;
+    let messages = messages::list_latest_messages(&state.db, user_id, &body.channel_ids).await?;
+    Ok(Json(serde_json::json!({ "messages": messages })))
+}
+
 // ── POST /api/v1/channels/{channel_id}/messages/{msg_id}/cancel ─────────────
 
 pub async fn cancel_message(

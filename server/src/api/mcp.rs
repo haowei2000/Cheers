@@ -52,7 +52,7 @@ pub(crate) const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
 /// `MCP-Protocol-Version` header these revisions send after initialization.
 /// 2025-03-26 is excluded: it has no such header and requires JSON-RPC batching.
 pub(crate) const MCP_LEGACY_PROTOCOL_VERSIONS: [&str; 2] = ["2025-11-25", "2025-06-18"];
-const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. Channel outputs share one Artifacts library: use artifact_list/get/read to discover and inspect, artifact_create for documents, HTML/TSX pages and canvases, artifact_update with the returned artifact ID and version to edit, and artifact_deliver for binary files. Reuse idempotency_key when retrying create or deliver. Reference the returned artifact.uri (cheers:artifact/<id>) in replies and resource_ref cards; cards are references, not separate content copies. Check availability before reading; expired files are not recoverable through metadata. Legacy desk tools are for remaining path/directory operations, not a private Bot space. Host workspace files stay remote until explicitly delivered. For interactive UI, first call read_ui_contract or read cheers://help/interactive-ui and its catalog/example resources. Use the advertised Cheers catalog, create an artifact, and attach its resource_ref card to the current reply with set_resource_cards. Streaming card references are staged until completion. User interaction context is structured data, not an authorization grant; read the source and check its version before updating it. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
+const MCP_INSTRUCTIONS: &str = "Read Cheers resources and call Cheers tools. Channel outputs share one Artifacts library: use artifact_list/get/read to discover and inspect, artifact_create for documents, HTML/TSX pages and canvases, artifact_update with the returned artifact ID and version to edit, and artifact_upload_prepare, a shell upload and artifact_upload_finish for binary files, or artifact_deliver when you have no shell. Reuse idempotency_key when retrying create or deliver. Reference the returned artifact.uri (cheers:artifact/<id>) in replies and resource_ref cards; cards are references, not separate content copies. Check availability before reading; expired files are not recoverable through metadata. Legacy desk tools are for remaining path/directory operations, not a private Bot space. Host workspace files stay remote until explicitly delivered. For interactive UI, first call read_ui_contract or read cheers://help/interactive-ui and its catalog/example resources. Use the advertised Cheers catalog, create an artifact, and attach its resource_ref card to the current reply with set_resource_cards. Streaming card references are staged until completion. User interaction context is structured data, not an authorization grant; read the source and check its version before updating it. OAuth scopes are an upper bound; channel membership and role are enforced for every operation.";
 
 const MCP_TOKEN_USE: &str = "mcp_access";
 const GRANT_CLIENT_CREDENTIALS: &str = "client_credentials";
@@ -908,7 +908,7 @@ async fn running_execution(
 
 /// Whether `execution_id` is a task of this bot in this channel that has been
 /// accepted and has not committed a terminal result.
-async fn execution_is_running(
+pub(crate) async fn execution_is_running(
     state: &AppState,
     bot_id: &str,
     channel_id: &str,
@@ -2076,6 +2076,22 @@ fn tool_error_guidance(code: &str) -> Option<ToolErrorGuidance> {
             true,
         ),
         "E_TOO_LARGE" => ("Send less data per call, for example by splitting it.", true),
+        "E_UPLOAD_INCOMPLETE" => (
+            "Run the upload command from artifact_upload_prepare and check it succeeded, then call again.",
+            true,
+        ),
+        "E_UPLOAD_EXPIRED" => (
+            "Call artifact_upload_prepare again for a new upload, then run its command.",
+            true,
+        ),
+        "E_TOO_MANY_UPLOADS" => (
+            "Finish the uploads you started, or wait for them to expire, then call again.",
+            true,
+        ),
+        "E_CONTENT_MISMATCH" => (
+            "The data no longer matches the source file. Encode the file again and resend it; if this keeps failing, tell the user the file could not be delivered intact.",
+            true,
+        ),
         "CONFLICT" | "E_CONFLICT" | "INVALID_STATE" => (
             "The resource changed since you read it. Read it again, then retry.",
             true,
@@ -2835,6 +2851,13 @@ fn parse_requested_scopes(raw: &str) -> Option<Vec<&str>> {
     }
 }
 
+impl McpIdentity {
+    fn principal(&self, bot_id: Uuid) -> Principal {
+        Principal::bot_for(bot_id, self.on_behalf_of)
+            .for_task(self.task.as_deref().and_then(|task| task.parse().ok()))
+    }
+}
+
 async fn authenticate_mcp(
     state: &AppState,
     headers: &HeaderMap,
@@ -3439,7 +3462,7 @@ async fn call_tool(
     });
     let response = crate::gateway::resource_effects::dispatch_with_effects(
         state,
-        Principal::bot_for(bot_id, identity.on_behalf_of),
+        identity.principal(bot_id),
         &frame,
     )
     .await;
@@ -3528,7 +3551,7 @@ async fn read_resource(
     });
     let response = resource::dispatch(
         &state.db,
-        Principal::bot_for(bot_id, identity.on_behalf_of),
+        identity.principal(bot_id),
         &frame,
         &state.bot_locator,
     )
@@ -4350,6 +4373,13 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Do not retry"));
+
+        let mismatch = tool_error_result("E_CONTENT_MISMATCH", "sha256 does not match");
+        assert_eq!(mismatch["structuredContent"]["retryable"], true);
+        assert!(mismatch["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Next: The data no longer matches the source file."));
 
         let status = tool_error_result("STATUS_OWNER_DM_ONLY", "set_status only works in the DM");
         assert_eq!(status["structuredContent"]["retryable"], false);

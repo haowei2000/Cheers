@@ -52,20 +52,24 @@ export function AgentRunOverview({ message, channelId, approvalCount = 0, expand
   const label = loadFailed && summary.status === "unknown" ? "Run summary unavailable" : summary.label;
   const text = [label, summary.detail].filter(Boolean).join(" · ");
   return (
-    <ControlTrigger
-      ref={triggerRef}
-      controlSize="regular"
-      controlWidth="content"
-      aria-label={`Open message record: ${text}`}
-      aria-haspopup="dialog"
-      aria-expanded={expanded}
-      title={text}
-      onClick={event => onOpen(event.currentTarget)}
-      className={cn("max-w-full justify-start text-left", summary.tone === "danger" ? "text-danger-400" : "text-content-primary")}
+    <div
+      className={cn("flex min-w-0 max-w-full items-center gap-1 font-utility text-regular", summary.tone === "danger" ? "text-danger-400" : "text-content-primary")}
     >
       <Icon className={cn(controlIconClasses.regular, "shrink-0")} aria-hidden="true" />
-      <span className="min-w-0 truncate" aria-live="polite">{text}</span>
-      <ListTree className={cn(controlIconClasses.regular, "shrink-0")} aria-hidden="true" />
-    </ControlTrigger>
+      <span className="min-w-0 wrap-break-word" aria-live="polite">{text}</span>
+      <ControlTrigger
+        ref={triggerRef}
+        controlSize="regular"
+        square
+        aria-label={`Open message record: ${text}`}
+        aria-haspopup="dialog"
+        aria-expanded={expanded}
+        title={`Message record · ${text}`}
+        onClick={event => onOpen(event.currentTarget)}
+        className="shrink-0"
+      >
+        <ListTree className={controlIconClasses.regular} aria-hidden="true" />
+      </ControlTrigger>
+    </div>
   );
 }

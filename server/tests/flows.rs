@@ -1957,6 +1957,32 @@ async fn m3_inbox_deliver_validates_and_requires_storage(db: PgPool) {
     )
     .await;
     assert_eq!(nostore.unwrap_err().0, "E_STORAGE_UNAVAILABLE");
+
+    // 合法 base64 但内容与源文件 sha256 不符 → 存储之前就拒,不会落下损坏文件
+    let damaged = files::handle_create(
+        &db,
+        &p,
+        &serde_json::json!({
+            "channel_id": ch, "filename": "r.txt", "data_b64": "aGVsbA==", // "hell"
+            "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            "idempotency_key": "damaged-copy"
+        }),
+    )
+    .await;
+    assert_eq!(damaged.unwrap_err().0, "E_CONTENT_MISMATCH");
+
+    // 同一 idempotency_key 重发正确内容 → 不被上次的拒绝占用,继续走到存储
+    let resent = files::handle_create(
+        &db,
+        &p,
+        &serde_json::json!({
+            "channel_id": ch, "filename": "r.txt", "data_b64": "aGVsbG8=",
+            "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            "idempotency_key": "damaged-copy"
+        }),
+    )
+    .await;
+    assert_eq!(resent.unwrap_err().0, "E_STORAGE_UNAVAILABLE");
 }
 
 // ── Phase A：promoted session/update artifacts（plan / usage / commands）─────────

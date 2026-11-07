@@ -63,11 +63,12 @@ final class AppModel {
     @ObservationIgnored
     private(set) var token: String?
 
-    /// Refresh tokens rotate on every use. Keep the refresh operation single-flight so
-    /// a foreground wakeup and the periodic timer cannot present the same token twice
-    /// and trigger the gateway's refresh-token-reuse revocation.
+    /// Refresh tokens rotate on every use. Every credential replacement (timer,
+    /// foreground, socket auth failure, API 401 retry, password change) runs as this
+    /// one task; late callers await it instead of presenting a refresh token that is
+    /// being rotated, which the gateway treats as reuse and revokes.
     @ObservationIgnored
-    private var isRefreshingSession = false
+    private var credentialTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var lastSessionRefreshAt: Date?
@@ -119,8 +120,84 @@ final class AppModel {
 
     /// Authenticated client for the current session.
     var api: APIClient? {
-        guard let baseURL, token != nil else { return nil }
-        return APIClient(baseURL: baseURL, token: token)
+        guard let baseURL, let token else { return nil }
+        let userId = session?.userId
+        return APIClient(
+            baseURL: baseURL,
+            token: token,
+            reauthenticate: { [weak self] rejected in
+                await self?.reauthenticate(rejectedToken: rejected, userId: userId)
+            },
+            confirmIdentity: { [weak self] in
+                await self?.confirmIdentity() ?? false
+            }
+        )
+    }
+
+    // MARK: Step-up
+
+    /// A security-sensitive request is waiting for the user to confirm their
+    /// identity (gateway 428 `recent_authentication_required`). RootView presents
+    /// StepUpSheet while this is set.
+    struct StepUpRequest: Identifiable, Equatable {
+        let id = UUID()
+    }
+
+    private(set) var pendingStepUp: StepUpRequest?
+
+    @ObservationIgnored
+    private var stepUpWaiters: [CheckedContinuation<Bool, Never>] = []
+
+    /// APIClient's 428 hook. Concurrent sensitive requests share one prompt and
+    /// all retry once it is confirmed.
+    func confirmIdentity() async -> Bool {
+        guard session != nil else { return false }
+        return await withCheckedContinuation { continuation in
+            stepUpWaiters.append(continuation)
+            if pendingStepUp == nil {
+                pendingStepUp = StepUpRequest()
+            }
+        }
+    }
+
+    func finishStepUp(confirmed: Bool) {
+        let waiters = stepUpWaiters
+        stepUpWaiters = []
+        pendingStepUp = nil
+        for waiter in waiters {
+            waiter.resume(returning: confirmed)
+        }
+    }
+
+    /// APIClient's 401 hook: an expired access token gets one shared refresh, and
+    /// the request retries with the session's current token. Signing out happens
+    /// only when the refresh credential itself is rejected (or missing).
+    func reauthenticate(rejectedToken: String, userId: String?) async -> String? {
+        if let inFlight = credentialTask {
+            await inFlight.value
+        }
+        guard let session, session.userId == userId else { return nil }
+        if let token, token != rejectedToken { return token }
+        guard KeychainStore.get(Keys.refreshToken) != nil else {
+            clearSession()
+            return nil
+        }
+        await refreshSessionIfNeeded(force: true)
+        guard self.session?.userId == userId, let token, token != rejectedToken else { return nil }
+        return token
+    }
+
+    /// Runs `operation` as the only credential replacement in flight.
+    private func withCredentialGate<T: Sendable>(
+        _ operation: @escaping @MainActor () async -> T
+    ) async -> T {
+        while let inFlight = credentialTask {
+            await inFlight.value
+        }
+        let task = Task { await operation() }
+        credentialTask = Task { _ = await task.value }
+        defer { credentialTask = nil }
+        return await task.value
     }
 
     // MARK: Auth flows
@@ -324,10 +401,11 @@ final class AppModel {
     /// the local session so a later timer/foreground wakeup can retry; only a rejected
     /// refresh credential signs the user out.
     func refreshSessionIfNeeded(force: Bool = false) async {
-        guard let session,
-              !isRefreshingSession,
-              let base = baseURL
-        else { return }
+        if let inFlight = credentialTask {
+            await inFlight.value
+            return
+        }
+        guard let session, let base = baseURL else { return }
         guard let refreshToken = KeychainStore.get(Keys.refreshToken) else {
             if needsSocketAuthenticationRefresh {
                 clearSession()
@@ -347,21 +425,21 @@ final class AppModel {
                 && self.token == attemptedToken
                 && KeychainStore.get(Keys.refreshToken) == refreshToken
         }
-        isRefreshingSession = true
-        defer { isRefreshingSession = false }
-        do {
-            let response = try await APIClient(baseURL: base, token: nil).refresh(refreshToken: refreshToken)
-            guard isCurrentRefresh() else { return }
-            try finishLogin(base: base, response: response)
-        } catch APIError.http(let status, _) where status == 401 {
-            guard isCurrentRefresh() else { return }
-            clearSession()
-        } catch {
-            guard isCurrentRefresh() else { return }
-            // Offline/server failures are retryable. Keep using the current access
-            // token only if the socket has not rejected it; otherwise the next
-            // minute/foreground check retries refresh before connecting again.
-            reconnectSocketIfNeeded()
+        await withCredentialGate {
+            do {
+                let response = try await APIClient(baseURL: base, token: nil).refresh(refreshToken: refreshToken)
+                guard isCurrentRefresh() else { return }
+                try self.finishLogin(base: base, response: response)
+            } catch APIError.http(let status, _) where status == 401 {
+                guard isCurrentRefresh() else { return }
+                self.clearSession()
+            } catch {
+                guard isCurrentRefresh() else { return }
+                // Offline/server failures are retryable. Keep using the current access
+                // token only if the socket has not rejected it; otherwise the next
+                // minute/foreground check retries refresh before connecting again.
+                self.reconnectSocketIfNeeded()
+            }
         }
     }
 
@@ -388,31 +466,72 @@ final class AppModel {
         clearSession(forgetDevice: true)
     }
 
-    /// Changes the password and replaces the locally held token. The gateway
-    /// revokes every older session and push registration as part of this flow.
+    /// Changes the password and adopts the reissued session (access + refresh
+    /// token). The gateway revokes every older session and push registration.
     func changePassword(
         currentPassword: String,
         newPassword: String,
         twoFactorCode: String? = nil
     ) async throws {
-        guard let api else { throw APIError.unauthorized }
-        let response = try await api.changePassword(
-            currentPassword: currentPassword,
-            newPassword: newPassword,
-            twoFactorCode: twoFactorCode
-        )
-        token = response.accessToken
-        _ = KeychainStore.set(response.accessToken, for: Keys.token)
-        socket.disconnect()
-        socketConnected = false
-        connectSocket()
-        if let refreshedAPI = self.api {
-            await PushRouter.reregisterCurrentDevice(using: refreshedAPI)
+        try await rotateCredentials { client in
+            try await client.changePassword(
+                currentPassword: currentPassword,
+                newPassword: newPassword,
+                twoFactorCode: twoFactorCode
+            )
+        }
+    }
+
+    /// Adds the first password to an Apple-only account. Same session reissue as
+    /// a password change.
+    func setPassword(_ password: String, apple: AppleAuthorizationPayload) async throws {
+        try await rotateCredentials { client in
+            try await client.setPassword(password, apple: apple)
+        }
+    }
+
+    private func rotateCredentials(
+        _ rotate: @Sendable @escaping (APIClient) async throws -> LoginResponse
+    ) async throws {
+        for attempt in 0..<2 {
+            guard let base = baseURL, let token else { throw APIError.unauthorized }
+            // The gateway kicks this user's sockets before it answers. Run inside the
+            // credential gate so the socket's auth failure waits for the reissued
+            // session instead of spending the refresh token the server is revoking.
+            // The client has no 401 hook: reauthenticating would wait on this gate.
+            let outcome: Result<Void, Error> = await withCredentialGate {
+                do {
+                    let response = try await rotate(APIClient(baseURL: base, token: token))
+                    self.socket.disconnect()
+                    self.socketConnected = false
+                    try self.finishLogin(base: base, response: response)
+                    return .success(())
+                } catch {
+                    return .failure(error)
+                }
+            }
+            switch outcome {
+            case .success:
+                if let refreshedAPI = self.api {
+                    await PushRouter.reregisterCurrentDevice(using: refreshedAPI)
+                }
+                return
+            case .failure(let error):
+                if attempt == 0, case APIError.unauthorized = error,
+                   await reauthenticate(rejectedToken: token, userId: session?.userId) != nil {
+                    continue
+                }
+                if needsSocketAuthenticationRefresh {
+                    await refreshSessionIfNeeded(force: true)
+                }
+                throw error
+            }
         }
     }
 
     /// Local sign-out (used on 401 / invalidated token).
     func clearSession(forgetDevice: Bool = false) {
+        finishStepUp(confirmed: false)
         NavigationCache.removeAll(userId: session?.userId, server: serverURLString)
         socket.disconnect()
         socketConnected = false

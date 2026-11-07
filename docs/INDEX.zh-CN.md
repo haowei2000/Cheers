@@ -44,15 +44,18 @@
 - 🛠 **规划中** —— [网关重构计划](arch/REFACTOR_PLAN.md)
 - 📝 **草稿 / 提案** —— [科研场景（research-lab）](arch/RESEARCH_SCENARIO.md)
 - 📝 **草稿 / 提案** —— [frontend-next Figma 设计稿说明](design/frontend-next/main-chat-full-base.figma-notes.md)
-- 🗄 **历史存档** —— [M1 演示手册](DEMO_M1.md)
-- 🗄 **历史存档** —— [M1 安全评审](SECURITY_REVIEW_M1.md)
+- 🗄 **历史存档** —— [M1 演示手册](archive/DEMO_M1.md)
+- 🗄 **历史存档** —— [M1 安全评审](archive/SECURITY_REVIEW_M1.md)
 
 ## 产品路线图与发布
 
 - [产品路线图](ROADMAP.md) / [English](ROADMAP.md)
 - [项目概览](PROJECT_OVERVIEW.zh-CN.md) / [English](PROJECT_OVERVIEW.md)
 - [竞品对比](COMPARISON.zh-CN.md) / [English](COMPARISON.md) —— Cheers 与其它 AI 协作项目的对比
-- [发布说明](release_note/README.zh-CN.md)
+- [发布说明](release/notes/README.zh-CN.md)
+- [iOS App Store 提交](release/IOS_APP_STORE_SUBMISSION.md)
+- [缺陷记录](bugs/README.md)
+- [开发者追溯体系（草案）](developer/TRACEABILITY.md)
 
 ## 历史文档说明
 

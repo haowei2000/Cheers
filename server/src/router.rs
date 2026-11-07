@@ -37,13 +37,15 @@ pub fn build(state: AppState) -> Router {
     // Keep CORS policy explicit at the top-level router so every grouped route
     // shares a consistent browser/API access policy.
     Router::new()
-        .merge(build_public_routes())
+        .merge(build_public_routes(&state))
         .merge(build_auth_flow_routes(state.clone()))
         .merge(build_authed_routes(state.clone()))
         .merge(build_ws_routes())
         // Explicit request-body cap (audit H3/M5): replaces the implicit 2MB
-        // default with an intentional 16 MiB ceiling sized for attachments.
-        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
+        // default with an intentional ceiling sized for attachments.
+        .layer(DefaultBodyLimit::max(
+            state.config.max_request_body_mib * 1024 * 1024,
+        ))
         // Backstop request timeout so a stuck handler can't pin a worker; set
         // generously so legitimate slow connector RPCs aren't cut off.
         .layer(TimeoutLayer::new(Duration::from_secs(120)))
@@ -374,6 +376,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::channels::list_notification_preferences),
         )
         // DM: a type='dm' channel. Static segment → matches before :channel_id.
+        .route(
+            "/api/v1/channels/latest-messages",
+            post(api::messages::latest_messages),
+        )
         .route(
             "/api/v1/channels/dm",
             get(api::channels::list_dms).post(api::channels::create_dm),
@@ -972,7 +978,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .layer(middleware::from_fn_with_state(state.clone(), jwt_auth))
 }
 
-fn build_public_routes() -> Router<AppState> {
+fn build_public_routes(state: &AppState) -> Router<AppState> {
     // Public endpoints used before token acquisition.
     Router::new()
         .route("/health", get(health))
@@ -994,11 +1000,19 @@ fn build_public_routes() -> Router<AppState> {
         // initialization-based 2025-06-18/2025-11-25 clients get no session.
         // Every POST carries a host-bound, channel-narrowed bearer token; the
         // host is re-validated on each request, so revocation is immediate.
-        // 12 MiB accommodates the existing 8 MiB binary attachment limit after
-        // base64 expansion while retaining an endpoint-local hard cap.
+        // The default 12 MiB accommodates the existing 8 MiB binary attachment
+        // limit after base64 expansion while retaining an endpoint-local hard cap.
         .route(
             "/mcp",
-            post(api::mcp::mcp_http).layer(DefaultBodyLimit::max(12 * 1024 * 1024)),
+            post(api::mcp::mcp_http).layer(DefaultBodyLimit::max(
+                state.config.mcp_max_body_mib * 1024 * 1024,
+            )),
+        )
+        // Authenticated by its single-file ticket. The handler reads the body itself, up
+        // to the size the ticket allows, so the body limit above does not apply.
+        .route(
+            "/api/v1/agent-uploads/:upload_id",
+            put(api::agent_uploads::receive_upload),
         )
         .route(
             "/oauth/token",

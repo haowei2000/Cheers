@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use aws_sdk_s3::Client;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -16,8 +17,8 @@ use super::{
 /// `MAX_DELIVER_BYTES`). `download_url` is a human-UI endpoint the agent cannot authenticate.
 const TEXT_CAP: usize = 256 * 1024;
 
-/// Largest file an agent may deliver inline (base64) via `inbox_deliver`. Bigger files should go
-/// through the chunked upload path, not a single resource frame.
+/// Largest file an agent may deliver inline (base64) via `artifact_deliver` / `inbox_deliver`.
+/// Agents have no other upload path, so bigger files are refused.
 const MAX_DELIVER_BYTES: usize = 8 * 1024 * 1024;
 
 /// Process-global S3 handle (client + default bucket), injected at startup by main.rs.
@@ -32,7 +33,7 @@ pub fn init_s3(client: Client, bucket: String) {
 /// The startup-injected S3 handle, shared with other frame-dispatch layers that only carry
 /// `db` (e.g. the task dispatcher inlining image attachments). `None` until `init_s3` ran
 /// (unit tests) — callers must degrade gracefully, never fail the dispatch.
-pub(crate) fn s3_handle() -> Option<(&'static Client, &'static str)> {
+pub fn s3_handle() -> Option<(&'static Client, &'static str)> {
     S3.get().map(|(client, bucket)| (client, bucket.as_str()))
 }
 
@@ -286,7 +287,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
 
 /// Reduce an agent-supplied filename to a single safe path segment (strip any directory parts),
 /// so it cannot escape the `uploads/<file_id>/` object-key prefix.
-fn safe_attachment_name(raw: &str) -> Result<String, (String, String)> {
+pub(super) fn safe_attachment_name(raw: &str) -> Result<String, (String, String)> {
     let name = raw.trim().rsplit(['/', '\\']).next().unwrap_or("").trim();
     if name.is_empty() || matches!(name, "." | "..") {
         return Err(super::resource_error(
@@ -295,6 +296,112 @@ fn safe_attachment_name(raw: &str) -> Result<String, (String, String)> {
         ));
     }
     Ok(name.to_string())
+}
+
+/// Decode a delivery's `data_b64`. The model copies this text into the tool call by hand, so a
+/// damaged copy can still be valid base64: only the caller's `sha256` of the source file proves
+/// the decoded bytes are the file. Line breaks are ignored because wrapped base64 is common.
+fn decode_delivery(params: &Value) -> Result<Vec<u8>, (String, String)> {
+    let data_b64 = params
+        .get("data_b64")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "data_b64 required"))?;
+    let compact: String = data_b64.split_ascii_whitespace().collect();
+    let bytes = STANDARD.decode(compact).map_err(|_| {
+        super::resource_error(
+            "INVALID_PARAMS",
+            "data_b64 is not valid base64; it may have been damaged while copying the file",
+        )
+    })?;
+    if bytes.is_empty() {
+        return Err(super::resource_error("INVALID_PARAMS", "empty file"));
+    }
+    if bytes.len() > MAX_DELIVER_BYTES {
+        return Err(super::resource_error(
+            "E_TOO_LARGE",
+            "file exceeds the 8MB inline delivery limit",
+        ));
+    }
+    let expected = match params.get("sha256") {
+        None | Some(Value::Null) => return Ok(bytes),
+        Some(value) => value.as_str().ok_or_else(|| {
+            super::resource_error("INVALID_PARAMS", "sha256 must be a hex string")
+        })?,
+    };
+    let actual = hex::encode(Sha256::digest(&bytes));
+    if !actual.eq_ignore_ascii_case(expected.trim()) {
+        return Err(super::resource_error(
+            "E_CONTENT_MISMATCH",
+            format!(
+                "data_b64 decodes to {} bytes with sha256 {actual}, which does not match the supplied sha256; nothing was stored",
+                bytes.len()
+            ),
+        ));
+    }
+    Ok(bytes)
+}
+
+/// A stored object about to become a channel attachment.
+pub(super) struct DeliveredFile<'a> {
+    pub file_id: &'a str,
+    pub object_key: &'a str,
+    pub bucket: &'a str,
+    pub filename: &'a str,
+    pub content_type: &'a str,
+    pub size_bytes: i32,
+}
+
+/// Record a stored object as a channel attachment with a 7-day TTL. Its artifact comes from
+/// the `file_records` trigger, so it commits with this row.
+pub(super) async fn record_delivered_file(
+    tx: &mut sqlx::PgConnection,
+    principal: &Principal,
+    channel_id: Uuid,
+    file: DeliveredFile<'_>,
+) -> ResourceResult {
+    // channels.workspace_id is NOT NULL; carry it onto the record like upload_file does.
+    let workspace_id: Option<String> = sqlx::query_scalar!(
+        "SELECT workspace_id FROM channels WHERE channel_id = $1",
+        channel_id.to_string(),
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(super::db_err("files.create: select channel workspace_id"))?;
+
+    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
+    sqlx::query!(
+        "INSERT INTO file_records
+            (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
+             storage_bucket, original_filename, content_type, size_bytes, status,
+             uploaded_at, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'uploaded', NOW(), $10)",
+        file.file_id,
+        channel_id.to_string(),
+        workspace_id.as_deref(),
+        principal.principal_id.to_string(),
+        file.object_key,
+        file.bucket,
+        file.filename,
+        file.content_type,
+        file.size_bytes,
+        expires_at,
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(super::db_err("files.create: insert file record"))?;
+
+    let artifact =
+        super::artifacts::for_source(&mut *tx, channel_id, "attachment", file.file_id).await?;
+    Ok(json!({
+        "artifact": artifact,
+        "channel_id": channel_id,
+        "file_id": file.file_id,
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size_bytes": file.size_bytes,
+        "status": "uploaded",
+        "download_url": format!("/api/v1/files/{}/download", file.file_id),
+    }))
 }
 
 /// channel.files.create (Inbox `inbox_deliver`): store an agent-delivered file as a channel
@@ -323,22 +430,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "filename required"))?;
     let filename = safe_attachment_name(filename)?;
 
-    let data_b64 = params
-        .get("data_b64")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "data_b64 required"))?;
-    let bytes = STANDARD
-        .decode(data_b64.trim())
-        .map_err(|_| super::resource_error("INVALID_PARAMS", "data_b64 is not valid base64"))?;
-    if bytes.is_empty() {
-        return Err(super::resource_error("INVALID_PARAMS", "empty file"));
-    }
-    if bytes.len() > MAX_DELIVER_BYTES {
-        return Err(super::resource_error(
-            "E_TOO_LARGE",
-            "file exceeds the 8MB inline delivery limit; use the chunked upload path",
-        ));
-    }
+    let bytes = decode_delivery(params)?;
     let size_bytes = i32::try_from(bytes.len())
         .map_err(|_| super::resource_error("E_TOO_LARGE", "file too large"))?;
 
@@ -368,15 +460,6 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
             "files.create: s3 put_object",
         ))?;
 
-    // channels.workspace_id is NOT NULL; carry it onto the record like upload_file does.
-    let workspace_id: Option<String> = sqlx::query_scalar!(
-        "SELECT workspace_id FROM channels WHERE channel_id = $1",
-        channel_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await
-    .map_err(super::db_err("files.create: select channel workspace_id"))?;
-
     let mut tx = db
         .begin()
         .await
@@ -389,40 +472,20 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
             return key.replay_claimed(db).await;
         }
     }
-    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
-    sqlx::query!(
-        "INSERT INTO file_records
-            (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
-             storage_bucket, original_filename, content_type, size_bytes, status,
-             uploaded_at, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'uploaded', NOW(), $10)",
-        &file_id,
-        channel_id.to_string(),
-        workspace_id.as_deref(),
-        principal.principal_id.to_string(),
-        &object_key,
-        bucket,
-        &filename,
-        &content_type,
-        size_bytes,
-        expires_at,
+    let data = record_delivered_file(
+        &mut tx,
+        principal,
+        channel_id,
+        DeliveredFile {
+            file_id: &file_id,
+            object_key: &object_key,
+            bucket,
+            filename: &filename,
+            content_type: &content_type,
+            size_bytes,
+        },
     )
-    .execute(&mut *tx)
-    .await
-    .map_err(super::db_err("files.create: insert file record"))?;
-
-    let artifact =
-        super::artifacts::for_source(&mut tx, channel_id, "attachment", &file_id).await?;
-    let data = json!({
-        "artifact": artifact,
-        "channel_id": channel_id,
-        "file_id": file_id,
-        "filename": filename,
-        "content_type": content_type,
-        "size_bytes": size_bytes,
-        "status": "uploaded",
-        "download_url": format!("/api/v1/files/{file_id}/download"),
-    });
+    .await?;
     if let Some(key) = &idempotency {
         key.complete(&mut tx, &data).await?;
     }
@@ -434,7 +497,39 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
 
 #[cfg(test)]
 mod tests {
-    use super::is_text;
+    use super::{decode_delivery, is_text};
+    use serde_json::json;
+
+    // sha256("hello"), the bytes behind "aGVsbG8=".
+    const HELLO_SHA256: &str = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+    #[test]
+    fn delivery_with_a_matching_sha256_decodes() {
+        let params = json!({"data_b64": "aGVsbG8=", "sha256": HELLO_SHA256.to_uppercase()});
+        assert_eq!(decode_delivery(&params).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn delivery_refuses_valid_base64_that_is_not_the_source_file() {
+        // Characters lost in copying: still valid base64, but different bytes.
+        let params = json!({"data_b64": "aGVsbA==", "sha256": HELLO_SHA256});
+        assert_eq!(
+            decode_delivery(&params).unwrap_err().0,
+            "E_CONTENT_MISMATCH"
+        );
+    }
+
+    #[test]
+    fn delivery_ignores_line_breaks_in_base64() {
+        let params = json!({"data_b64": "aGVs\nbG8=\r\n", "sha256": HELLO_SHA256});
+        assert_eq!(decode_delivery(&params).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn delivery_sha256_must_be_a_string() {
+        let params = json!({"data_b64": "aGVsbG8=", "sha256": 42});
+        assert_eq!(decode_delivery(&params).unwrap_err().0, "INVALID_PARAMS");
+    }
 
     #[test]
     fn is_text_by_content_type() {

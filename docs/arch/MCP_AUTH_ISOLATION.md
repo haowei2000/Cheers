@@ -140,6 +140,13 @@ Delivery strength, strongest first:
 | L2 lend short-lived | Agent asks the client for a short-lived token | Yes, briefly |
 | L3 static injection | `mcpServers[].headers` (`direct` mode) | Yes, for the token lifetime |
 
+Upload tickets (`artifact_upload_prepare`) are L2 in every mode, including
+`acp` and `gateway`: the Agent's shell must present one to send a file. A
+ticket is not an MCP token. It lasts 15 minutes, can only store one file whose
+size and SHA-256 were fixed in advance, and stops with its task. It cannot read
+anything or publish: `artifact_upload_finish` is a normal tool call, repeats
+every check, and must come from the same bot acting for the same person.
+
 Three delivery modes exist, and the connector picks one per Agent process
 (§3.5). Setting: `policy.mcp.delivery` (`direct` | `gateway`, later `auto`).
 

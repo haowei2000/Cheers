@@ -144,9 +144,9 @@ struct CheersItemButton: View {
     }
 }
 
-/// Native confirmation-dialog action with one shared call shape for semantic
-/// roles. Keeping this primitive separate also prevents feature screens from
-/// inventing button styling inside system-owned dialogs.
+/// Native confirmation-dialog or swipe action with one shared call shape for
+/// semantic roles. Keeping this primitive separate also prevents feature screens from
+/// inventing button styling inside system-owned surfaces.
 struct CheersConfirmationButton: View {
     let title: String
     var role: ButtonRole?
@@ -160,14 +160,24 @@ struct CheersConfirmationButton: View {
 /// Shared actions for native artifact lists and detail toolbars. Navigation and
 /// disclosure labels stay with their native controls rather than borrowing verbs.
 enum CheersContentAction {
-    case done, retry, loadMore, addContext, attach
+    case done, retry, loadMore, addContext, attach, cancel, sendCode, useAnotherMethod, review, answer, save, add, dismiss, resendCode, confirmEmail
     var title: String {
         switch self {
-        case .done: return "Done"
-        case .retry: return "Retry"
-        case .loadMore: return "Load more"
-        case .addContext: return "Add to context"
-        case .attach: return "Attach"
+        case .done: return String(localized: "Done")
+        case .retry: return String(localized: "Retry")
+        case .loadMore: return String(localized: "Load more")
+        case .addContext: return String(localized: "Add to context")
+        case .attach: return String(localized: "Attach")
+        case .cancel: return String(localized: "Cancel")
+        case .sendCode: return String(localized: "Send code")
+        case .useAnotherMethod: return String(localized: "Use another method")
+        case .review: return String(localized: "Review")
+        case .answer: return String(localized: "Answer")
+        case .save: return String(localized: "Save")
+        case .add: return String(localized: "Add")
+        case .dismiss: return String(localized: "Dismiss")
+        case .resendCode: return String(localized: "Send a new code")
+        case .confirmEmail: return String(localized: "Confirm email")
         }
     }
     var symbol: String {
@@ -177,6 +187,16 @@ enum CheersContentAction {
         case .loadMore: return "ellipsis"
         case .addContext: return "text.badge.plus"
         case .attach: return "paperclip"
+        case .cancel: return "xmark"
+        case .sendCode: return "paperplane"
+        case .useAnotherMethod: return "arrow.left.arrow.right"
+        case .review: return "chevron.right"
+        case .answer: return "chevron.right"
+        case .save: return "checkmark"
+        case .add: return "plus"
+        case .dismiss: return "xmark"
+        case .resendCode: return "arrow.clockwise"
+        case .confirmEmail: return "checkmark"
         }
     }
 }

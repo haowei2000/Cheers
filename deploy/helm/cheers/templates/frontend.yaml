@@ -69,7 +69,10 @@ server {
     include /etc/nginx/security-headers.conf;
   }
 
+  # Body limits share the gateway's values. nginx's 1 MiB default would refuse
+  # larger requests with a 413 before the gateway ever saw them.
   location /api {
+    client_max_body_size {{ .Values.gateway.maxRequestBodyMib }}m;
     proxy_pass http://{{ $gw }};
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -77,7 +80,20 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
+  # Unbuffered so the gateway checks the upload ticket before the body arrives.
+  location ^~ /api/v1/agent-uploads/ {
+    client_max_body_size {{ .Values.gateway.agentUploadMaxMib }}m;
+    proxy_request_buffering off;
+    proxy_pass http://{{ $gw }};
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
   location = /mcp {
+    client_max_body_size {{ .Values.gateway.mcpMaxBodyMib }}m;
     proxy_pass http://{{ $gw }};
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -188,6 +204,11 @@ spec:
             capabilities:
               drop: ["ALL"]
               add: ["CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"]
+          env:
+            # The ConfigMap below replaces the image's rendered config, and
+            # rendering over that read-only mount would stop nginx starting.
+            - name: NGINX_ENVSUBST_TEMPLATE_DIR
+              value: /nonexistent
           ports:
             - name: http
               containerPort: 80

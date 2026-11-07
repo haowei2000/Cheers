@@ -540,7 +540,7 @@
         [
           "docs",
           "M1 demo runbook + connector 配置",
-          "`docs/DEMO_M1.md` 全流程 + `examples/cheers-daemon.local-demo.toml`",
+          "`docs/archive/DEMO_M1.md` 全流程 + `examples/cheers-daemon.local-demo.toml`",
           "`06d14d7`"
         ],
         [
@@ -685,7 +685,7 @@
         },
         {
           "title": "M1 Demo Runbook",
-          "href": "DEMO_M1.md",
+          "href": "../archive/DEMO_M1.md",
           "description": "全流程：infra → gateway → frontend → bot/token → connector → @bot 流式"
         },
         {

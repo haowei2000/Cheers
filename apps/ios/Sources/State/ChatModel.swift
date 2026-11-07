@@ -82,6 +82,8 @@ final class ChatModel {
     var errorMessage: String?
     var pendingAIConsent: [AIDataDisclosure] = []
     var composerText = ""
+    /// Bot turn whose suggestions the reader closed; a new turn shows its own.
+    private(set) var dismissedSuggestionMsgId: String?
     /// Explicit reset signal for the leaf composer. The draft deliberately
     /// lives outside ChatModel while typing, so model text changes must not be
     /// observed on every keystroke; this increments only after a confirmed send.
@@ -317,9 +319,6 @@ final class ChatModel {
             forceBottomTick += 1
             markRead()
             schedulePersist()
-        } catch APIError.aiConsentRequired(let disclosures) {
-            pendingAIConsent = disclosures
-            errorMessage = nil
         } catch {
             report(error)
         }
@@ -592,6 +591,13 @@ final class ChatModel {
                 sinceSeq: highestSeq,
                 limit: 200
             )
+            if response.meta?.hasMoreAfter == true {
+                // More was missed than one page holds. Appending this page would
+                // leave a hole between it and the newest rows; jump to the latest
+                // page instead (older history stays reachable via loadOlder).
+                await loadLatest()
+                return
+            }
             guard !response.messages.isEmpty else { return }
             for message in response.messages {
                 upsert(message)
@@ -724,10 +730,33 @@ final class ChatModel {
             }
             forceBottomTick += 1
             return true
+        } catch APIError.aiConsentRequired(let disclosures) {
+            // The message was refused, not sent: keep the draft and ask; the
+            // consent sheet's Allow resends it via grantPendingAIConsentAndRetry.
+            pendingAIConsent = disclosures
+            errorMessage = nil
+            return false
         } catch {
             report(error)
             return false
         }
+    }
+
+    /// Follow-ups for the turn the current user just triggered, unless dismissed.
+    var activeSuggestions: (msgId: String, questions: [SuggestedQuestion])? {
+        guard let active = SuggestedQuestion.active(in: messages, currentUserId: app?.session?.userId),
+              active.msgId != dismissedSuggestionMsgId else { return nil }
+        return active
+    }
+
+    func useSuggestion(_ question: SuggestedQuestion) {
+        composerText = question.displayText
+        composerPrefillMention = nil
+        composerPrefillTick += 1
+    }
+
+    func dismissSuggestions(msgId: String) {
+        dismissedSuggestionMsgId = msgId
     }
 
     func addPendingFile(_ file: MessageFileRef) {
@@ -797,7 +826,7 @@ final class ChatModel {
     /// They neither insert timeline rows nor alter scroll/read state.
     func applyTaskClaimUpdate(_ update: TaskClaimUpdate) {
         guard update.channelId == channel.channelId else { return }
-        patchClaimMessages { TaskClaimProjection.applying(update, to: $0) }
+        patchLoadedMessages { TaskClaimProjection.applying(update, to: $0) }
         if update.status != "pending" {
             pendingTaskClaims.removeAll { $0.claimId == update.claimId }
         }
@@ -805,11 +834,11 @@ final class ChatModel {
 
     func resolveTaskClaim(claimId: String, decision: String) async throws {
         guard let app, let api = app.api else { throw APIError.unauthorized }
-        let token = api.token
+        let userId = app.session?.userId
         let result = try await api.resolveTaskClaim(
             channelId: channel.channelId, claimId: claimId, decision: decision
         )
-        guard app.api?.baseURL == api.baseURL, app.token == token else {
+        guard app.api?.baseURL == api.baseURL, app.session?.userId == userId else {
             throw CancellationError()
         }
         applyTaskClaimUpdate(result)
@@ -827,7 +856,7 @@ final class ChatModel {
         }
     }
 
-    private func patchClaimMessages(_ patch: (MessageDto) -> MessageDto) {
+    private func patchLoadedMessages(_ patch: (MessageDto) -> MessageDto) {
         var changed = false
         func project(_ message: MessageDto) -> MessageDto {
             let projected = preservingClaimProjection(patch(message))
@@ -850,6 +879,7 @@ final class ChatModel {
     private func scheduleClaimRevalidation() {
         claimRevalidationTask?.cancel()
         guard let app, let api = app.api, let attachment = listenerId else { return }
+        let userId = app.session?.userId
         var seen = Set<String>()
         let candidates = knownClaimMessages.filter {
             TaskClaimProjection.needsRevalidation($0) && seen.insert($0.msgId).inserted
@@ -877,10 +907,10 @@ final class ChatModel {
                 while let snapshot = await group.next() {
                     guard !Task.isCancelled, let self,
                           self.listenerId == attachment,
-                          app.api?.baseURL == api.baseURL, app.token == api.token
+                          app.api?.baseURL == api.baseURL, app.session?.userId == userId
                     else { group.cancelAll(); return }
                     if let snapshot {
-                        self.patchClaimMessages { TaskClaimProjection.applyingSnapshot(snapshot, to: $0) }
+                        self.patchLoadedMessages { TaskClaimProjection.applyingSnapshot(snapshot, to: $0) }
                     }
                     if let candidate = iterator.next() { enqueue(candidate) }
                 }
@@ -942,9 +972,9 @@ final class ChatModel {
     private func handle(_ event: SocketEvent) {
         switch event {
         case .connected:
-            // Re-assert our subscription: the socket's replay set may have
-            // been cleared after a 4403 (stale channel) close. The server
-            // treats repeat subscribes as idempotent.
+            // Re-assert our subscription: the socket drops a channel from its
+            // replay set after a subscription_error. The server treats repeat
+            // subscribes as idempotent.
             app?.socket.subscribe(channelId: channel.channelId)
             scheduleMemberRefresh()
         case .subscribed(let channelId) where channelId == channel.channelId:
@@ -989,6 +1019,42 @@ final class ChatModel {
                 Task { await store.delete(msgId: msgId) }
             }
             scheduleDiscussionRefresh()
+        case .botUnavailable(let channelId, let botId, let placeholderMsgId) where channelId == channel.channelId:
+            // The server already deleted the placeholder; without this the
+            // "thinking…" bubble stays forever (and in the cache).
+            messages.removeAll { $0.msgId == placeholderMsgId }
+            liveTraceEvents[placeholderMsgId] = nil
+            if let store = app?.messageStore {
+                Task { await store.delete(msgId: placeholderMsgId) }
+            }
+            let botName = channelMembers.first { $0.memberId == botId }?.displayName ?? "This bot"
+            errorMessage = "\(botName) is offline and couldn't receive your message."
+        case .subscriptionDenied(let channelId, let code, _) where channelId == channel.channelId:
+            errorMessage = code == "PERMISSION_DENIED"
+                ? "You no longer have access to this channel."
+                : "Live updates for this channel stopped. Reopen it to try again."
+        case .contentDataUpdated(let channelId, let msgId, let contentData) where channelId == channel.channelId:
+            patchLoadedMessages { message in
+                guard message.msgId == msgId else { return message }
+                var updated = message
+                updated.contentData = contentData
+                return updated
+            }
+        case .fileTranscribed(let channelId, let fileId, let status, let summary) where channelId == channel.channelId:
+            patchLoadedMessages { message in
+                guard message.files?.contains(where: { $0.fileId == fileId }) == true else { return message }
+                var updated = message
+                updated.files = message.files?.map { file in
+                    guard file.fileId == fileId else { return file }
+                    var patched = file
+                    patched.transcriptStatus = status
+                    patched.summary = summary ?? file.summary
+                    return patched
+                }
+                return updated
+            }
+        case .taskClaimCreated(let channelId) where channelId == channel.channelId:
+            Task { await refreshTaskClaims() }
         case .taskClaimUpdated(let update) where update.channelId == channel.channelId:
             applyTaskClaimUpdate(update)
         default:
@@ -1082,14 +1148,6 @@ final class ChatModel {
                || (underlying as? URLError)?.code == .cancelled) {
             return
         }
-        if let apiError = error as? APIError {
-            if case .unauthorized = apiError {
-                app?.clearSession()
-                return
-            }
-            errorMessage = apiError.errorDescription
-        } else {
-            errorMessage = error.localizedDescription
-        }
+        errorMessage = error.localizedDescription
     }
 }

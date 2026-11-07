@@ -16,14 +16,14 @@
 ## 测试
 
 - [ ] 已添加/更新单元测试
-- [ ] 本地 `pytest` 全量通过
+- [ ] 涉及的 Rust crate 本地 `cargo test` 已通过
 - [ ] 前端 `pnpm build` 无报错
 - [ ] 前端 `pnpm lint` / `pnpm test` / `pnpm build` 已通过
 
 ## 数据库迁移
 
 - [ ] 不涉及数据库变更
-- [ ] 已添加 Alembic 迁移文件并本地验证（`alembic heads` 只有一个 head，然后 `alembic upgrade head`）
+- [ ] 已在 `server/migrations/` 下添加顺序编号的 sqlx 迁移并本地验证（`cargo build`，再在干净的 Postgres 上运行）；未修改已应用的迁移
 
 ## 安全与发布影响
 

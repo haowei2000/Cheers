@@ -13,7 +13,7 @@ struct DaySeparatorView: View {
         Text(label)
             .font(.caption.weight(.medium))
             .foregroundStyle(Theme.textSecondary)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Theme.bgRaised)
             .clipShape(Capsule())
@@ -33,7 +33,7 @@ struct SystemMessageView: View {
             .foregroundStyle(Theme.textMuted)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
             .padding(.horizontal, 24)
     }
 
@@ -50,19 +50,31 @@ struct SystemMessageView: View {
                 ? String(localized: "Agent sign-in (resolved)")
                 : String(localized: "Agent sign-in required")
         }
+        if message.msgType == "elicitation" {
+            let resolved = message.contentData?["resolved"]?.boolValue == true
+            return resolved
+                ? String(localized: "Agent question (answered)")
+                : String(localized: "Agent question")
+        }
         return message.content
     }
 }
 
 // MARK: - Chat bubble (Telegram-style, design map §5.2b)
 
+enum MessageIdentityLayout {
+    case rail, avatar
+}
+
 struct MessageBubbleView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.presentationLevel) private var presentationLevel
     let message: MessageDto
     let isOwn: Bool
     let showAvatar: Bool
+    /// Chat's rail of avatar + name, or Discussion's avatar alone.
+    var identityLayout: MessageIdentityLayout = .rail
+    /// Not shown on the row (DESIGN_LANGUAGE §8); the long-press menu carries it.
     /// Preformatted when the channel's presentation model changes, not while
     /// the bubble is being laid out during scrolling.
     var formattedTime: String = ""
@@ -82,67 +94,70 @@ struct MessageBubbleView: View {
     /// activity never creates a second text row below the message.
     var recordAccessory: AnyView? = nil
     var body: some View {
-        VStack(alignment: isOwn ? .trailing : .leading, spacing: Theme.messageInnerGap) {
-            if !isOwn, showAvatar {
-                senderHeader
+        HStack(alignment: .top, spacing: Theme.space2) {
+            if isOwn {
+                Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? Theme.space2 : Theme.space5)
+            } else {
+                identitySlot
             }
-
-            HStack(alignment: .top, spacing: Theme.space2) {
-                if isOwn {
-                    Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? Theme.space2 : Theme.space5)
+            bubble
+            if let recordAccessory {
+                recordAccessory
+            }
+            if message.isBot, message.isPartial == true, let onStop {
+                Button {
+                    NativeFeedback.lightImpact()
+                    onStop()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.caption.weight(.semibold))
                 }
-                bubble
-                if let recordAccessory {
-                    recordAccessory
-                }
-                if message.isBot, message.isPartial == true, let onStop {
-                    Button {
-                        NativeFeedback.lightImpact()
-                        onStop()
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.circle)
-                    .controlSize(.small)
-                    .tint(Theme.textSecondary)
-                    .frame(width: Theme.hitMin, height: Theme.hitMin)
-                    .accessibilityLabel("Stop response")
-                    .accessibilityHint("Stops this response and any bot-to-bot chain it started")
-                }
-                if !isOwn {
-                    Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? Theme.space2 : Theme.space5)
-                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.circle)
+                .controlSize(.small)
+                .tint(Theme.textSecondary)
+                .frame(width: Theme.hitMin, height: Theme.hitMin)
+                .accessibilityLabel("Stop response")
+                .accessibilityHint("Stops this response and any bot-to-bot chain it started")
+            }
+            if !isOwn {
+                Spacer(minLength: Theme.space2)
             }
         }
         // Outer ChatTimelineRow owns inter-message gaps; keep chrome tight.
-        .padding(.horizontal, nested ? Theme.space3 : Theme.space5)
-        .padding(.top, 0)
+        .padding(.horizontal, nested ? Theme.space3 : Theme.space4)
     }
 
-    private var senderHeader: some View {
-        HStack(spacing: Theme.space2) {
-            senderAvatar
-            Text(message.senderName ?? (message.isBot ? String(localized: "Bot") : String(localized: "Unknown")))
-                .font(nested ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-            if message.isBot {
-                Text("BOT")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Theme.textSecondary)
-                    .padding(.horizontal, Theme.space1)
-                    .padding(.vertical, 2)
-                    .background(Theme.bgSelected)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+    /// Chat shows avatar + name in the rail. A threaded reply, or a type size too
+    /// large to spare the rail, shows the avatar alone (DESIGN_LANGUAGE §8).
+    private var showsName: Bool {
+        identityLayout == .rail && !nested && !dynamicTypeSize.isAccessibilitySize
+    }
+
+    private var senderName: String {
+        message.senderName ?? (message.isBot ? String(localized: "Bot") : String(localized: "Unknown"))
+    }
+
+    @ViewBuilder
+    private var identitySlot: some View {
+        if showAvatar {
+            VStack(spacing: Theme.space1) {
+                senderAvatar
+                if showsName {
+                    Text(senderName)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
-            Spacer(minLength: 0)
-            if presentationLevel != .minimal {
-                timeLabel
-            }
+            .frame(width: showsName ? Theme.identityRail : Theme.messageAvatar)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(message.isBot ? "\(senderName), bot" : senderName)
+        } else {
+            // A consecutive row indents to what the identity above it reserved.
+            Color.clear.frame(width: showsName ? Theme.identityRail : Theme.messageAvatar, height: 1)
         }
-        .frame(minHeight: nested ? 24 : 32)
     }
 
     @ViewBuilder
@@ -151,11 +166,10 @@ struct MessageBubbleView: View {
             AvatarView(
                 seedId: message.senderId ?? message.msgId,
                 name: message.senderName,
-                size: nested ? 24 : 32,
+                size: Theme.messageAvatar,
                 monochrome: true
             )
-            .frame(minWidth: Theme.hitMin, minHeight: Theme.hitMin)
-            .contentShape(Rectangle())
+            .contentShape(Rectangle().inset(by: (Theme.messageAvatar - Theme.hitMin) / 2))
             .contextMenu {
                 Button {
                     NativeFeedback.selection()
@@ -177,14 +191,14 @@ struct MessageBubbleView: View {
             AvatarView(
                 seedId: message.senderId ?? message.msgId,
                 name: message.senderName,
-                size: nested ? 24 : 32,
+                size: Theme.messageAvatar,
                 monochrome: true
             )
         }
     }
 
     private var bubble: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             if let repliedTo {
                 replyQuote(repliedTo)
             }
@@ -237,6 +251,9 @@ struct MessageBubbleView: View {
         .background(Theme.bubbleOther)
         .clipShape(bubbleShape)
         .contextMenu {
+            if !formattedTime.isEmpty {
+                Text(formattedTime)
+            }
             // Web bubble actions (MessageItem.tsx): Reply · Copy text · Forward.
             if let onReply {
                 Button {
@@ -265,11 +282,11 @@ struct MessageBubbleView: View {
 
     /// Compact quoted-message block (sender + one line), leading accent bar.
     private func replyQuote(_ quoted: MessageDto) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 8) {
             Capsule()
                 .fill(Theme.accent)
                 .frame(width: 2.5)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(quoted.senderName ?? (quoted.isBot ? String(localized: "Bot") : String(localized: "Message")))
                     .font(.caption.weight(.semibold))
                 Text(quoted.content.replacingOccurrences(of: "\n", with: " "))
@@ -279,26 +296,10 @@ struct MessageBubbleView: View {
             .foregroundStyle(Theme.textSecondary)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.vertical, 4)
         .frame(maxWidth: 240, alignment: .leading)
         .background(Theme.bgApp.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-    }
-
-    private var timeLabel: some View {
-        HStack(spacing: 4) {
-            if !isAwaitingContent, message.isPartial == true {
-                // Streaming: pulsing caret substitute.
-                Circle()
-                    .fill(Theme.textSecondary)
-                    .frame(width: 5, height: 5)
-            }
-            Text(formattedTime)
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(Theme.textSecondary)
-                .dynamicTypeSize(...DynamicTypeSize.large)
-        }
-        .padding(.bottom, 1)
     }
 
     private var isAwaitingContent: Bool {
@@ -338,7 +339,7 @@ struct AttachmentChipView: View {
         HStack(spacing: 8) {
             Image(systemName: "doc")
                 .font(.subheadline)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(file.originalFilename ?? "Attachment")
                     .font(.caption.weight(.medium))
                     .lineLimit(1)
@@ -347,13 +348,28 @@ struct AttachmentChipView: View {
                         .font(.caption)
                         .opacity(0.7)
                 }
+                if let transcriptLine {
+                    Text(transcriptLine)
+                        .font(.caption)
+                        .opacity(0.7)
+                        .lineLimit(3)
+                }
             }
         }
         .foregroundStyle(Theme.textBody)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
         .background(Theme.bgSelected.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var transcriptLine: String? {
+        if let summary = file.summary, !summary.isEmpty { return summary }
+        switch file.transcriptStatus {
+        case "pending": return String(localized: "Transcribing…")
+        case "failed": return String(localized: "Transcription failed")
+        default: return nil
+        }
     }
 }
 
@@ -384,9 +400,9 @@ private struct AttachmentImagePreview: View {
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
+                            .padding(.vertical, 4)
                             .background(.black.opacity(0.62), in: Capsule())
-                            .padding(7)
+                            .padding(8)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else if failed {
@@ -471,7 +487,7 @@ struct MessageContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(segments) { segment in
                 switch segment {
                 case .text(let attributed, _):
@@ -485,7 +501,7 @@ struct MessageContentView: View {
                         Text(code)
                             .font(.subheadline.monospaced())
                             .foregroundStyle(Theme.textBody)
-                            .padding(10)
+                            .padding(8)
                     }
                     .background(Theme.bgApp)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

@@ -189,3 +189,122 @@ struct AuthAckResponse: Decodable {
     let delivered: Bool
     let action: String
 }
+
+/// ACP v1 form / URL elicitation card from `msg_type: "elicitation"` — an
+/// agent asking the user a question mid-turn. Mirrors the web ElicitationCard;
+/// the gateway re-validates answers against `requested_schema`.
+struct ElicitationRequest {
+    struct Field: Identifiable {
+        struct Choice: Hashable {
+            let value: JSONValue
+            let title: String
+        }
+
+        let name: String
+        let title: String
+        let description: String?
+        /// string | number | integer | boolean | array
+        let type: String
+        let choices: [Choice]?
+        let isRequired: Bool
+        let defaultValue: JSONValue?
+
+        var id: String { name }
+    }
+
+    let requestId: String
+    /// form | url
+    let mode: String
+    let message: String
+    let fields: [Field]
+    let url: URL?
+    let isMcpOAuth: Bool
+    let initiatingUserId: String?
+    let resolved: Bool
+    let status: String?
+
+    init?(contentData: JSONValue?) {
+        guard let data = contentData,
+              let requestId = data["request_id"]?.stringValue, !requestId.isEmpty else {
+            return nil
+        }
+        self.requestId = requestId
+        mode = data["mode"]?.stringValue ?? "form"
+        message = data["message"]?.stringValue ?? ""
+        url = data["url"]?.stringValue.flatMap(URL.init(string:))
+        isMcpOAuth = mode == "url" && data["interaction_kind"]?.stringValue == "mcp_oauth"
+        initiatingUserId = data["initiating_user_id"]?.stringValue
+        resolved = data["resolved"]?.boolValue == true
+        status = data["status"]?.stringValue
+
+        let schema = data["requested_schema"]
+        let required = Set((schema?["required"]?.arrayValue ?? []).compactMap(\.stringValue))
+        let properties = schema?["properties"]?.objectValue ?? [:]
+        // JSON objects carry no order; sort so fields don't shuffle between renders.
+        fields = properties.keys.sorted().compactMap { name in
+            guard let property = properties[name] else { return nil }
+            return Field(
+                name: name,
+                title: property["title"]?.stringValue ?? name,
+                description: property["description"]?.stringValue,
+                type: property["type"]?.stringValue ?? "string",
+                choices: Self.choices(property),
+                isRequired: required.contains(name),
+                defaultValue: property["default"]
+            )
+        }
+    }
+
+    private static func choices(_ property: JSONValue) -> [Field.Choice]? {
+        let plain = property["enum"]?.arrayValue ?? property["items"]?["enum"]?.arrayValue
+        if let plain {
+            return plain.map { Field.Choice(value: $0, title: label($0)) }
+        }
+        guard let oneOf = property["oneOf"]?.arrayValue else { return nil }
+        return oneOf.map { option in
+            guard option.objectValue != nil else {
+                return Field.Choice(value: option, title: label(option))
+            }
+            let value = option["const"] ?? option["title"] ?? .string("")
+            return Field.Choice(value: value, title: option["title"]?.stringValue ?? label(value))
+        }
+    }
+
+    private static func label(_ value: JSONValue) -> String {
+        switch value {
+        case .string(let s): return s
+        case .number(let n): return n == n.rounded() ? String(Int64(n)) : String(n)
+        case .bool(let b): return String(b)
+        default: return ""
+        }
+    }
+
+    /// May this user answer? The gateway only accepts the initiating user.
+    func canRespond(userId: String?) -> Bool {
+        initiatingUserId == nil || initiatingUserId == userId
+    }
+
+    /// The first required field without a usable value, if any.
+    func missingRequiredField(in values: [String: JSONValue]) -> Field? {
+        fields.first { field in
+            guard field.isRequired else { return false }
+            switch values[field.name] {
+            case nil, .null: return true
+            case .string(let s): return s.trimmingCharacters(in: .whitespaces).isEmpty
+            case .array(let a): return a.isEmpty
+            default: return false
+            }
+        }
+    }
+}
+
+struct ResolveElicitationRequest: Encodable {
+    let action: String
+    let content: [String: JSONValue]?
+}
+
+struct ResolveElicitationResponse: Decodable {
+    let ok: Bool
+    let delivered: Bool
+    let action: String
+}

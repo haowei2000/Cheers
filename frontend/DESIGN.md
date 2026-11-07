@@ -487,6 +487,15 @@ registered treatments and no third:
 record icon; raw attachment/trace counts belong in the accessible label and
 tooltip, not as unexplained zero-padded folio numbers in the timeline.
 
+Bot progress has one owner: the run overview shows the outcome, tool/error
+counts, record disclosure, and adjacent Stop action. Its text wraps so critical
+status remains visible on narrow screens. While this overview is present, the
+message body renders content without another progress cursor or trace title.
+Inline steps show pending approvals first, otherwise the latest tool/event;
+pending approvals render their command and direct choices once, without an
+additional trace disclosure header. Run lifecycle rows belong only in the
+record, and status badges do not repeat as event previews.
+
 `w-2 h-2 rounded-full ring-2 ring-zinc-900` overlaid bottom-right of the
 avatar; `bg-emerald-500` online / `bg-zinc-600` offline. One size, one ring
 style — don't mix `border` and `ring` variants. (This ring is the avatar

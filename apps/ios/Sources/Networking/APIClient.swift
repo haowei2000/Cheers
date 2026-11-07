@@ -10,13 +10,14 @@ enum APIError: LocalizedError {
     case transport(Error)
     case decoding(Error)
     case aiConsentRequired([AIDataDisclosure])
+    case identityConfirmationCancelled
 
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL:
             return "Invalid server URL."
         case .unauthorized:
-            return "Session expired. Please sign in again."
+            return "Couldn't renew your session. Check your connection and try again."
         case .http(let status, let detail):
             if let detail, !detail.isEmpty { return detail }
             return "HTTP \(status)"
@@ -26,6 +27,8 @@ enum APIError: LocalizedError {
             return "Unexpected server response."
         case .aiConsentRequired:
             return "Review the external AI data notice before sending this message."
+        case .identityConfirmationCancelled:
+            return "Identity confirmation was cancelled."
         }
     }
 }
@@ -35,10 +38,22 @@ enum APIError: LocalizedError {
 /// Thin async/await REST client for the Cheers Rust gateway.
 /// `baseURL` includes the `/api/v1` prefix (e.g. http://localhost:30080/api/v1).
 struct APIClient: Sendable {
+    /// Called with the rejected access token when the gateway answers an empty
+    /// 401 (expired or revoked JWT). Returns a fresh token to retry once with,
+    /// or nil when the session cannot be renewed.
+    typealias Reauthenticate = @Sendable (_ rejectedToken: String) async -> String?
+    /// Called when a security-sensitive request answers 428
+    /// `recent_authentication_required`. Returns true once the user has confirmed
+    /// their identity (the request is then retried once), false if they cancelled.
+    typealias ConfirmIdentity = @Sendable () async -> Bool
+
     let baseURL: URL
     let token: String?
+    private let reauthenticate: Reauthenticate?
+    private let confirmIdentity: ConfirmIdentity?
+    private let session: URLSession
 
-    private static let session: URLSession = {
+    static let defaultSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.waitsForConnectivity = false
@@ -46,9 +61,18 @@ struct APIClient: Sendable {
     }()
     private static let logger = Logger(subsystem: "app.cheers.ios", category: "HTTP")
 
-    init(baseURL: URL, token: String?) {
+    init(
+        baseURL: URL,
+        token: String?,
+        session: URLSession = APIClient.defaultSession,
+        reauthenticate: Reauthenticate? = nil,
+        confirmIdentity: ConfirmIdentity? = nil
+    ) {
         self.baseURL = baseURL
         self.token = token
+        self.session = session
+        self.reauthenticate = reauthenticate
+        self.confirmIdentity = confirmIdentity
     }
 
     /// Normalizes user input like "localhost:30080" or a trailing-slash URL
@@ -116,11 +140,15 @@ struct APIClient: Sendable {
         return request
     }
 
-    private func send(_ request: URLRequest) async throws -> Data {
+    private func send(
+        _ request: URLRequest,
+        mayReauthenticate: Bool = true,
+        mayConfirmIdentity: Bool = true
+    ) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await Self.session.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as URLError where error.code == .cancelled {
@@ -144,13 +172,33 @@ struct APIClient: Sendable {
                required.code == "ai_consent_required" {
                 throw APIError.aiConsentRequired(required.disclosures)
             }
+            if http.statusCode == 428, mayConfirmIdentity, let confirmIdentity,
+               (try? JSONDecoder().decode(ErrorCodeBody.self, from: data))?.code
+                   == "recent_authentication_required" {
+                guard await confirmIdentity() else { throw APIError.identityConfirmationCancelled }
+                return try await send(
+                    request,
+                    mayReauthenticate: mayReauthenticate,
+                    mayConfirmIdentity: false
+                )
+            }
             // 401 means "session revoked/expired" only when the body is empty.
             // Authenticated management calls (change-password, 2FA enable/disable)
             // also use 401 for wrong credentials / codes — surface that detail.
-            if http.statusCode == 401, token != nil {
+            if http.statusCode == 401, let token {
                 let detail = (try? JSONDecoder().decode(ApiErrorBody.self, from: data))?.detail
                 if let detail, !detail.isEmpty {
                     throw APIError.http(status: 401, detail: detail)
+                }
+                if mayReauthenticate, let reauthenticate,
+                   let fresh = await reauthenticate(token) {
+                    var retry = request
+                    retry.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
+                    return try await send(
+                        retry,
+                        mayReauthenticate: false,
+                        mayConfirmIdentity: mayConfirmIdentity
+                    )
                 }
                 throw APIError.unauthorized
             }
@@ -160,6 +208,10 @@ struct APIClient: Sendable {
             throw APIError.http(status: http.statusCode, detail: detail)
         }
         return data
+    }
+
+    private struct ErrorCodeBody: Decodable {
+        let code: String?
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
@@ -208,8 +260,8 @@ struct APIClient: Sendable {
         _ = try await send(request)
     }
 
-    func deleteEmpty(_ path: String) async throws {
-        let request = try makeRequest("DELETE", path)
+    func deleteEmpty(_ path: String, query: [URLQueryItem] = []) async throws {
+        let request = try makeRequest("DELETE", path, query: query)
         _ = try await send(request)
     }
 
@@ -425,8 +477,12 @@ struct APIClient: Sendable {
         )
     }
 
-    func setPassword(_ password: String, apple: AppleAuthorizationPayload) async throws {
-        try await postEmptyJSON("/users/me/password", body: SetPasswordRequest(newPassword: password, apple: apple))
+    func setPassword(_ password: String, apple: AppleAuthorizationPayload) async throws -> LoginResponse {
+        try await postJSON(
+            "/users/me/password",
+            body: SetPasswordRequest(newPassword: password, apple: apple),
+            as: LoginResponse.self
+        )
     }
 
     func report(targetType: String, targetId: String, channelId: String?, reason: String, details: String?) async throws {
@@ -538,7 +594,7 @@ struct APIClient: Sendable {
         currentPassword: String,
         newPassword: String,
         twoFactorCode: String? = nil
-    ) async throws -> ChangePasswordResponse {
+    ) async throws -> LoginResponse {
         try await postJSON(
             "/auth/change-password",
             body: ChangePasswordRequest(
@@ -546,7 +602,7 @@ struct APIClient: Sendable {
                 newPassword: newPassword,
                 twoFactorCode: twoFactorCode
             ),
-            as: ChangePasswordResponse.self
+            as: LoginResponse.self
         )
     }
 
@@ -674,6 +730,64 @@ struct APIClient: Sendable {
         return try await postRawJSON("/auth/2fa/passkey/verify", object: body, as: LoginResponse.self)
     }
 
+    // MARK: Step-up (server/src/api/auth_flow.rs)
+
+    func startStepUpFlow(actionClass: String = "sensitive_action") async throws -> AuthFlowResponse {
+        struct Body: Encodable {
+            let purpose = "step_up"
+            let client = "ios"
+            let actionClass: String
+            enum CodingKeys: String, CodingKey {
+                case purpose, client
+                case actionClass = "action_class"
+            }
+        }
+        return try await postJSON("/auth/flows/start", body: Body(actionClass: actionClass), as: AuthFlowResponse.self)
+    }
+
+    func verifyStepUpPassword(transactionId: String, password: String) async throws -> AuthFlowResponse {
+        try await postJSON(
+            "/auth/flows/\(transactionId)/password",
+            body: ["password": password],
+            as: AuthFlowResponse.self
+        )
+    }
+
+    /// `method` is `email`, `totp`, or `recovery_code`; the TOTP endpoint also
+    /// accepts recovery codes.
+    func verifyStepUpCode(transactionId: String, method: String, code: String) async throws -> AuthFlowResponse {
+        let suffix = method == "email" ? "email/verify" : "totp/verify"
+        return try await postJSON(
+            "/auth/flows/\(transactionId)/\(suffix)",
+            body: ["code": code],
+            as: AuthFlowResponse.self
+        )
+    }
+
+    func sendStepUpEmail(transactionId: String) async throws {
+        try await postEmpty("/auth/flows/\(transactionId)/email/send")
+    }
+
+    func stepUpPasskeyOptions(transactionId: String) async throws -> PasskeyAssertOptionsResponse {
+        try await postJSON(
+            "/auth/flows/\(transactionId)/passkey/options",
+            body: EmptyRequest(),
+            as: PasskeyAssertOptionsResponse.self
+        )
+    }
+
+    func verifyStepUpPasskey(transactionId: String, credential: [String: Any]) async throws -> AuthFlowResponse {
+        try await postRawJSON(
+            "/auth/flows/\(transactionId)/passkey/verify",
+            object: ["credential": credential],
+            as: AuthFlowResponse.self
+        )
+    }
+
+    func cancelStepUpFlow(transactionId: String) async throws {
+        try await postEmpty("/auth/flows/\(transactionId)/cancel")
+    }
+
     private func postRawJSON<T: Decodable>(_ path: String, object: [String: Any], as type: T.Type) async throws -> T {
         let data = try JSONSerialization.data(withJSONObject: object)
         let request = try makeRequest("POST", path, body: data)
@@ -773,6 +887,16 @@ struct APIClient: Sendable {
             query.append(URLQueryItem(name: "workspace_id", value: workspaceId))
         }
         return try await getJSON("/channels", query: query, as: [ChannelDto].self)
+    }
+
+    /// Newest message per channel, for conversation-list previews. Channels with
+    /// no visible message (or that the caller hasn't joined) are absent.
+    func latestMessages(channelIds: [String]) async throws -> [MessageDto] {
+        try await postJSON(
+            "/channels/latest-messages",
+            body: LatestMessagesRequest(channelIds: channelIds),
+            as: LatestMessagesResponse.self
+        ).messages
     }
 
     func listDMs() async throws -> [ChannelDto] {
@@ -1229,6 +1353,99 @@ struct APIClient: Sendable {
             "/channels/\(channelId)/auth-required/\(encoded)/ack",
             body: AuthAckRequest(action: action),
             as: AuthAckResponse.self
+        )
+    }
+
+    // MARK: Scheduled messages
+
+    func listScheduledMessages() async throws -> [ScheduledMessageDto] {
+        try await getJSON("/scheduled-messages", as: ScheduledMessagesResponse.self).tasks
+    }
+
+    func createScheduledMessage(_ input: ScheduledMessageInput) async throws -> ScheduledMessageDto {
+        try await postJSON("/scheduled-messages", body: input, as: ScheduledMessageDto.self)
+    }
+
+    func updateScheduledMessage(id: String, _ input: ScheduledMessageInput) async throws -> ScheduledMessageDto {
+        try await putJSON("/scheduled-messages/\(id)", body: input, as: ScheduledMessageDto.self)
+    }
+
+    func deleteScheduledMessage(id: String) async throws {
+        try await deleteEmpty("/scheduled-messages/\(id)")
+    }
+
+    func runScheduledMessageNow(id: String) async throws {
+        try await postEmpty("/scheduled-messages/\(id)/run")
+    }
+
+    func listScheduledMessageRuns(id: String) async throws -> [ScheduledMessageRunDto] {
+        try await getJSON("/scheduled-messages/\(id)/runs", as: ScheduledMessageRunsResponse.self).runs
+    }
+
+    // MARK: Email change
+
+    func requestEmailUpdateCode(email: String) async throws {
+        try await postEmptyJSON("/auth/email/request-code", body: ["email": email])
+    }
+
+    func updateEmail(email: String, code: String) async throws {
+        try await postEmptyJSON("/auth/email/update", body: ["email": email, "code": code])
+    }
+
+    // MARK: Bot access (owner/admin)
+
+    func listApprovers(botId: String) async throws -> [ApproverDto] {
+        try await getJSON("/bots/\(botId)/approvers", as: ApproversResponse.self).delegates
+    }
+
+    func revokeApprover(botId: String, approver: ApproverDto) async throws {
+        try await deleteEmpty("/bots/\(botId)/approvers/\(approver.userId)", query: [
+            URLQueryItem(name: "channel_id", value: approver.channelId),
+            URLQueryItem(name: "operation_kind", value: approver.operationKind ?? "*"),
+        ])
+    }
+
+    func eventAccess(botId: String) async throws -> EventAccessDto {
+        try await getJSON("/bots/\(botId)/event-access", as: EventAccessDto.self)
+    }
+
+    func upsertEventRule(botId: String, rule: EventRuleInput) async throws {
+        _ = try await putJSON("/bots/\(botId)/event-access", body: rule, as: JSONValue.self)
+    }
+
+    func deleteEventRule(botId: String, rule: EventRuleDto) async throws {
+        var query = [
+            URLQueryItem(name: "subject_kind", value: rule.subjectKind),
+            URLQueryItem(name: "subject_id", value: rule.subjectId),
+            URLQueryItem(name: "event_class", value: rule.eventClass),
+            URLQueryItem(name: "capability", value: rule.capability),
+        ]
+        if !rule.channelId.isEmpty {
+            query.append(URLQueryItem(name: "channel_id", value: rule.channelId))
+        }
+        try await deleteEmpty("/bots/\(botId)/event-access", query: query)
+    }
+
+    func acpEvents(botId: String, limit: Int = 100) async throws -> [AcpEventDto] {
+        try await getJSON(
+            "/bots/\(botId)/acp-events",
+            query: [URLQueryItem(name: "limit", value: String(limit))],
+            as: AcpEventsResponse.self
+        ).events
+    }
+
+    /// Answer an ACP form / URL elicitation. `content` only for an accepted form.
+    func resolveElicitation(
+        channelId: String,
+        requestId: String,
+        action: String,
+        content: [String: JSONValue]? = nil
+    ) async throws -> ResolveElicitationResponse {
+        let encoded = requestId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? requestId
+        return try await postJSON(
+            "/channels/\(channelId)/elicitations/\(encoded)/resolve",
+            body: ResolveElicitationRequest(action: action, content: content),
+            as: ResolveElicitationResponse.self
         )
     }
 
