@@ -1,8 +1,9 @@
 //! Compile-time Agent extensions isolated from ACP runtime orchestration.
 //!
-//! Extensions may only enrich presentation metadata or rank advertised auth
-//! methods. They cannot alter permissions, capabilities, sessions, MCP scopes,
-//! credentials, or raw ACP payloads.
+//! Extensions may only enrich presentation metadata, rank advertised auth
+//! methods, or recognize vendor-shaped MCP tool approval prompts. They cannot
+//! alter permissions, capabilities, sessions, MCP scopes, credentials, or raw ACP
+//! payloads — what to do with a recognized approval stays a runtime policy.
 
 use std::collections::BTreeMap;
 
@@ -27,6 +28,47 @@ pub trait AuthMethodPolicy: Send + Sync {
         methods: &[AuthMethodInfo],
         agent_env: &BTreeMap<String, String>,
     ) -> Option<i16>;
+}
+
+/// An MCP tool approval recognized in an elicitation request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpToolApproval {
+    pub server_name: String,
+    pub tool_name: String,
+}
+
+impl McpToolApproval {
+    /// Reads the structured server/tool fields agents attach to the request.
+    pub fn from_structured_fields(params: &Value) -> Self {
+        let field = |key: &str| {
+            params
+                .get(key)
+                .or_else(|| params.get("_meta").and_then(|m| m.get(key)))
+        };
+        let server_name = field("serverName")
+            .and_then(Value::as_str)
+            .unwrap_or("mcp")
+            .to_string();
+        let tool_name = field("toolName")
+            .or_else(|| {
+                params
+                    .get("toolCall")
+                    .and_then(|t| t.get("name").or_else(|| t.get("tool")))
+            })
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        Self {
+            server_name,
+            tool_name,
+        }
+    }
+}
+
+/// Read-only recognizer for vendor-specific MCP tool approval elicitations.
+pub trait McpApprovalDecoder: Send + Sync {
+    /// Returns the approval's server/tool, or `None` when the request is not one.
+    fn decode_mcp_approval(&self, params: &Value) -> Option<McpToolApproval>;
 }
 
 struct CodexExtension;
@@ -97,6 +139,53 @@ impl AuthMethodPolicy for CodexExtension {
     }
 }
 
+/// Parses the approval prompt text Codex sends for MCP tool calls:
+/// `Allow the <server> MCP server to run tool "<tool>"?`.
+pub fn parse_mcp_approval_message(message: &str) -> Option<(String, String)> {
+    let marker = " MCP server to run tool ";
+    let pos = message.find(marker)?;
+    let before = &message[..pos];
+    let after = &message[pos + marker.len()..];
+    let server = before
+        .strip_prefix("Allow the ")
+        .or_else(|| before.strip_prefix("Allow "))
+        .unwrap_or(before)
+        .trim();
+    let tool_trimmed = after.trim().trim_end_matches('?').trim();
+    let tool = tool_trimmed
+        .strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .or_else(|| {
+            tool_trimmed
+                .strip_prefix('\'')
+                .and_then(|t| t.strip_suffix('\''))
+        })
+        .unwrap_or(tool_trimmed);
+    (!server.is_empty() && !tool.is_empty()).then(|| (server.to_string(), tool.to_string()))
+}
+
+impl McpApprovalDecoder for CodexExtension {
+    fn decode_mcp_approval(&self, params: &Value) -> Option<McpToolApproval> {
+        let message = params.get("message").and_then(Value::as_str).unwrap_or("");
+        if let Some((server_name, tool_name)) = parse_mcp_approval_message(message) {
+            return Some(McpToolApproval {
+                server_name,
+                tool_name,
+            });
+        }
+        let tagged = params
+            .pointer("/_meta/codex_approval_kind")
+            .and_then(Value::as_str)
+            == Some("mcp_tool_call");
+        // Codex's approval form has a `persist` field titled "Approval scope".
+        let scope_form = params
+            .pointer("/requestedSchema/properties/persist/title")
+            .and_then(Value::as_str)
+            == Some("Approval scope");
+        (tagged || scope_form).then(|| McpToolApproval::from_structured_fields(params))
+    }
+}
+
 static CODEX: CodexExtension = CodexExtension;
 static CLAUDE: ClaudeExtension = ClaudeExtension;
 
@@ -116,6 +205,13 @@ pub fn decode_presentation(payload: &Value) -> Option<NormalizedPresentation> {
         normalized.tool_name = normalized.tool_name.or(decoded.tool_name);
     }
     (!normalized.is_empty()).then_some(normalized)
+}
+
+/// Runs every built-in recognizer; the first match wins.
+pub fn decode_mcp_approval(params: &Value) -> Option<McpToolApproval> {
+    [&CODEX as &dyn McpApprovalDecoder]
+        .into_iter()
+        .find_map(|decoder| decoder.decode_mcp_approval(params))
 }
 
 /// Orders methods for display while preserving Agent order when no policy matches.
@@ -144,6 +240,35 @@ pub fn rank_auth_methods(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn parses_mcp_tool_approval_messages() {
+        let msg = r#"Allow the cheers-0cc488cced5747c881687c9485b4af3c MCP server to run tool "post_message"?"#;
+        let parsed = parse_mcp_approval_message(msg);
+        assert_eq!(
+            parsed,
+            Some((
+                "cheers-0cc488cced5747c881687c9485b4af3c".to_string(),
+                "post_message".to_string()
+            ))
+        );
+
+        let msg2 = "Allow the github MCP server to run tool 'create_issue'?";
+        let parsed2 = parse_mcp_approval_message(msg2);
+        assert_eq!(
+            parsed2,
+            Some(("github".to_string(), "create_issue".to_string()))
+        );
+
+        let msg3 = "Allow local-fs MCP server to run tool read_file";
+        let parsed3 = parse_mcp_approval_message(msg3);
+        assert_eq!(
+            parsed3,
+            Some(("local-fs".to_string(), "read_file".to_string()))
+        );
+
+        assert_eq!(parse_mcp_approval_message("What is your name?"), None);
+    }
 
     #[test]
     fn codex_metadata_becomes_vendor_neutral_presentation() {

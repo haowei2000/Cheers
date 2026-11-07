@@ -383,7 +383,7 @@ impl RuntimeContext {
 
 pub(super) fn is_cheers_mcp_permission(params: &Value) -> bool {
     let msg = params.get("message").and_then(Value::as_str).unwrap_or("");
-    if let Some((server, _)) = elicitation::parse_mcp_tool_approval_message(msg) {
+    if let Some((server, _)) = crate::extensions::parse_mcp_approval_message(msg) {
         if is_cheers_mcp_server_name(&server) {
             return true;
         }

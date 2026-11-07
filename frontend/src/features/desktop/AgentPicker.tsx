@@ -20,12 +20,23 @@ export interface DetectedAgent {
   installable: boolean;
 }
 
+/** Why an agent has no launch command yet (empty `command` from detection). */
+function UnknownCommandNote({ agent }: { agent: DetectedAgent }) {
+  return agent.installable ? (
+    <HelpLabel help="Couldn't read this package's command from npm. After installing, set adapter.command in the config by hand.">
+      <span className="text-caption text-content-muted">Command unknown</span>
+    </HelpLabel>
+  ) : (
+    <span className="text-caption text-content-muted">Not for this Mac</span>
+  );
+}
+
 /**
  * Pick the agent for a connector from the ones installed on THIS machine —
  * shown cleanly with brand icons and status, with an expandable registry catalog
  * to install additional ACP agents. `value` is the selected agent key or "custom";
  * `onPick` reports the chosen key plus its resolved absolute command path (null
- * when not installed / custom).
+ * when not installed / custom) and its adapter args.
  */
 export function AgentPicker({
   value,
@@ -34,7 +45,7 @@ export function AgentPicker({
 }: {
   value: string;
   allowCustom?: boolean;
-  onPick: (key: string, commandPath: string | null) => void;
+  onPick: (key: string, commandPath: string | null, args: string[]) => void;
 }) {
   const [agents, setAgents] = useState<DetectedAgent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +91,7 @@ export function AgentPicker({
       const updated = await invokeDesktop<DetectedAgent[]>("detect_agents");
       setAgents(updated);
       const newlyInstalled = updated.find((x) => x.key === key);
-      onPick(key, newlyInstalled?.path ?? null);
+      onPick(key, newlyInstalled?.path ?? null, newlyInstalled?.args ?? []);
     } catch (e) {
       toast.error(typeof e === "string" ? e : "install failed");
     } finally {
@@ -148,7 +159,7 @@ export function AgentPicker({
                       <Check className="w-4 h-4 text-content-strong" />
                     ) : null
                   }
-                  onClick={() => onPick(a.key, a.path)}
+                  onClick={() => onPick(a.key, a.path, a.args ?? [])}
                 />
               );
             })}
@@ -171,7 +182,7 @@ export function AgentPicker({
                   <Check className="w-4 h-4 text-content-strong" />
                 ) : null
               }
-              onClick={() => onPick("custom", null)}
+              onClick={() => onPick("custom", null, [])}
             />}
           </ItemList>
 
@@ -218,6 +229,7 @@ export function AgentPicker({
                             <OperationsItem
                               key={a.key}
                               title={a.label}
+                              criticalStatus={a.command ? undefined : <UnknownCommandNote agent={a} />}
                               leading={
                                 <span
                                   data-design-system-exempt="identity"
@@ -258,7 +270,7 @@ export function AgentPicker({
                                     variant={isSelected ? "primary" : "ghost"}
                                     controlSize="compact"
                                     disabled={installing !== null}
-                                    onClick={() => onPick(a.key, a.path)}
+                                    onClick={() => onPick(a.key, a.path, a.args ?? [])}
                                   >
                                     {isSelected ? "Selected" : "Select"}
                                   </Button>

@@ -770,6 +770,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cheers-acp-registry"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cheers-bridge-protocol"
 version = "0.1.58"
 dependencies = [
@@ -3703,6 +3711,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bcrypt",
+ "cheers-acp-registry",
  "cheers-bridge-protocol",
  "cheers-interactive-core",
  "cheers-mcp-server",
