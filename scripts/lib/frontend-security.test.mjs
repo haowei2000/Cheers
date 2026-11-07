@@ -68,6 +68,7 @@ test("nginx body limits follow the gateway's settings", async () => {
   const limits = [
     ["location /api", "MAX_REQUEST_BODY_MIB", "maxRequestBodyMib"],
     ["location = /mcp", "MCP_MAX_BODY_MIB", "mcpMaxBodyMib"],
+    ["location \\^~ /api/v1/agent-uploads/", "AGENT_UPLOAD_MAX_MIB", "agentUploadMaxMib"],
   ];
   const blockOf = (config, location) => config.match(new RegExp(`${location} \\{[\\s\\S]*?proxy_pass`))?.[0] ?? "";
   for (const [location, env, value] of limits) {

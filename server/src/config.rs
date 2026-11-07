@@ -192,6 +192,9 @@ pub struct Config {
     pub max_request_body_mib: usize,
     /// `/mcp` request-body cap in MiB (`MCP_MAX_BODY_MIB`, default 12, at least 11).
     pub mcp_max_body_mib: usize,
+    /// Largest agent file upload in MiB (`AGENT_UPLOAD_MAX_MIB`, default 32). The
+    /// proxy must allow the same size, like the limits above.
+    pub agent_upload_max_mib: usize,
 
     /// Public WS base the connector dials to reach this gateway's agent-bridge,
     /// e.g. `ws://localhost:30080` (via the frontend proxy for local kind) or
@@ -343,6 +346,7 @@ fn reject_removed_mcp_channel_scope(raw: Option<&str>) {
 
 const DEFAULT_MAX_REQUEST_BODY_MIB: usize = 16;
 const DEFAULT_MCP_MAX_BODY_MIB: usize = 12;
+const DEFAULT_AGENT_UPLOAD_MAX_MIB: usize = 32;
 /// `artifact_deliver` sends up to 8 MiB as base64 (about 10.7 MiB) plus its JSON envelope.
 const MIN_MCP_MAX_BODY_MIB: usize = 11;
 
@@ -593,6 +597,12 @@ impl Config {
                 DEFAULT_MCP_MAX_BODY_MIB,
                 MIN_MCP_MAX_BODY_MIB,
             ),
+            agent_upload_max_mib: body_limit_mib(
+                "AGENT_UPLOAD_MAX_MIB",
+                optional("AGENT_UPLOAD_MAX_MIB").as_deref(),
+                DEFAULT_AGENT_UPLOAD_MAX_MIB,
+                1,
+            ),
             connector_public_base,
             connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
                 .ok()
@@ -785,6 +795,12 @@ impl Config {
     /// Canonical MCP resource identifier. The localhost fallback is only for
     /// development; production must set MCP_PUBLIC_URL so untrusted proxy/Host
     /// headers can never influence token audience or discovery metadata.
+    /// Where agents send upload bytes: beside `/mcp`, which they can already reach.
+    pub fn agent_upload_url_base(&self) -> String {
+        let mcp = self.mcp_resource_url();
+        format!("{}/api/v1/agent-uploads", mcp.trim_end_matches("/mcp"))
+    }
+
     pub fn mcp_resource_url(&self) -> String {
         self.mcp_public_url
             .clone()

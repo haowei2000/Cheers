@@ -33,7 +33,7 @@ pub fn init_s3(client: Client, bucket: String) {
 /// The startup-injected S3 handle, shared with other frame-dispatch layers that only carry
 /// `db` (e.g. the task dispatcher inlining image attachments). `None` until `init_s3` ran
 /// (unit tests) — callers must degrade gracefully, never fail the dispatch.
-pub(crate) fn s3_handle() -> Option<(&'static Client, &'static str)> {
+pub fn s3_handle() -> Option<(&'static Client, &'static str)> {
     S3.get().map(|(client, bucket)| (client, bucket.as_str()))
 }
 
@@ -287,7 +287,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
 
 /// Reduce an agent-supplied filename to a single safe path segment (strip any directory parts),
 /// so it cannot escape the `uploads/<file_id>/` object-key prefix.
-fn safe_attachment_name(raw: &str) -> Result<String, (String, String)> {
+pub(super) fn safe_attachment_name(raw: &str) -> Result<String, (String, String)> {
     let name = raw.trim().rsplit(['/', '\\']).next().unwrap_or("").trim();
     if name.is_empty() || matches!(name, "." | "..") {
         return Err(super::resource_error(
@@ -339,6 +339,69 @@ fn decode_delivery(params: &Value) -> Result<Vec<u8>, (String, String)> {
         ));
     }
     Ok(bytes)
+}
+
+/// A stored object about to become a channel attachment.
+pub(super) struct DeliveredFile<'a> {
+    pub file_id: &'a str,
+    pub object_key: &'a str,
+    pub bucket: &'a str,
+    pub filename: &'a str,
+    pub content_type: &'a str,
+    pub size_bytes: i32,
+}
+
+/// Record a stored object as a channel attachment with a 7-day TTL. Its artifact comes from
+/// the `file_records` trigger, so it commits with this row.
+pub(super) async fn record_delivered_file(
+    tx: &mut sqlx::PgConnection,
+    principal: &Principal,
+    channel_id: Uuid,
+    file: DeliveredFile<'_>,
+) -> ResourceResult {
+    // channels.workspace_id is NOT NULL; carry it onto the record like upload_file does.
+    let workspace_id: Option<String> = sqlx::query_scalar!(
+        "SELECT workspace_id FROM channels WHERE channel_id = $1",
+        channel_id.to_string(),
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(super::db_err("files.create: select channel workspace_id"))?;
+
+    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
+    sqlx::query!(
+        "INSERT INTO file_records
+            (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
+             storage_bucket, original_filename, content_type, size_bytes, status,
+             uploaded_at, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'uploaded', NOW(), $10)",
+        file.file_id,
+        channel_id.to_string(),
+        workspace_id.as_deref(),
+        principal.principal_id.to_string(),
+        file.object_key,
+        file.bucket,
+        file.filename,
+        file.content_type,
+        file.size_bytes,
+        expires_at,
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(super::db_err("files.create: insert file record"))?;
+
+    let artifact =
+        super::artifacts::for_source(&mut *tx, channel_id, "attachment", file.file_id).await?;
+    Ok(json!({
+        "artifact": artifact,
+        "channel_id": channel_id,
+        "file_id": file.file_id,
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size_bytes": file.size_bytes,
+        "status": "uploaded",
+        "download_url": format!("/api/v1/files/{}/download", file.file_id),
+    }))
 }
 
 /// channel.files.create (Inbox `inbox_deliver`): store an agent-delivered file as a channel
@@ -397,15 +460,6 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
             "files.create: s3 put_object",
         ))?;
 
-    // channels.workspace_id is NOT NULL; carry it onto the record like upload_file does.
-    let workspace_id: Option<String> = sqlx::query_scalar!(
-        "SELECT workspace_id FROM channels WHERE channel_id = $1",
-        channel_id.to_string(),
-    )
-    .fetch_optional(db)
-    .await
-    .map_err(super::db_err("files.create: select channel workspace_id"))?;
-
     let mut tx = db
         .begin()
         .await
@@ -418,40 +472,20 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
             return key.replay_claimed(db).await;
         }
     }
-    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
-    sqlx::query!(
-        "INSERT INTO file_records
-            (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
-             storage_bucket, original_filename, content_type, size_bytes, status,
-             uploaded_at, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'uploaded', NOW(), $10)",
-        &file_id,
-        channel_id.to_string(),
-        workspace_id.as_deref(),
-        principal.principal_id.to_string(),
-        &object_key,
-        bucket,
-        &filename,
-        &content_type,
-        size_bytes,
-        expires_at,
+    let data = record_delivered_file(
+        &mut tx,
+        principal,
+        channel_id,
+        DeliveredFile {
+            file_id: &file_id,
+            object_key: &object_key,
+            bucket,
+            filename: &filename,
+            content_type: &content_type,
+            size_bytes,
+        },
     )
-    .execute(&mut *tx)
-    .await
-    .map_err(super::db_err("files.create: insert file record"))?;
-
-    let artifact =
-        super::artifacts::for_source(&mut tx, channel_id, "attachment", &file_id).await?;
-    let data = json!({
-        "artifact": artifact,
-        "channel_id": channel_id,
-        "file_id": file_id,
-        "filename": filename,
-        "content_type": content_type,
-        "size_bytes": size_bytes,
-        "status": "uploaded",
-        "download_url": format!("/api/v1/files/{file_id}/download"),
-    });
+    .await?;
     if let Some(key) = &idempotency {
         key.complete(&mut tx, &data).await?;
     }

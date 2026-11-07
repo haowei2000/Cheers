@@ -1,4 +1,5 @@
 pub mod acp_capability;
+pub mod agent_uploads;
 pub mod apple_auth;
 pub mod approval;
 pub mod auth;

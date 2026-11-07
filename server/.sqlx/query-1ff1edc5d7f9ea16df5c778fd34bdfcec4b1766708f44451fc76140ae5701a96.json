@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_file_uploads SET status = 'published', result = $2 WHERE upload_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ff1edc5d7f9ea16df5c778fd34bdfcec4b1766708f44451fc76140ae5701a96"
+}

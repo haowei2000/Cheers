@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_file_uploads SET status = $2, receiving_since = NULL\n         WHERE upload_id = $1 AND status = 'receiving'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "830c712101fc7eeeb1c84eb01a0be815cd6ad9ae3105ddacb37f102a655b202b"
+}

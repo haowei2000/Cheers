@@ -14,6 +14,7 @@ pub mod messages;
 pub mod plan;
 pub mod sessions;
 pub mod task_claims;
+pub mod uploads;
 pub mod usage;
 pub mod voice;
 
@@ -51,6 +52,9 @@ pub struct Principal {
     /// of the bot's and the user's role there, and the user must be a member.
     /// It only narrows; the bot never gains what the user has and it lacks.
     pub on_behalf_of: Option<Uuid>,
+    /// The task execution a task-bound token serves. Work that outlives the call, such as an
+    /// upload ticket, must stop when this task does.
+    pub task: Option<Uuid>,
 }
 
 impl Principal {
@@ -59,6 +63,7 @@ impl Principal {
             principal_type: PrincipalType::Bot,
             principal_id: bot_id,
             on_behalf_of: None,
+            task: None,
         }
     }
 
@@ -71,11 +76,16 @@ impl Principal {
     }
 
     #[allow(dead_code)]
+    pub fn for_task(self, task: Option<Uuid>) -> Self {
+        Self { task, ..self }
+    }
+
     pub fn user(user_id: Uuid) -> Self {
         Self {
             principal_type: PrincipalType::User,
             principal_id: user_id,
             on_behalf_of: None,
+            task: None,
         }
     }
 
@@ -238,6 +248,10 @@ pub async fn dispatch(
         "channel.artifacts.update" => artifacts::handle_update(db, &principal, &params).await,
         "channel.artifacts.patch" => artifacts::handle_patch(db, &principal, &params).await,
         "channel.artifacts.deliver" => files::handle_create(db, &principal, &params).await,
+        "channel.artifacts.upload_prepare" => {
+            uploads::handle_prepare(db, &principal, &params).await
+        }
+        "channel.artifacts.upload_finish" => uploads::handle_finish(db, &principal, &params).await,
         "channel.context" => context::handle(db, &principal, &params).await,
 
         // ── mesh step 6：新增读操作 ───────────────────────────────────────
