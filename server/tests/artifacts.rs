@@ -304,6 +304,40 @@ async fn artifact_deletion_and_directory_conversion_leave_tombstones(db: PgPool)
 }
 
 #[sqlx::test]
+async fn deleting_a_workspace_keeps_its_files_and_removes_their_artifacts(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    let file = Uuid::new_v4().to_string();
+    let ws: String = sqlx::query_scalar("SELECT workspace_id FROM channels WHERE channel_id=$1")
+        .bind(ch.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO file_records(file_id,channel_id,workspace_id,uploader_id,original_path,original_filename,status) VALUES($1,$2,$3,$4,'report.pdf','report.pdf','uploaded')")
+        .bind(&file).bind(ch.to_string()).bind(&ws).bind(p.principal_id.to_string()).execute(&db).await.unwrap();
+
+    sqlx::query("DELETE FROM workspaces WHERE workspace_id=$1")
+        .bind(&ws)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let artifacts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM artifacts WHERE source_id=$1")
+        .bind(&file)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(artifacts, 0);
+    let unscoped: bool = sqlx::query_scalar(
+        "SELECT channel_id IS NULL AND workspace_id IS NULL FROM file_records WHERE file_id=$1",
+    )
+    .bind(&file)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(unscoped);
+}
+
+#[sqlx::test]
 async fn artifact_pagination_and_authorization_use_channel_scope(db: PgPool) {
     let (ch, p) = channel(&db).await;
     for path in ["a.md", "b.html", "c.tsx"] {
