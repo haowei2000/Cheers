@@ -1,4 +1,5 @@
 import type { MouseEvent, ReactNode } from "react";
+import type { Artifact } from "../../artifacts/client";
 import type { PatchOp } from "../patchOps";
 import type { ContextItem } from "@/features/chat/context/contextPick";
 import type { ContextAction } from "@/components/ui/context-actions";
@@ -54,6 +55,9 @@ export interface LensProps {
   requestContextPick?: (event: MouseEvent<Element>, target: LensContextTarget) => void;
   /** Navigate the user's view to a `cheers:` locator (e.g. opening a referenced file in the Workbench). */
   openLocator?: (uri: string) => void;
+  /** Look up a referenced artifact's catalog metadata (title, availability). A lens
+   *  that shows references calls this rather than holding a resource client itself. */
+  resolveArtifact?: (artifactId: string) => Promise<Artifact>;
   /** Active state for Design Mode / DOM Inspector */
   inspectorActive?: boolean;
   /** Callback for interactive form submissions inside the lens */

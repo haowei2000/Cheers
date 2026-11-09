@@ -12,7 +12,8 @@ import { sourcePathKey } from "../annotations";
 import { applyPatchOps, invertPatchOps, type PatchOp } from "../patchOps";
 import { canvasLayout } from "./layout";
 import { connectOps, pinNodeOps, removeNodeOps } from "./ops";
-import { nodeLocator, nodeTitle, parseCanvas, type CanvasNode, type CanvasRect, type CanvasSide } from "./document";
+import { nodeLocator, parseCanvas, type CanvasDocument, type CanvasNode, type CanvasRect, type CanvasSide } from "./document";
+import { artifactNodeDetail, artifactNodeTitle, type ArtifactRef } from "./artifactRefs";
 import {
   activateCanvasNode,
   canvasNodeKeyAction,
@@ -90,7 +91,46 @@ function offsetFor(side: CanvasSide, reach: number): { x: number; y: number } {
   }
 }
 
-function NodeBody({ node }: { node: CanvasNode }) {
+/** Catalog metadata for every artifact the canvas references, fetched once per id. The
+ *  canvas file holds only the id; the title and availability live in the catalog, so a
+ *  rename or a deletion shows up here without anyone editing the canvas. */
+function useArtifactRefs(
+  document_: CanvasDocument | null,
+  resolveArtifact: LensProps["resolveArtifact"],
+): ReadonlyMap<string, ArtifactRef> {
+  const [refs, setRefs] = useState<ReadonlyMap<string, ArtifactRef>>(() => new Map());
+  const ids = useMemo(() => {
+    const set = new Set<string>();
+    for (const node of document_?.nodes ?? []) {
+      if (node.kind === "source" && node.source.kind === "artifact") set.add(node.source.artifactId);
+    }
+    return [...set].sort().join(",");
+  }, [document_]);
+
+  useEffect(() => {
+    if (!resolveArtifact || !ids) return;
+    let cancelled = false;
+    const pending = ids.split(",").filter((id) => !refs.has(id));
+    for (const id of pending) {
+      resolveArtifact(id).then(
+        (artifact): ArtifactRef => artifact,
+        (): ArtifactRef => "missing",
+      ).then((ref) => {
+        if (!cancelled) setRefs((current) => new Map(current).set(id, ref));
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+    // `refs` is read only to skip ids already resolved; depending on it would refetch
+    // every remaining id each time one answer lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids, resolveArtifact]);
+
+  return refs;
+}
+
+function NodeBody({ node, artifact }: { node: CanvasNode; artifact?: ArtifactRef }) {
   if (node.kind === "text") {
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 text-compact text-content-secondary">
@@ -103,7 +143,7 @@ function NodeBody({ node }: { node: CanvasNode }) {
   // for last, and until then the card says what it points at and opens it on click.
   const detail =
     node.source.kind === "fs" ? node.source.path
-    : node.source.kind === "artifact" ? node.source.artifactId
+    : node.source.kind === "artifact" ? artifactNodeDetail(node.source.artifactId, artifact)
     : node.source.verb;
   const Icon = node.source.kind === "resource" ? Database : FileText;
   return (
@@ -119,8 +159,12 @@ function NodeBody({ node }: { node: CanvasNode }) {
   );
 }
 
-export function CanvasLens({ data, onOps, requestContextPick, openLocator }: LensProps) {
+export function CanvasLens({ data, onOps, requestContextPick, openLocator, resolveArtifact }: LensProps) {
   const document_ = useMemo(() => parseCanvas(data), [data]);
+  const artifactRefs = useArtifactRefs(document_, resolveArtifact);
+  const artifactOf = (node: CanvasNode): ArtifactRef | undefined =>
+    node.kind === "source" && node.source.kind === "artifact" ? artifactRefs.get(node.source.artifactId) : undefined;
+  const titleOf = (node: CanvasNode): string => artifactNodeTitle(node, artifactOf(node));
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 24, y: 24 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -420,7 +464,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       if (isSource && openLocator) {
         extraActions.push({
           id: "open-source",
-          label: `Open ${nodeTitle(node)}`,
+          label: `Open ${titleOf(node)}`,
           icon: <ExternalLink className="h-4 w-4" />,
           run: () => openSource(node),
         });
@@ -439,7 +483,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       });
 
       requestContextPick(event, {
-        label: nodeTitle(node),
+        label: titleOf(node),
         locator: uri,
         sourcePath: ["nodes", node.at],
         extraActions,
@@ -596,10 +640,10 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 data-workbench-context-target="canvas-node"
                 data-workbench-anchor={sourcePathKey(["nodes", node.at])}
                 data-cheers-locator={nodeUri}
-                data-cheers-label={nodeTitle(node)}
+                data-cheers-label={titleOf(node)}
                 role="option"
                 aria-selected={selected}
-                aria-label={`${nodeTitle(node)}${node.rect ? ", pinned" : ""}`}
+                aria-label={`${titleOf(node)}${node.rect ? ", pinned" : ""}`}
                 tabIndex={activeTabId === node.id ? 0 : -1}
                 className={`absolute flex flex-col rounded-sm elevation-raised ring-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                   selected ? selectedContainerClasses : "bg-panel ring-zinc-700 hover:ring-zinc-500"
@@ -611,10 +655,10 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 onDoubleClick={() => openSource(node)}
               >
                 <div className="flex shrink-0 items-center gap-2 px-3 py-2">
-                  <span className="min-w-0 flex-1 truncate text-compact font-medium text-content-primary">{nodeTitle(node)}</span>
+                  <span className="min-w-0 flex-1 truncate text-compact font-medium text-content-primary">{titleOf(node)}</span>
                   {node.rect && <span className="shrink-0 text-minimal text-content-muted">pinned</span>}
                 </div>
-                <NodeBody node={node} />
+                <NodeBody node={node} artifact={artifactOf(node)} />
                 {selected && !readOnly &&
                   SIDES.map((side) => (
                     <span
