@@ -204,10 +204,12 @@ impl RuntimeSettingsStore {
         let mut tx = db.begin().await?;
         // A row lock cannot cover a key with no row yet, and concurrent admins
         // must each record the true `old_value`.
-        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
-            .bind(&storage_key)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)",
+            storage_key,
+        )
+        .execute(&mut *tx)
+        .await?;
         let old_value = sqlx::query_scalar!(
             "SELECT value FROM system_settings WHERE key = $1",
             storage_key,
