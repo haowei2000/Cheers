@@ -1,4 +1,5 @@
 import type { PanelSourceContribution } from "../extensions/package";
+import { parseLocator } from "../../locator";
 
 // The canvas document: a channel file holding nodes and the edges between them.
 //
@@ -50,6 +51,13 @@ interface CanvasNodeCommon {
   color?: string;
 }
 
+/** What a source node points at: a panel source, or a channel artifact by its stable id.
+ *  The artifact form is canvas-only for now. `PanelSourceContribution` is also the
+ *  published package schema, and letting packages declare artifact sources is a separate
+ *  decision from letting a canvas reference one. A path breaks when the file is renamed;
+ *  an artifact id does not (docs/arch/UNIFIED_ARTIFACTS.md). */
+export type CanvasNodeSource = PanelSourceContribution | { kind: "artifact"; artifactId: string };
+
 /** A node is one of two shapes, not a four-way kind union: either literal text, or the
  *  same `{source, view, config}` a scene item and a lane panel already use. Keeping it
  *  that way is what makes "a canvas node is a panel with a position" true rather than
@@ -58,7 +66,7 @@ export type CanvasNode =
   | (CanvasNodeCommon & { kind: "text"; text: string })
   | (CanvasNodeCommon & {
       kind: "source";
-      source: PanelSourceContribution;
+      source: CanvasNodeSource;
       view?: string;
       config?: unknown;
     });
@@ -100,7 +108,7 @@ function parseRect(raw: unknown): CanvasRect | undefined {
   return { x, y, w, h };
 }
 
-function parseSource(raw: unknown): PanelSourceContribution | null {
+function parseSource(raw: unknown): CanvasNodeSource | null {
   if (!isMapping(raw)) return null;
   if (raw.kind === "fs") {
     const path = raw.path;
@@ -117,6 +125,13 @@ function parseSource(raw: unknown): PanelSourceContribution | null {
     // node renders as a card. Before it ever fetches, it must be gated by the same
     // EXTENSION_CHANNEL_RESOURCES list a package panel is, for the same reason.
     return pick ? { kind: "resource", verb: raw.verb, pick } : { kind: "resource", verb: raw.verb };
+  }
+  if (raw.kind === "artifact") {
+    // The locator parser owns what a valid artifact id is; a second copy of that rule
+    // here would drift from the one every `cheers:artifact/` link is checked against.
+    if (typeof raw.id !== "string") return null;
+    const loc = parseLocator(`cheers:artifact/${raw.id}`);
+    return loc?.kind === "artifact" ? { kind: "artifact", artifactId: loc.artifactId } : null;
   }
   return null;
 }
@@ -205,5 +220,21 @@ export function nodeTitle(node: CanvasNode): string {
   if (node.source.kind === "fs") {
     return node.source.path.split("/").pop() || node.source.path;
   }
+  // The title lives in the artifact catalog, not in the canvas file. Until the card
+  // resolves it, the node's own id is the most readable thing the document holds.
+  if (node.source.kind === "artifact") return node.id;
   return node.source.verb;
+}
+
+/** The `cheers:` locator a source node opens and is picked as context by. */
+export function nodeLocator(node: CanvasNode): string | undefined {
+  if (node.kind !== "source") return undefined;
+  switch (node.source.kind) {
+    case "fs":
+      return `cheers:desk/${node.source.path}`;
+    case "artifact":
+      return `cheers:artifact/${node.source.artifactId}`;
+    case "resource":
+      return `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`;
+  }
 }

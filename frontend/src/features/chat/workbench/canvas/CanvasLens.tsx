@@ -12,7 +12,7 @@ import { sourcePathKey } from "../annotations";
 import { applyPatchOps, invertPatchOps, type PatchOp } from "../patchOps";
 import { canvasLayout } from "./layout";
 import { connectOps, pinNodeOps, removeNodeOps } from "./ops";
-import { nodeTitle, parseCanvas, type CanvasNode, type CanvasRect, type CanvasSide } from "./document";
+import { nodeLocator, nodeTitle, parseCanvas, type CanvasNode, type CanvasRect, type CanvasSide } from "./document";
 import {
   activateCanvasNode,
   canvasNodeKeyAction,
@@ -101,11 +101,15 @@ function NodeBody({ node }: { node: CanvasNode }) {
   // A source node is a CARD, not a live render. Mounting a lens per node would nest a
   // third interactive layer inside the drag and the pan; docs/arch/CANVAS.md keeps that
   // for last, and until then the card says what it points at and opens it on click.
-  const detail = node.source.kind === "fs" ? node.source.path : node.source.verb;
+  const detail =
+    node.source.kind === "fs" ? node.source.path
+    : node.source.kind === "artifact" ? node.source.artifactId
+    : node.source.verb;
+  const Icon = node.source.kind === "resource" ? Database : FileText;
   return (
     <div className="flex min-h-0 flex-1 items-start gap-2 px-3 pb-3">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary">
-        {node.source.kind === "fs" ? <FileText className="h-4 w-4" /> : <Database className="h-4 w-4" />}
+        <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-compact text-content-secondary" title={detail}>{detail}</span>
@@ -315,11 +319,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
   const openSource = useCallback(
     (node: CanvasNode) => {
       if (!openLocator || node.kind !== "source") return;
-      const uri =
-        node.source.kind === "fs"
-          ? `cheers:desk/${node.source.path}`
-          : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`;
-      openLocator(uri);
+      const uri = nodeLocator(node);
+      if (uri) openLocator(uri);
     },
     [openLocator]
   );
@@ -413,11 +414,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       event.stopPropagation();
       setSelectedId(node.id);
       const isSource = node.kind === "source";
-      const uri = isSource
-        ? node.source.kind === "fs"
-          ? `cheers:desk/${node.source.path}`
-          : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`
-        : undefined;
+      const uri = nodeLocator(node);
 
       const extraActions: ContextAction[] = [];
       if (isSource && openLocator) {
@@ -587,12 +584,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
             const rect = rectOf(node.id);
             if (!rect) return null;
             const selected = selectedId === node.id;
-            const nodeUri =
-              node.kind === "source"
-                ? node.source.kind === "fs"
-                  ? `cheers:desk/${node.source.path}`
-                  : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`
-                : undefined;
+            const nodeUri = nodeLocator(node);
             return (
               <div
                 key={node.id}
