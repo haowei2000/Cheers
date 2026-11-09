@@ -30,6 +30,7 @@ pub mod mentions;
 pub mod message_policy;
 pub mod messages;
 pub mod plan_store;
+pub mod runtime_settings;
 pub mod scheduled_messages;
 pub mod seed;
 pub mod sessions;

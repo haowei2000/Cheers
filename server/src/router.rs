@@ -971,6 +971,19 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/admin/settings/stt/test",
             post(api::stt_settings::test_settings),
         )
+        // Admin instance settings: reviewed runtime overrides (no restart).
+        .route(
+            "/api/v1/admin/settings/runtime",
+            get(api::runtime_settings::list_settings),
+        )
+        .route(
+            "/api/v1/admin/settings/runtime/:key",
+            put(api::runtime_settings::put_setting),
+        )
+        .route(
+            "/api/v1/admin/settings/runtime/:key/revisions",
+            get(api::runtime_settings::list_revisions),
+        )
         .route(
             "/api/v1/mcp/oauth/authorize",
             get(api::mcp::authorize_inspect).post(api::mcp::authorize_approve),

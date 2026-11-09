@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.old_value, r.new_value, r.actor_id, r.reason, r.created_at,\n                  COALESCE(u.display_name, u.username) AS \"actor_name?\"\n           FROM system_setting_revisions r\n           LEFT JOIN users u ON u.user_id = r.actor_id\n           WHERE r.key = $1\n           ORDER BY r.created_at DESC, r.id DESC\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "old_value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "new_value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "actor_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "actor_name?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "288d013ff8824adfc8d4e17938008f4eb676b0e87cbf21b6bace26b3b2042832"
+}
