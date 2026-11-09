@@ -9,7 +9,8 @@ import {
 } from "@/features/chat/context/contextPick";
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
-import { useFileSession } from "./jsonFile";
+import { errMsg, useFileSession } from "./jsonFile";
+import { artifactEditorClient, makeArtifactClient, type Artifact } from "../artifacts/client";
 import { filterCollaborators } from "./collab";
 import { useAnnotations, resolveAnnotation } from "./annotations";
 import { inspectableIdLineRange } from "./contextSource";
@@ -148,8 +149,30 @@ export function useSceneWorkbenchCoordinator({
         ? storedSelection
         : activePaths[0]) ?? null;
 
+  // A canvas is an artifact (docs/arch/UNIFIED_ARTIFACTS.md P4), so its edits go through
+  // the catalog: `channel.artifacts.patch` checks the artifact version, the same check the
+  // Artifacts library makes, rather than the provider's. The session waits for the lookup.
+  // Opening on the path and switching clients once it lands would swap the session out
+  // from under an edit made in between.
+  const canvasPath = selectedPath && isCanvasPath(selectedPath) ? selectedPath : null;
+  const [canvasArtifact, setCanvasArtifact] = useState<Artifact | null>(null);
+  useEffect(() => {
+    if (!canvasPath) return;
+    let alive = true;
+    makeArtifactClient(ctx.sendResourceReq, ctx.channelId).resolvePath(canvasPath).then(
+      (artifact) => { if (alive) setCanvasArtifact(artifact); },
+      (error) => { if (alive) setStatus(`Couldn’t open ${canvasPath}: ${errMsg(error)}`); },
+    );
+    return () => { alive = false; };
+  }, [canvasPath, ctx.sendResourceReq, ctx.channelId]);
+  const resolvedCanvas = canvasArtifact && canvasArtifact.path === canvasPath ? canvasArtifact : null;
+  const sessionFs = useMemo(
+    () => resolvedCanvas ? artifactEditorClient(ctx.fs, ctx.sendResourceReq, ctx.channelId, resolvedCanvas) : ctx.fs,
+    [resolvedCanvas, ctx.fs, ctx.sendResourceReq, ctx.channelId],
+  );
+
   // Shared session for the selected item (Raw edits text, Preview renders data)
-  const session = useFileSession(ctx.fs, selectedPath ?? "");
+  const session = useFileSession(sessionFs, canvasPath && !resolvedCanvas ? "" : selectedPath ?? "");
 
   // Live-push: reload file on server change
   const filesTick = ctx.filesTick ?? 0;
