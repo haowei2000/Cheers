@@ -42,4 +42,7 @@ pub struct AppState {
     pub push: Option<Arc<crate::notify::PushTransport>>,
     /// Observed MCP delivery: whether `direct` Agents pick up renewed tokens.
     pub mcp_delivery: Arc<crate::gateway::mcp_delivery::McpDeliveryTracker>,
+    /// Admin-edited settings applied without a restart. Workers read this on
+    /// each use instead of the startup `config`.
+    pub runtime_settings: Arc<crate::domain::runtime_settings::RuntimeSettingsStore>,
 }

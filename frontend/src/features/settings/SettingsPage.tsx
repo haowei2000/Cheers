@@ -15,6 +15,7 @@ import {
   Palette,
   ArrowLeft,
   Sliders,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { logout as logoutApi } from "@/api/auth";
@@ -25,6 +26,7 @@ import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { ScheduledMessagesManager } from "@/features/scheduled/ScheduledMessagesManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
+import { AdminRuntimeSettings } from "./AdminRuntimeSettings";
 import { AdminReports } from "./AdminReports";
 import { PasskeyCard, TrustedDevicesCard, TwoFactorCard } from "./SecurityCards";
 import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
@@ -60,6 +62,7 @@ type SectionId =
   | "scheduled"
   | "members"
   | "speech"
+  | "runtime"
   | "reports"
   | "account";
 
@@ -79,6 +82,7 @@ const NAV: {
   { id: "scheduled", label: "Scheduled tasks", icon: CalendarClock },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
   { id: "speech", label: "Speech-to-text", icon: AudioLines, adminOnly: true },
+  { id: "runtime", label: "Runtime settings", icon: SlidersHorizontal, adminOnly: true },
   { id: "reports", label: "Safety reports", icon: ShieldAlert, adminOnly: true },
   { id: "account", label: "Account", icon: LogOut },
 ];
@@ -180,6 +184,7 @@ export default function SettingsPage() {
           {section === "members" && <AdminUsers />}
           {section === "reports" && <AdminReports />}
           {section === "speech" && <AdminSttSettings />}
+          {section === "runtime" && <AdminRuntimeSettings />}
 
           {section === "account" && (
             <SettingsSection title="Account" icon={LogOut}>

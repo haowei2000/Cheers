@@ -299,6 +299,7 @@ pub struct Config {
     /// 待审批卡片超过该秒数仍未解决则扫为 expired（默认 1800 = 30 分钟）。
     /// 是连接器自身权限超时之上的兜底——正常情况下连接器先发 permission_cancel，
     /// 本扫描只兜底「连接器进程在超时前就死掉」导致卡片永久 pending 的情况。
+    /// 这里只是默认值；管理员可在运行时覆盖，读取请走 `AppState::runtime_settings`。
     pub approval_card_ttl_secs: u64,
     /// 审批卡扫描间隔秒数（默认 120；设为 0 则只在启动时扫一次）。
     pub approval_sweep_interval_secs: u64,
