@@ -1673,6 +1673,7 @@ export function ChannelView({
         }
       }}>
     <ResourceCardProvider key={cardResources.principalId} fs={cardFileClient} channelId={channel.channel_id} filesTick={boardTick.files ?? 0}
+      sendResourceReq={sendResourceReq}
       openLocator={openLocator} composeMessage={composeMessage}
       requestInteraction={channel.my_role === "readonly" ? undefined : requestInteraction}>
     <ProfileCardProvider

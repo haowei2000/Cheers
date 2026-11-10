@@ -26,6 +26,20 @@ const documents:Record<string,string>={
   ]}),
   "letter/canvas.tsx":"export default function Note(){return <article style={{padding:16,fontFamily:'Georgia,serif'}}><h3 style={{fontSize:16}}>A small interactive enclosure</h3><p>Canvas keeps its expressive content inside the same letter attachment.</p><button onClick={e=>e.currentTarget.textContent='Reviewed'}>Review note</button></article>}",
 };
+// Artifact links carry only an id; the title, type and availability come from the catalog.
+const artifactBase={channel_id:"preview",source_id:"file",size_bytes:412,version:5,source_version:3,created_at:"",updated_at:"",expires_at:null};
+const artifacts:Record<string,Record<string,unknown>>={
+  "00000000-0000-4000-8000-000000000001":{...artifactBase,title:"notes.md",source_kind:"text",path:"letter/notes.md",content_type:"text/markdown",availability:"ready"},
+  "00000000-0000-4000-8000-000000000002":{...artifactBase,title:"quarterly-report.pdf",source_kind:"attachment",path:null,content_type:"application/pdf",availability:"expired"},
+};
+const sendArtifactRequest=async(verb:string,params:Record<string,unknown>)=>{
+  const artifact=artifacts[String(params.artifact_id)];
+  if(!artifact)throw new Error("Artifact not found.");
+  const described={...artifact,artifact_id:params.artifact_id,uri:`cheers:artifact/${String(params.artifact_id)}`};
+  if(verb==="channel.artifacts.get")return described;
+  if(verb==="channel.artifacts.read")return {artifact:described,content:documents[String(artifact.path)],kind:"text",truncated:false};
+  throw new Error("This fixture is read-only.");
+};
 function Letter() {
   const [draft,setDraft]=useState("");const [target,setTarget]=useState("");
   const open=useCallback((uri:string)=>setTarget(uri),[]);
@@ -41,9 +55,10 @@ function Letter() {
     <article className="mx-auto max-w-2xl space-y-4 py-4">
       <p className="text-section-label">A letter with enclosures</p>
       <p className="text-message">The next part is ready. I have enclosed the notes, a short form, and a terminal request so you can inspect each one without leaving the conversation.</p>
-      <ResourceCardProvider fs={fs} channelId="preview" filesTick={0} openLocator={open} composeMessage={setDraft}>
+      <ResourceCardProvider fs={fs} channelId="preview" filesTick={0} sendResourceReq={sendArtifactRequest} openLocator={open} composeMessage={setDraft}>
         <LocatorOpenContext.Provider value={open}>
           {cards.map(card=><ResourceRefCards key={card.path} cards={[{v:1,kind:"resource_ref",uri:`cheers:desk/letter/${card.path}`,title:card.title,description:card.description}]} />)}
+          {Object.keys(artifacts).map(id=><ResourceRefCards key={id} cards={[{v:1,kind:"resource_ref",uri:`cheers:artifact/${id}`}]} />)}
         </LocatorOpenContext.Provider>
       </ResourceCardProvider>
       <p className="text-message">Once you have reviewed the enclosures, we can continue with the release.</p>
@@ -57,7 +72,7 @@ function Gallery() {
   const [width,setWidth]=useState(390);const [dark,setDark]=useState(false);
   return <main className="min-h-screen space-y-4 bg-canvas p-4 text-content-primary">
     <h1 className="text-title">Letter enclosures · local fixture</h1>
-    <p className="text-caption">Document, form, terminal draft, Canvas, loading failure and draft conflict. No remote execution or authentication runs.</p>
+    <p className="text-caption">Document, form, terminal draft, Canvas, loading failure, artifact links (ready and expired) and draft conflict. No remote execution or authentication runs.</p>
     <div role="tablist" aria-label="Preview width" className="flex flex-wrap gap-2">{[390,768,1280].map(size=><ControlTrigger key={size} role="tab" selected={width===size} onClick={()=>setWidth(size)}>{size}px</ControlTrigger>)}</div>
     <Button action="preview" onClick={()=>setDark(value=>!value)} aria-label={dark?"Preview light appearance":"Preview dark appearance"}/>
     <div className="overflow-auto"><iframe key={`${width}:${dark}`} title={`Enclosures at ${width}px, ${dark?"dark":"light"}`} src={`/dev/enclosures.html?frame=1&theme=${dark?"dark":"light"}`} width={width} height={1800} className="max-w-none border-0" /></div>
