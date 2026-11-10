@@ -22,7 +22,8 @@ import type { RendererDesc } from "./registry";
 import { EXTENSION_CHANNEL_RESOURCES } from "../extensions/package";
 import toast from "react-hot-toast";
 import { createResourceInteractionDispatcher } from "../nativeResource";
-import { makeArtifactClient } from "../../artifacts/client";
+import { artifactReferenceStore } from "../../artifacts/referenceStore";
+import { useArtifactInvalidation } from "../../artifacts/useArtifactReference";
 
 const CodeEditor = lazy(() => import("../CodeEditor").then((module) => ({ default: module.CodeEditor })));
 
@@ -232,10 +233,8 @@ export function RendererHost({
     onFormSubmit,
     requestInteraction: ctx.requestInteraction,
   }), [ctx.openLocator, ctx.composeMessage, ctx.requestInteraction, ctx.channelId, ctx.fs, onFormSubmit]);
-  const artifacts = useMemo(
-    () => makeArtifactClient(ctx.sendResourceReq, ctx.channelId),
-    [ctx.sendResourceReq, ctx.channelId],
-  );
+  const artifactRefs = artifactReferenceStore(ctx.sendResourceReq, ctx.channelId);
+  useArtifactInvalidation(artifactRefs, ctx.filesTick);
   const openResource = async (uri: string) => {
     const result = await dispatchInteraction({ kind: "open", uri });
     if (!result.ok) toast.error(result.error);
@@ -371,7 +370,7 @@ export function RendererHost({
           onSelectAnnotation={onSelectAnnotation}
           onRevealSource={onRevealSource}
           openLocator={openResource}
-          artifacts={artifacts}
+          artifactRefs={artifactRefs}
           inspectorActive={inspectorActive}
           onFormSubmit={submitForm}
           onInteraction={dispatchInteraction}
@@ -387,7 +386,7 @@ export function RendererHost({
           channelId={ctx.channelId}
           reloadTick={ctx.filesTick}
           openLocator={openResource}
-          artifacts={artifacts}
+          artifactRefs={artifactRefs}
           inspectorActive={inspectorActive}
           onFormSubmit={submitForm}
           onInteraction={dispatchInteraction}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Artifact } from "../../artifacts/client";
-import { artifactExcerpt, artifactNodeDetail, artifactNodeTitle, hasTextExcerpt } from "./artifactRefs";
+import { artifactExcerpt, artifactNodeDetail, artifactNodeTitle } from "./artifactRefs";
 import { parseCanvas } from "./document";
 
 const id = "0f8b6c2e-4d3a-4b1c-9e7f-2a5d8c1b3e60";
@@ -16,6 +16,9 @@ function artifact(overrides: Partial<Artifact>): Artifact {
   };
 }
 
+const ref = (overrides: Partial<Artifact>) => ({ artifact: artifact(overrides), loading: false });
+const missing = { missing: true, loading: false };
+
 describe("artifact node labels", () => {
   it("shows the node id and artifact id until the catalog answers", () => {
     expect(artifactNodeTitle(node, undefined)).toBe("plan");
@@ -23,30 +26,22 @@ describe("artifact node labels", () => {
   });
 
   it("takes the title from the catalog, so a rename shows without editing the canvas", () => {
-    expect(artifactNodeTitle(node, artifact({ title: "q4-roadmap.canvas.yaml" }))).toBe("q4-roadmap.canvas.yaml");
-    expect(artifactNodeDetail(id, artifact({}))).toBe("Canvas");
+    expect(artifactNodeTitle(node, ref({ title: "q4-roadmap.canvas.yaml" }))).toBe("q4-roadmap.canvas.yaml");
+    expect(artifactNodeDetail(id, ref({}))).toBe("Canvas");
   });
 
   it("says why an artifact cannot be opened", () => {
-    expect(artifactNodeDetail(id, artifact({ availability: "deleted" }))).toBe("Deleted");
-    expect(artifactNodeDetail(id, artifact({ availability: "expired" }))).toBe("Expired");
+    expect(artifactNodeDetail(id, ref({ availability: "deleted" }))).toBe("Deleted");
+    expect(artifactNodeDetail(id, ref({ availability: "expired" }))).toBe("Expired");
   });
 
   it("does not distinguish an unknown id from one the viewer may not read", () => {
-    expect(artifactNodeTitle(node, "missing")).toBe("plan");
-    expect(artifactNodeDetail(id, "missing")).toBe("Unavailable");
+    expect(artifactNodeTitle(node, missing)).toBe("plan");
+    expect(artifactNodeDetail(id, missing)).toBe("Unavailable");
   });
 });
 
 describe("artifact excerpts", () => {
-  it("quotes only ready text artifacts", () => {
-    expect(hasTextExcerpt(artifact({}))).toBe(true);
-    expect(hasTextExcerpt(artifact({ source_kind: "attachment" }))).toBe(false);
-    expect(hasTextExcerpt(artifact({ availability: "deleted" }))).toBe(false);
-    expect(hasTextExcerpt("missing")).toBe(false);
-    expect(hasTextExcerpt(undefined)).toBe(false);
-  });
-
   it("keeps the opening lines and marks what it left out", () => {
     expect(artifactExcerpt("\n\n# Roadmap\n\n- ship\n")).toBe("# Roadmap\n\n- ship");
     expect(artifactExcerpt("1\n2\n3\n4\n5\n6\n7\n8")).toBe("1\n2\n3\n4\n5\n6\n…");

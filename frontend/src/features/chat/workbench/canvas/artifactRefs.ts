@@ -1,28 +1,19 @@
-import type { Artifact } from "../../artifacts/client";
+import type { ArtifactReference } from "../../artifacts/referenceStore";
 import { artifactType, availabilityLabel } from "../../artifacts/presentation";
 import { nodeTitle, type CanvasNode } from "./document";
 
-/** What the catalog said about a referenced artifact. "missing" covers both an id the
- *  channel does not have and one this viewer may not read — the card must not say which. */
-export type ArtifactRef = Artifact | "missing";
-
 /** The catalog title wins once it is known: it follows renames, the node id does not. */
-export function artifactNodeTitle(node: CanvasNode, ref: ArtifactRef | undefined): string {
-  return ref && ref !== "missing" ? ref.title : nodeTitle(node);
+export function artifactNodeTitle(node: CanvasNode, ref: ArtifactReference | undefined): string {
+  return ref?.artifact?.title ?? nodeTitle(node);
 }
 
 /** The card's second line: what the artifact is, or why it cannot be opened. Before the
  *  catalog answers, the id is the only thing the canvas file knows. */
-export function artifactNodeDetail(artifactId: string, ref: ArtifactRef | undefined): string {
-  if (ref === undefined) return artifactId;
-  if (ref === "missing") return "Unavailable";
-  return ref.availability === "ready" ? artifactType(ref) : availabilityLabel[ref.availability];
-}
-
-/** Only a ready text artifact has a source the card can quote. An attachment may be a
- *  multi-megabyte binary, and a deleted or pending one has nothing current to show. */
-export function hasTextExcerpt(ref: ArtifactRef | undefined): ref is Artifact {
-  return ref !== undefined && ref !== "missing" && ref.availability === "ready" && ref.source_kind === "text";
+export function artifactNodeDetail(artifactId: string, ref: ArtifactReference | undefined): string {
+  if (ref?.missing) return "Unavailable";
+  const artifact = ref?.artifact;
+  if (!artifact) return artifactId;
+  return artifact.availability === "ready" ? artifactType(artifact) : availabilityLabel[artifact.availability];
 }
 
 const EXCERPT_LINES = 6;

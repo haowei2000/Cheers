@@ -13,7 +13,9 @@ import { applyPatchOps, invertPatchOps, type PatchOp } from "../patchOps";
 import { canvasLayout } from "./layout";
 import { connectOps, pinNodeOps, removeNodeOps } from "./ops";
 import { nodeLocator, parseCanvas, type CanvasDocument, type CanvasNode, type CanvasRect, type CanvasSide } from "./document";
-import { artifactExcerpt, artifactNodeDetail, artifactNodeTitle, hasTextExcerpt, type ArtifactRef } from "./artifactRefs";
+import { artifactExcerpt, artifactNodeDetail, artifactNodeTitle } from "./artifactRefs";
+import type { ArtifactReference } from "../../artifacts/referenceStore";
+import { useArtifactReferences } from "../../artifacts/useArtifactReference";
 import {
   activateCanvasNode,
   canvasNodeKeyAction,
@@ -91,59 +93,18 @@ function offsetFor(side: CanvasSide, reach: number): { x: number; y: number } {
   }
 }
 
-/** What the card knows about one referenced artifact: the catalog entry, then — for a
- *  ready text artifact — the opening lines of its source. */
-type ArtifactPreview = { ref: ArtifactRef; excerpt?: string };
-
-/** Catalog metadata for every artifact the canvas references, fetched once per id. The
- *  canvas file holds only the id; the title and availability live in the catalog, so a
- *  rename or a deletion shows up here without anyone editing the canvas. The excerpt is
- *  a second read, so a slow or failed one never holds back the title. */
-function useArtifactPreviews(
-  document_: CanvasDocument | null,
-  artifacts: LensProps["artifacts"],
-): ReadonlyMap<string, ArtifactPreview> {
-  const [previews, setPreviews] = useState<ReadonlyMap<string, ArtifactPreview>>(() => new Map());
-  const ids = useMemo(() => {
-    const set = new Set<string>();
-    for (const node of document_?.nodes ?? []) {
-      if (node.kind === "source" && node.source.kind === "artifact") set.add(node.source.artifactId);
-    }
-    return [...set].sort().join(",");
-  }, [document_]);
-
-  useEffect(() => {
-    if (!artifacts || !ids) return;
-    let cancelled = false;
-    const store = (id: string, preview: ArtifactPreview) => {
-      if (!cancelled) setPreviews((current) => new Map(current).set(id, preview));
-    };
-    const pending = ids.split(",").filter((id) => !previews.has(id));
-    for (const id of pending) {
-      void artifacts.get(id).then(
-        async (artifact) => {
-          store(id, { ref: artifact });
-          if (!hasTextExcerpt(artifact)) return;
-          const content = await artifacts.read(id).catch(() => null);
-          if (content?.kind === "text" && typeof content.content === "string") {
-            store(id, { ref: artifact, excerpt: artifactExcerpt(content.content) });
-          }
-        },
-        () => store(id, { ref: "missing" }),
-      );
-    }
-    return () => {
-      cancelled = true;
-    };
-    // `previews` is read only to skip ids already resolved; depending on it would refetch
-    // every remaining id each time one answer lands.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ids, artifacts]);
-
-  return previews;
+/** The artifact ids a canvas references, as one stable key. The canvas file holds only
+ *  the id; the title, availability and source live in the channel's reference store, so
+ *  a rename or a deletion shows up here without anyone editing the canvas. */
+function referencedArtifactIds(document_: CanvasDocument | null): string {
+  const set = new Set<string>();
+  for (const node of document_?.nodes ?? []) {
+    if (node.kind === "source" && node.source.kind === "artifact") set.add(node.source.artifactId);
+  }
+  return [...set].sort().join(",");
 }
 
-function NodeBody({ node, artifact }: { node: CanvasNode; artifact?: ArtifactPreview }) {
+function NodeBody({ node, artifact }: { node: CanvasNode; artifact?: ArtifactReference }) {
   if (node.kind === "text") {
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 text-compact text-content-secondary">
@@ -157,7 +118,7 @@ function NodeBody({ node, artifact }: { node: CanvasNode; artifact?: ArtifactPre
   // artifact card also quotes its source as inert text: nothing in it runs or links.
   const detail =
     node.source.kind === "fs" ? node.source.path
-    : node.source.kind === "artifact" ? artifactNodeDetail(node.source.artifactId, artifact?.ref)
+    : node.source.kind === "artifact" ? artifactNodeDetail(node.source.artifactId, artifact)
     : node.source.verb;
   const Icon = node.source.kind === "resource" ? Database : FileText;
   return (
@@ -168,9 +129,9 @@ function NodeBody({ node, artifact }: { node: CanvasNode; artifact?: ArtifactPre
       <span className="min-w-0 flex-1">
         <span className="block truncate text-compact text-content-secondary" title={detail}>{detail}</span>
         {node.view && <span className="mt-1 block truncate text-minimal text-content-muted">{node.view}</span>}
-        {artifact?.excerpt && (
+        {artifact?.head && (
           <pre data-canvas-excerpt className="mt-2 overflow-hidden whitespace-pre-wrap break-all font-code text-minimal leading-reading text-content-muted">
-            {artifact.excerpt}
+            {artifactExcerpt(artifact.head)}
           </pre>
         )}
       </span>
@@ -178,12 +139,12 @@ function NodeBody({ node, artifact }: { node: CanvasNode; artifact?: ArtifactPre
   );
 }
 
-export function CanvasLens({ data, onOps, requestContextPick, openLocator, artifacts }: LensProps) {
+export function CanvasLens({ data, onOps, requestContextPick, openLocator, artifactRefs }: LensProps) {
   const document_ = useMemo(() => parseCanvas(data), [data]);
-  const artifactPreviews = useArtifactPreviews(document_, artifacts);
-  const artifactOf = (node: CanvasNode): ArtifactPreview | undefined =>
-    node.kind === "source" && node.source.kind === "artifact" ? artifactPreviews.get(node.source.artifactId) : undefined;
-  const titleOf = (node: CanvasNode): string => artifactNodeTitle(node, artifactOf(node)?.ref);
+  useArtifactReferences(artifactRefs, useMemo(() => referencedArtifactIds(document_), [document_]));
+  const artifactOf = (node: CanvasNode): ArtifactReference | undefined =>
+    node.kind === "source" && node.source.kind === "artifact" ? artifactRefs?.snapshot(node.source.artifactId) : undefined;
+  const titleOf = (node: CanvasNode): string => artifactNodeTitle(node, artifactOf(node));
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 24, y: 24 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
