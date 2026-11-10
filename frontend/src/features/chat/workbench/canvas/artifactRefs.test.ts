@@ -50,6 +50,7 @@ describe("artifact excerpts", () => {
   it("keeps the opening lines and marks what it left out", () => {
     expect(artifactExcerpt("\n\n# Roadmap\n\n- ship\n")).toBe("# Roadmap\n\n- ship");
     expect(artifactExcerpt("1\n2\n3\n4\n5\n6\n7\n8")).toBe("1\n2\n3\n4\n5\n6\n…");
+    expect(artifactExcerpt("1\n2\n3\n4\n5\n6\n")).toBe("1\n2\n3\n4\n5\n6");
   });
 
   it("cuts a long line instead of letting it fill the card", () => {

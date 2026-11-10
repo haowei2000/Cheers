@@ -9,8 +9,10 @@ import {
 } from "@/features/chat/context/contextPick";
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
-import { errMsg, useFileSession } from "./jsonFile";
+import { useFileSession } from "./jsonFile";
 import { artifactEditorClient, makeArtifactClient, type Artifact } from "../artifacts/client";
+import { canvasLookupKey, settleCanvasLookup, type CanvasLookup } from "./canvasArtifactLookup";
+import { channelFileClient } from "./channelFileClient";
 import { filterCollaborators } from "./collab";
 import { useAnnotations, resolveAnnotation } from "./annotations";
 import { inspectableIdLineRange } from "./contextSource";
@@ -153,26 +155,35 @@ export function useSceneWorkbenchCoordinator({
   // the catalog: `channel.artifacts.patch` checks the artifact version, the same check the
   // Artifacts library makes, rather than the provider's. The session waits for the lookup.
   // Opening on the path and switching clients once it lands would swap the session out
-  // from under an edit made in between.
+  // from under an edit made in between. If the lookup fails, the canvas opens on its path
+  // as it did before artifacts, rather than not at all.
   const canvasPath = selectedPath && isCanvasPath(selectedPath) ? selectedPath : null;
-  const [canvasArtifact, setCanvasArtifact] = useState<Artifact | null>(null);
+  // Only the channel's current client is replaced. A pinned historical revision has its
+  // own read-only client, and the catalog would serve (and patch) the latest instead.
+  const canvasKey = canvasPath && ctx.fs === channelFileClient(ctx.sendResourceReq, ctx.channelId)
+    ? canvasLookupKey(ctx.channelId, canvasPath)
+    : null;
+  const [canvasLookup, setCanvasLookup] = useState<CanvasLookup | null>(null);
   useEffect(() => {
-    if (!canvasPath) return;
+    if (!canvasKey || !canvasPath) return;
     let alive = true;
-    makeArtifactClient(ctx.sendResourceReq, ctx.channelId).resolvePath(canvasPath).then(
-      (artifact) => { if (alive) setCanvasArtifact(artifact); },
-      (error) => { if (alive) setStatus(`Couldn’t open ${canvasPath}: ${errMsg(error)}`); },
-    );
+    const settle = (artifact: Artifact | null) => {
+      if (alive) setCanvasLookup((current) => settleCanvasLookup(current, canvasKey, artifact));
+    };
+    makeArtifactClient(ctx.sendResourceReq, ctx.channelId).resolvePath(canvasPath).then(settle, () => settle(null));
     return () => { alive = false; };
-  }, [canvasPath, ctx.sendResourceReq, ctx.channelId]);
-  const resolvedCanvas = canvasArtifact && canvasArtifact.path === canvasPath ? canvasArtifact : null;
+    // Re-asked on every file change: a canvas deleted and recreated at this path is a
+    // new artifact, and the old id would fail every read.
+  }, [canvasKey, canvasPath, ctx.sendResourceReq, ctx.channelId, ctx.filesTick]);
+  const settledCanvas = canvasLookup?.key === canvasKey ? canvasLookup : null;
+  const canvasArtifact = settledCanvas?.artifact ?? null;
   const sessionFs = useMemo(
-    () => resolvedCanvas ? artifactEditorClient(ctx.fs, ctx.sendResourceReq, ctx.channelId, resolvedCanvas) : ctx.fs,
-    [resolvedCanvas, ctx.fs, ctx.sendResourceReq, ctx.channelId],
+    () => canvasArtifact ? artifactEditorClient(ctx.fs, ctx.sendResourceReq, ctx.channelId, canvasArtifact) : ctx.fs,
+    [canvasArtifact, ctx.fs, ctx.sendResourceReq, ctx.channelId],
   );
 
   // Shared session for the selected item (Raw edits text, Preview renders data)
-  const session = useFileSession(sessionFs, canvasPath && !resolvedCanvas ? "" : selectedPath ?? "");
+  const session = useFileSession(sessionFs, canvasKey && !settledCanvas ? "" : selectedPath ?? "");
 
   // Live-push: reload file on server change
   const filesTick = ctx.filesTick ?? 0;
