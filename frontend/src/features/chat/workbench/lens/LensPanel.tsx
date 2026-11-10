@@ -29,7 +29,7 @@ export function LensView({
   onSelectAnnotation,
   onRevealSource,
   openLocator,
-  resolveArtifact,
+  artifacts,
   inspectorActive,
   onFormSubmit,
   artifactId,
@@ -55,7 +55,7 @@ export function LensView({
    *  header: one buffer must not grow two Save buttons or report "Saved" twice. */
   standalone?: boolean;
   openLocator?: (uri: string) => void;
-  resolveArtifact?: LensProps["resolveArtifact"];
+  artifacts?: LensProps["artifacts"];
   inspectorActive?: boolean;
   artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
@@ -182,7 +182,7 @@ export function LensView({
             readOnly: !writable,
             requestContextPick,
             openLocator,
-            resolveArtifact,
+            artifacts,
             inspectorActive,
             onFormSubmit,
             onInteraction,
@@ -227,7 +227,7 @@ export function LensPanel({
   channelId,
   reloadTick,
   openLocator,
-  resolveArtifact,
+  artifacts,
   inspectorActive,
   onFormSubmit,
   artifactId,
@@ -241,7 +241,7 @@ export function LensPanel({
   channelId: string;
   reloadTick?: number;
   openLocator?: (uri: string) => void;
-  resolveArtifact?: LensProps["resolveArtifact"];
+  artifacts?: LensProps["artifacts"];
   inspectorActive?: boolean;
   artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
@@ -267,7 +267,7 @@ export function LensPanel({
       channelId={channelId}
       standalone
       openLocator={openLocator}
-      resolveArtifact={resolveArtifact}
+      artifacts={artifacts}
       inspectorActive={inspectorActive}
       onFormSubmit={onFormSubmit}
       artifactId={artifactId}

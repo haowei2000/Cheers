@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Artifact } from "../../artifacts/client";
-import { artifactNodeDetail, artifactNodeTitle } from "./artifactRefs";
+import { artifactExcerpt, artifactNodeDetail, artifactNodeTitle, hasTextExcerpt } from "./artifactRefs";
 import { parseCanvas } from "./document";
 
 const id = "0f8b6c2e-4d3a-4b1c-9e7f-2a5d8c1b3e60";
@@ -35,5 +35,26 @@ describe("artifact node labels", () => {
   it("does not distinguish an unknown id from one the viewer may not read", () => {
     expect(artifactNodeTitle(node, "missing")).toBe("plan");
     expect(artifactNodeDetail(id, "missing")).toBe("Unavailable");
+  });
+});
+
+describe("artifact excerpts", () => {
+  it("quotes only ready text artifacts", () => {
+    expect(hasTextExcerpt(artifact({}))).toBe(true);
+    expect(hasTextExcerpt(artifact({ source_kind: "attachment" }))).toBe(false);
+    expect(hasTextExcerpt(artifact({ availability: "deleted" }))).toBe(false);
+    expect(hasTextExcerpt("missing")).toBe(false);
+    expect(hasTextExcerpt(undefined)).toBe(false);
+  });
+
+  it("keeps the opening lines and marks what it left out", () => {
+    expect(artifactExcerpt("\n\n# Roadmap\n\n- ship\n")).toBe("# Roadmap\n\n- ship");
+    expect(artifactExcerpt("1\n2\n3\n4\n5\n6\n7\n8")).toBe("1\n2\n3\n4\n5\n6\n…");
+  });
+
+  it("cuts a long line instead of letting it fill the card", () => {
+    const excerpt = artifactExcerpt("x".repeat(500));
+    expect(excerpt).toHaveLength(161);
+    expect(excerpt.endsWith("…")).toBe(true);
   });
 });

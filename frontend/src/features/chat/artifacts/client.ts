@@ -48,6 +48,8 @@ export function makeArtifactClient(send: SendResourceReq, channelId: string) {
   };
 }
 
+export type ArtifactClient = ReturnType<typeof makeArtifactClient>;
+
 /** Adapt the existing single-buffer editor to stable identity and artifact versions.
  * Configuration/annotation files still belong to the provider workspace. */
 export function artifactEditorClient(base: FsClient, send: SendResourceReq, channelId: string, artifact: Artifact): FsClient {

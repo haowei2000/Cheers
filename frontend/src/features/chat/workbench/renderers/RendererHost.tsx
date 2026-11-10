@@ -232,8 +232,8 @@ export function RendererHost({
     onFormSubmit,
     requestInteraction: ctx.requestInteraction,
   }), [ctx.openLocator, ctx.composeMessage, ctx.requestInteraction, ctx.channelId, ctx.fs, onFormSubmit]);
-  const resolveArtifact = useMemo(
-    () => makeArtifactClient(ctx.sendResourceReq, ctx.channelId).get,
+  const artifacts = useMemo(
+    () => makeArtifactClient(ctx.sendResourceReq, ctx.channelId),
     [ctx.sendResourceReq, ctx.channelId],
   );
   const openResource = async (uri: string) => {
@@ -371,7 +371,7 @@ export function RendererHost({
           onSelectAnnotation={onSelectAnnotation}
           onRevealSource={onRevealSource}
           openLocator={openResource}
-          resolveArtifact={resolveArtifact}
+          artifacts={artifacts}
           inspectorActive={inspectorActive}
           onFormSubmit={submitForm}
           onInteraction={dispatchInteraction}
@@ -387,7 +387,7 @@ export function RendererHost({
           channelId={ctx.channelId}
           reloadTick={ctx.filesTick}
           openLocator={openResource}
-          resolveArtifact={resolveArtifact}
+          artifacts={artifacts}
           inspectorActive={inspectorActive}
           onFormSubmit={submitForm}
           onInteraction={dispatchInteraction}
