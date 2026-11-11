@@ -70,15 +70,15 @@ pub async fn bind(
     Ok(())
 }
 
-fn read_binding(row: &crate::infra::db::query_rows::BindingRow) -> anyhow::Result<Binding> {
-    Ok(Binding {
-        channel_id: row.channel_id.clone(),
-        integration_id: row.integration_id.clone(),
-        installation_id: row.installation_id.clone(),
-        external_kind: row.external_kind.clone(),
-        external_id: row.external_id.clone(),
-        created_by: row.created_by.clone(),
-    })
+fn read_binding(row: crate::infra::db::query_rows::BindingRow) -> Binding {
+    Binding {
+        channel_id: row.channel_id,
+        integration_id: row.integration_id,
+        installation_id: row.installation_id,
+        external_kind: row.external_kind,
+        external_id: row.external_id,
+        created_by: row.created_by,
+    }
 }
 
 pub async fn for_channel(db: &PgPool, channel_id: &str) -> anyhow::Result<Option<Binding>> {
@@ -86,7 +86,7 @@ pub async fn for_channel(db: &PgPool, channel_id: &str) -> anyhow::Result<Option
         channel_id,
     ).fetch_optional(db)
     .await?;
-    row.as_ref().map(read_binding).transpose()
+    Ok(row.map(read_binding))
 }
 
 /// The inbound route: which channel, if any, an external resource feeds.
@@ -106,7 +106,7 @@ pub async fn for_external(
         external_id,
     ).fetch_optional(db)
     .await?;
-    row.as_ref().map(read_binding).transpose()
+    Ok(row.map(read_binding))
 }
 
 /// Drop the link.
@@ -240,13 +240,10 @@ pub async fn sync_members(
         )
         .fetch_optional(&mut *tx)
         .await?
-        .map(|row| -> anyhow::Result<ExistingMembership> {
-            Ok(ExistingMembership {
-                role: row.role.clone(),
-                projected_from: row.projected_from.clone(),
-            })
-        })
-        .transpose()?;
+        .map(|row| ExistingMembership {
+            role: row.role,
+            projected_from: row.projected_from,
+        });
 
         match projection::decide(
             role_projection,

@@ -83,9 +83,7 @@ export function ProfileCardProvider({
     id: string,
     fallback?: Partial<ProfileData>
   ) => {
-    const member =
-      members.get(id) ?? { member_id: id, member_type: "user", ...fallback };
-    setState({ member, rect: anchor.getBoundingClientRect() });
+    open(anchor, members.get(id) ?? { member_id: id, member_type: "user", ...fallback });
   };
 
   // Keep an open card live: `state.member` is a snapshot captured at open time, so a
@@ -159,6 +157,7 @@ function ProfileCard({
   const name =
     member.display_name || member.username || member.member_id.slice(0, 8);
   const handle = member.username ? `@${member.username}` : null;
+  const statusAge = member.status_updated_at ? relativeTime(member.status_updated_at) : "";
 
   // Anchor near the clicked element; clamp horizontally, flip above when the
   // click is in the lower half of the viewport so the card stays on-screen.
@@ -204,13 +203,11 @@ function ProfileCard({
               {member.status_text}
             </p>
           )}
-          {member.status_updated_at &&
-            (member.status_emoji || member.status_text) &&
-            relativeTime(member.status_updated_at) && (
-              <p className="mt-1 text-minimal text-content-muted">
-                updated {relativeTime(member.status_updated_at)}
-              </p>
-            )}
+          {(member.status_emoji || member.status_text) && statusAge && (
+            <p className="mt-1 text-minimal text-content-muted">
+              updated {statusAge}
+            </p>
+          )}
         </div>
       </div>
 

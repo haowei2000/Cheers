@@ -95,6 +95,8 @@ export const notify = {
   info: (message: string, opts?: NotifyOpts) => show("info", message, opts),
 };
 
+const NAME_TAKEN_MESSAGE = "That name is already taken — choose another, or use Existing bot";
+
 /** The human message of an unknown thrown value. Unlike `String(e)`, never
  *  yields "Error: …" / "[object Object]" — the api client already humanizes
  *  ApiError messages, so `e.message` is the renderable sentence. */
@@ -108,14 +110,14 @@ export function messageOf(e: unknown, fallback = "Something went wrong"): string
       typeof (e as { status?: unknown }).status === "number" &&
       (e as { status: number }).status === 409
     ) {
-      return "That name is already taken — choose another, or use Existing bot";
+      return NAME_TAKEN_MESSAGE;
     }
     return msg || fallback;
   }
   if (typeof e === "string" && e.trim()) {
     const msg = e.trim();
     if (msg.toLowerCase() === "conflict") {
-      return "That name is already taken — choose another, or use Existing bot";
+      return NAME_TAKEN_MESSAGE;
     }
     return msg;
   }

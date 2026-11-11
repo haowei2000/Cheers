@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowUpCircle } from "lucide-react";
 import toast from "react-hot-toast";
@@ -55,14 +54,14 @@ export function AgentUpdates() {
         <p className="text-compact font-medium text-content-secondary">
           {outdated.length} adapter update{outdated.length > 1 ? "s" : ""} available
         </p>
-        <UiButton action="refresh" variant="plain"
+        <Button action="refresh" variant="plain"
           type="button"
           className=" text-content-primary hover:text-content-strong ml-auto"
           onClick={() => void check()}
           disabled={busy}
         >
           Recheck
-        </UiButton>
+        </Button>
       </div>
       <ItemList presentationLevel="minimal" controlSize="compact">
         {outdated.map((u) => (

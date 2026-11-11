@@ -37,9 +37,9 @@ pub async fn record(
          DO UPDATE SET session_id = EXCLUDED.session_id,
                        commands   = EXCLUDED.commands,
                        updated_at = now()",
-        channel_id.to_string(),
-        bot_id.to_string(),
-        session_id.map(|s| s.to_string()),
+        channel_id,
+        bot_id,
+        session_id,
         commands_json,
     )
     .execute(db)

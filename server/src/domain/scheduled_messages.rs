@@ -1,5 +1,7 @@
 //! Durable scheduled channel messages and their execution lifecycle.
 
+use std::sync::LazyLock;
+
 use chrono::{DateTime, Duration, NaiveTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -300,7 +302,9 @@ fn validate_input(input: &ScheduledMessageInput) -> Result<(), AppError> {
             "sourceExtensionId and sourceAutomationId must be provided together".into(),
         ));
     }
-    let extension_id = Regex::new(r"^[a-z0-9][a-z0-9._-]{0,63}$").expect("static id regex");
+    static EXTENSION_ID: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9._-]{0,63}$").expect("static id regex"));
+    let extension_id = &*EXTENSION_ID;
     for (kind, value) in [
         ("sourceExtensionId", input.source_extension_id.as_deref()),
         ("sourceAutomationId", input.source_automation_id.as_deref()),
@@ -749,30 +753,39 @@ pub async fn execute_claimed(state: &AppState, task: ClaimedTask) -> Result<(), 
         return Ok(());
     }
     let result = execute(state, &task, "schedule").await;
-    match &result {
+    record_run_result(&state.db, &run_id, &result).await?;
+    finish_schedule(&state.db, &task, &result).await?;
+    result.map(|_| ())
+}
+
+async fn record_run_result(
+    db: &PgPool,
+    run_id: &str,
+    result: &Result<String, AppError>,
+) -> Result<(), AppError> {
+    match result {
         Ok(message_id) => {
             sqlx::query!(
                 "UPDATE scheduled_message_runs SET status='succeeded',message_id=$2,
                  finished_at=NOW() WHERE run_id=$1",
-                &run_id,
+                run_id,
                 message_id,
             )
-            .execute(&state.db)
+            .execute(db)
             .await?;
         }
         Err(error) => {
             sqlx::query!(
                 "UPDATE scheduled_message_runs SET status='failed',error=$2,
                  finished_at=NOW() WHERE run_id=$1",
-                &run_id,
+                run_id,
                 error.to_string().chars().take(500).collect::<String>(),
             )
-            .execute(&state.db)
+            .execute(db)
             .await?;
         }
     }
-    finish_schedule(&state.db, &task, &result).await?;
-    result.map(|_| ())
+    Ok(())
 }
 
 pub async fn run_now(state: &AppState, user_id: Uuid, id: &str) -> Result<String, AppError> {
@@ -816,16 +829,9 @@ pub async fn run_now(state: &AppState, user_id: Uuid, id: &str) -> Result<String
     .execute(&state.db)
     .await?;
     let result = execute(state, &task, "manual").await;
+    record_run_result(&state.db, &run_id, &result).await?;
     match &result {
-        Ok(message_id) => {
-            sqlx::query!(
-                "UPDATE scheduled_message_runs SET status='succeeded',message_id=$2,
-                 finished_at=NOW() WHERE run_id=$1",
-                &run_id,
-                message_id,
-            )
-            .execute(&state.db)
-            .await?;
+        Ok(_) => {
             sqlx::query!(
                 "UPDATE scheduled_messages SET last_run_at=NOW(),last_error=NULL,
                  consecutive_failures=0,updated_at=NOW() WHERE task_id=$1",
@@ -835,14 +841,6 @@ pub async fn run_now(state: &AppState, user_id: Uuid, id: &str) -> Result<String
             .await?;
         }
         Err(error) => {
-            sqlx::query!(
-                "UPDATE scheduled_message_runs SET status='failed',error=$2,
-                 finished_at=NOW() WHERE run_id=$1",
-                &run_id,
-                error.to_string().chars().take(500).collect::<String>(),
-            )
-            .execute(&state.db)
-            .await?;
             sqlx::query!(
                 "UPDATE scheduled_messages SET last_run_at=NOW(),last_error=$2,
                  consecutive_failures=consecutive_failures+1,updated_at=NOW() WHERE task_id=$1",

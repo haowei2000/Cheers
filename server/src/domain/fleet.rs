@@ -56,14 +56,12 @@ fn row_to_fleet_pending(
     r: crate::infra::db::query_rows::FleetPermissionRow,
 ) -> Option<FleetPending> {
     Some(FleetPending {
-        msg_id: Some(r.msg_id.clone()).and_then(|s| s.parse().ok())?,
-        channel_id: Some(r.channel_id.clone()).and_then(|s| s.parse().ok())?,
-        channel_name: r.channel_name.clone(),
-        bot_id: Some(r.sender_id.clone()).and_then(|s| s.parse().ok())?,
-        content_data: r.content_data.clone().unwrap_or(Value::Null),
-        created_at: Some(r.created_at.clone())
-            .map(|t| t.to_rfc3339())
-            .unwrap_or_default(),
+        msg_id: r.msg_id.parse().ok()?,
+        channel_id: r.channel_id.parse().ok()?,
+        channel_name: r.channel_name,
+        bot_id: r.sender_id.parse().ok()?,
+        content_data: r.content_data.unwrap_or(Value::Null),
+        created_at: r.created_at.to_rfc3339(),
     })
 }
 
@@ -161,12 +159,12 @@ pub async fn list_fleet_bots_all(
 
 fn row_to_fleet_bot(r: crate::infra::db::query_rows::FleetAgentRow) -> Option<FleetBotRow> {
     Some(FleetBotRow {
-        bot_id: Some(r.bot_id.clone()).and_then(|s| s.parse().ok())?,
-        channel_id: Some(r.channel_id.clone()).and_then(|s| s.parse().ok())?,
-        channel_name: r.channel_name.clone(),
-        bot_name: r.bot_name.clone().unwrap_or_default(),
-        status_text: r.status_text.clone(),
-        status_emoji: r.status_emoji.clone(),
+        bot_id: r.bot_id.parse().ok()?,
+        channel_id: r.channel_id.parse().ok()?,
+        channel_name: r.channel_name,
+        bot_name: r.bot_name.unwrap_or_default(),
+        status_text: r.status_text,
+        status_emoji: r.status_emoji,
     })
 }
 
@@ -193,11 +191,9 @@ pub async fn session_counts(
     Ok(rows
         .into_iter()
         .filter_map(|r| {
-            let bot: Uuid = Some(r.bot_id.clone()).and_then(|s| s.parse().ok())?;
-            let ch: Uuid = Some(r.channel_id.clone()).and_then(|s| s.parse().ok())?;
-            let busy: i64 = r.busy.clone().unwrap_or(0);
-            let idle: i64 = r.idle.clone().unwrap_or(0);
-            Some(((bot, ch), (busy, idle)))
+            let bot: Uuid = r.bot_id.parse().ok()?;
+            let ch: Uuid = r.channel_id.parse().ok()?;
+            Some(((bot, ch), (r.busy.unwrap_or(0), r.idle.unwrap_or(0))))
         })
         .collect())
 }
@@ -229,10 +225,9 @@ pub async fn cost_today(
     Ok(rows
         .into_iter()
         .filter_map(|r| {
-            let bot: Uuid = Some(r.bot_id.clone()).and_then(|s| s.parse().ok())?;
-            let ch: Uuid = Some(r.channel_id.clone()).and_then(|s| s.parse().ok())?;
-            let cost: Option<f64> = r.cost.clone();
-            Some(((bot, ch), cost.unwrap_or(0.0)))
+            let bot: Uuid = r.bot_id.parse().ok()?;
+            let ch: Uuid = r.channel_id.parse().ok()?;
+            Some(((bot, ch), r.cost.unwrap_or(0.0)))
         })
         .collect())
 }
@@ -262,5 +257,5 @@ pub async fn is_workspace_member(
     )
     .fetch_one(db)
     .await?;
-    Ok(row.ok.clone().unwrap_or(false))
+    Ok(row.ok.unwrap_or(false))
 }

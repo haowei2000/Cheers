@@ -108,6 +108,12 @@ export function AnnotationProvider({
     (store.error as { status?: number } | null | undefined)?.status === 404;
   const editable = (item: SavedAnnotation) =>
     canWrite && (item.author_id === userId || Boolean(canManage));
+  const beginAdd = () => {
+    setDraft("");
+    setMode("add");
+    setActive(null);
+  };
+  const needle = query.toLowerCase();
   const visible = store.notes.filter(
     (n) =>
       (scope === "all" ||
@@ -117,7 +123,7 @@ export function AnnotationProvider({
         n.target.kind === scope) &&
       `${n.label} ${n.note} ${n.target.kind === "file" ? n.target.path : n.target.msg_id}`
         .toLowerCase()
-        .includes(query.toLowerCase()),
+        .includes(needle),
   );
   const editor = (item?: SavedAnnotation) => (
     <div className="space-y-2 p-3">
@@ -248,11 +254,7 @@ export function AnnotationProvider({
                   mode !== "browse" ||
                   store.pending ||
                   isUnsupported,
-                onSelect: () => {
-                  setDraft("");
-                  setMode("add");
-                  setActive(null);
-                },
+                onSelect: beginAdd,
               },
               {
                 id: "refresh-annotations",
@@ -315,11 +317,7 @@ export function AnnotationProvider({
                 showHeader={false}
                 showSearch={false}
                 showAdd={false}
-                onAdd={() => {
-                  setDraft("");
-                  setMode("add");
-                  setActive(null);
-                }}
+                onAdd={beginAdd}
                 addDisabled={mode !== "browse" || store.pending || isUnsupported}
               >
                 {mode === "add" && <ItemGroup>{editor()}</ItemGroup>}

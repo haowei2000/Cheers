@@ -30,13 +30,7 @@ const alignClasses: Record<DataTableAlign, string> = {
   right: "text-right",
 };
 
-function compareValues(
-  left: string | number | null | undefined,
-  right: string | number | null | undefined,
-): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
+function compareValues(left: string | number, right: string | number): number {
   if (typeof left === "number" && typeof right === "number") return left - right;
   return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" });
 }

@@ -1,5 +1,4 @@
 import { HelpLabel } from "@/components/ui/help-text";
-import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -57,7 +56,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
   const [done, setDone] = useState(false);
   const accessibleLabel = done ? "Copied" : label === "" ? "Copy Bot ID" : label ?? "Copy";
   return (
-    <UiButton action="copy" variant="plain" content={label === "" ? "icon" : "iconText"}
+    <Button action="copy" variant="plain" content={label === "" ? "icon" : "iconText"}
       aria-label={accessibleLabel} title={accessibleLabel}
       type="button"
       onClick={async () => {
@@ -75,7 +74,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
     >
       {done ? <Check className="w-3.5 h-3.5 text-success-400" /> : <Copy className="w-3.5 h-3.5" />}
       {label ?? (done ? "Copied" : "Copy")}
-    </UiButton>
+    </Button>
   );
 }
 
@@ -224,7 +223,7 @@ export function BotDetailPanel({
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
-            <UiButton content="iconText" variant="plain" role="tab" aria-selected={active} selected={active}
+            <Button content="iconText" variant="plain" role="tab" aria-selected={active} selected={active}
               key={id}
               type="button"
               onClick={() => setTab(id)}
@@ -235,7 +234,7 @@ export function BotDetailPanel({
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
-            </UiButton>
+            </Button>
           );
         })}
       </div>

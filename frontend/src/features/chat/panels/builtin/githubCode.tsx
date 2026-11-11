@@ -195,7 +195,7 @@ function ExecutionTargetDialog({
   }, [hostId, hosts, open]);
 
   async function save() {
-    const host = hosts.find((item) => item.host_id === hostId);
+    const host = selectedHost;
     if (!host || saving) return;
     setSaving(true);
     try {

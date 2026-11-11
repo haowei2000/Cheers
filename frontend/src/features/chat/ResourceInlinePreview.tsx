@@ -7,8 +7,8 @@ import { useArtifactReference } from "./artifacts/useArtifactReference";
 import { artifactType, availabilityLabel } from "./artifacts/presentation";
 import { FileGrid } from "./fileView";
 import { ControlTrigger } from "@/components/ui/control-trigger";
-import { parseLocator } from "./locator";
-import { ResourceCardContext } from "./ResourceCardContext";
+import { formatLocator, parseLocator } from "./locator";
+import { ResourceCardContext, ResourceCardProvider } from "./ResourceCardContext";
 import { useNearViewport } from "@/hooks/useNearViewport";
 import { fileResourceStore } from "./workbench/fileResource";
 import { formatFor, errMsg } from "./workbench/jsonFile";
@@ -17,8 +17,6 @@ import { ArtifactLens } from "./workbench/lens/ArtifactLens";
 import { resolveDeskResource,type ResolvedDeskResource } from "@/api/resources";
 import { sendResourceInteraction } from "@/api/messages";
 import { makeFsClient } from "./workbench/fsClient";
-import { ResourceCardProvider } from "./ResourceCardContext";
-import { formatLocator } from "./locator";
 
 function GlobalPreview({uri}:{uri:string}) {
   const parent=useContext(ResourceCardContext)!;

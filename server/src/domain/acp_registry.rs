@@ -10,8 +10,7 @@
 use std::sync::{LazyLock, Mutex};
 
 pub use cheers_acp_registry::{
-    adapter_args_for, bin_name_from_cmd, representative_binary_target, unscoped_package_name,
-    BinaryLaunch, PackageLaunch,
+    adapter_args_for, bin_name_from_cmd, representative_binary_target, BinaryLaunch, PackageLaunch,
 };
 use cheers_acp_registry::{
     npm_manifest_url, parse_npm_bin, DistKind, NpmBin, NpmBinCache, NpmLookup, ParsedRegistry,

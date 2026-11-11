@@ -131,6 +131,8 @@ const EVENT_TYPE_LABEL: Record<string, string> = {
 };
 /** Last-resort humanizer so an unmapped id never headlines as snake_case. */
 const humanize = (id: string) => id.replaceAll("_", " ");
+const decisionLabelOf = (e: AuditEvent) =>
+  e.decision ? DECISION_LABEL[e.decision.toLowerCase()] ?? humanize(e.decision) : null;
 
 type Tone = {
   Icon: typeof Check;
@@ -149,14 +151,14 @@ function tone(e: AuditEvent): Tone {
     return {
       Icon: Check,
       text: "text-success-400",
-      label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Approved",
+      label: decisionLabelOf(e) || "Approved",
       raw,
     };
   if (d.startsWith("reject") || d.startsWith("deny") || et.includes("reject") || et.includes("deny") || et === "access_revoked")
     return {
       Icon: X,
       text: "text-danger-400",
-      label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Denied",
+      label: decisionLabelOf(e) || "Denied",
       raw,
     };
   if (et.includes("expire") || et === "timeout")
@@ -219,7 +221,7 @@ function AuditRow({
   const cwd = str(tool, "cwd");
   const kind = str(tool, "kind");
   const toolTitle = concreteText(str(tool, "title"));
-  const decisionLabel = e.decision ? DECISION_LABEL[e.decision.toLowerCase()] ?? humanize(e.decision) : null;
+  const decisionLabel = decisionLabelOf(e);
 
   const approver = memberOf(e.actor_id);
   const target =

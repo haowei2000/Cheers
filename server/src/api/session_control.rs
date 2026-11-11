@@ -20,8 +20,8 @@ use crate::{
     errors::AppError,
 };
 
-/// Channel-member gate (platform admins bypass), mirroring messages.rs.
-async fn ensure_channel_member(
+/// Channel-member gate (platform admins bypass); returns the caller's user id.
+pub(crate) async fn ensure_channel_member(
     state: &AppState,
     channel_id: Uuid,
     claims: &Claims,
@@ -196,18 +196,7 @@ pub async fn close_session(
     Extension(claims): Extension<Claims>,
     Path((channel_id, bot_id, session_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
-    let role = caller_role(&state, channel_id, user_id).await?;
-    gate_initiate(
-        &state,
-        &claims,
-        channel_id,
-        bot_id,
-        user_id,
-        &role,
-        "cheers/session_close",
-    )
-    .await?;
+    authorize_initiate(&state, &claims, channel_id, bot_id, "cheers/session_close").await?;
     sessions::close_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
     Ok(Json(
         json!({ "ok": true, "session_id": session_id.to_string() }),
@@ -226,26 +215,16 @@ pub async fn set_primary_session(
     Extension(claims): Extension<Claims>,
     Path((channel_id, bot_id, session_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
-    let role = caller_role(&state, channel_id, user_id).await?;
-    gate_initiate(
+    authorize_initiate(
         &state,
         &claims,
         channel_id,
         bot_id,
-        user_id,
-        &role,
         "cheers/session_set_primary",
     )
     .await?;
     // Verify the session is live in this channel and belongs to this bot.
-    let (sbot, _key) =
-        sessions::resolve_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
-    if sbot != bot_id {
-        return Err(AppError::BadRequest(
-            "session does not belong to this bot".into(),
-        ));
-    }
+    resolve_bot_session(&state, channel_id, bot_id, session_id).await?;
     sessions::set_primary_session(&state.db, bot_id, &channel_id.to_string(), session_id).await?;
     Ok(Json(
         json!({ "ok": true, "session_id": session_id.to_string() }),
@@ -296,7 +275,25 @@ async fn gate_initiate(
     {
         return Ok(());
     }
-    let allowed = acp_policy::allows(
+    if initiate_allowed(state, channel_id, bot_id, user_id, role, event_name).await {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "you are not authorized to change this agent's session config here".into(),
+        ))
+    }
+}
+
+/// INITIATE rule check for `event_name`, fail-closed: a rules/DB error denies.
+async fn initiate_allowed(
+    state: &AppState,
+    channel_id: Uuid,
+    bot_id: Uuid,
+    user_id: Uuid,
+    role: &str,
+    event_name: &str,
+) -> bool {
+    acp_policy::allows(
         &state.db,
         &bot_id.to_string(),
         &channel_id.to_string(),
@@ -306,14 +303,41 @@ async fn gate_initiate(
         Capability::Initiate,
     )
     .await
-    .unwrap_or(false); // fail-closed: a rules/DB error denies the mutation
-    if allowed {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden(
-            "you are not authorized to change this agent's session config here".into(),
-        ))
+    .unwrap_or(false)
+}
+
+/// Member gate + caller role + [`gate_initiate`] for a session mutation.
+async fn authorize_initiate(
+    state: &AppState,
+    claims: &Claims,
+    channel_id: Uuid,
+    bot_id: Uuid,
+    event_name: &str,
+) -> Result<(), AppError> {
+    let user_id = ensure_channel_member(state, channel_id, claims).await?;
+    let role = caller_role(state, channel_id, user_id).await?;
+    gate_initiate(
+        state, claims, channel_id, bot_id, user_id, &role, event_name,
+    )
+    .await
+}
+
+/// Verify `session_id` is live in this channel and belongs to `bot_id`;
+/// returns its resume key.
+async fn resolve_bot_session(
+    state: &AppState,
+    channel_id: Uuid,
+    bot_id: Uuid,
+    session_id: Uuid,
+) -> Result<String, AppError> {
+    let (sbot, key) =
+        sessions::resolve_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
+    if sbot != bot_id {
+        return Err(AppError::BadRequest(
+            "session does not belong to this bot".into(),
+        ));
     }
+    Ok(key)
 }
 
 /// The agent's advertised ACP config options (connector_control.options.options.configOptions),
@@ -383,18 +407,7 @@ pub async fn set_session_mode(
     Path((channel_id, bot_id, session_id)): Path<(Uuid, Uuid, Uuid)>,
     Json(body): Json<SetModeRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
-    let role = caller_role(&state, channel_id, user_id).await?;
-    gate_initiate(
-        &state,
-        &claims,
-        channel_id,
-        bot_id,
-        user_id,
-        &role,
-        "session/set_mode",
-    )
-    .await?;
+    authorize_initiate(&state, &claims, channel_id, bot_id, "session/set_mode").await?;
 
     let mode = body.mode.trim().to_string();
     if mode.is_empty() {
@@ -410,13 +423,7 @@ pub async fn set_session_mode(
         )));
     }
     // Verify the session is in this channel and resolve its resume key + bot.
-    let (sbot, key) =
-        sessions::resolve_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
-    if sbot != bot_id {
-        return Err(AppError::BadRequest(
-            "session does not belong to this bot".into(),
-        ));
-    }
+    let key = resolve_bot_session(&state, channel_id, bot_id, session_id).await?;
 
     let desired =
         persist_session_override(&state, session_id, json!({"permission_mode": mode})).await?;
@@ -445,15 +452,11 @@ pub async fn set_session_config_option(
     Path((channel_id, bot_id, session_id)): Path<(Uuid, Uuid, Uuid)>,
     Json(body): Json<SetConfigOptionRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
-    let role = caller_role(&state, channel_id, user_id).await?;
-    gate_initiate(
+    authorize_initiate(
         &state,
         &claims,
         channel_id,
         bot_id,
-        user_id,
-        &role,
         "session/set_config_option",
     )
     .await?;
@@ -488,13 +491,7 @@ pub async fn set_session_config_option(
             "config option {config_id:?} is not advertised by this agent"
         )));
     }
-    let (sbot, key) =
-        sessions::resolve_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
-    if sbot != bot_id {
-        return Err(AppError::BadRequest(
-            "session does not belong to this bot".into(),
-        ));
-    }
+    let key = resolve_bot_session(&state, channel_id, bot_id, session_id).await?;
 
     let desired = persist_session_override(
         &state, session_id, json!({"config_options": std::collections::BTreeMap::from([(config_id.clone(), value.clone())])}),
@@ -533,26 +530,16 @@ pub async fn set_session_workspace(
     Path((channel_id, bot_id, session_id)): Path<(Uuid, Uuid, Uuid)>,
     Json(body): Json<SetWorkspaceRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
-    let role = caller_role(&state, channel_id, user_id).await?;
-    gate_initiate(
+    authorize_initiate(
         &state,
         &claims,
         channel_id,
         bot_id,
-        user_id,
-        &role,
         "session/set_config_option",
     )
     .await?;
 
-    let (sbot, _key) =
-        sessions::resolve_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
-    if sbot != bot_id {
-        return Err(AppError::BadRequest(
-            "session does not belong to this bot".into(),
-        ));
-    }
+    resolve_bot_session(&state, channel_id, bot_id, session_id).await?;
 
     let additional_dirs = normalize_additional_dirs(Some(body.additional_dirs))?;
     // Validate each dir against the bot connector's policy; store canonical paths.
@@ -579,66 +566,15 @@ pub async fn session_controls(
         crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id.to_string())
             .await
             .is_ok();
-    let can_set_mode = privileged
-        || acp_policy::allows(
-            &state.db,
-            &bot_id.to_string(),
-            &channel_id.to_string(),
-            &user_id.to_string(),
-            &role,
-            "session/set_mode",
-            Capability::Initiate,
-        )
-        .await
-        .unwrap_or(false);
-    let can_set_config_option = privileged
-        || acp_policy::allows(
-            &state.db,
-            &bot_id.to_string(),
-            &channel_id.to_string(),
-            &user_id.to_string(),
-            &role,
-            "session/set_config_option",
-            Capability::Initiate,
-        )
-        .await
-        .unwrap_or(false);
-    let can_create_session = privileged
-        || acp_policy::allows(
-            &state.db,
-            &bot_id.to_string(),
-            &channel_id.to_string(),
-            &user_id.to_string(),
-            &role,
-            "cheers/session_create",
-            Capability::Initiate,
-        )
-        .await
-        .unwrap_or(false);
-    let can_close_session = privileged
-        || acp_policy::allows(
-            &state.db,
-            &bot_id.to_string(),
-            &channel_id.to_string(),
-            &user_id.to_string(),
-            &role,
-            "cheers/session_close",
-            Capability::Initiate,
-        )
-        .await
-        .unwrap_or(false);
-    let can_set_primary = privileged
-        || acp_policy::allows(
-            &state.db,
-            &bot_id.to_string(),
-            &channel_id.to_string(),
-            &user_id.to_string(),
-            &role,
-            "cheers/session_set_primary",
-            Capability::Initiate,
-        )
-        .await
-        .unwrap_or(false);
+    let (state_ref, role_ref) = (&state, role.as_str());
+    let allowed = move |event: &'static str| {
+        initiate_allowed(state_ref, channel_id, bot_id, user_id, role_ref, event)
+    };
+    let can_set_mode = privileged || allowed("session/set_mode").await;
+    let can_set_config_option = privileged || allowed("session/set_config_option").await;
+    let can_create_session = privileged || allowed("cheers/session_create").await;
+    let can_close_session = privileged || allowed("cheers/session_close").await;
+    let can_set_primary = privileged || allowed("cheers/session_set_primary").await;
     let agent_type = bot_agent_type(&state, bot_id).await;
     let (default_mode, allowed_modes) = connector_config::posture_preset(&agent_type);
     Ok(Json(json!({

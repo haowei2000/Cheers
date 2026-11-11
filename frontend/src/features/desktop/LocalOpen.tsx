@@ -7,11 +7,7 @@ import { invokeDesktop } from "@/lib/desktop";
 import { isTauri } from "@/lib/serverConfig";
 import { openDesktopFile, probeDesktopFile as probeLocal } from "@/lib/desktopResource";
 import { OpenerGlyph } from "./openerIcons";
-
-interface Opener {
-  key: string;
-  label: string;
-}
+import type { Opener } from "./ConnectorChanges";
 
 // The opener list is fixed for the session. Locality is decided per file at
 // click time (a connector may start/stop mid-session, and a browse root can

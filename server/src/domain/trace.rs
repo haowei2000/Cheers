@@ -59,20 +59,17 @@ pub fn normalize_event_payload(mut value: Value) -> Value {
     let Some(object) = value.as_object_mut() else {
         return value;
     };
+    // Read-only view of the incoming fields; the inserts below never touch
+    // `data`, so every lookup sees the producer's original values.
+    let snapshot = Value::Object(object.clone());
 
-    let request_id = string_at(&Value::Object(object.clone()), "request_id")
-        .or_else(|| nested_string(&Value::Object(object.clone()), "data", &["request_id"]));
-    let tool_call_id = string_at(&Value::Object(object.clone()), "tool_call_id")
-        .or_else(|| string_at(&Value::Object(object.clone()), "toolCallId"))
-        .or_else(|| {
-            nested_string(
-                &Value::Object(object.clone()),
-                "data",
-                &["tool_call_id", "toolCallId"],
-            )
-        });
-    let phase = string_at(&Value::Object(object.clone()), "phase").unwrap_or_default();
-    let kind = string_at(&Value::Object(object.clone()), "kind").unwrap_or_else(|| {
+    let request_id = string_at(&snapshot, "request_id")
+        .or_else(|| nested_string(&snapshot, "data", &["request_id"]));
+    let tool_call_id = string_at(&snapshot, "tool_call_id")
+        .or_else(|| string_at(&snapshot, "toolCallId"))
+        .or_else(|| nested_string(&snapshot, "data", &["tool_call_id", "toolCallId"]));
+    let phase = string_at(&snapshot, "phase").unwrap_or_default();
+    let kind = string_at(&snapshot, "kind").unwrap_or_else(|| {
         if phase == "approval" {
             "approval"
         } else {
@@ -88,8 +85,8 @@ pub fn normalize_event_payload(mut value: Value) -> Value {
         .get("producer_seq")
         .or_else(|| object.get("seq"))
         .cloned();
-    let id = string_at(&Value::Object(object.clone()), "id")
-        .or_else(|| string_at(&Value::Object(object.clone()), "event_id"))
+    let id = string_at(&snapshot, "id")
+        .or_else(|| string_at(&snapshot, "event_id"))
         .or_else(|| {
             producer_seq.as_ref().map(|producer_seq| {
                 let seed = json!({
@@ -116,7 +113,7 @@ pub fn normalize_event_payload(mut value: Value) -> Value {
             .to_string();
             Uuid::new_v5(&Uuid::NAMESPACE_OID, seed.as_bytes()).to_string()
         });
-    let status = normalize_status(string_at(&Value::Object(object.clone()), "status"));
+    let status = normalize_status(string_at(&snapshot, "status"));
 
     object.insert("v".to_string(), json!(TRACE_EVENT_VERSION));
     object.insert("id".to_string(), json!(id.clone()));
@@ -156,7 +153,7 @@ pub fn normalize_event_payload(mut value: Value) -> Value {
     }
     for field in ["approval_kind", "decision", "option_id", "actor_id"] {
         if !object.contains_key(field) {
-            let nested = nested_string(&Value::Object(object.clone()), "data", &[field]);
+            let nested = nested_string(&snapshot, "data", &[field]);
             object.insert(field.to_string(), json!(nested));
         }
     }

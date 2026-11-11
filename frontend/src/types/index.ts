@@ -421,7 +421,3 @@ export interface BotItem {
   invite_policy?: "open" | "require_approval";
 }
 
-export interface WsEvent {
-  type: string;
-  data: Record<string, unknown>;
-}

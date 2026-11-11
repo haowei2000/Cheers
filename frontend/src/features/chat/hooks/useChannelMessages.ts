@@ -9,6 +9,15 @@ import { reconcileClaimConfirmations } from "../reconcileClaimConfirmations";
 import { coalesceTraceEvents } from "../traceEvent";
 import { mergeMessages, patchMessageContentData, sortMessages, upsertMessage } from "../messageCollection";
 
+function maxChannelSeq(messages: Message[]): number {
+  let max = 0;
+  for (const m of messages) {
+    if (typeof m.channel_seq === "number" && m.channel_seq > max)
+      max = m.channel_seq;
+  }
+  return max;
+}
+
 export function useChannelMessages({
   channel,
   preview,
@@ -82,12 +91,7 @@ export function useChannelMessages({
   // Highest delivered channel_seq, used as the reconnect/refresh catch-up cursor.
   const lastSeqRef = useRef(0);
   useEffect(() => {
-    let max = 0;
-    for (const m of messages) {
-      if (typeof m.channel_seq === "number" && m.channel_seq > max)
-        max = m.channel_seq;
-    }
-    lastSeqRef.current = max;
+    lastSeqRef.current = maxChannelSeq(messages);
   }, [messages]);
 
   // The channel whose async responses are still welcome — a response landing
@@ -164,11 +168,7 @@ export function useChannelMessages({
 
     const seeded = seedFromCache(cid);
     if (seeded) {
-      let maxSeq = 0;
-      for (const m of seeded.messages) {
-        if (typeof m.channel_seq === "number" && m.channel_seq > maxSeq)
-          maxSeq = m.channel_seq;
-      }
+      const maxSeq = maxChannelSeq(seeded.messages);
       lastSeqRef.current = maxSeq;
       setLoading(false);
       loadingRef.current = false;
@@ -191,11 +191,7 @@ export function useChannelMessages({
       .then((res) => {
         if (!mountedRef.current || activeChannelRef.current !== cid || generation !== clientSessionGeneration()) return;
         const msgs = sortMessages(res.messages ?? res.data ?? []);
-        let maxSeq = 0;
-        for (const m of msgs) {
-          if (typeof m.channel_seq === "number" && m.channel_seq > maxSeq)
-            maxSeq = m.channel_seq;
-        }
+        const maxSeq = maxChannelSeq(msgs);
         lastSeqRef.current = maxSeq;
         setMessages((previous) => {
           msgsOwnerRef.current = cid;

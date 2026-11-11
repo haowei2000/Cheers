@@ -51,6 +51,15 @@ impl Terminal {
         Ok(())
     }
 }
+/// Requested terminal size, clamped to sane bounds (start and resize alike).
+fn pty_size(request: &RemoteExecutionRequest) -> PtySize {
+    PtySize {
+        rows: request.rows.unwrap_or(24).clamp(2, 200),
+        cols: request.cols.unwrap_or(80).clamp(10, 400),
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
 #[derive(Default)]
 pub(super) struct RemoteRegistry {
     sessions: Mutex<HashMap<String, Arc<Terminal>>>,
@@ -160,12 +169,7 @@ impl RemoteRegistry {
             if !cwd.starts_with(root) || !cwd.is_dir() {
                 anyhow::bail!("Terminal directory is outside the registered root");
             }
-            let pair = native_pty_system().openpty(PtySize {
-                rows: request.rows.unwrap_or(24).clamp(2, 200),
-                cols: request.cols.unwrap_or(80).clamp(10, 400),
-                pixel_width: 0,
-                pixel_height: 0,
-            })?;
+            let pair = native_pty_system().openpty(pty_size(&request))?;
             let mut command = CommandBuilder::new("/bin/sh");
             command.env_clear();
             for (key, value) in env {
@@ -306,12 +310,7 @@ impl RemoteRegistry {
                 writer.write_all(input.as_bytes())?;
                 writer.flush()?;
             }
-            "terminal.resize" => terminal.master.lock().unwrap().resize(PtySize {
-                rows: request.rows.unwrap_or(24).clamp(2, 200),
-                cols: request.cols.unwrap_or(80).clamp(10, 400),
-                pixel_width: 0,
-                pixel_height: 0,
-            })?,
+            "terminal.resize" => terminal.master.lock().unwrap().resize(pty_size(&request))?,
             "terminal.cancel" => {
                 let mut state = terminal.state.lock().unwrap();
                 if state.status == "running" {

@@ -72,6 +72,27 @@ export function twoFactorSummary(methods: TwoFactorMethods | undefined): string 
   return `Using ${armed.join(", ")}`;
 }
 
+async function copyToClipboard(text: string, successMessage: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(successMessage);
+  } catch {
+    toast.error("Clipboard unavailable");
+  }
+}
+
+/** Recovery codes shown once after they are minted. */
+function RecoveryCodeList({ codes }: { codes: string[] }) {
+  return (
+    <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary space-y-1">
+      {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
+      {codes.map((c) => (
+        <li key={c}>{c}</li>
+      ))}
+    </ul>
+  );
+}
+
 /** On/Off marker for one second factor, matching the card's own status voice. */
 function MethodState({ on }: { on: boolean }) {
   return <Badge tone={on ? "success" : "neutral"} indicator={on}>{on ? "On" : "Off"}</Badge>;
@@ -314,24 +335,6 @@ export function TwoFactorCard() {
     }
   }
 
-  async function copySecret() {
-    try {
-      await navigator.clipboard.writeText(secret);
-      toast.success("Secret copied");
-    } catch {
-      toast.error("Clipboard unavailable");
-    }
-  }
-
-  async function copyBackup() {
-    try {
-      await navigator.clipboard.writeText(backupCodes.join("\n"));
-      toast.success("Backup codes copied");
-    } catch {
-      toast.error("Clipboard unavailable");
-    }
-  }
-
   return (
     <>
       <OperationsItem
@@ -481,7 +484,7 @@ export function TwoFactorCard() {
                 {secret}
               </div>
               <div className="flex flex-wrap gap-2">
-                <ActionButton action="copy" context="security" accessibleLabel="Copy authenticator secret" controlSize="compact" onClick={() => void copySecret()} />
+                <ActionButton action="copy" context="security" accessibleLabel="Copy authenticator secret" controlSize="compact" onClick={() => void copyToClipboard(secret, "Secret copied")} />
                 {provisioningUri && (
                   <a
                     href={provisioningUri}
@@ -521,14 +524,9 @@ export function TwoFactorCard() {
           <p className="text-compact text-warning-200/90">
             Save these recovery codes now. Each code works once when your other verification methods are unavailable.
           </p>
-          <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary space-y-1">
-            {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
-            {backupCodes.map((c) => (
-              <li key={c}>{c}</li>
-            ))}
-          </ul>
+          <RecoveryCodeList codes={backupCodes} />
           <div className="flex gap-2">
-            <ActionButton action="copy" context="security" accessibleLabel="Copy recovery codes" onClick={() => void copyBackup()} />
+            <ActionButton action="copy" context="security" accessibleLabel="Copy recovery codes" onClick={() => void copyToClipboard(backupCodes.join("\n"), "Backup codes copied")} />
             <ActionButton action="done" context="security" accessibleLabel="Finish two-step verification setup"
               onClick={() => {
                 setBackupCodes([]);
@@ -831,15 +829,6 @@ export function PasskeyCard() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [newRecoveryCodes, setNewRecoveryCodes] = useState<string[]>([]);
 
-  async function copyNewRecoveryCodes() {
-    try {
-      await navigator.clipboard.writeText(newRecoveryCodes.join("\n"));
-      toast.success("Recovery codes copied");
-    } catch {
-      toast.error("Clipboard unavailable");
-    }
-  }
-
   function closeAddDialog() {
     if (busy) return;
     setName("");
@@ -975,14 +964,9 @@ export function PasskeyCard() {
             <p className="text-compact text-warning-200/90">
               This passkey turned on two-step verification. Save these recovery codes now — each works once if you lose access to your passkey.
             </p>
-            <ul className="rounded-sm bg-zinc-800 px-3 py-2 font-code text-regular text-content-primary space-y-1">
-              {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
-              {newRecoveryCodes.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
+            <RecoveryCodeList codes={newRecoveryCodes} />
             <div className="flex gap-2">
-              <ActionButton action="copy" context="security" accessibleLabel="Copy recovery codes" onClick={() => void copyNewRecoveryCodes()} />
+              <ActionButton action="copy" context="security" accessibleLabel="Copy recovery codes" onClick={() => void copyToClipboard(newRecoveryCodes.join("\n"), "Recovery codes copied")} />
               <ActionButton action="done" context="security" accessibleLabel="Finish saving recovery codes" onClick={() => setNewRecoveryCodes([])} />
             </div>
           </div>

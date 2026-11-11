@@ -7,7 +7,7 @@ import { Button as UiButton } from "@/components/ui/button";
 //
 // Moved here from workbench/viewBoard.tsx unchanged in behavior; see
 // docs/arch/PANEL_MODEL.md for why boards stopped being their own subsystem.
-import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
 import { RefreshCw, type LucideIcon } from "lucide-react";
 import { FloatingPanelActionPortal } from "@/components/ui/floating-panel";
 import { registerPanel, type PanelContext, type PanelContribution } from "./registry";
@@ -164,7 +164,6 @@ export function PanelShell({
 export function defineDataPanel<T>(def: DataPanelDef<T>): PanelContribution {
   function Panel({ ctx }: { ctx: PanelContext }) {
     const { data, loading, error, refetch } = usePanelData<T>(def.source, ctx);
-    const onRefresh = useCallback(() => refetch(), [refetch]);
 
     // Live-push: re-fetch when the signal for THIS SOURCE bumps — its own
     // board_signal for a verb, the shared files tick for a workspace file.
@@ -176,7 +175,7 @@ export function defineDataPanel<T>(def: DataPanelDef<T>): PanelContribution {
         <PanelRefreshAction
           title={def.title}
           loading={loading}
-          onRefresh={onRefresh}
+          onRefresh={refetch}
           active={ctx.visible !== false}
         />
 

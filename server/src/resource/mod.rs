@@ -190,11 +190,7 @@ fn resolve_frame(resource: &str, params: &Value) -> Result<(String, Value), (Str
 }
 
 async fn resolve_resource(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel = params
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .and_then(|v| v.parse().ok())
-        .ok_or_else(|| resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel = uuid_param(params, "channel_id")?;
     crate::api::resources::resolve_descriptor(
         db,
         principal,
@@ -359,11 +355,7 @@ async fn require_channel_admin(
     principal: &Principal,
     params: &Value,
 ) -> Result<(), (String, String)> {
-    let channel_id = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<Uuid>().ok())
-        .ok_or_else(|| resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id = uuid_param(params, "channel_id")?;
     let membership = authorize_channel_read(db, principal, channel_id).await?;
     if role_can_admin(&membership.role) {
         Ok(())
@@ -428,6 +420,25 @@ pub fn permission_denied(reason: &str) -> (String, String) {
 
 pub fn not_found(what: &str) -> (String, String) {
     resource_error("NOT_FOUND", format!("{what} not found"))
+}
+
+/// A required UUID param; absent or malformed is `INVALID_PARAMS` "`{key} required`".
+fn uuid_param(params: &Value, key: &str) -> Result<Uuid, (String, String)> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| resource_error("INVALID_PARAMS", format!("{key} required")))
+}
+
+/// The required `channel_id` as the activity/board/fs verbs report it:
+/// `BAD_REQUEST` "missing channel_id".
+fn channel_id_or_bad_request(params: &Value) -> Result<Uuid, (String, String)> {
+    params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| resource_error("BAD_REQUEST", "missing channel_id"))
 }
 
 pub async fn authorize_channel_read(

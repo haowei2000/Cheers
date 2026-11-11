@@ -7,7 +7,7 @@ import { getFileStatus } from "@/api/files";
 import { Dialog } from "@/components/ui/dialog";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import type { FileInfo } from "@/types";
-import { downloadFile, extOf, formatBytes, previewKind } from "./fileUtils";
+import { downloadFile, extOf, formatBytes, previewKind, useDownloadObjectUrl } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
 import { PdfViewer } from "./PdfViewer";
 import { useImageObjectUrl } from "./imageObjectUrl";
@@ -148,25 +148,7 @@ function OfficeBody({ file }: { file: FileInfo }) {
 }
 
 function AudioBody({ file }: { file: FileInfo }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let url: string | null = null;
-    let alive = true;
-    apiFetch(`/files/${file.file_id}/download`)
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("dl"))))
-      .then((b) => {
-        if (alive) {
-          url = URL.createObjectURL(b);
-          setSrc(url);
-        }
-      })
-      .catch(() => alive && setFailed(true));
-    return () => {
-      alive = false;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [file.file_id]);
+  const { src, failed } = useDownloadObjectUrl(file.file_id);
   if (failed) return <Centered tone="error">Failed to load audio</Centered>;
   if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading audio…</Centered>;
   return (

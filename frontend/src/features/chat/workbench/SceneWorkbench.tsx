@@ -109,12 +109,22 @@ export function SceneWorkbench({
       ? "Other"
       : coord.reconciled.titles[coord.activeScene] ?? templates.find((template) => template.id === coord.activeScene)?.title ?? coord.activeScene;
 
+  // Whether a scene's existing files can be, or already are, all in the pending context.
+  const sceneContext = (id: string) => {
+    const contextPaths = (id === OTHER_SCENE ? coord.otherPaths : coord.reconciled.items[id] ?? [])
+      .filter((path) => coord.existing.has(path));
+    return {
+      contextAdded: contextPaths.length > 0
+        && contextPaths.every((path) => coord.pickedIds.has(workbenchFileContextItem(path).id)),
+      contextAvailable: contextPaths.length > 0,
+    };
+  };
+
   const collectionTabs = () => coord.sceneIds.map((id) => {
     const template = templates.find((candidate) => candidate.id === id);
     const meta = metaFor(id, template?.icon);
     const label = id === OTHER_SCENE ? "Other" : coord.reconciled.titles[id] ?? id;
-    const contextPaths = (id === OTHER_SCENE ? coord.otherPaths : coord.reconciled.items[id] ?? [])
-      .filter((path) => coord.existing.has(path));
+    const { contextAdded, contextAvailable } = sceneContext(id);
     return (
       <SceneTab
         key={id}
@@ -126,9 +136,8 @@ export function SceneWorkbench({
         onSelect={() => coord.setActiveScene(id)}
         onShowRaw={onShowRaw}
         onAddToContext={() => coord.addSceneToContext(id)}
-        contextAdded={contextPaths.length > 0
-          && contextPaths.every((path) => coord.pickedIds.has(workbenchFileContextItem(path).id))}
-        contextAvailable={contextPaths.length > 0}
+        contextAdded={contextAdded}
+        contextAvailable={contextAvailable}
       />
     );
   });
@@ -144,8 +153,7 @@ export function SceneWorkbench({
       : id === OTHER_SCENE
         ? "Other"
         : coord.reconciled.titles[id] ?? id;
-    const contextPaths = (id === OTHER_SCENE ? coord.otherPaths : coord.reconciled.items[id] ?? [])
-      .filter((path) => coord.existing.has(path));
+    const { contextAdded, contextAvailable } = sceneContext(id);
     return {
       id,
       label,
@@ -162,30 +170,32 @@ export function SceneWorkbench({
           onSelect={() => coord.setActiveScene(id)}
           onShowRaw={onShowRaw}
           onAddToContext={() => coord.addSceneToContext(id)}
-          contextAdded={contextPaths.length > 0
-            && contextPaths.every((path) => coord.pickedIds.has(workbenchFileContextItem(path).id))}
-          contextAvailable={contextPaths.length > 0}
+          contextAdded={contextAdded}
+          contextAvailable={contextAvailable}
         />
       ),
     };
   });
 
-  const itemNavigationItems = (canvasScenePath(coord.activeScene) ? [] : coord.activePaths).map((path) => ({
-    id: path,
-    label: itemTitle(coord.activeScene, path, templates),
-    selected: path === coord.selectedPath,
-    onSelect: () => coord.selectPath(path),
-    control: (presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => (
-      <ItemTab
-        label={itemTitle(coord.activeScene, path, templates)}
-        selected={path === coord.selectedPath}
-        presentation={presentation}
-        onSelect={() => coord.selectPath(path)}
-        onAddToContext={() => coord.addPathToContext(path)}
-        contextAdded={coord.pickedIds.has(workbenchFileContextItem(path).id)}
-      />
-    ),
-  }));
+  const itemNavigationItems = (canvasScenePath(coord.activeScene) ? [] : coord.activePaths).map((path) => {
+    const label = itemTitle(coord.activeScene, path, templates);
+    return {
+      id: path,
+      label,
+      selected: path === coord.selectedPath,
+      onSelect: () => coord.selectPath(path),
+      control: (presentation: Exclude<AdaptiveControlPresentation, "collapsed">) => (
+        <ItemTab
+          label={label}
+          selected={path === coord.selectedPath}
+          presentation={presentation}
+          onSelect={() => coord.selectPath(path)}
+          onAddToContext={() => coord.addPathToContext(path)}
+          contextAdded={coord.pickedIds.has(workbenchFileContextItem(path).id)}
+        />
+      ),
+    };
+  });
 
   const canAddTab = canAddTabToCollection(coord.reconciled, coord.activeScene);
   const tabCandidates = canAddTab

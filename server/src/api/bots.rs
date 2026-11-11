@@ -272,6 +272,25 @@ pub async fn list_bots(
     Ok(Json(bots))
 }
 
+/// An external processor must disclose who it is, what it does with data, and an
+/// HTTPS privacy policy.
+fn ensure_processor_disclosure(
+    name: Option<&str>,
+    data_use: Option<&str>,
+    privacy_url: Option<&str>,
+) -> Result<(), AppError> {
+    let present = |value: Option<&str>| value.map(str::trim).is_some_and(|v| !v.is_empty());
+    let valid_url = privacy_url
+        .and_then(|value| reqwest::Url::parse(value).ok())
+        .is_some_and(|url| url.scheme() == "https");
+    if !present(name) || !present(data_use) || !valid_url {
+        return Err(AppError::BadRequest(
+            "external processors require a provider name, data-use disclosure, and HTTPS privacy URL".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn create_bot(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -279,29 +298,11 @@ pub async fn create_bot(
 ) -> Result<Json<Value>, AppError> {
     let username = validate_bot_username(&body.username)?;
     if body.external_processor {
-        let valid_url = body
-            .processor_privacy_url
-            .as_deref()
-            .and_then(|value| reqwest::Url::parse(value).ok())
-            .is_some_and(|url| url.scheme() == "https");
-        if body
-            .processor_name
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .is_none()
-            || body
-                .processor_data_use
-                .as_deref()
-                .map(str::trim)
-                .filter(|v| !v.is_empty())
-                .is_none()
-            || !valid_url
-        {
-            return Err(AppError::BadRequest(
-                "external processors require a provider name, data-use disclosure, and HTTPS privacy URL".into(),
-            ));
-        }
+        ensure_processor_disclosure(
+            body.processor_name.as_deref(),
+            body.processor_data_use.as_deref(),
+            body.processor_privacy_url.as_deref(),
+        )?;
     }
     // Security: remote agent creation requires 2FA when the instance is configured for it.
     two_factor::ensure_2fa_for_remote_agent_access(
@@ -569,13 +570,11 @@ pub async fn list_connection_events(
         .into_iter()
         .map(|r| {
             json!({
-                "stream": r.stream.clone(),
-                "event": r.event.clone(),
-                "reason": r.reason.clone(),
-                "connection_id": r.connection_id.clone(),
-                "created_at": Some(r.created_at.clone())
-                    .map(|t| t.to_rfc3339())
-                    .unwrap_or_default(),
+                "stream": r.stream,
+                "event": r.event,
+                "reason": r.reason,
+                "connection_id": r.connection_id,
+                "created_at": r.created_at.to_rfc3339(),
             })
         })
         .collect();
@@ -688,19 +687,8 @@ pub async fn test_bot(
     Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    // `ensure_bot_visible` already answers NotFound for a missing bot.
     ensure_bot_visible(&state, &claims, &bot_id).await?;
-    let exists = sqlx::query!(
-        "SELECT EXISTS(SELECT 1 AS present FROM bot_accounts WHERE bot_id = $1) AS ok",
-        &bot_id,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .ok
-    .clone()
-    .unwrap_or(false);
-    if !exists {
-        return Err(AppError::NotFound);
-    }
     Ok(Json(
         json!({"bot_id": bot_id, "ok": true, "message": "bot configuration is readable"}),
     ))
@@ -820,16 +808,11 @@ pub async fn update_bot_profile(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     if external_processor_provided && external_processor {
-        let valid_url = processor_privacy_url
-            .value
-            .as_deref()
-            .and_then(|value| reqwest::Url::parse(value).ok())
-            .is_some_and(|url| url.scheme() == "https");
-        if processor_name.value.is_none() || processor_data_use.value.is_none() || !valid_url {
-            return Err(AppError::BadRequest(
-                "external processors require a provider name, data-use disclosure, and HTTPS privacy URL".into(),
-            ));
-        }
+        ensure_processor_disclosure(
+            processor_name.value.as_deref(),
+            processor_data_use.value.as_deref(),
+            processor_privacy_url.value.as_deref(),
+        )?;
     }
 
     if status_text
@@ -1009,24 +992,15 @@ pub async fn bot_self_status(
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
 
-    let status_text = body
-        .status_text
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-    let status_emoji = body
-        .status_emoji
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-    let description = body
-        .description
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
+    let trimmed = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let status_text = trimmed(body.status_text.as_deref());
+    let status_emoji = trimmed(body.status_emoji.as_deref());
+    let description = trimmed(body.description.as_deref());
     // Input caps (status_text ≤140, status_emoji ≤32, description ≤1000 chars) are
     // enforced inside persist_bot_self_status — the single choke point shared with
     // the resource verb (audit item 1) — so both write paths validate identically.

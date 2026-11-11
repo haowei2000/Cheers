@@ -30,7 +30,6 @@ use hmac::{Hmac, Mac};
 use jsonwebtoken::{decode, encode, Algorithm, Header, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use sha2::Digest;
 
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
@@ -39,6 +38,7 @@ use uuid::Uuid;
 
 use crate::{
     api::middleware::Claims,
+    api::oauth::{pkce_challenge, random_url_secret},
     app_state::AppState,
     errors::AppError,
     infra::crypto::hash_host_credential,
@@ -353,7 +353,7 @@ pub async fn authorize_approve(
         }
     };
 
-    let code = random_oauth_secret()?;
+    let code = random_url_secret()?;
     sqlx::query!(
         "INSERT INTO mcp_oauth_authorization_codes
          (code_id,code_hash,host_id,client_id,redirect_uri,scope,resource,code_challenge,created_by,expires_at,channel_id)
@@ -616,15 +616,8 @@ fn is_public_ip(ip: IpAddr) -> bool {
     }
 }
 
-fn random_oauth_secret() -> Result<String, AppError> {
-    let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes)
-        .map_err(|error| AppError::Internal(format!("secure random generation failed: {error}")))?;
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
-}
-
 fn hash_oauth_secret(secret: &str) -> String {
-    format!("{:x}", sha2::Sha256::digest(secret.as_bytes()))
+    crate::infra::crypto::sha256_hex(secret)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1059,7 +1052,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
     if !valid_pkce_verifier(verifier) {
         return oauth_token_error("invalid_grant", "code_verifier is invalid");
     }
-    let challenge = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
+    let challenge = pkce_challenge(verifier);
     let mut tx = match state.db.begin().await {
         Ok(tx) => tx,
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
@@ -1098,7 +1091,7 @@ async fn exchange_authorization_code(state: &AppState, request: McpTokenRequest)
             return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
-    let refresh_token = match random_oauth_secret() {
+    let refresh_token = match random_url_secret() {
         Ok(value) => value,
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     };
@@ -1154,7 +1147,7 @@ async fn exchange_refresh_token(state: &AppState, request: McpTokenRequest) -> R
             "refresh_token and client_id are required",
         );
     };
-    let replacement = match random_oauth_secret() {
+    let replacement = match random_url_secret() {
         Ok(value) => value,
         Err(_) => return mcp_http_error(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
     };
@@ -3781,6 +3774,7 @@ fn private_json_response(status: StatusCode, body: Value) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
 
     #[test]
     fn only_authenticated_mcp_request_is_connected_evidence() {

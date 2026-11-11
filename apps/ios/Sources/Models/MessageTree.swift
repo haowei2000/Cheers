@@ -7,8 +7,7 @@ enum MessageTree {
     /// Agent steps on web; iOS still surfaces unresolved cards as system rows,
     /// but we exclude them from the reply tree so they don't appear as roots.
     static func isFoldedPermission(_ message: MessageDto) -> Bool {
-        guard message.msgType == "permission" else { return false }
-        return permissionSourceId(message) != nil
+        permissionSourceId(message) != nil
     }
 
     static func permissionSourceId(_ message: MessageDto) -> String? {

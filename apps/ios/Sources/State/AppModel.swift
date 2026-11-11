@@ -40,6 +40,8 @@ final class AppModel {
         static let role = "role"
         static let username = "username"
         static let avatarURL = "avatar_url"
+        /// Non-secret session fields persisted in UserDefaults.
+        static let sessionDefaults = [userId, displayName, role, username, avatarURL]
     }
 
     var serverURLString: String
@@ -83,8 +85,7 @@ final class AppModel {
             KeychainStore.remove(Keys.token)
             KeychainStore.remove(Keys.refreshToken)
             KeychainStore.remove(Keys.trustedDevice)
-            [Keys.serverURL, Keys.userId, Keys.displayName, Keys.role, Keys.username, Keys.avatarURL]
-                .forEach(defaults.removeObject(forKey:))
+            ([Keys.serverURL] + Keys.sessionDefaults).forEach(defaults.removeObject(forKey:))
         }
         serverURLString = defaults.string(forKey: Keys.serverURL) ?? Self.defaultServerURL
         token = KeychainStore.get(Keys.token)
@@ -96,7 +97,6 @@ final class AppModel {
                 username: defaults.string(forKey: Keys.username),
                 avatarURL: defaults.string(forKey: Keys.avatarURL)
             )
-            _ = token // silence unused warning paths
         } else {
             token = nil
         }
@@ -205,9 +205,7 @@ final class AppModel {
     /// Returns a factor challenge when 2FA is required; `nil` means the session is live.
     @discardableResult
     func login(server: String, login loginName: String, password: String) async throws -> FactorChallenge? {
-        guard let base = APIClient.normalizeBaseURL(server) else {
-            throw APIError.invalidBaseURL
-        }
+        let base = try Self.requireBaseURL(server)
         let client = APIClient(baseURL: base, token: nil)
         let response = try await client.login(
             login: loginName,
@@ -225,9 +223,7 @@ final class AppModel {
         method: String = "code",
         rememberDevice: Bool = true
     ) async throws {
-        guard let base = APIClient.normalizeBaseURL(server) else {
-            throw APIError.invalidBaseURL
-        }
+        let base = try Self.requireBaseURL(server)
         let client = APIClient(baseURL: base, token: nil)
         let response = try await client.verifyTwoFactorLogin(
             transactionId: transactionId,
@@ -244,9 +240,7 @@ final class AppModel {
         credential: [String: Any],
         rememberDevice: Bool = true
     ) async throws {
-        guard let base = APIClient.normalizeBaseURL(server) else {
-            throw APIError.invalidBaseURL
-        }
+        let base = try Self.requireBaseURL(server)
         let client = APIClient(baseURL: base, token: nil)
         let response = try await client.passkeyFactorVerify(
             transactionId: transactionId,
@@ -257,7 +251,7 @@ final class AppModel {
     }
 
     func appleCapabilities(server: String) async throws -> (AuthCapabilities, AppleChallenge?) {
-        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let base = try Self.requireBaseURL(server)
         let client = APIClient(baseURL: base, token: nil)
         let capabilities = try await client.authCapabilities(client: "ios")
         let challenge = capabilities.signInWithApple ? try await client.appleChallenge() : nil
@@ -265,12 +259,12 @@ final class AppModel {
     }
 
     func forgotPassword(server: String, email: String) async throws {
-        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let base = try Self.requireBaseURL(server)
         try await APIClient(baseURL: base, token: nil).forgotPassword(email: email)
     }
 
     func resetPassword(server: String, email: String, code: String, newPassword: String) async throws {
-        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let base = try Self.requireBaseURL(server)
         try await APIClient(baseURL: base, token: nil).resetPassword(
             email: email,
             code: code,
@@ -281,7 +275,7 @@ final class AppModel {
     /// Exchanges the `cheers://` handoff code from Google OAuth for a session.
     @discardableResult
     func completeGoogleOAuth(server: String, callbackURL: URL) async throws -> FactorChallenge? {
-        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let base = try Self.requireBaseURL(server)
         guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
               !code.isEmpty
@@ -302,7 +296,7 @@ final class AppModel {
     }
 
     func startGoogleOAuth(server: String, deviceName: String?) async throws -> URL {
-        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let base = try Self.requireBaseURL(server)
         let started = try await APIClient(baseURL: base, token: nil).startOAuth(
             provider: "google",
             client: "ios",
@@ -315,7 +309,7 @@ final class AppModel {
     }
 
     func requestRegisterCode(server: String, email: String, inviteToken: String?) async throws {
-        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let base = try Self.requireBaseURL(server)
         try await APIClient(baseURL: base, token: nil).requestRegisterCode(
             email: email,
             inviteToken: inviteToken
@@ -323,14 +317,14 @@ final class AppModel {
     }
 
     func register(server: String, request: RegisterRequest) async throws {
-        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let base = try Self.requireBaseURL(server)
         let response = try await APIClient(baseURL: base, token: nil).register(request)
         _ = try finishLoginOrChallenge(base: base, response: response)
     }
 
     @discardableResult
     func loginWithApple(server: String, payload: AppleAuthorizationPayload) async throws -> FactorChallenge? {
-        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let base = try Self.requireBaseURL(server)
         var payload = payload
         if payload.trustedDevice == nil {
             payload.trustedDevice = KeychainStore.get(Keys.trustedDevice)
@@ -340,6 +334,11 @@ final class AppModel {
         }
         let response = try await APIClient(baseURL: base, token: nil).appleLogin(payload)
         return try finishLoginOrChallenge(base: base, response: response)
+    }
+
+    private static func requireBaseURL(_ server: String) throws -> URL {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        return base
     }
 
     private func finishLoginOrChallenge(base: URL, response: LoginResponse) throws -> FactorChallenge? {
@@ -546,12 +545,7 @@ final class AppModel {
         if forgetDevice {
             KeychainStore.remove(Keys.trustedDevice)
         }
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: Keys.userId)
-        defaults.removeObject(forKey: Keys.displayName)
-        defaults.removeObject(forKey: Keys.role)
-        defaults.removeObject(forKey: Keys.username)
-        defaults.removeObject(forKey: Keys.avatarURL)
+        Keys.sessionDefaults.forEach(UserDefaults.standard.removeObject(forKey:))
     }
 
     /// Clears the session and remembered server URL so Login shows the server field.

@@ -336,14 +336,10 @@ pub async fn ensure_recovery_codes(db: &PgPool, user_id: &str) -> Result<Vec<Str
         return Ok(Vec::new());
     }
     let codes = generate_backup_codes();
-    let hashes: Vec<Value> = codes
-        .iter()
-        .map(|c| json!({ "hash": sha256_hex(c), "used_at": Value::Null }))
-        .collect();
     sqlx::query!(
         "UPDATE users SET backup_codes = $2 WHERE user_id = $1",
         user_id,
-        Value::Array(hashes),
+        stored_backup_codes(&codes),
     )
     .execute(&mut *tx)
     .await?;
@@ -357,14 +353,10 @@ pub async fn regenerate_recovery_codes(
     user_id: &str,
 ) -> Result<Vec<String>, AppError> {
     let codes = generate_backup_codes();
-    let hashes: Vec<Value> = codes
-        .iter()
-        .map(|c| json!({ "hash": sha256_hex(c), "used_at": Value::Null }))
-        .collect();
     let updated = sqlx::query!(
         "UPDATE users SET backup_codes = $2 WHERE user_id = $1 AND is_deleted = FALSE",
         user_id,
-        Value::Array(hashes),
+        stored_backup_codes(&codes),
     )
     .execute(db)
     .await?;
@@ -482,14 +474,7 @@ pub async fn issue_email_code(
     config: &Config,
     user_id: &str,
 ) -> Result<Option<EmailCodeIssue>, AppError> {
-    let email: Option<String> = sqlx::query_scalar!(
-        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-        user_id,
-    )
-    .fetch_optional(db)
-    .await?
-    .flatten();
-    let Some(email) = email.filter(|value| !value.trim().is_empty()) else {
+    let Some(email) = crate::domain::webauthn::user_email(db, user_id).await? else {
         return Ok(None);
     };
     let normalized = email.trim().to_lowercase();
@@ -551,14 +536,7 @@ pub async fn verify_email_code(
     user_id: &str,
     code: &str,
 ) -> Result<bool, AppError> {
-    let email: Option<String> = sqlx::query_scalar!(
-        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-        user_id,
-    )
-    .fetch_optional(db)
-    .await?
-    .flatten();
-    let Some(email) = email.filter(|value| !value.trim().is_empty()) else {
+    let Some(email) = crate::domain::webauthn::user_email(db, user_id).await? else {
         return Ok(false);
     };
     let hash = hash_email_code(
@@ -676,6 +654,16 @@ pub async fn consume_login_session(
     .execute(db)
     .await?;
     Ok(Some(user_id))
+}
+
+/// The at-rest form of freshly minted recovery codes: hashes only, all unused.
+fn stored_backup_codes(codes: &[String]) -> Value {
+    Value::Array(
+        codes
+            .iter()
+            .map(|c| json!({ "hash": sha256_hex(c), "used_at": Value::Null }))
+            .collect(),
+    )
 }
 
 fn generate_backup_codes() -> Vec<String> {

@@ -135,19 +135,7 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
         }
         Some("channel.messages.suggestions.write") => {
             if let Some(data) = resp.get("data") {
-                if let Some(channel_id) = data
-                    .get("channel_id")
-                    .and_then(Value::as_str)
-                    .and_then(|s| s.parse::<Uuid>().ok())
-                {
-                    state
-                        .fanout
-                        .broadcast_channel(
-                            channel_id,
-                            WireFrame::channel(channel_id, "suggestions_updated", data.clone()),
-                        )
-                        .await;
-                }
+                broadcast_to_data_channel(state, "suggestions_updated", data).await;
             }
         }
         Some("channel.messages.cards.write") => {
@@ -155,19 +143,7 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
                 if data.get("staged").and_then(Value::as_bool) == Some(true) {
                     return resp;
                 }
-                if let Some(channel_id) = data
-                    .get("channel_id")
-                    .and_then(Value::as_str)
-                    .and_then(|s| s.parse::<Uuid>().ok())
-                {
-                    state
-                        .fanout
-                        .broadcast_channel(
-                            channel_id,
-                            WireFrame::channel(channel_id, "cards_updated", data.clone()),
-                        )
-                        .await;
-                }
+                broadcast_to_data_channel(state, "cards_updated", data).await;
             }
         }
         Some("channel.task_claims.evaluate") => {
@@ -263,6 +239,23 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
         _ => {}
     }
     resp
+}
+
+/// Broadcast a resource result verbatim to the channel named by its `channel_id`.
+async fn broadcast_to_data_channel(state: &AppState, frame_type: &str, data: &Value) {
+    if let Some(channel_id) = data
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse::<Uuid>().ok())
+    {
+        state
+            .fanout
+            .broadcast_channel(
+                channel_id,
+                WireFrame::channel(channel_id, frame_type, data.clone()),
+            )
+            .await;
+    }
 }
 
 /// Resolve another Bot's live workspace reference under the requesting Bot's
@@ -373,8 +366,9 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
         } else {
             false
         };
-        if is_dm {
-            let sender_name: String = sqlx::query_scalar!(
+        // One sender-name lookup serves both the DM and the mention nudges.
+        let sender_name: Option<String> = if is_dm || !human_mentions.is_empty() {
+            sqlx::query_scalar!(
                 r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
                 author_bot_id.to_string(),
             )
@@ -382,7 +376,11 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
             .await
             .ok()
             .flatten()
-            .unwrap_or_else(|| "Bot".into());
+        } else {
+            None
+        };
+        if is_dm {
+            let sender_name: String = sender_name.clone().unwrap_or_else(|| "Bot".into());
             if let Some(channel_id) = channel_id {
                 let users: Vec<String> = sqlx::query_scalar!(
                     "SELECT member_id FROM channel_memberships
@@ -415,14 +413,6 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
             }
         }
         if !human_mentions.is_empty() {
-            let sender_name: Option<String> = sqlx::query_scalar!(
-                r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
-                author_bot_id.to_string(),
-            )
-            .fetch_optional(&db)
-            .await
-            .ok()
-            .flatten();
             let body: String = created
                 .get("content")
                 .and_then(Value::as_str)

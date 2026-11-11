@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type MutableRefObject,
   type SetStateAction,
 } from "react";
 import type { ComposerPrefill } from "../MessageComposer";
@@ -13,6 +14,19 @@ export function resolveBooleanUpdate(
   next: SetStateAction<boolean>,
 ): boolean {
   return typeof next === "function" ? next(current) : next;
+}
+
+/** Apply an open-state update through its mirror ref; opening also activates the tab. */
+function applyOpen(
+  ref: MutableRefObject<boolean>,
+  setOpen: (open: boolean) => void,
+  next: SetStateAction<boolean>,
+  activateTab: () => void,
+) {
+  const resolved = resolveBooleanUpdate(ref.current, next);
+  ref.current = resolved;
+  setOpen(resolved);
+  if (resolved) activateTab();
 }
 
 export function useChannelInstruments() {
@@ -92,39 +106,23 @@ export function useChannelInstruments() {
   workspaceOpenRef.current = workspaceOpen;
   filesOpenRef.current = filesOpen;
   const openWorkbench = useCallback(
-    (next: SetStateAction<boolean>) => {
-      const resolved = resolveBooleanUpdate(workbenchOpenRef.current, next);
-      workbenchOpenRef.current = resolved;
-      setWorkbenchOpen(resolved);
-      if (resolved) activate("workbench");
-    },
+    (next: SetStateAction<boolean>) =>
+      applyOpen(workbenchOpenRef, setWorkbenchOpen, next, () => activate("workbench")),
     [activate],
   );
   const openViewBoard = useCallback(
-    (next: SetStateAction<boolean>) => {
-      const resolved = resolveBooleanUpdate(viewBoardOpenRef.current, next);
-      viewBoardOpenRef.current = resolved;
-      setViewBoardOpen(resolved);
-      if (resolved) activate("viewboard");
-    },
+    (next: SetStateAction<boolean>) =>
+      applyOpen(viewBoardOpenRef, setViewBoardOpen, next, () => activate("viewboard")),
     [activate],
   );
   const openWorkspace = useCallback(
-    (next: SetStateAction<boolean>) => {
-      const resolved = resolveBooleanUpdate(workspaceOpenRef.current, next);
-      workspaceOpenRef.current = resolved;
-      setWorkspaceOpen(resolved);
-      if (resolved) activate("workspace");
-    },
+    (next: SetStateAction<boolean>) =>
+      applyOpen(workspaceOpenRef, setWorkspaceOpen, next, () => activate("workspace")),
     [activate],
   );
   const openFiles = useCallback(
-    (next: SetStateAction<boolean>) => {
-      const resolved = resolveBooleanUpdate(filesOpenRef.current, next);
-      filesOpenRef.current = resolved;
-      setFilesOpen(resolved);
-      if (resolved) activate("files");
-    },
+    (next: SetStateAction<boolean>) =>
+      applyOpen(filesOpenRef, setFilesOpen, next, () => activate("files")),
     [activate],
   );
 

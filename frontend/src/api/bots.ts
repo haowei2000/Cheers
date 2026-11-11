@@ -252,28 +252,6 @@ export interface Reachability {
   configured: boolean;
 }
 
-export interface ConnectorConfig {
-  bot_id: string;
-  account_id: string;
-  agent_type: string;
-  credential_file: string;
-  control_url: string;
-  data_url: string;
-  config_toml: string;
-  reachability: Reachability;
-  note?: string;
-}
-
-/** Connector config skeleton. Pairing is still required to obtain the
- * host-bound credential referenced by this file. */
-export async function getConnectorConfig(
-  botId: string,
-  agentType?: AgentType
-): Promise<ConnectorConfig> {
-  const q = agentType ? `?agent_type=${encodeURIComponent(agentType)}` : "";
-  return apiJson<ConnectorConfig>(`/bots/${botId}/connector-config${q}`);
-}
-
 export interface HostPairing {
   pairing_code: string;
   pairing_id: string;

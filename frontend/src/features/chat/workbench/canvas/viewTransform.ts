@@ -29,11 +29,7 @@ export function canvasNodeKeyAction(
   if (key === "Delete" || key === "Backspace") return options.writable ? { kind: "remove" } : null;
   if (!["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(key)) return null;
   const arrow = key as CanvasArrowKey;
-  if (options.altKey) {
-    return options.writable
-      ? { kind: "move", key: arrow, largeStep: !!options.shiftKey }
-      : { kind: "focus", delta: arrow === "ArrowLeft" || arrow === "ArrowUp" ? -1 : 1 };
-  }
+  if (options.altKey && options.writable) return { kind: "move", key: arrow, largeStep: !!options.shiftKey };
   return { kind: "focus", delta: arrow === "ArrowLeft" || arrow === "ArrowUp" ? -1 : 1 };
 }
 

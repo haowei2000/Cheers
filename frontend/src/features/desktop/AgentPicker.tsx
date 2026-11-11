@@ -1,4 +1,4 @@
-import { Button, Button as UiButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { useCallback, useEffect, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Download, Terminal, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
@@ -188,7 +188,7 @@ export function AgentPicker({
 
           {availableAgents.length > 0 && (
             <div className="pt-1">
-              <UiButton
+              <Button
                 action={showAvailable ? "collapse" : "expand"}
                 variant="plain"
                 type="button"
@@ -201,7 +201,7 @@ export function AgentPicker({
                   <ChevronRight className="w-3.5 h-3.5" />
                 )}
                 <span>Available in ACP Registry ({availableAgents.length})</span>
-              </UiButton>
+              </Button>
 
               {showAvailable && (
                 <div className="mt-2 space-y-2">

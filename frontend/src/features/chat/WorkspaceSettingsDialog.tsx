@@ -182,13 +182,18 @@ export function WorkspaceSettingsDialog({
     }
   }
 
+  // This workspace is gone for the caller: drop it locally and fall back to Personal.
+  function forgetWorkspace(message: string) {
+    setWorkspaces(workspaces.filter((w) => w.workspace_id !== workspace.workspace_id));
+    selectWorkspace(personalWorkspace?.workspace_id ?? null);
+    toast.success(message);
+    onClose();
+  }
+
   async function doDelete() {
     try {
       await deleteWorkspace(workspace.workspace_id);
-      setWorkspaces(workspaces.filter((w) => w.workspace_id !== workspace.workspace_id));
-      selectWorkspace(personalWorkspace?.workspace_id ?? null);
-      toast.success("Workspace deleted");
-      onClose();
+      forgetWorkspace("Workspace deleted");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to delete");
     }
@@ -206,10 +211,7 @@ export function WorkspaceSettingsDialog({
   async function leave() {
     try {
       await leaveWorkspace(workspace.workspace_id);
-      setWorkspaces(workspaces.filter((w) => w.workspace_id !== workspace.workspace_id));
-      selectWorkspace(personalWorkspace?.workspace_id ?? null);
-      toast.success("Left workspace");
-      onClose();
+      forgetWorkspace("Left workspace");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to leave");
     }

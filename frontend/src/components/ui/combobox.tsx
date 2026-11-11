@@ -24,11 +24,15 @@ export interface ComboboxOption {
   disabled?: boolean;
 }
 
-function optionText(option: ComboboxOption): string {
-  const label = typeof option.label === "string" || typeof option.label === "number"
+/** The option's label as text, when the label is plain text. */
+function plainLabel(option: ComboboxOption): string | undefined {
+  return typeof option.label === "string" || typeof option.label === "number"
     ? String(option.label)
-    : "";
-  return `${label} ${option.value} ${option.searchText ?? ""}`.trim();
+    : undefined;
+}
+
+function optionText(option: ComboboxOption): string {
+  return `${plainLabel(option) ?? ""} ${option.value} ${option.searchText ?? ""}`.trim();
 }
 
 export function filterComboboxOptions(options: ComboboxOption[], query: string): ComboboxOption[] {
@@ -90,9 +94,7 @@ export function Combobox({
   menuClassName?: string;
 }) {
   const selected = options.find((option) => option.value === value);
-  const selectedLabel = selected && (typeof selected.label === "string" || typeof selected.label === "number")
-    ? String(selected.label)
-    : selected?.searchText ?? "";
+  const selectedLabel = (selected && plainLabel(selected)) ?? selected?.searchText ?? "";
   const [query, setQuery] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -124,9 +126,7 @@ export function Combobox({
 
   const choose = (option: ComboboxOption) => {
     if (option.disabled) return;
-    const label = typeof option.label === "string" || typeof option.label === "number"
-      ? String(option.label)
-      : option.searchText ?? option.value;
+    const label = plainLabel(option) ?? option.searchText ?? option.value;
     typingRef.current = false;
     setQuery(label);
     onValueChange(option.value);

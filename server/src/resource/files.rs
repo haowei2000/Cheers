@@ -44,11 +44,7 @@ pub fn s3_handle() -> Option<(&'static Client, &'static str)> {
 /// `converted` is the reserved terminal state for the doc→markdown pipeline (the `converted_at`
 /// / `md_path` columns) — not wired yet, kept here so the filter doesn't need changing when it is.
 pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
 
     authorize_channel_read(db, principal, channel_id).await?;
 
@@ -151,11 +147,7 @@ fn is_text(content_type: Option<&str>, filename: Option<&str>) -> bool {
 /// base64-encoded (capped at `MAX_DELIVER_BYTES`). The bridge is how an external agent gets a
 /// binary's content: it has no gateway HTTP session, so it cannot authenticate `download_url`.
 pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
 
     let file_id = params
         .get("file_id")
@@ -410,11 +402,7 @@ pub(super) async fn record_delivered_file(
 /// 7-day TTL — so the delivered file behaves exactly like a human upload (listable via inbox_list,
 /// readable via inbox_open, downloadable over REST).
 pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
     let idempotency = IdempotencyKey::from_params(principal, "channel.files.create", params)?;
 
     authorize_channel_write(db, principal, channel_id).await?;

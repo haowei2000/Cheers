@@ -566,9 +566,7 @@ impl Config {
             s3_region: env::var("S3_REGION")
                 .or_else(|_| env::var("STORAGE_S3_REGION"))
                 .unwrap_or_else(|_| "us-east-1".into()),
-            cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            cors_allowed_origins: optional("CORS_ALLOWED_ORIGINS"),
             mcp_public_url,
             mcp_allowed_delivery_modes: parse_mcp_allowed_delivery_modes(
                 optional("MCP_ALLOWED_DELIVERY_MODES").as_deref(),
@@ -605,29 +603,21 @@ impl Config {
                 1,
             ),
             connector_public_base,
-            connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
+            connector_release_repo: optional("CHEERS_CONNECTOR_RELEASE_REPO")
                 .unwrap_or_else(|| "haowei2000/Cheers".into()),
-            connector_release_version: env::var("CHEERS_CONNECTOR_RELEASE_VERSION")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            connector_release_version: optional("CHEERS_CONNECTOR_RELEASE_VERSION"),
 
-            gotenberg_url: env::var("GOTENBERG_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            gotenberg_url: optional("GOTENBERG_URL"),
             conversion_poll_interval_secs: env::var("CONVERSION_POLL_INTERVAL_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(20),
 
-            secret_store_key: env::var("SECRET_STORE_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            secret_store_key: optional("SECRET_STORE_KEY"),
             apple_auth,
             google_auth,
             github_oauth,
-            oauth_web_return_url: optional("OAUTH_WEB_RETURN_URL"),
+            oauth_web_return_url,
 
             github_app,
             github_api_base_url: optional("GITHUB_API_BASE_URL")
@@ -635,23 +625,12 @@ impl Config {
                 .trim_end_matches('/')
                 .to_string(),
 
-            brevo_api_key: env::var("BREVO_API_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            email_from_email: env::var("EMAIL_FROM_EMAIL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            email_from_name: env::var("EMAIL_FROM_NAME")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| "Cheers".into()),
+            brevo_api_key: optional("BREVO_API_KEY"),
+            email_from_email: optional("EMAIL_FROM_EMAIL"),
+            email_from_name: optional("EMAIL_FROM_NAME").unwrap_or_else(|| "Cheers".into()),
 
-            vapid_private_key_pem: env::var("VAPID_PRIVATE_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            vapid_subject: env::var("VAPID_SUBJECT")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
+            vapid_private_key_pem: optional("VAPID_PRIVATE_KEY"),
+            vapid_subject: optional("VAPID_SUBJECT")
                 .unwrap_or_else(|| "mailto:admin@tocheers.com".into()),
 
             open_registration: env_flag("OPEN_REGISTRATION", false),
@@ -669,10 +648,7 @@ impl Config {
                 .or_else(|_| env::var("CHEERS_WEBAUTHN_RP_ORIGIN"))
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
-            webauthn_rp_name: env::var("WEBAUTHN_RP_NAME")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| "Cheers".into()),
+            webauthn_rp_name: optional("WEBAUTHN_RP_NAME").unwrap_or_else(|| "Cheers".into()),
 
             trust_proxy_headers: env_flag("TRUST_PROXY_HEADERS", false),
 
@@ -694,36 +670,16 @@ impl Config {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(120),
 
-            livekit_url: env::var("LIVEKIT_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            livekit_internal_url: env::var("LIVEKIT_INTERNAL_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            livekit_api_key: env::var("LIVEKIT_API_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            livekit_api_secret: env::var("LIVEKIT_API_SECRET")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_transcriber_token: env::var("VOICE_TRANSCRIBER_TOKEN")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_provider: env::var("VOICE_STT_PROVIDER")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_api_key: env::var("VOICE_STT_API_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_base_url: env::var("VOICE_STT_BASE_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_model: env::var("VOICE_STT_MODEL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_language: env::var("VOICE_STT_LANGUAGE")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            livekit_url: optional("LIVEKIT_URL"),
+            livekit_internal_url: optional("LIVEKIT_INTERNAL_URL"),
+            livekit_api_key: optional("LIVEKIT_API_KEY"),
+            livekit_api_secret: optional("LIVEKIT_API_SECRET"),
+            voice_transcriber_token: optional("VOICE_TRANSCRIBER_TOKEN"),
+            voice_stt_provider: optional("VOICE_STT_PROVIDER"),
+            voice_stt_api_key: optional("VOICE_STT_API_KEY"),
+            voice_stt_base_url: optional("VOICE_STT_BASE_URL"),
+            voice_stt_model: optional("VOICE_STT_MODEL"),
+            voice_stt_language: optional("VOICE_STT_LANGUAGE"),
             task_claims_enabled: env::var("TASK_CLAIMS_ENABLED")
                 .ok()
                 .map(|v| v.trim().eq_ignore_ascii_case("true"))
@@ -851,25 +807,9 @@ fn resolve_mcp_public_url(
         return Some(url);
     }
 
-    if let Some(raw) = oauth_web_return_url
-        .map(str::trim)
-        .filter(|u| !u.is_empty())
-    {
-        if let Ok(parsed) = url::Url::parse(raw) {
-            if parsed.scheme() == "https" {
-                if let Some(host) = parsed.host_str() {
-                    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
-                        let origin = parsed.origin().ascii_serialization();
-                        let url = format!("{origin}/mcp");
-                        validate_mcp_url("MCP_PUBLIC_URL", &url, true);
-                        return Some(url);
-                    }
-                }
-            }
-        }
-    }
-
-    None
+    let url = format!("{}/mcp", public_https_origin(oauth_web_return_url)?);
+    validate_mcp_url("MCP_PUBLIC_URL", &url, true);
+    Some(url)
 }
 
 fn resolve_connector_public_base(
@@ -891,25 +831,24 @@ fn resolve_connector_public_base(
         return Some(format!("wss://{domain}"));
     }
 
-    if let Some(raw) = oauth_web_return_url
-        .map(str::trim)
-        .filter(|u| !u.is_empty())
-    {
-        if let Ok(parsed) = url::Url::parse(raw) {
-            if parsed.scheme() == "https" {
-                if let Some(host) = parsed.host_str() {
-                    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
-                        let origin = parsed.origin().ascii_serialization();
-                        if let Some(rest) = origin.strip_prefix("https://") {
-                            return Some(format!("wss://{rest}"));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let origin = public_https_origin(oauth_web_return_url)?;
+    origin
+        .strip_prefix("https://")
+        .map(|rest| format!("wss://{rest}"))
+}
 
-    None
+/// The origin of `OAUTH_WEB_RETURN_URL` when it is an https, non-loopback URL —
+/// the last-resort hint for this gateway's public address.
+fn public_https_origin(oauth_web_return_url: Option<&str>) -> Option<String> {
+    let raw = oauth_web_return_url
+        .map(str::trim)
+        .filter(|u| !u.is_empty())?;
+    let parsed = url::Url::parse(raw).ok()?;
+    let host = parsed.host_str()?;
+    if parsed.scheme() != "https" || matches!(host, "localhost" | "127.0.0.1" | "::1") {
+        return None;
+    }
+    Some(parsed.origin().ascii_serialization())
 }
 
 fn validate_mcp_url(name: &str, value: &str, require_mcp_path: bool) {

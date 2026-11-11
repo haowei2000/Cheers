@@ -105,9 +105,8 @@ import { useAuthStore } from "@/stores/authStore";
 import type {
   Message,
   Channel,
-  PermissionContentData,
 } from "@/types";
-import { messageSessionId } from "./messageTree";
+import { isUnresolvedApproval, messageSessionId } from "./messageTree";
 import { mergeMessages, sortMessages, upsertMessage } from "./messageCollection";
 import { ChannelSelectionState } from "./ChannelSelectionState";
 import { ChannelPreview } from "./ChannelPreview";
@@ -1342,11 +1341,7 @@ export function ChannelView({
   // Live pending ACP permission cards — feeds the ViewBoard minimal Approvals dropdown.
   const pendingPermissionMessages = useMemo(
     () =>
-      messages.filter((m) => {
-        if (m.msg_type !== "permission") return false;
-        return !(m.content_data as PermissionContentData | null | undefined)
-          ?.resolved;
-      }),
+      messages.filter((m) => m.msg_type === "permission" && isUnresolvedApproval(m)),
     [messages],
   );
 
@@ -1622,10 +1617,62 @@ export function ChannelView({
     : channel.name;
   const isVoiceChannel = hasChannelFeature(channel, CHANNEL_FEATURE_VOICE);
 
+  // Same composer for root sends, replies and discussion threads — reply only
+  // pre-fills session / @ / context (and sets reply_to on send). Esc clears nesting.
+  const composerFooter = (
+    <>
+      {activeSuggestion && dismissedSuggestionMsgId !== activeSuggestion.msgId && (
+        <SuggestedQuestionsComposerBanner
+          questions={activeSuggestion.questions}
+          selectedIndex={selectedSuggestionIndex}
+          onSelect={handleSelectSuggestion}
+          onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
+        />
+      )}
+      {replyTo && (
+        <ReplyComposerBanner
+          message={replyTo}
+          senderName={memberNames.get(replyTo.sender_id)}
+          onCancel={() => setReplyTo(null)}
+        />
+      )}
+      <MessageComposer
+        channelId={channel.channel_id}
+        channelName={channel.name}
+        sessionTargetName={composerPinnedTargetName}
+        mentionables={mentionables}
+        commands={commands}
+        toolbar={composerToolbar}
+        contextBar={
+          <ContextPickBar
+            channelId={channel.channel_id}
+            replyTo={replyTo}
+            draftText={draftText}
+            files={channelFiles}
+            onJumpToSource={jumpToContextSource}
+          />
+        }
+        contextAction={
+          <ContextPickerButton
+            channelId={channel.channel_id}
+            onBrowseWorkbench={browseWorkbench}
+            onBrowseWorkspace={browseWorkspace}
+          />
+        }
+        onMentionsChange={setMentionedBots}
+        onTextChange={setDraftText}
+        prefill={composePrefill}
+        streamingCount={streamingIds.length}
+        onStopStreaming={stopStreaming}
+        onSend={handleSend}
+      />
+    </>
+  );
+
   const channelToolbar = (
     <ChannelToolbar
       channelId={channel.channel_id}
-      isDm={channel.type === "dm"}
+      isDm={isDm}
       memberCount={mentionables.length}
       onlineCount={onlineCount}
       filesOpen={filesOpen}
@@ -1831,57 +1878,7 @@ export function ChannelView({
                     liveMessages={messages}
                     discussionThreadRef={discussionThreadRef}
                     messageUpdatedRef={discussionMessageUpdatedRef}
-                    footer={
-                      !selectMode ? (
-                        <>
-                          {activeSuggestion && dismissedSuggestionMsgId !== activeSuggestion.msgId && (
-                            <SuggestedQuestionsComposerBanner
-                              questions={activeSuggestion.questions}
-                              selectedIndex={selectedSuggestionIndex}
-                              onSelect={handleSelectSuggestion}
-                              onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
-                            />
-                          )}
-                          {replyTo && (
-                            <ReplyComposerBanner
-                              message={replyTo}
-                              senderName={memberNames.get(replyTo.sender_id)}
-                              onCancel={() => setReplyTo(null)}
-                            />
-                          )}
-                          <MessageComposer
-                            channelId={channel.channel_id}
-                            channelName={channel.name}
-                            sessionTargetName={composerPinnedTargetName}
-                            mentionables={mentionables}
-                            commands={commands}
-                            toolbar={composerToolbar}
-                            contextBar={
-                              <ContextPickBar
-                                channelId={channel.channel_id}
-                                replyTo={replyTo}
-                                draftText={draftText}
-                                files={channelFiles}
-                                onJumpToSource={jumpToContextSource}
-                              />
-                            }
-                            contextAction={
-                              <ContextPickerButton
-                                channelId={channel.channel_id}
-                                onBrowseWorkbench={browseWorkbench}
-                                onBrowseWorkspace={browseWorkspace}
-                              />
-                            }
-                            onMentionsChange={setMentionedBots}
-                            onTextChange={setDraftText}
-                            prefill={composePrefill}
-                            streamingCount={streamingIds.length}
-                            onStopStreaming={stopStreaming}
-                            onSend={handleSend}
-                          />
-                        </>
-                      ) : null
-                    }
+                    footer={!selectMode ? composerFooter : null}
                     onComposerContextChange={handleDiscussionComposerContextChange}
                   />
                 </ResolveRefContext.Provider>
@@ -1960,57 +1957,8 @@ export function ChannelView({
                 </div>
               )}
 
-              {/* Same composer for root sends and replies — reply only pre-fills
-                  session / @ / context (and sets reply_to on send). Esc clears nesting. */}
-              {!selectMode && channel.conversation_mode !== "discuss" && (
-                <>
-                  {activeSuggestion && dismissedSuggestionMsgId !== activeSuggestion.msgId && (
-                    <SuggestedQuestionsComposerBanner
-                      questions={activeSuggestion.questions}
-                      selectedIndex={selectedSuggestionIndex}
-                      onSelect={handleSelectSuggestion}
-                      onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
-                    />
-                  )}
-                  {replyTo && (
-                    <ReplyComposerBanner
-                      message={replyTo}
-                      senderName={memberNames.get(replyTo.sender_id)}
-                      onCancel={() => setReplyTo(null)}
-                    />
-                  )}
-                  <MessageComposer
-                    channelId={channel.channel_id}
-                    channelName={channel.name}
-                    sessionTargetName={composerPinnedTargetName}
-                    mentionables={mentionables}
-                    commands={commands}
-                    toolbar={composerToolbar}
-                    contextBar={
-                      <ContextPickBar
-                        channelId={channel.channel_id}
-                        replyTo={replyTo}
-                        draftText={draftText}
-                        files={channelFiles}
-                        onJumpToSource={jumpToContextSource}
-                      />
-                    }
-                    contextAction={
-                      <ContextPickerButton
-                        channelId={channel.channel_id}
-                        onBrowseWorkbench={browseWorkbench}
-                        onBrowseWorkspace={browseWorkspace}
-                      />
-                    }
-                    onMentionsChange={setMentionedBots}
-                    onTextChange={setDraftText}
-                    prefill={composePrefill}
-                    streamingCount={streamingIds.length}
-                    onStopStreaming={stopStreaming}
-                    onSend={handleSend}
-                  />
-                </>
-              )}
+              {/* Chat channels render the shared composer footer here; Discuss passes it as `footer`. */}
+              {!selectMode && channel.conversation_mode !== "discuss" && composerFooter}
           </ConversationViewport>
 
         </PanelWorkspace>

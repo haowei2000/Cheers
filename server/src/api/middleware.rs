@@ -48,18 +48,7 @@ pub async fn jwt_auth(
     next: Next,
 ) -> Result<Response, StatusCode> {
     let token = extract_bearer(req.headers()).ok_or(StatusCode::UNAUTHORIZED)?;
-
-    let claims =
-        verify_rs256(&token, &state.config.jwt.decoding).map_err(|_| StatusCode::UNAUTHORIZED)?;
-
-    if session_valid_until(&state.db, &claims)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .is_none()
-    {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
+    let claims = authenticate_bearer(&state, &token).await?;
     req.extensions_mut().insert(claims);
     Ok(next.run(req).await)
 }
@@ -75,8 +64,15 @@ pub async fn optional_jwt_auth(
     let Some(token) = extract_bearer(req.headers()) else {
         return Ok(next.run(req).await);
     };
+    let claims = authenticate_bearer(&state, &token).await?;
+    req.extensions_mut().insert(claims);
+    Ok(next.run(req).await)
+}
+
+/// Signature + live-session check shared by both HTTP auth middlewares.
+async fn authenticate_bearer(state: &AppState, token: &str) -> Result<Claims, StatusCode> {
     let claims =
-        verify_rs256(&token, &state.config.jwt.decoding).map_err(|_| StatusCode::UNAUTHORIZED)?;
+        verify_rs256(token, &state.config.jwt.decoding).map_err(|_| StatusCode::UNAUTHORIZED)?;
     if session_valid_until(&state.db, &claims)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -84,8 +80,7 @@ pub async fn optional_jwt_auth(
     {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    req.extensions_mut().insert(claims);
-    Ok(next.run(req).await)
+    Ok(claims)
 }
 
 /// Shared HTTP/WS authority check, also used after registering or rebinding a

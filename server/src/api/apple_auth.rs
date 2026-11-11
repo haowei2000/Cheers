@@ -13,7 +13,10 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
-    api::{auth::LoginResponse, middleware::Claims},
+    api::{
+        auth::{factor_required_response, issued_session_response},
+        middleware::Claims,
+    },
     app_state::AppState,
     config::AppleAuthConfig,
     domain::{auth, auth_sessions, two_factor},
@@ -177,17 +180,9 @@ async fn consume_challenge(state: &AppState, id: &str) -> Result<String, AppErro
     })
 }
 
-async fn verify_identity_token(
-    config: &AppleAuthConfig,
-    token: &str,
-    expected_nonce: &str,
-) -> Result<AppleIdentityClaims, AppError> {
-    let header = decode_header(token)
-        .map_err(|_| AppError::Unauthorized("invalid Apple identity token".into()))?;
-    let kid = header
-        .kid
-        .ok_or_else(|| AppError::Unauthorized("Apple token has no key id".into()))?;
-    let keys: AppleJwks = reqwest::Client::new()
+/// Apple's current identity-token signing keys.
+async fn fetch_apple_keys() -> Result<AppleJwks, AppError> {
+    reqwest::Client::new()
         .get(APPLE_KEYS_URL)
         .send()
         .await
@@ -198,7 +193,20 @@ async fn verify_identity_token(
         })?
         .json()
         .await
-        .map_err(|_| AppError::ServiceUnavailable("invalid Apple key response".into()))?;
+        .map_err(|_| AppError::ServiceUnavailable("invalid Apple key response".into()))
+}
+
+async fn verify_identity_token(
+    config: &AppleAuthConfig,
+    token: &str,
+    expected_nonce: &str,
+) -> Result<AppleIdentityClaims, AppError> {
+    let header = decode_header(token)
+        .map_err(|_| AppError::Unauthorized("invalid Apple identity token".into()))?;
+    let kid = header
+        .kid
+        .ok_or_else(|| AppError::Unauthorized("Apple token has no key id".into()))?;
+    let keys = fetch_apple_keys().await?;
     let key = keys
         .keys
         .into_iter()
@@ -419,19 +427,13 @@ async fn persist_refresh_token(
     Ok(())
 }
 
-struct AppleLoginResult {
-    body: LoginResponse,
-    refresh_token: Option<String>,
-    csrf_token: Option<String>,
-}
-
 async fn login_response(
     state: &AppState,
     user_id: &str,
     client: auth_sessions::ClientType,
     device_name: Option<&str>,
     trusted_credential: Option<&str>,
-) -> Result<AppleLoginResult, AppError> {
+) -> Result<axum::response::Response, AppError> {
     let user = auth::load_auth_user(&state.db, user_id).await?;
     let trusted =
         auth_sessions::trusted_device_is_valid(&state.db, user_id, trusted_credential).await?;
@@ -451,77 +453,15 @@ async fn login_response(
             Some("oauth"),
         )
         .await?;
-        return Ok(AppleLoginResult {
-            body: LoginResponse {
-                status: "factor_required".into(),
-                transaction_id: Some(transaction.transaction_id),
-                allowed_factors,
-                expires_in: Some(600),
-                requires_2fa: true,
-                two_factor_session_id: None,
-                access_token: None,
-                token_type: None,
-                user_id: None,
-                username: None,
-                display_name: None,
-                role: None,
-                refresh_token: None,
-                csrf_token: None,
-                trusted_device: None,
-            },
-            refresh_token: None,
-            csrf_token: None,
-        });
+        return Ok(Json(factor_required_response(
+            transaction.transaction_id,
+            allowed_factors,
+        ))
+        .into_response());
     }
     let session =
         auth_sessions::finalize_login(&state.db, &state.config, &user, client, device_name).await?;
-    Ok(AppleLoginResult {
-        body: LoginResponse {
-            status: "authenticated".into(),
-            transaction_id: None,
-            allowed_factors: Vec::new(),
-            expires_in: Some(session.expires_in),
-            requires_2fa: false,
-            two_factor_session_id: None,
-            access_token: Some(session.access_token),
-            token_type: Some("bearer".into()),
-            user_id: Some(user.id),
-            username: Some(user.username),
-            display_name: user.display_name,
-            role: Some(user.role),
-            refresh_token: (client != auth_sessions::ClientType::Web)
-                .then_some(session.refresh_token.clone()),
-            csrf_token: (client != auth_sessions::ClientType::Web)
-                .then_some(session.csrf_token.clone()),
-            trusted_device: None,
-        },
-        refresh_token: Some(session.refresh_token),
-        csrf_token: Some(session.csrf_token),
-    })
-}
-
-fn apple_login_response(
-    result: AppleLoginResult,
-    client: auth_sessions::ClientType,
-) -> axum::response::Response {
-    let mut response = Json(result.body).into_response();
-    if client == auth_sessions::ClientType::Web {
-        if let Some(refresh) = result.refresh_token {
-            response.headers_mut().append(
-                axum::http::header::SET_COOKIE,
-                format!("cheers_refresh={refresh}; Max-Age=2592000; Path=/; Secure; HttpOnly; SameSite=Lax").parse().unwrap(),
-            );
-        }
-        if let Some(csrf) = result.csrf_token {
-            response.headers_mut().append(
-                axum::http::header::SET_COOKIE,
-                format!("cheers_csrf={csrf}; Max-Age=2592000; Path=/; Secure; SameSite=Lax")
-                    .parse()
-                    .unwrap(),
-            );
-        }
-    }
-    response
+    issued_session_response(&user, session, client)
 }
 
 pub async fn authorize(
@@ -544,15 +484,14 @@ pub async fn authorize(
     .await?
     {
         persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
-        let result = login_response(
+        return login_response(
             &state,
             &user_id,
             client,
             request.device_name.as_deref(),
             presented.as_deref(),
         )
-        .await?;
-        return Ok(apple_login_response(result, client));
+        .await;
     }
 
     crate::api::auth::ensure_may_register(&state, request.invite_token.as_deref()).await?;
@@ -604,15 +543,14 @@ pub async fn authorize(
     .await?;
     tx.commit().await?;
     persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
-    let result = login_response(
+    login_response(
         &state,
         &user_id,
         client,
         request.device_name.as_deref(),
         presented.as_deref(),
     )
-    .await?;
-    Ok(apple_login_response(result, client))
+    .await
 }
 
 pub async fn link(
@@ -784,18 +722,7 @@ pub async fn events(
     let kid = header
         .kid
         .ok_or_else(|| AppError::Unauthorized("Apple event token has no key id".into()))?;
-    let keys: AppleJwks = reqwest::Client::new()
-        .get(APPLE_KEYS_URL)
-        .send()
-        .await
-        .map_err(|_| AppError::ServiceUnavailable("could not reach Apple identity service".into()))?
-        .error_for_status()
-        .map_err(|_| {
-            AppError::ServiceUnavailable("Apple identity service rejected key request".into())
-        })?
-        .json()
-        .await
-        .map_err(|_| AppError::ServiceUnavailable("invalid Apple key response".into()))?;
+    let keys = fetch_apple_keys().await?;
     let key = keys
         .keys
         .into_iter()

@@ -1,4 +1,5 @@
 import { parseLocator } from "../../../locator";
+import { ACTION_ID, UUID } from "../../interaction";
 import catalog from "../../../../../../../design-system/a2ui-catalog.json";
 
 export const A2UI_VERSION = "v0.9.1";
@@ -141,8 +142,8 @@ function parseComponent(raw: unknown, sourcePath: (string | number)[]): A2UIComp
     } else {
       const request = raw.action.event.name === "cheers.request" || raw.action.event.name === "cheers.execute";
       keys(raw.action.event.context, request ? ["actionId", "payload", "botId"] : ["actionId", "payload"]);
-      if (request) requireThat(typeof raw.action.event.context.botId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw.action.event.context.botId), "Requests need a stable bot id.");
-      requireThat(typeof raw.action.event.context.actionId === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/.test(raw.action.event.context.actionId), "Invalid compose action id.");
+      if (request) requireThat(typeof raw.action.event.context.botId === "string" && UUID.test(raw.action.event.context.botId), "Requests need a stable bot id.");
+      requireThat(typeof raw.action.event.context.actionId === "string" && ACTION_ID.test(raw.action.event.context.actionId), "Invalid compose action id.");
       requireThat(mapping(raw.action.event.context.payload), "Compose payload must be an object.");
       for (const value of Object.values(raw.action.event.context.payload)) {
         if (mapping(value)) binding(value);

@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { disarmHover } from "@/lib/hoverIntent";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { NewAnnotation } from "./annotations";
+import { anchorOf, type NewAnnotation } from "./annotations";
 import type { LensContextTarget } from "./lens/registry";
 
 export interface PendingAnnotation {
@@ -29,16 +29,7 @@ const EDGE = 8;
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-export function anchorOfTarget(
-  target: LensContextTarget,
-): NewAnnotation["anchor"] {
-  if (target.inspectableId && target.locator)
-    return { kind: "uri", uri: target.locator };
-  if (target.sourcePath) return { kind: "path", sourcePath: target.sourcePath };
-  if (target.sourceText !== undefined)
-    return { kind: "text", sourceText: target.sourceText };
-  return { kind: "file" };
-}
+export const anchorOfTarget: (target: LensContextTarget) => NewAnnotation["anchor"] = anchorOf;
 
 /**
  * Compose one note, anchored at the click.

@@ -36,8 +36,6 @@ struct PermissionRequest {
     let options: [PermissionOption]
 
     let resolved: Bool
-    let resolvedKind: String?
-    let chosenKind: String?
 
     /// The allow-variant options (radio choices); falls back to all options.
     var radioOptions: [PermissionOption] {
@@ -49,9 +47,6 @@ struct PermissionRequest {
         options.first { $0.isReject }
     }
 
-    var wasAllowed: Bool { (chosenKind ?? "").hasPrefix("allow") }
-    var wasExpired: Bool { resolvedKind == "expired" }
-
     /// Parse from a permission message's `content_data`. Returns nil if the
     /// payload lacks a request id (not an actionable card).
     init?(contentData: JSONValue?) {
@@ -61,8 +56,6 @@ struct PermissionRequest {
         }
         self.requestId = requestId
         self.resolved = data["resolved"]?.boolValue == true
-        self.resolvedKind = data["resolved_kind"]?.stringValue
-        self.chosenKind = data["chosen_kind"]?.stringValue
 
         let tool = data["tool"]
         let rawInput = tool?["raw_input"] ?? tool?["rawInput"]
@@ -159,7 +152,6 @@ struct AuthRequiredRequest {
     let description: String
     let methodId: String?
     let link: String?
-    let authType: String?
     let botOwnerId: String?
     let resolved: Bool
     let chosenAction: String?
@@ -176,7 +168,6 @@ struct AuthRequiredRequest {
             ?? "This agent needs authentication before it can continue."
         self.methodId = data["method_id"]?.stringValue
         self.link = data["link"]?.stringValue
-        self.authType = data["auth_type"]?.stringValue
         self.botOwnerId = data["bot_owner_id"]?.stringValue
         self.resolved = data["resolved"]?.boolValue == true
         self.chosenAction = data["chosen_action"]?.stringValue

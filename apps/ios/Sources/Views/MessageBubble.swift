@@ -162,38 +162,34 @@ struct MessageBubbleView: View {
 
     @ViewBuilder
     private var senderAvatar: some View {
+        let avatar = AvatarView(
+            seedId: message.senderId ?? message.msgId,
+            name: message.senderName,
+            size: Theme.messageAvatar,
+            monochrome: true
+        )
         if let onMention {
-            AvatarView(
-                seedId: message.senderId ?? message.msgId,
-                name: message.senderName,
-                size: Theme.messageAvatar,
-                monochrome: true
-            )
-            .contentShape(Rectangle().inset(by: (Theme.messageAvatar - Theme.hitMin) / 2))
-            .contextMenu {
-                Button {
-                    NativeFeedback.selection()
-                    onMention()
-                } label: {
-                    Label(
-                        "Mention @\(message.senderName ?? String(localized: "member"))",
-                        systemImage: "at"
-                    )
+            avatar
+                .contentShape(Rectangle().inset(by: (Theme.messageAvatar - Theme.hitMin) / 2))
+                .contextMenu {
+                    Button {
+                        NativeFeedback.selection()
+                        onMention()
+                    } label: {
+                        Label(
+                            "Mention @\(message.senderName ?? String(localized: "member"))",
+                            systemImage: "at"
+                        )
+                    }
                 }
-            }
-            .accessibilityHint("Touch and hold for member actions")
-            .accessibilityAction(
-                named: Text("Mention @\(message.senderName ?? String(localized: "member"))")
-            ) {
-                onMention()
-            }
+                .accessibilityHint("Touch and hold for member actions")
+                .accessibilityAction(
+                    named: Text("Mention @\(message.senderName ?? String(localized: "member"))")
+                ) {
+                    onMention()
+                }
         } else {
-            AvatarView(
-                seedId: message.senderId ?? message.msgId,
-                name: message.senderName,
-                size: Theme.messageAvatar,
-                monochrome: true
-            )
+            avatar
         }
     }
 
@@ -309,19 +305,9 @@ struct MessageBubbleView: View {
     /// Uniform 16pt rounded rectangle (no tail) — the avatar sits at the top of
     /// a run now, matching the web's tail-less bubbles.
     private var bubbleShape: UnevenRoundedRectangle {
-        let tail: CGFloat = 16
-        if isOwn {
-            return UnevenRoundedRectangle(
-                topLeadingRadius: 16,
-                bottomLeadingRadius: 16,
-                bottomTrailingRadius: tail,
-                topTrailingRadius: 16,
-                style: .continuous
-            )
-        }
-        return UnevenRoundedRectangle(
+        UnevenRoundedRectangle(
             topLeadingRadius: 16,
-            bottomLeadingRadius: tail,
+            bottomLeadingRadius: 16,
             bottomTrailingRadius: 16,
             topTrailingRadius: 16,
             style: .continuous
@@ -524,12 +510,6 @@ struct MessageContentView: View {
 
     private var segments: [Segment] {
         Self.segments(for: content, mentions: mentions)
-    }
-
-    /// Safe to call from a detached task before a locally-sent message is
-    /// inserted into the timeline. NSCache is thread-safe.
-    static func prewarm(content: String) {
-        _ = segments(for: content, mentions: [])
     }
 
     private static func segments(for content: String, mentions: [MessageMention]) -> [Segment] {

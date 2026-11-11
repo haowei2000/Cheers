@@ -315,7 +315,7 @@ struct BotDetailView: View {
         isUploadingAvatar = true
         defer { isUploadingAvatar = false; pickerItem = nil }
         do {
-            guard let jpeg = try await Self.jpegData(from: item) else {
+            guard let jpeg = try await item.avatarJPEGData() else {
                 errorText = "Could not read the selected photo."
                 return
             }
@@ -326,17 +326,6 @@ struct BotDetailView: View {
         } catch {
             errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
-    }
-
-    private static func jpegData(from item: PhotosPickerItem) async throws -> Data? {
-        if let data = try await item.loadTransferable(type: Data.self),
-           let image = UIImage(data: data),
-           let jpeg = image.jpegData(compressionQuality: 0.88) { return jpeg }
-        if let url = try await item.loadTransferable(type: URL.self),
-           let data = try? Data(contentsOf: url),
-           let image = UIImage(data: data),
-           let jpeg = image.jpegData(compressionQuality: 0.88) { return jpeg }
-        return nil
     }
 
     private func setDisabled(_ disabled: Bool) async {

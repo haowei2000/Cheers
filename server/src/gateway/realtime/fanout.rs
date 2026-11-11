@@ -84,6 +84,7 @@ pub trait Fanout: Send + Sync {
 
 /// 单进程 fan-out。每条浏览器 WS 连接持有一个 `mpsc::Sender<SharedFrame>`，
 /// 注册时把 Sender 存入 DashMap，断线时移除。
+#[derive(Default)]
 pub struct InProcessFanout {
     /// channel_id → 订阅该频道的所有连接的发送端
     channels: DashMap<Uuid, Vec<ConnSender>>,
@@ -123,13 +124,7 @@ struct ConnIdentity {
 
 impl InProcessFanout {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            channels: DashMap::new(),
-            users: DashMap::new(),
-            closers: DashMap::new(),
-            conn_users: DashMap::new(),
-            conn_focus: DashMap::new(),
-        })
+        Arc::new(Self::default())
     }
 
     /// 浏览器 WS 连接建立后，注册 user 级发送端及服务端关闭信号端。
@@ -344,18 +339,6 @@ impl InProcessFanout {
             }
         }
         out
-    }
-}
-
-impl Default for InProcessFanout {
-    fn default() -> Self {
-        Self {
-            channels: DashMap::new(),
-            users: DashMap::new(),
-            closers: DashMap::new(),
-            conn_users: DashMap::new(),
-            conn_focus: DashMap::new(),
-        }
     }
 }
 

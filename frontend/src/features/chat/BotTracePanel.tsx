@@ -31,15 +31,19 @@ import type { Message, PermissionContentData, TraceEvent } from "@/types";
 import { DiffView } from "./DiffView";
 import {
   aggregateDiffStats,
+  asRecord,
   diffStats,
   fileDiffPreview,
   fileDiffsFromData,
   formatDiffDelta,
   pathBasename,
+  stringField,
   type FileDiff,
+  type JsonRecord,
 } from "./fileEditDiff";
 import { PermissionCard } from "./PermissionCard";
 import { coalesceTraceEvents } from "./traceEvent";
+import { isUnresolvedApproval } from "./messageTree";
 import {
   parseGitStatusResult,
   toolPresentationFromTrace,
@@ -202,8 +206,6 @@ function statusLabel(status: string): string {
   );
 }
 
-type JsonRecord = Record<string, unknown>;
-
 function GitStatusInspector({ presentation }: { presentation: ToolPresentation }) {
   const result = parseGitStatusResult(presentation);
   if (!result) return null;
@@ -251,40 +253,25 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
   );
 }
 
-function asRecord(value: unknown): JsonRecord | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : null;
-}
-
 const DETAIL_PREVIEW_LIMIT = 12_000;
 
+function truncatePreview(text: string, limit = DETAIL_PREVIEW_LIMIT): string {
+  return text.length > limit
+    ? `${text.slice(0, limit)}\n… preview truncated (${text.length - limit} more characters)`
+    : text;
+}
+
 function formatJson(value: unknown, limit = DETAIL_PREVIEW_LIMIT): string {
-  const formatted = JSON.stringify(value, null, 2) ?? String(value);
-  return formatted.length > limit
-    ? `${formatted.slice(0, limit)}\n… preview truncated (${formatted.length - limit} more characters)`
-    : formatted;
+  return truncatePreview(JSON.stringify(value, null, 2) ?? String(value), limit);
 }
 
 function DetailValue({ value }: { value: unknown }) {
-  const rendered = typeof value === "string"
-    ? value.length > DETAIL_PREVIEW_LIMIT
-      ? `${value.slice(0, DETAIL_PREVIEW_LIMIT)}\n… preview truncated (${value.length - DETAIL_PREVIEW_LIMIT} more characters)`
-      : value
-    : formatJson(value);
+  const rendered = typeof value === "string" ? truncatePreview(value) : formatJson(value);
   return (
     <pre className="whitespace-pre-wrap wrap-break-word font-code">
       {rendered}
     </pre>
   );
-}
-
-function stringField(record: JsonRecord | null, ...keys: string[]): string | null {
-  for (const key of keys) {
-    const value = record?.[key];
-    if (typeof value === "string" && value.trim()) return value;
-  }
-  return null;
 }
 
 function RawEventData({ metadata, data }: { metadata: JsonRecord; data: JsonRecord | null }) {
@@ -662,10 +649,7 @@ function TraceItem({
   const displayTitle = presentation
     ? label
     : event.title || (pendingApproval ? "Approval" : label);
-  const needsAction = Boolean(
-    pendingApproval &&
-      !(pendingApproval.content_data as PermissionContentData | null | undefined)?.resolved,
-  );
+  const needsAction = Boolean(pendingApproval && isUnresolvedApproval(pendingApproval));
   const statusTone = needsAction
     ? "text-warning-400/90"
     : event.status === "failed"
@@ -816,10 +800,7 @@ export function BotTracePanel({
   view = "record",
 }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(
-    pendingApprovals.some(
-      (message) =>
-        !(message.content_data as PermissionContentData | null | undefined)?.resolved,
-    ) || !!focusRequestId,
+    pendingApprovals.some(isUnresolvedApproval) || !!focusRequestId,
   );
   const expanded = controlledExpanded ?? internalExpanded;
   const updateExpanded = (next: boolean | ((current: boolean) => boolean)) => {
@@ -848,11 +829,7 @@ export function BotTracePanel({
   }, [pendingApprovals]);
 
   const actionableApprovals = useMemo(
-    () =>
-      pendingApprovals.filter(
-        (message) =>
-          !(message.content_data as PermissionContentData | null | undefined)?.resolved,
-      ),
+    () => pendingApprovals.filter(isUnresolvedApproval),
     [pendingApprovals],
   );
   const hasActionable = actionableApprovals.length > 0;
@@ -889,10 +866,7 @@ export function BotTracePanel({
       const pending = timeline.filter((event) => {
         if (event.kind !== "approval" || !event.request_id) return false;
         const approval = approvalByRequestId.get(event.request_id);
-        return Boolean(
-          approval &&
-          !(approval.content_data as PermissionContentData | null | undefined)?.resolved,
-        );
+        return Boolean(approval && isUnresolvedApproval(approval));
       });
       if (!streaming || pending.length > 0) return pending;
       const latest = [...timeline].reverse().find((event) => !pending.includes(event));
@@ -906,9 +880,7 @@ export function BotTracePanel({
     const pendingExtras = timeline.filter((e) => {
       if (e === latest || e.kind !== "approval" || !e.request_id) return false;
       const approval = approvalByRequestId.get(e.request_id);
-      if (!approval) return false;
-      return !(approval.content_data as PermissionContentData | null | undefined)
-        ?.resolved;
+      return Boolean(approval && isUnresolvedApproval(approval));
     });
     return [...pendingExtras, latest];
   }, [view, streaming, showAll, timeline, approvalByRequestId]);

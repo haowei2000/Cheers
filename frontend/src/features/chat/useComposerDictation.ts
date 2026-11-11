@@ -86,8 +86,7 @@ export function useComposerDictation({
     dictationStreamRef.current = null;
   }
 
-  function releaseStepFunCapture() {
-    const capture = stepFunCaptureRef.current;
+  function releaseStepFunCapture(capture = stepFunCaptureRef.current) {
     stepFunCaptureRef.current = null;
     if (capture) {
       capture.processor.disconnect();
@@ -118,12 +117,8 @@ export function useComposerDictation({
     return new Blob([output.buffer as ArrayBuffer], { type: "audio/pcm" });
   }
 
-  async function finishStepFunDictation(capture: StepFunCapture, targetChannelId: string) {
-    stepFunCaptureRef.current = null;
-    capture.processor.disconnect();
-    capture.source.disconnect();
-    void capture.context.close();
-    releaseDictationStream();
+  async function finishStepFunDictation(capture: StepFunCapture) {
+    releaseStepFunCapture(capture);
     setDictating(false);
     if (!capture.chunks.length) {
       toast("No speech was detected");
@@ -131,7 +126,7 @@ export function useComposerDictation({
     }
     setTranscribingDictation(true);
     try {
-      const result = await transcribeDictation(targetChannelId, pcm16leAt16k(capture));
+      const result = await transcribeDictation(capture.channelId, pcm16leAt16k(capture));
       appendDictation(result.transcript);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Dictation failed");
@@ -153,7 +148,7 @@ export function useComposerDictation({
         releaseStepFunCapture();
         setDictating(false);
       } else {
-        void finishStepFunDictation(stepFunCapture, stepFunCapture.channelId);
+        void finishStepFunDictation(stepFunCapture);
       }
       return;
     }
