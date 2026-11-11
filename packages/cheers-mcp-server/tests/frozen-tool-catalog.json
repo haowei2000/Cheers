@@ -385,7 +385,7 @@
       "destructiveHint": false,
       "readOnlyHint": true
     },
-    "description": "List documents, interactive pages, canvases and delivered files together. Follow next_cursor with before. Internal configuration files are hidden by default.",
+    "description": "List documents, interactive pages, canvases and delivered files together. Pass type \"canvas\" to list only canvases. Follow next_cursor with before. Internal configuration files are hidden by default.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -400,6 +400,9 @@
         },
         "limit": {
           "type": "integer"
+        },
+        "type": {
+          "type": "string"
         }
       },
       "required": [
