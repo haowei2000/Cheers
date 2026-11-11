@@ -90,6 +90,12 @@ jobs:
       - name: Format
         run: cargo fmt --check
 
+      # Shared with the desktop shell; its unit tests are not part of `server`.
+      - name: Format and test shared ACP registry crate
+        run: |
+          cargo fmt --manifest-path ../packages/cheers-acp-registry/Cargo.toml -- --check
+          cargo test --manifest-path ../packages/cheers-acp-registry/Cargo.toml
+
   # ─────────────────────────────────────────────
   # Gateway (Rust): compile once, then run unit + integration tests against a
   # real Postgres. Keeping this job name preserves existing required checks.

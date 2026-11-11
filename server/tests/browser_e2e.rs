@@ -84,9 +84,9 @@ fn desktop_onboarding_fixture_matches_gateway_renderer() {
         "account_id":"e2e-codex",
         "credential_file":"secrets/e2e-codex.token",
         "config_toml":render_toml(&RenderParams {
-            account_id:"e2e-codex",
-            agent_type:"codex",
-            public_base:"ws://127.0.0.1:1",
+            account_id:"e2e-codex".into(),
+            agent_type:"codex".into(),
+            public_base:"ws://127.0.0.1:1".into(),
             token_ref:TokenRef::HostFile("secrets/e2e-codex.token".into()),
         }),
     });

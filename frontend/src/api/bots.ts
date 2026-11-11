@@ -14,7 +14,10 @@ export interface AcpAgentInfo {
   name: string;
   version?: string;
   package?: string;
+  command?: string;
   args?: string[];
+  /** Env var for headless API-key auth, when the agent supports one. */
+  api_key_env?: string | null;
   source: string;
   installable: boolean;
 }

@@ -2561,7 +2561,7 @@ async fn handle_auth_required_frame(
         "auth_required: load agent profile",
     ))?
     .unwrap_or_else(|| "generic".to_string());
-    let agent_profile = crate::domain::agent_profile::profile(&agent_type);
+    let agent_profile = crate::domain::agent_catalog::profile(&agent_type);
 
     let method_id = frame
         .get("method_id")
