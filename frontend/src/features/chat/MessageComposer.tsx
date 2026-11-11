@@ -104,6 +104,13 @@ const GROUP_MENTIONS: MentionCandidate[] = [
 const mentionRank = (c: MentionCandidate): number =>
   c.type === "bot" ? 0 : c.type === "group" ? 1 : 2;
 
+/** Restored picks plus any mention a restored suggestion binding still carries. */
+function withBindingMentions(picked: MentionCandidate[], bindings: SuggestionBinding[]): MentionCandidate[] {
+  return [...picked, ...bindings.flatMap((b) =>
+    b.mention && !picked.some((p) => p.id === b.mention?.id) ? [b.mention] : [],
+  )];
+}
+
 interface Props {
   channelId?: string;
   channelName?: string;
@@ -192,12 +199,7 @@ function MessageComposerImpl({
   const [uploading, setUploading] = useState(false);
   // Mentions the user has picked, keyed by id. Routing source of truth.
   const [picked, setPicked] = useState<MentionCandidate[]>(
-    () => {
-      const picked = restoreComposerMentions(channelId);
-      return [...picked, ...restoreSuggestionBindings(channelId).flatMap(b =>
-        b.mention && !picked.some(p => p.id === b.mention?.id) ? [b.mention] : [],
-      )];
-    },
+    () => withBindingMentions(restoreComposerMentions(channelId), restoreSuggestionBindings(channelId)),
   );
   const [picker, setPicker] = useState<PickerState | null>(null);
   // Paperclip → small menu (upload vs. pick existing) + the channel-file picker dialog.
@@ -257,13 +259,7 @@ function MessageComposerImpl({
       setSuggestionBindings([]);
     }
     if (prefill.kind === "clear") {
-      const el = textareaRef.current;
-      if (el) {
-        requestAnimationFrame(() => {
-          el.style.height = "auto";
-          el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-        });
-      }
+      requestAnimationFrame(adjustHeight);
       return;
     }
     const mentioned =
@@ -323,25 +319,17 @@ function MessageComposerImpl({
     setText(incomingText);
     setAttachments(mem?.attachments ?? []);
     const restoredBindings = mem?.suggestionBindings ?? restoreSuggestionBindings(channelId);
-    setPicked(() => {
-      const picked = restoreComposerMentions(channelId);
-      return [...picked, ...restoredBindings.flatMap((b) => b.mention && !picked.some((p) => p.id === b.mention?.id) ? [b.mention] : [])];
-    });
+    setPicked(() => withBindingMentions(restoreComposerMentions(channelId), restoredBindings));
     setTranscribedIds(mem?.transcribedIds ?? new Set());
-    setSuggestionBindings(mem?.suggestionBindings ?? restoreSuggestionBindings(channelId));
+    setSuggestionBindings(restoredBindings);
     setBindingChannelId(channelId);
     setPicker(null);
     setAttachMenuOpen(false);
     setLibraryOpen(false);
     setVoiceWarning(null);
     stopDictationRef.current(true);
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-    });
-  }, [channelId]);
+    requestAnimationFrame(adjustHeight);
+  }, [channelId, adjustHeight]);
 
   // Unmount (e.g. mobile back-navigation unmounts ChannelView): keep the draft.
   useEffect(
@@ -802,12 +790,7 @@ function MessageComposerImpl({
       setPicked(draft.picked);
       setTranscribedIds(draft.transcribedIds);
       setSuggestionBindings(draft.suggestionBindings);
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.style.height = "auto";
-        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-      });
+      requestAnimationFrame(adjustHeight);
     } finally {
       setSending(false);
       textareaRef.current?.focus();

@@ -22,7 +22,11 @@ use uuid::Uuid;
 use std::collections::HashMap;
 
 use crate::{
-    api::{bots::is_admin, middleware::Claims},
+    api::{
+        approval::{channel_role, user_id},
+        bots::is_admin,
+        middleware::Claims,
+    },
     app_state::AppState,
     domain::{
         approval,
@@ -39,27 +43,6 @@ pub struct FleetAuditQuery {
     pub host_id: Option<String>,
     pub event_type: Option<String>,
     pub limit: Option<i64>,
-}
-
-fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
-    claims
-        .sub
-        .parse()
-        .map_err(|_| AppError::Unauthorized("invalid user_id".into()))
-}
-
-/// The caller's current channel role for the event-policy matrix.
-async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> Result<String, AppError> {
-    sqlx::query!(
-        "SELECT role FROM channel_memberships
-         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
-        channel_id.to_string(),
-        uid.to_string(),
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .map(|r| r.role)
-    .ok_or_else(|| AppError::Forbidden("not a channel member".into()))
 }
 
 /// Resolve (may_see, may_answer) for one pending card — the same SEE gate and
@@ -116,6 +99,22 @@ async fn see_and_answer(
     (true, actionable)
 }
 
+/// The caller's role in `channel_id`, read once per channel per request. `None`
+/// when the caller is not a member (or the read failed) — the card is skipped.
+async fn cached_channel_role(
+    state: &AppState,
+    roles: &mut HashMap<Uuid, String>,
+    channel_id: Uuid,
+    uid: Uuid,
+) -> Option<String> {
+    if let Some(role) = roles.get(&channel_id) {
+        return Some(role.clone());
+    }
+    let role = channel_role(state, channel_id, uid).await.ok()?;
+    roles.insert(channel_id, role.clone());
+    Some(role)
+}
+
 // ── GET /fleet/badge ─────────────────────────────────────────────────────────
 
 /// Workspace-agnostic count of pending approvals the caller may answer —
@@ -131,15 +130,8 @@ pub async fn get_fleet_badge(
     let mut roles: HashMap<Uuid, String> = HashMap::new();
     let mut count: i64 = 0;
     for p in pending {
-        let role = match roles.get(&p.channel_id) {
-            Some(r) => r.clone(),
-            None => {
-                let Ok(r) = channel_role(&state, p.channel_id, uid).await else {
-                    continue;
-                };
-                roles.insert(p.channel_id, r.clone());
-                r
-            }
+        let Some(role) = cached_channel_role(&state, &mut roles, p.channel_id, uid).await else {
+            continue;
         };
         let (_, actionable) = see_and_answer(&state, &p, uid, &role, admin, &mut access).await;
         if actionable {
@@ -375,15 +367,8 @@ async fn build_fleet(
     let mut approvals: Vec<Value> = Vec::with_capacity(pending.len());
     let mut pending_counts: HashMap<(Uuid, Uuid), i64> = HashMap::new();
     for p in pending {
-        let role = match roles.get(&p.channel_id) {
-            Some(r) => r.clone(),
-            None => {
-                let Ok(r) = channel_role(state, p.channel_id, uid).await else {
-                    continue;
-                };
-                roles.insert(p.channel_id, r.clone());
-                r
-            }
+        let Some(role) = cached_channel_role(state, &mut roles, p.channel_id, uid).await else {
+            continue;
         };
         // SEE gate — fail-closed: on error, drop the row (see module docs).
         let (may_see, actionable) = see_and_answer(state, &p, uid, &role, admin, &mut access).await;

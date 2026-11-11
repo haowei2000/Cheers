@@ -1,7 +1,6 @@
 import { isPointerFocus, markPointerInteraction, whenPointerRests } from "@/lib/hoverIntent";
 import { Tip } from "@/components/ui/tip";
 import { HelpLabel } from "@/components/ui/help-text";
-import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { notify, messageOf } from "@/lib/notify";
@@ -61,7 +60,7 @@ function CopyBtn({
   const [done, setDone] = useState(false);
   const label = done ? "Copied" : title;
   return (
-    <UiButton
+    <Button
       action="copy"
       variant="plain"
       content="icon"
@@ -85,7 +84,7 @@ function CopyBtn({
       ) : (
         <Copy className="w-3.5 h-3.5" />
       )}
-    </UiButton>
+    </Button>
   );
 }
 
@@ -635,7 +634,7 @@ export function CreateHostWizard({
             />
 
             <div className="flex items-center justify-between pt-1">
-              <UiButton
+              <Button
                 action="back"
                 content="iconText"
                 variant="plain"
@@ -643,7 +642,7 @@ export function CreateHostWizard({
                 onClick={() => setStep(0)}
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-              </UiButton>
+              </Button>
               <Button
                 action="done"
                 onClick={() => {
@@ -752,7 +751,7 @@ function PairingSection({
         </span>
         <div className="flex items-center gap-2">
           {pairing && !connected && (
-            <UiButton
+            <Button
               action="revoke"
               content="iconText"
               variant="secondary"
@@ -762,7 +761,7 @@ function PairingSection({
               loading={busy}
             >
               <Trash2 className="w-3.5 h-3.5" />
-            </UiButton>
+            </Button>
           )}
           <Button
             action={pairing ? "replace" : "create"}

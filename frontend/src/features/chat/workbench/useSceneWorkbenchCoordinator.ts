@@ -39,6 +39,15 @@ export interface SceneWorkbenchCoordinatorOptions {
   onAddTab: (collectionId: string, path: string) => Promise<boolean>;
 }
 
+/** The Collection that indexes `path`, else the Other scene. */
+function owningScene(
+  order: WorkbenchSceneState["order"],
+  items: WorkbenchSceneState["items"],
+  path: string,
+): string {
+  return order.find((id) => (items[id] ?? []).includes(path)) ?? OTHER_SCENE;
+}
+
 export function useSceneWorkbenchCoordinator({
   ctx,
   sceneState,
@@ -292,8 +301,7 @@ export function useSceneWorkbenchCoordinator({
 
   const onSelectAnnotationFile = useCallback(
     (path: string) => {
-      const owner = reconciled.order.find((id) => (reconciled.items[id] ?? []).includes(path));
-      const targetScene = owner ?? OTHER_SCENE;
+      const targetScene = owningScene(reconciled.order, reconciled.items, path);
       setActiveScene(targetScene);
       selectPath(path, targetScene);
       showRaw(path, true);
@@ -319,18 +327,16 @@ export function useSceneWorkbenchCoordinator({
   useEffect(() => {
     const target = ctx.openTarget;
     if (!target || !renderers[target]) return;
-    const owner = reconciled.order.find((id) => (reconciled.items[id] ?? []).includes(target));
-    setActiveScene(owner ?? OTHER_SCENE);
-    setSelectedByScene((previous) => ({ ...previous, [owner ?? OTHER_SCENE]: target }));
+    const owner = owningScene(reconciled.order, reconciled.items, target);
+    setActiveScene(owner);
+    setSelectedByScene((previous) => ({ ...previous, [owner]: target }));
   }, [ctx.openTarget, renderers, reconciled]);
 
   const addTabAndSelect = useCallback((path: string) => {
     void onAddTab(activeScene, path).then((added) => {
-      if (!added) return;
-      setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
-      localStorage.setItem(`${storagePrefix}.item.${activeScene}`, path);
+      if (added) selectPath(path, activeScene);
     });
-  }, [activeScene, onAddTab, storagePrefix]);
+  }, [activeScene, onAddTab, selectPath]);
 
   return {
     contents,

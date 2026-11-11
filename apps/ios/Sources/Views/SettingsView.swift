@@ -377,6 +377,27 @@ struct SettingsView: View {
     }
 }
 
+extension PhotosPickerItem {
+    /// PhotosPicker's `Data` transferable is unreliable for HEIC/Live Photos;
+    /// decode via UIImage and re-encode JPEG so the gateway always accepts it.
+    /// Shared by the profile, bot and channel avatar pickers.
+    func avatarJPEGData() async throws -> Data? {
+        if let data = try await loadTransferable(type: Data.self),
+           let image = UIImage(data: data),
+           let jpeg = image.jpegData(compressionQuality: 0.88) {
+            return jpeg
+        }
+        // Fallback: some iOS versions only expose a file URL transferable.
+        if let url = try await loadTransferable(type: URL.self),
+           let data = try? Data(contentsOf: url),
+           let image = UIImage(data: data),
+           let jpeg = image.jpegData(compressionQuality: 0.88) {
+            return jpeg
+        }
+        return nil
+    }
+}
+
 // MARK: - Profile edit
 
 private struct ProfileEditSheet: View {
@@ -480,7 +501,7 @@ private struct ProfileEditSheet: View {
             pickerItem = nil
         }
         do {
-            guard let jpeg = try await Self.jpegData(from: item) else {
+            guard let jpeg = try await item.avatarJPEGData() else {
                 errorText = "Could not read the selected photo."
                 return
             }
@@ -491,24 +512,6 @@ private struct ProfileEditSheet: View {
         } catch {
             errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
-    }
-
-    /// PhotosPicker's `Data` transferable is unreliable for HEIC/Live Photos;
-    /// decode via UIImage and re-encode JPEG so the gateway always accepts it.
-    private static func jpegData(from item: PhotosPickerItem) async throws -> Data? {
-        if let data = try await item.loadTransferable(type: Data.self),
-           let image = UIImage(data: data),
-           let jpeg = image.jpegData(compressionQuality: 0.88) {
-            return jpeg
-        }
-        // Fallback: some iOS versions only expose a file URL transferable.
-        if let url = try await item.loadTransferable(type: URL.self),
-           let data = try? Data(contentsOf: url),
-           let image = UIImage(data: data),
-           let jpeg = image.jpegData(compressionQuality: 0.88) {
-            return jpeg
-        }
-        return nil
     }
 
     private func save() async {

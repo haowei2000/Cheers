@@ -1,6 +1,10 @@
 import { apiJson } from "./client";
-import { acceptChannelInvite, declineChannelInvite } from "./channels";
-import { acceptBotChannelInvite, declineBotChannelInvite } from "./channels";
+import {
+  acceptBotChannelInvite,
+  acceptChannelInvite,
+  declineBotChannelInvite,
+  declineChannelInvite,
+} from "./channels";
 import { acceptInvite, declineInvite } from "./workspaces";
 import { acceptFriendRequest, cancelFriendRequest } from "./friends";
 

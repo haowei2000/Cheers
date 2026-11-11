@@ -184,21 +184,23 @@ async fn validated_daemon_status(
     Ok(statuses.remove(0))
 }
 
+/// Every readable daemon.json under the connector home, lazily.
+fn discovered_metadata() -> impl Iterator<Item = DaemonMetadata> {
+    connector_home()
+        .and_then(|home| fs::read_dir(home).ok())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            fs::read_to_string(entry.path().join("daemon.json"))
+                .ok()
+                .and_then(|raw| serde_json::from_str(&raw).ok())
+        })
+}
+
 /// Find an instance's daemon.json by its logical `name` field.
 fn read_metadata_by_name(name: &str) -> Option<DaemonMetadata> {
-    let home = connector_home()?;
-    let entries = fs::read_dir(&home).ok()?;
-    for entry in entries.flatten() {
-        let meta: Option<DaemonMetadata> = fs::read_to_string(entry.path().join("daemon.json"))
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok());
-        if let Some(m) = meta {
-            if m.name == name {
-                return Some(m);
-            }
-        }
-    }
-    None
+    discovered_metadata().find(|m| m.name == name)
 }
 
 /// The stdout log path an instance writes to (recorded in its daemon.json), for
@@ -231,8 +233,7 @@ async fn read_instances(app: &tauri::AppHandle) -> Result<Vec<ConnectorInstance>
                 });
             }
             None => {
-                let config_path = dirs::home_dir()
-                    .map(|h| h.join(".cheers").join(format!("cheers-daemon.{name}.toml")))
+                let config_path = onboarded_config_path(&name)
                     .filter(|p| p.exists())
                     .map(|p| p.to_string_lossy().into_owned());
                 out.push(ConnectorInstance {
@@ -450,12 +451,8 @@ pub async fn connector_start(
     // `env node` shebang. Normalize again at launch so a previously failed
     // first setup is repaired by Retry, without requiring the user to find and
     // edit a TOML file themselves.
-    let current_config = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
-    let normalized_config = normalize_desktop_connector_config(&current_config)?;
-    if normalized_config != current_config {
-        fs::write(&config_path, &normalized_config).map_err(|e| e.to_string())?;
-    }
-    ensure_workspace_dirs(&normalized_config);
+    normalize_desktop_config_at(Path::new(&config_path))?;
+    ensure_workspace_dirs_at(Path::new(&config_path));
     let out = run_cli(&app, &["--name", &name, "--config", &config_path, "start"]).await?;
     state.managed.lock().unwrap().insert(name);
     Ok(out)
@@ -465,13 +462,9 @@ pub async fn connector_start(
 /// homebrew/npm/cargo bins that a GUI-launched app never sees. Falls back to
 /// common locations if the shell can't be probed.
 fn login_path_dirs() -> Vec<PathBuf> {
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     // `command -v` printing $PATH via a login+interactive shell loads the
     // user's real PATH (.zprofile/.zshrc). No user input is interpolated.
-    let out = std::process::Command::new(&shell)
-        .args(["-lic", "printf %s \"$PATH\""])
-        .output()
-        .ok();
+    let out = login_shell("printf %s \"$PATH\"").ok();
     let mut path_dirs: Vec<PathBuf> = out
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
@@ -684,48 +677,47 @@ pub async fn install_agent(key: String) -> Result<String, String> {
 
 async fn run_login_shell_install(install_cmd: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-        let out = std::process::Command::new(&shell)
-            .args(["-lic", &install_cmd])
-            .output()
-            .map_err(|e| e.to_string())?;
+        let out = login_shell(&install_cmd).map_err(|e| e.to_string())?;
         if out.status.success() {
             Ok("installed".to_string())
         } else {
-            let err = String::from_utf8_lossy(&out.stderr);
-            Err(format!(
-                "install failed — {}",
-                err.trim().lines().last().unwrap_or("see terminal")
-            ))
+            Err(shell_failure("install", &out))
         }
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
+/// Run `script` in the user's login+interactive shell (`$SHELL -lic`), which
+/// loads their real PATH (.zprofile/.zshrc).
+fn login_shell(script: &str) -> std::io::Result<std::process::Output> {
+    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    std::process::Command::new(&shell)
+        .args(["-lic", script])
+        .output()
+}
+
+/// `<what> failed — <last stderr line>` for a failed login-shell step.
+fn shell_failure(what: &str, out: &std::process::Output) -> String {
+    let err = String::from_utf8_lossy(&out.stderr);
+    format!(
+        "{what} failed — {}",
+        err.trim().lines().last().unwrap_or("see terminal")
+    )
+}
+
 /// Ensure `uv`/`uvx` exists (Astral installer), then warm the package cache via `uvx`.
 fn install_uvx_agent(package: &str) -> Result<String, String> {
     if resolve_on_login_path("uvx").is_none() {
-        let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
         // Official installer: https://docs.astral.sh/uv/getting-started/installation/
-        let out = std::process::Command::new(&shell)
-            .args(["-lic", "curl -LsSf https://astral.sh/uv/install.sh | sh"])
-            .output()
+        let out = login_shell("curl -LsSf https://astral.sh/uv/install.sh | sh")
             .map_err(|e| format!("uv install failed to start: {e}"))?;
         if !out.status.success() {
-            let err = String::from_utf8_lossy(&out.stderr);
-            return Err(format!(
-                "uv install failed — {}",
-                err.trim().lines().last().unwrap_or("see terminal")
-            ));
+            return Err(shell_failure("uv install", &out));
         }
     }
     // Warm/download the tool; `--help` fetches without spawning ACP.
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let warm = format!("uvx '{package}' --help");
-    let _ = std::process::Command::new(&shell)
-        .args(["-lic", &warm])
-        .output();
+    let _ = login_shell(&format!("uvx '{package}' --help"));
     if resolve_on_login_path("uvx").is_none() {
         return Err(
             "uv installed but uvx is still not on the login PATH — open a new terminal or restart Cheers"
@@ -801,23 +793,15 @@ fn install_binary_agent(launch: &crate::acp_registry::BinaryLaunch) -> Result<St
         "agent.tar.gz"
     };
     let archive_path = dest.join(archive_name);
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     // Quote URL for the shell; host already allowlisted.
     let download = format!(
         "curl -fsSL --retry 3 -o '{}' '{}'",
         archive_path.display(),
         target.archive.replace('\'', "'\\''")
     );
-    let out = std::process::Command::new(&shell)
-        .args(["-lic", &download])
-        .output()
-        .map_err(|e| format!("download failed to start: {e}"))?;
+    let out = login_shell(&download).map_err(|e| format!("download failed to start: {e}"))?;
     if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "download failed — {}",
-            err.trim().lines().last().unwrap_or("see terminal")
-        ));
+        return Err(shell_failure("download", &out));
     }
 
     let extract = if archive_name.ends_with(".zip") {
@@ -833,16 +817,9 @@ fn install_binary_agent(launch: &crate::acp_registry::BinaryLaunch) -> Result<St
             dest.display()
         )
     };
-    let out = std::process::Command::new(&shell)
-        .args(["-lic", &extract])
-        .output()
-        .map_err(|e| format!("extract failed to start: {e}"))?;
+    let out = login_shell(&extract).map_err(|e| format!("extract failed to start: {e}"))?;
     if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "extract failed — {}",
-            err.trim().lines().last().unwrap_or("see terminal")
-        ));
+        return Err(shell_failure("extract", &out));
     }
     let _ = fs::remove_file(&archive_path);
 
@@ -916,14 +893,10 @@ fn npm_global_versions(pkgs: &[&str]) -> std::collections::HashMap<String, Strin
     if pkgs.is_empty() {
         return map;
     }
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let cmd = format!("npm ls -g --depth=0 --json {}", pkgs.join(" "));
     // `npm ls` exits non-zero when a queried package is missing but still emits
     // the JSON tree on stdout, so parse stdout regardless of exit status.
-    let Ok(out) = std::process::Command::new(&shell)
-        .args(["-lic", &cmd])
-        .output()
-    else {
+    let Ok(out) = login_shell(&cmd) else {
         return map;
     };
     let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
@@ -942,11 +915,7 @@ fn npm_global_versions(pkgs: &[&str]) -> std::collections::HashMap<String, Strin
 /// Latest published version of `pkg` (`npm view <pkg> version`), or None when
 /// offline / not found. `pkg` is a registry package name (or OpenCode's).
 fn npm_latest_version(pkg: &str) -> Option<String> {
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let out = std::process::Command::new(&shell)
-        .args(["-lic", &format!("npm view {pkg} version")])
-        .output()
-        .ok()?;
+    let out = login_shell(&format!("npm view {pkg} version")).ok()?;
     if !out.status.success() {
         return None;
     }
@@ -1075,9 +1044,7 @@ fn normalize_adapter_launcher(config_toml: &str) -> Result<String, String> {
         .and_then(|content| content.lines().next().map(str::to_owned))
         .is_some_and(|first| first.trim() == "#!/usr/bin/env node");
 
-    let mut doc: toml_edit::DocumentMut = config_toml
-        .parse()
-        .map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let mut doc = crate::host_config::parse_document(config_toml)?;
     let account_id = doc
         .get("accounts")
         .and_then(|a| a.as_table())
@@ -1119,9 +1086,7 @@ fn normalize_adapter_launcher(config_toml: &str) -> Result<String, String> {
 /// conservative `auto = false` default; this migration is scoped to configs the
 /// desktop starts and never overwrites an explicit true/false choice.
 fn enable_desktop_auto_update_if_unspecified(config_toml: &str) -> Result<String, String> {
-    let mut doc: toml_edit::DocumentMut = config_toml
-        .parse()
-        .map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let mut doc = crate::host_config::parse_document(config_toml)?;
     let has_explicit_choice = doc
         .get("update")
         .and_then(toml_edit::Item::as_table_like)
@@ -1245,10 +1210,12 @@ fn config_path_for(name: &str) -> Option<PathBuf> {
     if let Some(meta) = read_metadata_by_name(name) {
         return Some(meta.config_path);
     }
-    let p = dirs::home_dir()?
-        .join(".cheers")
-        .join(format!("cheers-daemon.{}.toml", safe_name(name)));
-    p.exists().then_some(p)
+    onboarded_config_path(&safe_name(name)).filter(|p| p.exists())
+}
+
+/// `~/.cheers/cheers-daemon.<name>.toml`, where desktop onboarding writes configs.
+fn onboarded_config_path(name: &str) -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".cheers").join(format!("cheers-daemon.{name}.toml")))
 }
 
 /// The every-account `policy.workspace` roots + `default_cwd` in a config,
@@ -1356,10 +1323,7 @@ fn deletable_configs_for(name: &str) -> Vec<PathBuf> {
             out.push(p);
         }
     }
-    if let Some(p) = dirs::home_dir().map(|h| {
-        h.join(".cheers")
-            .join(format!("cheers-daemon.{}.toml", safe_name(name)))
-    }) {
+    if let Some(p) = onboarded_config_path(&safe_name(name)) {
         if p.exists() && !out.iter().any(|existing| existing == &p) {
             out.push(p);
         }
@@ -1552,9 +1516,7 @@ pub fn connector_config_write_fields(path: String, fields: ConfigFields) -> Resu
     let p = PathBuf::from(&path);
     guard_config_path(&p)?;
     let text = fs::read_to_string(&p).map_err(|e| e.to_string())?;
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let mut doc = crate::host_config::parse_document(&text)?;
 
     let id = &fields.account_id;
     if doc.get("accounts").and_then(|a| a.get(id)).is_none() {
@@ -1695,9 +1657,7 @@ pub async fn connector_add_allowed_roots(
     let p = meta.config_path.clone();
     guard_config_path(&p)?;
     let text = fs::read_to_string(&p).map_err(|e| e.to_string())?;
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let mut doc = crate::host_config::parse_document(&text)?;
 
     // First (only) account — same convention as the other config commands.
     let acct_id = doc
@@ -1808,24 +1768,9 @@ fn is_desktop_onboarded_config(path: &Path) -> bool {
 
 /// Canonical paths of every config referenced by a discovered `daemon.json`.
 fn known_config_paths() -> std::collections::HashSet<PathBuf> {
-    let mut out = std::collections::HashSet::new();
-    let Some(home) = connector_home() else {
-        return out;
-    };
-    let Ok(entries) = fs::read_dir(&home) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let meta: Option<DaemonMetadata> = fs::read_to_string(entry.path().join("daemon.json"))
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok());
-        if let Some(m) = meta {
-            if let Ok(canon) = m.config_path.canonicalize() {
-                out.insert(canon);
-            }
-        }
-    }
-    out
+    discovered_metadata()
+        .filter_map(|m| m.config_path.canonicalize().ok())
+        .collect()
 }
 
 /// Expand a leading `~` / `~/` to the home dir — connector configs write roots
@@ -1944,19 +1889,9 @@ pub fn connector_roots(name: String) -> Result<ConnectorRoots, String> {
 /// server, so a local connector pointed elsewhere isn't the same bot.
 fn all_local_roots(server: Option<&str>) -> Vec<PathBuf> {
     let want_authority = server.and_then(url_authority);
-    let Some(home) = connector_home() else {
-        return Vec::new();
-    };
-    let Ok(entries) = fs::read_dir(&home) else {
-        return Vec::new();
-    };
     let mut out: Vec<PathBuf> = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    for entry in entries.flatten() {
-        let meta: Option<DaemonMetadata> = fs::read_to_string(entry.path().join("daemon.json"))
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok());
-        let Some(m) = meta else { continue };
+    for m in discovered_metadata() {
         for acct in parse_config_accounts(&m.config_path) {
             if let Some(want) = &want_authority {
                 match acct.control_url.as_deref().and_then(url_authority) {

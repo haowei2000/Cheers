@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
-    api::{apple_auth, auth, middleware::Claims},
+    api::{apple_auth, auth, bots::is_admin, middleware::Claims},
     app_state::AppState,
     domain::auth_sessions,
     errors::AppError,
@@ -466,7 +466,7 @@ pub async fn update_report(
 }
 
 fn ensure_admin(claims: &Claims) -> Result<(), AppError> {
-    if matches!(claims.role.as_str(), "admin" | "system_admin") {
+    if is_admin(claims) {
         Ok(())
     } else {
         Err(AppError::Forbidden("admin only".into()))

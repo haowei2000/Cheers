@@ -148,6 +148,21 @@ impl From<HumanIntentPolicyError> for IntentPolicyError {
 }
 
 impl DispatchInput {
+    fn v2(
+        actor: IntentActor,
+        params: DispatchParams,
+        trigger_message: Value,
+        file_ids: Vec<String>,
+    ) -> Self {
+        Self {
+            version: 2,
+            actor,
+            params,
+            trigger_message,
+            file_ids,
+        }
+    }
+
     fn author(&self) -> (Uuid, &'static str) {
         match self.actor {
             IntentActor::Human { author_id }
@@ -216,15 +231,14 @@ impl DispatchInput {
 
 impl From<HumanIntent> for DispatchInput {
     fn from(intent: HumanIntent) -> Self {
-        Self {
-            version: 2,
-            actor: IntentActor::Human {
+        Self::v2(
+            IntentActor::Human {
                 author_id: intent.author_id,
             },
-            params: intent.params,
-            trigger_message: intent.trigger_message,
-            file_ids: intent.file_ids,
-        }
+            intent.params,
+            intent.trigger_message,
+            intent.file_ids,
+        )
     }
 }
 
@@ -249,17 +263,16 @@ pub async fn enqueue_bot(
     }
     enqueue(
         tx,
-        DispatchInput {
-            version: 2,
-            actor: IntentActor::Bot {
+        DispatchInput::v2(
+            IntentActor::Bot {
                 author_bot_id: intent.author_bot_id,
                 parent_task_id: intent.parent_task_id,
                 parent_execution_id: intent.parent_execution_id,
             },
-            params: intent.params,
-            trigger_message: intent.trigger_message,
-            file_ids: intent.file_ids,
-        },
+            intent.params,
+            intent.trigger_message,
+            intent.file_ids,
+        ),
     )
     .await
 }
@@ -275,15 +288,14 @@ pub async fn enqueue_bot_message(
     }
     enqueue(
         tx,
-        DispatchInput {
-            version: 2,
-            actor: IntentActor::BotMessage {
+        DispatchInput::v2(
+            IntentActor::BotMessage {
                 author_bot_id: intent.author_bot_id,
             },
-            params: intent.params,
-            trigger_message: intent.trigger_message,
-            file_ids: intent.file_ids,
-        },
+            intent.params,
+            intent.trigger_message,
+            intent.file_ids,
+        ),
     )
     .await
 }
@@ -297,16 +309,15 @@ pub async fn enqueue_claim(
     }
     enqueue(
         tx,
-        DispatchInput {
-            version: 2,
-            actor: IntentActor::TaskClaim {
+        DispatchInput::v2(
+            IntentActor::TaskClaim {
                 claim_id: intent.claim_id,
                 requester_id: intent.requester_id,
             },
-            params: intent.params,
-            trigger_message: intent.trigger_message,
-            file_ids: intent.file_ids,
-        },
+            intent.params,
+            intent.trigger_message,
+            intent.file_ids,
+        ),
     )
     .await
 }
@@ -796,6 +807,25 @@ fn valid_frame(frame: &Value, intent: &DispatchInput, task: Uuid, placeholder: U
             && provider_session_key == intent.params.provider_session_key && session_id == intent.params.session_id.map(|id|id.to_string()))
 }
 
+/// Pool policy for one claimed run. A definitive denial cancels it (`Ok(None)`);
+/// a retryable failure keeps it for a later attempt.
+async fn preauthorize_or_cancel(
+    db: &PgPool,
+    fanout: &Arc<dyn Fanout>,
+    registry: &StreamRegistry,
+    run: &Claimed,
+    lease: Uuid,
+) -> Result<Option<DispatchInput>, AppError> {
+    match preauthorize(db, &run.dispatch_input).await {
+        Ok(intent) => Ok(Some(intent)),
+        Err(IntentPolicyError::Denied(error)) => {
+            cancel(db, fanout, registry, run, lease, &error.to_string()).await?;
+            Ok(None)
+        }
+        Err(IntentPolicyError::Retryable(error)) => Err(error),
+    }
+}
+
 async fn attempt(
     db: &PgPool,
     fanout: &Arc<dyn Fanout>,
@@ -805,13 +835,8 @@ async fn attempt(
     lease: Uuid,
     cache: &MediaCache,
 ) -> Result<bool, AppError> {
-    let intent = match preauthorize(db, &run.dispatch_input).await {
-        Ok(intent) => intent,
-        Err(IntentPolicyError::Denied(error)) => {
-            cancel(db, fanout, registry, run, lease, &error.to_string()).await?;
-            return Ok(false);
-        }
-        Err(IntentPolicyError::Retryable(error)) => return Err(error),
+    let Some(intent) = preauthorize_or_cancel(db, fanout, registry, run, lease).await? else {
+        return Ok(false);
     };
     let task: Uuid = run
         .task_id
@@ -885,13 +910,11 @@ async fn attempt(
     }
     // Repeat pool policy before acquiring locks; never perform pool/media calls
     // while retaining the transaction's connection or mutable run authority.
-    match preauthorize(db, &run.dispatch_input).await {
-        Ok(_) => {}
-        Err(IntentPolicyError::Denied(error)) => {
-            cancel(db, fanout, registry, run, lease, &error.to_string()).await?;
-            return Ok(false);
-        }
-        Err(IntentPolicyError::Retryable(error)) => return Err(error),
+    if preauthorize_or_cancel(db, fanout, registry, run, lease)
+        .await?
+        .is_none()
+    {
+        return Ok(false);
     }
     let mut tx = db.begin().await?;
     let message = sqlx::query!(

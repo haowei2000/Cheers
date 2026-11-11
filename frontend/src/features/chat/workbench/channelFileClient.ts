@@ -8,6 +8,8 @@ import { resolveDeskResource } from "@/api/resources";
 const MAX_IDLE_CHANNELS = 30;
 const clients = new WeakMap<SendResourceReq, { generation: number; channels: Map<string, FsClient> }>();
 
+const sessionChanged = () => new ResourceError("DISCONNECTED", "Your session changed. Reopen this resource.");
+
 /** Navigation reuses the authorized channel client, so resource sessions have a
  * stable identity across A → B → A. Cache only this authentication generation;
  * retain dirty/subscribed resources and evict inactive channel clients first. */
@@ -21,7 +23,7 @@ export function channelFileClient(send: SendResourceReq, channelId: string): FsC
   let client = scope.channels.get(channelId);
   if (!client) {
     client = makeFsClient((resource, params) => {
-      if (generation !== clientSessionGeneration()) return Promise.reject(new ResourceError("DISCONNECTED", "Your session changed. Reopen this resource."));
+      if (generation !== clientSessionGeneration()) return Promise.reject(sessionChanged());
       return send(resource, params);
     }, channelId);
   }
@@ -39,7 +41,7 @@ export function channelFileClient(send: SendResourceReq, channelId: string): FsC
 export async function resolveWorkbenchTarget(uri: string, channelId: string) {
   const generation = clientSessionGeneration();
   const resource = await resolveDeskResource(uri, channelId);
-  if (generation !== clientSessionGeneration()) throw new ResourceError("DISCONNECTED", "Your session changed. Reopen this resource.");
+  if (generation !== clientSessionGeneration()) throw sessionChanged();
   if (resource.channel_id !== channelId) throw new ResourceError("CHANNEL_MISMATCH", "This resource belongs to another channel. Open it from that channel.");
   return resource;
 }
@@ -52,11 +54,11 @@ export function workbenchFileClient(send: SendResourceReq, channelId: string, ta
   if (locator?.kind !== "resource" || locator.resourceKind !== "desk" || locator.version === undefined) return current;
   const generation = clientSessionGeneration();
   return makeFsClient(async (verb, params) => {
-    if (generation !== clientSessionGeneration()) throw new ResourceError("DISCONNECTED", "Your session changed. Reopen this resource.");
+    if (generation !== clientSessionGeneration()) throw sessionChanged();
     if (verb !== "fs.read" && verb !== "fs.ls") throw new Error("Historical resource revisions are read-only. Open the current URI to edit.");
     if (verb === "fs.read") {
       const resource = await resolveWorkbenchTarget(target!, channelId);
-      if (generation !== clientSessionGeneration()) throw new ResourceError("DISCONNECTED", "Your session changed. Reopen this resource.");
+      if (generation !== clientSessionGeneration()) throw sessionChanged();
       if (params.path === resource.path) return resource;
     }
     return send(verb, params);

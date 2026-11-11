@@ -318,8 +318,6 @@ impl GatewayState {
     }
 }
 
-/// Streams the Gateway's response back, so request-scoped SSE progress reaches
-/// the Agent as it is produced.
 /// Adds loopback to the Agent's `NO_PROXY` / `no_proxy`, keeping any hosts
 /// already listed there. An inherited `HTTP_PROXY` would otherwise route the
 /// Agent's requests for the local URL, local secret included, through that
@@ -349,6 +347,8 @@ fn with_loopback(current: Option<&str>) -> String {
     hosts.join(",")
 }
 
+/// Streams the Gateway's response back, so request-scoped SSE progress reaches
+/// the Agent as it is produced.
 fn relay(upstream: reqwest::Response) -> Response<ProxyBody> {
     let status = upstream.status();
     let headers = relayed_response_headers(upstream.headers());

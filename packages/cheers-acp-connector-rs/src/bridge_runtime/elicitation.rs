@@ -269,34 +269,13 @@ impl RuntimeContext {
                     permission_resolution,
                     ..
                 }) => {
-                    if let Some(value) = permission_resolution {
-                        if let Ok(resolution) =
-                            serde_json::from_value::<PermissionResolution>(value)
-                        {
-                            self.handle_permission_resolution(resolution).await?;
-                        }
-                    }
+                    self.apply_inline_permission_resolution(permission_resolution)
+                        .await?;
                 }
                 Ok(_) | Err(_) => {
-                    let pending = self
-                        .shared
-                        .interactions
-                        .lock()
-                        .await
-                        .pending_permissions
-                        .remove(&request_id);
-                    if let Some(pending) = pending {
-                        if let PendingPermissionTarget::TranslatedElicitation(tx) = pending.target {
-                            let _ = tx.send(cancel_response());
-                        }
-                    }
-                    let _ = self
-                        .io
-                        .send_data(DataOutbound::PermissionCancel {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            request_id: request_id.clone(),
-                            reason: "bridge_rejected".to_string(),
-                        })
+                    // Inserted above as a translated elicitation, so the cancel
+                    // answers ACP with `cancel_response()`.
+                    self.cancel_pending_permission(&request_id, "bridge_rejected")
                         .await;
                 }
             }

@@ -138,13 +138,15 @@ pub fn resource_content(uri: &str) -> Option<Value> {
 }
 
 fn id(value: &Value, limit: usize) -> bool {
-    value.as_str().is_some_and(|s| {
-        !s.is_empty()
-            && s.len() <= limit
-            && s.as_bytes()[0].is_ascii_alphanumeric()
-            && s.bytes()
-                .all(|c| c.is_ascii_alphanumeric() || b"._:-".contains(&c))
-    })
+    value.as_str().is_some_and(|s| valid_id(s, limit))
+}
+
+fn valid_id(s: &str, limit: usize) -> bool {
+    !s.is_empty()
+        && s.len() <= limit
+        && s.as_bytes()[0].is_ascii_alphanumeric()
+        && s.bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"._:-".contains(&c))
 }
 
 fn keys(value: &Value, allowed: &[&str]) -> Result<(), &'static str> {
@@ -320,16 +322,7 @@ fn validate_component(node: &Value) -> Result<(), &'static str> {
 }
 
 fn uuid_shape(value: &Value) -> bool {
-    value.as_str().is_some_and(|s| {
-        s.len() == 36
-            && s.bytes().enumerate().all(|(i, c)| {
-                if [8, 13, 18, 23].contains(&i) {
-                    c == b'-'
-                } else {
-                    c.is_ascii_hexdigit()
-                }
-            })
-    })
+    value.as_str().is_some_and(global_uri::uuid)
 }
 
 pub fn is_desk_uri(uri: &str) -> bool {
@@ -556,44 +549,39 @@ pub fn extract_a2ui_actions(doc: &Value) -> Result<Vec<ActionDeclaration>, &'sta
     let mut declarations = Vec::new();
     for (sid, components) in surfaces {
         for component in components.values() {
-            if component.get("component").and_then(Value::as_str) == Some("Button") {
-                if let Some(event) = component.get("action").and_then(|a| a.get("event")) {
-                    let name = event.get("name").and_then(Value::as_str).unwrap_or("");
-                    let context = &event["context"];
-                    let action_id = context
-                        .get("actionId")
-                        .and_then(Value::as_str)
-                        .unwrap_or("");
-                    if !action_id.is_empty() {
-                        let bot_id = context
-                            .get("botId")
-                            .and_then(Value::as_str)
-                            .map(String::from);
-                        let uri = context.get("uri").and_then(Value::as_str).map(String::from);
-                        let opener = context
-                            .get("opener")
-                            .and_then(Value::as_str)
-                            .map(String::from);
-                        let payload = context
-                            .get("payload")
-                            .and_then(Value::as_object)
-                            .cloned()
-                            .unwrap_or_default();
-                        declarations.push(ActionDeclaration {
-                            surface_id: Some(sid.clone()),
-                            component_id: component["id"].as_str().map(String::from),
-                            action_id: action_id.to_string(),
-                            name: name.to_string(),
-                            bot_id,
-                            uri,
-                            opener,
-                            payload,
-                            presentation: default_presentation(),
-                            version: 1,
-                        });
-                    }
-                }
+            if component.get("component").and_then(Value::as_str) != Some("Button") {
+                continue;
             }
+            let Some(event) = component.get("action").and_then(|a| a.get("event")) else {
+                continue;
+            };
+            let name = event.get("name").and_then(Value::as_str).unwrap_or("");
+            let context = &event["context"];
+            let action_id = context
+                .get("actionId")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if action_id.is_empty() {
+                continue;
+            }
+            let text = |key: &str| context.get(key).and_then(Value::as_str).map(String::from);
+            let payload = context
+                .get("payload")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            declarations.push(ActionDeclaration {
+                surface_id: Some(sid.clone()),
+                component_id: component["id"].as_str().map(String::from),
+                action_id: action_id.to_string(),
+                name: name.to_string(),
+                bot_id: text("botId"),
+                uri: text("uri"),
+                opener: text("opener"),
+                payload,
+                presentation: default_presentation(),
+                version: 1,
+            });
         }
     }
     Ok(declarations)
@@ -617,7 +605,7 @@ fn parse_action_declarations(val: &Value) -> Result<Vec<ActionDeclaration>, &'st
             .get("actionId")
             .and_then(Value::as_str)
             .ok_or("actionId required")?;
-        if !id(&Value::String(action_id.to_string()), 80) {
+        if !valid_id(action_id, 80) {
             return Err("invalid actionId");
         }
         let raw_name = item
@@ -638,7 +626,7 @@ fn parse_action_declarations(val: &Value) -> Result<Vec<ActionDeclaration>, &'st
             let Some(bid) = &bot_id else {
                 return Err("request action requires botId");
             };
-            if !uuid_shape(&Value::String(bid.clone())) {
+            if !global_uri::uuid(bid) {
                 return Err("invalid botId UUID");
             }
         }
@@ -713,10 +701,8 @@ pub fn extract_tsx_actions(content: &str) -> Result<Vec<ActionDeclaration>, &'st
     };
     let json_str = &cleaned[start..];
     let mut de = serde_json::Deserializer::from_str(json_str);
-    let val: Value = match serde::de::Deserialize::deserialize(&mut de) {
-        Ok(v) => v,
-        Err(_) => return Err("invalid @cheers-actions JSON"),
-    };
+    let val: Value =
+        serde::de::Deserialize::deserialize(&mut de).map_err(|_| "invalid @cheers-actions JSON")?;
     parse_action_declarations(&val)
 }
 
@@ -754,10 +740,8 @@ pub fn validate_action_input(
             if supplied_val.is_object() || supplied_val.is_array() {
                 return Err("nested object/array input rejected");
             }
-        } else {
-            if expected_val != supplied_val {
-                return Err("constant value mismatch");
-            }
+        } else if expected_val != supplied_val {
+            return Err("constant value mismatch");
         }
     }
     Ok(())

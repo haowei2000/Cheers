@@ -124,14 +124,7 @@ pub async fn allowed_login_factors(
 }
 
 pub async fn user_has_email(db: &PgPool, user_id: &str) -> Result<bool, AppError> {
-    let email: Option<String> = sqlx::query_scalar!(
-        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-        user_id,
-    )
-    .fetch_optional(db)
-    .await?
-    .flatten();
-    Ok(email.as_deref().is_some_and(|e| !e.trim().is_empty()))
+    Ok(user_email(db, user_id).await?.is_some())
 }
 
 pub async fn user_email(db: &PgPool, user_id: &str) -> Result<Option<String>, AppError> {

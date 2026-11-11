@@ -530,11 +530,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/channels/:channel_id/voice/consent",
-            post(api::voice::grant_consent),
-        )
-        .route(
-            "/api/v1/channels/:channel_id/voice/consent",
-            delete(api::voice::withdraw_consent),
+            post(api::voice::grant_consent).delete(api::voice::withdraw_consent),
         )
         .route(
             "/api/v1/channels/:channel_id/voice/transcript/export",

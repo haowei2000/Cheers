@@ -26,6 +26,14 @@ export interface UseWorkbenchDrawerStateOptions {
   filesTick?: number;
 }
 
+function readLocalBindings(key: string): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
 export function useWorkbenchDrawerState({
   open,
   channelId,
@@ -43,13 +51,7 @@ export function useWorkbenchDrawerState({
   const [extensionsRevision, setExtensionsRevision] = useState(0);
 
   const localBindingKey = `cheers.workbench.personal-bindings.${channelId}`;
-  const [localBindings, setLocalBindings] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(localBindingKey) ?? "{}");
-    } catch {
-      return {};
-    }
-  });
+  const [localBindings, setLocalBindings] = useState<Record<string, string>>(() => readLocalBindings(localBindingKey));
 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -132,11 +134,7 @@ export function useWorkbenchDrawerState({
   }, [open, fs, channelId, extensionsRevision]);
 
   useEffect(() => {
-    try {
-      setLocalBindings(JSON.parse(localStorage.getItem(localBindingKey) ?? "{}"));
-    } catch {
-      setLocalBindings({});
-    }
+    setLocalBindings(readLocalBindings(localBindingKey));
   }, [localBindingKey]);
 
   const mutateCfg = useCallback(
@@ -172,16 +170,11 @@ export function useWorkbenchDrawerState({
 
   const setBinding = useCallback(
     (path: string, rendererId: string | null) => {
-      if (rendererId?.startsWith("personal:")) {
-        const next = { ...localBindings, [path]: rendererId };
-        setLocalBindings(next);
-        localStorage.setItem(localBindingKey, JSON.stringify(next));
-      } else {
-        const local = { ...localBindings };
-        delete local[path];
-        setLocalBindings(local);
-        localStorage.setItem(localBindingKey, JSON.stringify(local));
-      }
+      const local = { ...localBindings };
+      if (rendererId?.startsWith("personal:")) local[path] = rendererId;
+      else delete local[path];
+      setLocalBindings(local);
+      localStorage.setItem(localBindingKey, JSON.stringify(local));
       void mutateCfg((document) => {
         const shared = { ...(parseCfg(JSON.stringify(document)).bindings ?? {}) };
         if (rendererId?.startsWith("builtin:")) shared[path] = rendererId;

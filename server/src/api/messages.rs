@@ -433,11 +433,8 @@ pub async fn cancel_message(
         "handling cancel_message"
     );
 
-    let user_id: Uuid = claims
-        .sub
-        .parse()
-        .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
-    ensure_channel_member(&state, channel_id, user_id, &claims.role).await?;
+    let user_id =
+        crate::api::session_control::ensure_channel_member(&state, channel_id, &claims).await?;
 
     // 找到还在运行的占位消息，取出 bot_id + chain_id（后者用于整链取消）。
     let clicked = sqlx::query!(
@@ -520,35 +517,4 @@ pub async fn cancel_message(
         msg_id: msg_id.to_string(),
         delivered,
     }))
-}
-
-async fn ensure_channel_member(
-    state: &AppState,
-    channel_id: Uuid,
-    user_id: Uuid,
-    role: &str,
-) -> Result<(), AppError> {
-    if matches!(role, "system_admin" | "admin") {
-        return Ok(());
-    }
-
-    let ok = sqlx::query!(
-        "SELECT EXISTS(
-            SELECT 1 AS present FROM channel_memberships
-            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
-        ) AS ok",
-        channel_id.to_string(),
-        user_id.to_string(),
-    )
-    .fetch_one(&state.db)
-    .await?
-    .ok
-    .clone()
-    .unwrap_or(false);
-
-    if ok {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("not a channel member".into()))
-    }
 }

@@ -126,8 +126,7 @@ class SessionStore(
         var applied = false
         dataStore.edit { prefs ->
             if (decode(prefs) != expected) return@edit
-            prefs.clear()
-            prefs[Keys.LOGIN_EPOCH] = UUID.randomUUID().toString()
+            retire(prefs)
             applied = true
         }
         return applied
@@ -155,9 +154,14 @@ class SessionStore(
             val current = decode(it)
             if (current?.identity != expected) return@edit
             previous = current
-            it.clear()
-            it[Keys.LOGIN_EPOCH] = UUID.randomUUID().toString()
+            retire(it)
         }
         return previous
+    }
+
+    /** Clear credentials and start a fresh epoch so in-flight logins are superseded. */
+    private fun retire(prefs: MutablePreferences) {
+        prefs.clear()
+        prefs[Keys.LOGIN_EPOCH] = UUID.randomUUID().toString()
     }
 }

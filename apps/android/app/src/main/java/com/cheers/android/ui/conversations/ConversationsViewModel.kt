@@ -10,10 +10,8 @@ import com.cheers.android.data.api.CheersApi
 import com.cheers.android.data.api.MessageDto
 import com.cheers.android.data.api.WorkspaceDto
 import com.cheers.android.data.api.userMessage
-import com.cheers.android.data.auth.SessionRefreshResult
 import com.cheers.android.di.AppContainer
 import com.cheers.android.util.Format
-import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -68,15 +66,7 @@ class ConversationsViewModel(private val container: AppContainer) : ViewModel() 
     private suspend fun isCurrent(): Boolean =
         identity?.let { container.authRepository.isCurrent(it) } == true
 
-    private suspend fun scopedApi(): CheersApi {
-        val expected = identity ?: throw CancellationException("No active session")
-        return when (val result = container.authRepository.validSession(expected)) {
-            is SessionRefreshResult.Fresh -> container.apiFor(result.session)
-            SessionRefreshResult.Retryable -> throw IOException("Connection temporarily unavailable")
-            SessionRefreshResult.Ended, SessionRefreshResult.Stale ->
-                throw CancellationException("Session changed")
-        }
-    }
+    private suspend fun scopedApi(): CheersApi = container.scopedApi(identity)
 
     private var workspaces: List<WorkspaceDto> = emptyList()
     private var personalId: String? = null

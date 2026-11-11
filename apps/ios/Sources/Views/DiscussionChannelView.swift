@@ -421,7 +421,7 @@ struct DiscussionChannelView<Footer: View>: View {
         )
         .padding(.leading, 16 + CGFloat(max(row.depth - 1, 0)) * 16)
         .overlay(alignment: .leading) {
-            DiscussionThreadRail(isLastSibling: row.isLastSibling)
+            ThreadCornerRail(isLastSibling: row.isLastSibling)
                 .frame(width: 14)
                 .padding(.leading, CGFloat(max(row.depth - 1, 0)) * 16 + 6)
         }
@@ -436,29 +436,5 @@ struct DiscussionChannelView<Footer: View>: View {
     private func relativeTime(_ raw: String) -> String {
         guard let date = TimeFormat.parse(raw) else { return "" }
         return date.formatted(.relative(presentation: .numeric))
-    }
-}
-
-/// L-shaped reply connector (chat timeline parity) for nested discussion rows.
-private struct DiscussionThreadRail: View {
-    let isLastSibling: Bool
-
-    var body: some View {
-        Canvas { context, size in
-            let x: CGFloat = 0.5
-            let elbowY = min(16, size.height * 0.35)
-            var path = Path()
-            path.move(to: CGPoint(x: x, y: 0))
-            path.addLine(to: CGPoint(x: x, y: isLastSibling ? elbowY : size.height))
-            path.move(to: CGPoint(x: x, y: elbowY))
-            path.addLine(to: CGPoint(x: size.width, y: elbowY))
-            context.stroke(
-                path,
-                with: .color(Theme.border),
-                style: StrokeStyle(lineWidth: 1, lineCap: .square)
-            )
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }

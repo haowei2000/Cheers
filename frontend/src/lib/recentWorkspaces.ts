@@ -28,6 +28,13 @@ function getStorage(): Storage | null {
   }
 }
 
+function saveRecentWorkspaces(storage: Storage, list: RecentWorkspace[]): void {
+  storage.setItem(STORAGE_KEY, JSON.stringify(list));
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    window.dispatchEvent(new CustomEvent("cheers:recent-workspaces-changed", { detail: list }));
+  }
+}
+
 export function getRecentWorkspaces(): RecentWorkspace[] {
   const storage = getStorage();
   if (!storage) return [];
@@ -60,10 +67,7 @@ export function addRecentWorkspace(path: string, botId?: string): RecentWorkspac
       lastUsedAt: Date.now(),
     };
     const next = [updated, ...current].slice(0, MAX_RECENT);
-    storage.setItem(STORAGE_KEY, JSON.stringify(next));
-    if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
-      window.dispatchEvent(new CustomEvent("cheers:recent-workspaces-changed", { detail: next }));
-    }
+    saveRecentWorkspaces(storage, next);
     return next;
   } catch {
     return getRecentWorkspaces();
@@ -75,10 +79,7 @@ export function removeRecentWorkspace(path: string): RecentWorkspace[] {
   if (!storage) return [];
   try {
     const current = getRecentWorkspaces().filter((w) => w.path !== path.trim());
-    storage.setItem(STORAGE_KEY, JSON.stringify(current));
-    if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
-      window.dispatchEvent(new CustomEvent("cheers:recent-workspaces-changed", { detail: current }));
-    }
+    saveRecentWorkspaces(storage, current);
     return current;
   } catch {
     return getRecentWorkspaces();

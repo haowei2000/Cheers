@@ -130,6 +130,10 @@ export function readPackedManifest(bytes: Uint8Array): Manifest {
   return manifest;
 }
 
+async function isFile(path: string): Promise<boolean> {
+  try { return (await stat(path)).isFile(); } catch { return false; }
+}
+
 async function collect(root: string, directory: string, output: Record<string, Uint8Array>): Promise<void> {
   const absolute = join(root, directory);
   try { if (!(await stat(absolute)).isDirectory()) return; } catch { return; }
@@ -150,18 +154,8 @@ export async function packExtension(sourceDirectory: string, destination?: strin
 
   let iconPath = manifest.icon;
   if (!iconPath) {
-    try {
-      if ((await stat(join(root, "icon.svg"))).isFile()) {
-        iconPath = "icon.svg";
-      }
-    } catch { /* no icon.svg */ }
-    if (!iconPath) {
-      try {
-        if ((await stat(join(root, "icon.png"))).isFile()) {
-          iconPath = "icon.png";
-        }
-      } catch { /* no icon.png */ }
-    }
+    if (await isFile(join(root, "icon.svg"))) iconPath = "icon.svg";
+    else if (await isFile(join(root, "icon.png"))) iconPath = "icon.png";
   }
 
   if (iconPath) {
@@ -183,7 +177,7 @@ export async function packExtension(sourceDirectory: string, destination?: strin
     const candidates = [`.tsx`, `.ts`, `.jsx`, `.js`].map((extension) => join(root, "src/renderers", `${renderer.id}${extension}`));
     let source: string | undefined;
     for (const candidate of candidates) {
-      try { if ((await stat(candidate)).isFile()) { source = candidate; break; } } catch { /* try next */ }
+      if (await isFile(candidate)) { source = candidate; break; }
     }
     if (!source) throw new Error(`missing TypeScript renderer source: src/renderers/${renderer.id}.ts[x]`);
     const result = await build({

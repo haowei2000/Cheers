@@ -29,16 +29,8 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
             "only bots can respond to task-claim evaluations",
         ));
     }
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .and_then(|v| v.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
-    let evaluation_id: Uuid = params
-        .get("evaluation_id")
-        .and_then(Value::as_str)
-        .and_then(|v| v.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "evaluation_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
+    let evaluation_id: Uuid = super::uuid_param(params, "evaluation_id")?;
     let decision = params
         .get("decision")
         .and_then(Value::as_str)
@@ -90,11 +82,7 @@ pub async fn handle_evaluate(db: &PgPool, principal: &Principal, params: &Value)
 
 /// `channel.task_claims.list` — list claims in a channel (read-only).
 pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
     authorize_channel_read(db, principal, channel_id).await?;
     let status = params.get("status").and_then(Value::as_str);
     let limit = params

@@ -184,40 +184,14 @@ impl RuntimeContext {
                 permission_resolution,
                 ..
             }) => {
-                if let Some(value) = permission_resolution {
-                    if let Ok(resolution) = serde_json::from_value::<PermissionResolution>(value) {
-                        self.handle_permission_resolution(resolution).await?;
-                    }
-                }
+                self.apply_inline_permission_resolution(permission_resolution)
+                    .await?;
             }
             Ok(frame) => {
                 let message = send_ack_error(&frame).unwrap_or_else(|| {
                     "permission request was rejected by Agent Bridge".to_string()
                 });
-                let pending = self
-                    .shared
-                    .interactions
-                    .lock()
-                    .await
-                    .pending_permissions
-                    .remove(&request_id);
-                if let Some(pending) = pending {
-                    match pending.target {
-                        PendingPermissionTarget::Native(tx) => {
-                            let _ = tx.send(PermissionOutcome::Cancelled);
-                        }
-                        PendingPermissionTarget::TranslatedElicitation(tx) => {
-                            let _ = tx.send(elicitation::cancel_response());
-                        }
-                    }
-                }
-                let _ = self
-                    .io
-                    .send_data(DataOutbound::PermissionCancel {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        request_id: request_id.clone(),
-                        reason: "bridge_rejected".to_string(),
-                    })
+                self.cancel_pending_permission(&request_id, "bridge_rejected")
                     .await;
                 tracing::warn!(
                     account = %self.account_id,
@@ -226,30 +200,7 @@ impl RuntimeContext {
                 );
             }
             Err(err) => {
-                let pending = self
-                    .shared
-                    .interactions
-                    .lock()
-                    .await
-                    .pending_permissions
-                    .remove(&request_id);
-                if let Some(pending) = pending {
-                    match pending.target {
-                        PendingPermissionTarget::Native(tx) => {
-                            let _ = tx.send(PermissionOutcome::Cancelled);
-                        }
-                        PendingPermissionTarget::TranslatedElicitation(tx) => {
-                            let _ = tx.send(elicitation::cancel_response());
-                        }
-                    }
-                }
-                let _ = self
-                    .io
-                    .send_data(DataOutbound::PermissionCancel {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        request_id: request_id.clone(),
-                        reason: "bridge_ack_failed".to_string(),
-                    })
+                self.cancel_pending_permission(&request_id, "bridge_ack_failed")
                     .await;
                 tracing::warn!(
                     account = %self.account_id,
@@ -259,6 +210,49 @@ impl RuntimeContext {
             }
         }
         Ok(())
+    }
+
+    /// Applies a resolution the Gateway returned inline on a `send_ack`.
+    pub(super) async fn apply_inline_permission_resolution(
+        &self,
+        permission_resolution: Option<Value>,
+    ) -> anyhow::Result<()> {
+        if let Some(value) = permission_resolution {
+            if let Ok(resolution) = serde_json::from_value::<PermissionResolution>(value) {
+                self.handle_permission_resolution(resolution).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Answers a still-pending permission request with a cancel and tells the
+    /// gateway to finalize its card, after its approval card failed to deliver.
+    pub(super) async fn cancel_pending_permission(&self, request_id: &str, reason: &str) {
+        let pending = self
+            .shared
+            .interactions
+            .lock()
+            .await
+            .pending_permissions
+            .remove(request_id);
+        if let Some(pending) = pending {
+            match pending.target {
+                PendingPermissionTarget::Native(tx) => {
+                    let _ = tx.send(PermissionOutcome::Cancelled);
+                }
+                PendingPermissionTarget::TranslatedElicitation(tx) => {
+                    let _ = tx.send(elicitation::cancel_response());
+                }
+            }
+        }
+        let _ = self
+            .io
+            .send_data(DataOutbound::PermissionCancel {
+                v: BRIDGE_PROTOCOL_VERSION,
+                request_id: request_id.to_string(),
+                reason: reason.to_string(),
+            })
+            .await;
     }
 
     pub(super) async fn handle_permission_timeout(&self, request_id: String) {

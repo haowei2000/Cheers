@@ -1,4 +1,5 @@
 import { apiFetch, apiJson } from "./client";
+import { bytesFromBase64 } from "@/lib/desktop";
 
 /** A bot in the channel whose connector can serve a remote workspace. */
 export interface WorkspaceBot {
@@ -109,6 +110,12 @@ function extractConflict(body: unknown): { currentEtag: string | null; sizeBytes
   return { currentEtag: null, sizeBytes: 0 };
 }
 
+/** Append the optional root / session scope shared by the workspace endpoints. */
+function setScope(qs: URLSearchParams, root?: string, sessionId?: string): void {
+  if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
+}
+
 export async function listWorkspaceBots(channelId: string): Promise<WorkspaceBot[]> {
   const r = await apiJson<{ bots: WorkspaceBot[] }>(
     `/channels/${channelId}/workspace/bots`
@@ -124,8 +131,7 @@ export async function getWorkspaceTree(
   sessionId?: string
 ): Promise<WorkspaceTree> {
   const qs = new URLSearchParams({ bot_id: botId, path });
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   return apiJson<WorkspaceTree>(`/channels/${channelId}/workspace/tree?${qs}`);
 }
 
@@ -137,8 +143,7 @@ export async function getWorkspaceFile(
   sessionId?: string
 ): Promise<WorkspaceFile> {
   const qs = new URLSearchParams({ bot_id: botId, path });
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   return apiJson<WorkspaceFile>(`/channels/${channelId}/workspace/file?${qs}`);
 }
 
@@ -161,8 +166,7 @@ export async function putWorkspaceFile(
   ifEtag?: string
 ): Promise<string> {
   const qs = new URLSearchParams({ bot_id: botId, path });
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   const headers: Record<string, string> = {};
   if (ifEtag !== undefined) headers["If-Match"] = ifEtag;
   const res = await apiFetch(`/channels/${channelId}/workspace/file?${qs}`, {
@@ -206,8 +210,7 @@ export async function watchWorkspace(
   sessionId?: string
 ): Promise<WorkspaceWatch> {
   const qs = new URLSearchParams({ bot_id: botId, path });
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   return apiJson<WorkspaceWatch>(`/channels/${channelId}/workspace/watch?${qs}`, {
     method: "POST",
   });
@@ -284,8 +287,7 @@ export async function getGitStatus(
   sessionId?: string
 ): Promise<GitStatus | GitStatusUnavailable> {
   const qs = new URLSearchParams({ bot_id: botId, path });
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   return apiJson<GitStatus | GitStatusUnavailable>(
     `/channels/${channelId}/workspace/git/status?${qs}`
   );
@@ -301,8 +303,7 @@ export async function getGitDiff(
 ): Promise<GitDiff> {
   const qs = new URLSearchParams({ bot_id: botId, path });
   if (staged) qs.set("staged", "true");
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   return apiJson<GitDiff>(`/channels/${channelId}/workspace/git/diff?${qs}`);
 }
 
@@ -318,8 +319,7 @@ export async function getGitLog(
   const qs = new URLSearchParams({ bot_id: botId, path });
   if (limit != null) qs.set("limit", String(limit));
   if (skip != null && skip > 0) qs.set("skip", String(skip));
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   return apiJson<GitLog>(`/channels/${channelId}/workspace/git/log?${qs}`);
 }
 
@@ -346,8 +346,7 @@ export async function getGitShow(
 ): Promise<GitShow> {
   const qs = new URLSearchParams({ bot_id: botId, commit });
   if (path) qs.set("path", path);
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   return apiJson<GitShow>(`/channels/${channelId}/workspace/git/show?${qs}`);
 }
 
@@ -375,8 +374,7 @@ export async function getGitCommitFiles(
   sessionId?: string
 ): Promise<GitCommitFiles> {
   const qs = new URLSearchParams({ bot_id: botId, commit });
-  if (root) qs.set("root", root);
-  if (sessionId) qs.set("session_id", sessionId);
+  setScope(qs, root, sessionId);
   return apiJson<GitCommitFiles>(
     `/channels/${channelId}/workspace/git/commit-files?${qs}`
   );
@@ -465,7 +463,10 @@ export async function resolveRef(
 
 /** Download arbitrary text content (e.g. a Desk file) as a file. */
 export function downloadText(name: string, content: string, contentType = "text/plain"): void {
-  const blob = new Blob([content], { type: contentType });
+  downloadBlob(new Blob([content], { type: contentType }), name);
+}
+
+function downloadBlob(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -480,15 +481,7 @@ export function downloadWorkspaceFile(file: WorkspaceFile): void {
   if (file.is_text && file.content != null) {
     blob = new Blob([file.content], { type: file.content_type || "text/plain" });
   } else {
-    const bin = atob(file.content_b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    blob = new Blob([bytes], { type: file.content_type || "application/octet-stream" });
+    blob = new Blob([bytesFromBase64(file.content_b64)], { type: file.content_type || "application/octet-stream" });
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = file.filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, file.filename);
 }

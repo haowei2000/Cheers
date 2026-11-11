@@ -40,6 +40,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { controlIconClasses, controlSquareClasses, controlTextClasses } from "@/components/ui/control-size";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
 import { messageDetailsMeta } from "./messageDetails";
+import { isUnresolvedApproval } from "./messageTree";
 import {
   usePresentationLevel,
   type PresentationLevel,
@@ -440,10 +441,7 @@ function RegularMessageItem({
     (message.sender_type === "bot" ? "Bot" : "Unknown");
   const hasName = Boolean(message.sender_name || senderName);
   const isBot = message.sender_type === "bot";
-  const actionableApprovalCount = (pendingApprovals ?? []).filter(
-    (approval) =>
-      !(approval.content_data as { resolved?: boolean } | null | undefined)?.resolved,
-  ).length;
+  const actionableApprovalCount = (pendingApprovals ?? []).filter(isUnresolvedApproval).length;
   const detailsMeta = messageDetailsMeta(message, actionableApprovalCount);
   const annotationSurface = useAnnotationSurface();
   const annotationSource = annotationSurface?.revealed?.target;
@@ -920,6 +918,40 @@ function RegularMessageItem({
     }
     contextSurface.onKeyDown(e);
   };
+  // Tight gap: body ↔ status ↔ Agent steps within one message (both row layouts).
+  const messageContent = (
+    <>
+      {quote}
+      <MessageBody message={message} channelId={channelId} isBot={isBot} progressInOverview={showRunOverview} />
+      {presentationLevel !== "minimal" && folio}
+      {message.msg_type === "task_claim_confirmation" && (
+        <TaskClaimConfirmationCard
+          message={message}
+          channelId={channelId}
+          currentUserId={currentUserId}
+          onContentDataUpdated={actions?.onContentDataUpdated}
+        />
+      )}
+      {message._status && (
+        <SendStatus message={message} onRetry={actions?.onRetry} />
+      )}
+      {(presentationLevel !== "minimal" || showRunOverview || actionableApprovalCount > 0) && detailsSection}
+    </>
+  );
+  const actionBar = showActions && (
+    <ActionBar
+      message={message}
+      actions={actions}
+      anchorRef={contentRef}
+      visible={actionsVisible}
+      onEnter={showActionBarNow}
+      onLeave={hideActionBar}
+      hasDetails={detailsMeta.hasDetails}
+      onOpenDetails={openInspector}
+      canMention={canMention}
+      mentionLabel={name}
+    />
+  );
 
   if (isConsecutive || nested) {
     return (
@@ -961,7 +993,6 @@ function RegularMessageItem({
         )}
         {isConsecutive ? identityPlaceholder : identityColumn}
         {avatarMenu}
-        {/* Tight gap: body ↔ status ↔ Agent steps within one message. */}
         <div
           ref={contentRef}
           className={cn(
@@ -970,36 +1001,9 @@ function RegularMessageItem({
             isOwnAlignedRight && "items-end",
           )}
         >
-          {quote}
-          <MessageBody message={message} channelId={channelId} isBot={isBot} progressInOverview={showRunOverview} />
-          {presentationLevel !== "minimal" && folio}
-          {message.msg_type === "task_claim_confirmation" && (
-            <TaskClaimConfirmationCard
-              message={message}
-              channelId={channelId}
-              currentUserId={currentUserId}
-              onContentDataUpdated={actions?.onContentDataUpdated}
-            />
-          )}
-          {message._status && (
-            <SendStatus message={message} onRetry={actions?.onRetry} />
-          )}
-          {(presentationLevel !== "minimal" || showRunOverview || actionableApprovalCount > 0) && detailsSection}
+          {messageContent}
         </div>
-        {showActions && (
-          <ActionBar
-            message={message}
-            actions={actions}
-            anchorRef={contentRef}
-            visible={actionsVisible}
-            onEnter={showActionBarNow}
-            onLeave={hideActionBar}
-            hasDetails={detailsMeta.hasDetails}
-            onOpenDetails={openInspector}
-            canMention={canMention}
-            mentionLabel={name}
-          />
-        )}
+        {actionBar}
         {inspector}
       </div>
     );
@@ -1038,7 +1042,6 @@ function RegularMessageItem({
       {identityColumn}
       {avatarMenu}
 
-      {/* Tight gap: header/body ↔ status ↔ Agent steps within one message. */}
       <div
         ref={contentRef}
         className={cn(
@@ -1046,36 +1049,9 @@ function RegularMessageItem({
           isOwnAlignedRight && "items-end",
         )}
       >
-        {quote}
-        <MessageBody message={message} channelId={channelId} isBot={isBot} progressInOverview={showRunOverview} />
-        {presentationLevel !== "minimal" && folio}
-        {message.msg_type === "task_claim_confirmation" && (
-          <TaskClaimConfirmationCard
-            message={message}
-            channelId={channelId}
-            currentUserId={currentUserId}
-            onContentDataUpdated={actions?.onContentDataUpdated}
-          />
-        )}
-        {message._status && (
-          <SendStatus message={message} onRetry={actions?.onRetry} />
-        )}
-        {(presentationLevel !== "minimal" || showRunOverview || actionableApprovalCount > 0) && detailsSection}
+        {messageContent}
       </div>
-      {showActions && (
-        <ActionBar
-          message={message}
-          actions={actions}
-          anchorRef={contentRef}
-          visible={actionsVisible}
-          onEnter={showActionBarNow}
-          onLeave={hideActionBar}
-          hasDetails={detailsMeta.hasDetails}
-          onOpenDetails={openInspector}
-          canMention={canMention}
-          mentionLabel={name}
-        />
-      )}
+      {actionBar}
       {inspector}
     </div>
   );

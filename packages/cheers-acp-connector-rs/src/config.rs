@@ -67,10 +67,10 @@ pub struct AdvancedConfig {
 impl Default for AdvancedConfig {
     fn default() -> Self {
         Self {
-            reconnect_base_ms: 500,
-            reconnect_max_ms: 30_000,
-            heartbeat_interval_ms: 25_000,
-            send_ack_timeout_ms: 10 * 60_000,
+            reconnect_base_ms: default_reconnect_base_ms(),
+            reconnect_max_ms: default_reconnect_max_ms(),
+            heartbeat_interval_ms: default_heartbeat_interval_ms(),
+            send_ack_timeout_ms: default_send_ack_timeout_ms(),
         }
     }
 }
@@ -654,7 +654,7 @@ impl Default for RawSessionUpdatePolicy {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawMcpPolicy {
     /// Retired and ignored. Kept parseable so an existing TOML does not fail
@@ -672,31 +672,11 @@ struct RawMcpPolicy {
     servers: Vec<TomlValue>,
 }
 
-impl Default for RawMcpPolicy {
-    fn default() -> Self {
-        Self {
-            _inject_cheers: false,
-            delivery: McpDelivery::default(),
-            backend_may_inject_extra_servers: false,
-            allowed_servers: Vec::new(),
-            servers: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLoopbackPolicy {
     #[serde(default, rename = "request_timeout_ms")]
     _request_timeout_ms: Option<u64>,
-}
-
-impl Default for RawLoopbackPolicy {
-    fn default() -> Self {
-        Self {
-            _request_timeout_ms: None,
-        }
-    }
 }
 
 #[derive(Debug, Default, Deserialize)]

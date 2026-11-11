@@ -349,13 +349,20 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator, artif
     [openLocator]
   );
 
+  const removeNode = useCallback(
+    (id: string) => {
+      if (!document_) return;
+      const next = removeCanvasNodeState(selectedId, connectingFromId, id);
+      emit(removeNodeOps(document_, id));
+      setSelectedId(next.selectedId);
+      setConnectingFromId(next.connectingFromId);
+    },
+    [connectingFromId, document_, emit, selectedId]
+  );
+
   const removeSelected = useCallback(() => {
-    if (!selectedId || !document_) return;
-    const next = removeCanvasNodeState(selectedId, connectingFromId, selectedId);
-    emit(removeNodeOps(document_, selectedId));
-    setSelectedId(next.selectedId);
-    setConnectingFromId(next.connectingFromId);
-  }, [connectingFromId, document_, emit, selectedId]);
+    if (selectedId) removeNode(selectedId);
+  }, [removeNode, selectedId]);
 
   const onNodeKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>, node: CanvasNode) => {
@@ -372,10 +379,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator, artif
         return;
       }
       if (action.kind === "remove") {
-        const next = removeCanvasNodeState(selectedId, connectingFromId, node.id);
-        emit(removeNodeOps(document_!, node.id));
-        setSelectedId(next.selectedId);
-        setConnectingFromId(next.connectingFromId);
+        removeNode(node.id);
         return;
       }
       if (action.kind === "move") {
@@ -389,7 +393,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator, artif
         nodeRefs.current.get(nextId)?.focus();
       }
     },
-    [activateNode, connectingFromId, document_, emit, onOps, rectOf, selectedId]
+    [activateNode, document_, emit, onOps, rectOf, removeNode]
   );
 
   const fitCanvas = useCallback(() => {
@@ -454,12 +458,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator, artif
         label: "Delete node",
         icon: <Trash2 className="h-4 w-4" />,
         group: "danger" as const,
-        run: () => {
-          const next = removeCanvasNodeState(selectedId, connectingFromId, node.id);
-          emit(removeNodeOps(document_!, node.id));
-          setSelectedId(next.selectedId);
-          setConnectingFromId(next.connectingFromId);
-        },
+        run: () => removeNode(node.id),
       });
 
       requestContextPick(event, {

@@ -1,6 +1,4 @@
 import { HelpLabel } from "@/components/ui/help-text";
-import { Button as UiButton } from "@/components/ui/button";
-import { Input as UiInput } from "@/components/ui/input";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -37,7 +35,7 @@ import {
 } from "@/lib/desktopConnector";
 import { isTauri } from "@/lib/serverConfig";
 import { ConnectorConfigForm } from "./ConnectorConfigForm";
-import { ConnectorChanges } from "./ConnectorChanges";
+import { ConnectorChanges, type Opener } from "./ConnectorChanges";
 import { LocalHostSetup } from "./LocalHostSetup";
 import { AgentUpdates } from "./AgentUpdates";
 import { type DetectedAgent } from "./AgentPicker";
@@ -60,12 +58,6 @@ interface ConnectorInstance {
 interface ConnectorRoots {
   cwd: string | null;
   roots: string[];
-}
-
-/** An app that can open a workspace dir (Finder + installed editors). */
-interface Opener {
-  key: string;
-  label: string;
 }
 
 /** Which detail panel is open, as a modal. */
@@ -147,7 +139,7 @@ function HealthRow({
         {h.cpu_pct.toFixed(0)}% CPU · {fmtMem(h.mem_bytes)}
       </span>
       {reason && (
-        <UiButton action="restart" variant="plain"
+        <Button action="restart" variant="plain"
           type="button"
           onClick={onRestart}
           disabled={busy}
@@ -156,7 +148,7 @@ function HealthRow({
         >
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate">{reason} · Restart</span>
-        </UiButton>
+        </Button>
       )}
     </div>
   );
@@ -177,7 +169,7 @@ function IconBtn({
   danger?: boolean;
 }) {
   return (
-    <UiButton variant="plain"
+    <Button variant="plain"
       type="button"
       title={label}
       aria-label={label}
@@ -190,7 +182,7 @@ function IconBtn({
  }`}
     >
       {icon}
-    </UiButton>
+    </Button>
   );
 }
 
@@ -479,12 +471,12 @@ export function ConnectorManager() {
 
           </div>
           <div className="flex items-center gap-1">
-            <UiButton action="setup" content="iconText" variant="secondary" controlSize="compact" onClick={() => setModal({ kind: "onboard" })}>
+            <Button action="setup" content="iconText" variant="secondary" controlSize="compact" onClick={() => setModal({ kind: "onboard" })}>
               <Plus className="h-4 w-4" />
-            </UiButton>
-            <UiButton action="setup" content="icon" variant="plain" controlSize="compact" aria-label="Use pairing code" title="Use pairing code" onClick={() => setModal({ kind: "redeem" })}>
+            </Button>
+            <Button action="setup" content="icon" variant="plain" controlSize="compact" aria-label="Use pairing code" title="Use pairing code" onClick={() => setModal({ kind: "redeem" })}>
               <Ticket className="h-4 w-4" />
-            </UiButton>
+            </Button>
           </div>
         </div>
 
@@ -645,7 +637,7 @@ export function ConnectorManager() {
           <div className="space-y-3">
 
             <Field label="Pairing code" htmlFor="connector-pairing-code" hint="Codes are single-use and expire after about 15 minutes.">
-            <UiInput
+            <Input
               id="connector-pairing-code"
               value={pairingCode}
               onChange={(e) => setPairingCode(e.target.value)}
@@ -709,13 +701,13 @@ export function ConnectorManager() {
       {modal?.kind === "logs" && (
         <Dialog title={`Logs — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-2xl">
           <div className="flex justify-end mb-1">
-            <UiButton action="refresh" variant="plain"
+            <Button action="refresh" variant="plain"
               type="button"
               className=" text-content-primary hover:text-content-strong"
               onClick={() => void openLogs(modal.inst)}
             >
               Refresh
-            </UiButton>
+            </Button>
           </div>
           <pre className="text-compact bg-zinc-950 rounded-sm p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-content-secondary">
             {logs}
@@ -757,14 +749,14 @@ export function ConnectorManager() {
                   <div className="flex flex-wrap gap-2 pl-5">
                     {/* design-system-exempt: menu-option — opener command menu. */}
                     {openers.map((op) => (
-                      <UiButton variant="plain" role="menuitem"
+                      <Button variant="plain" role="menuitem"
                         key={op.key}
                         type="button"
                         controlSize="regular" className=" rounded-sm bg-zinc-800 hover:bg-zinc-700 text-content-primary transition-colors"
                         onClick={() => void openWith(modal.inst.name, dir, op.key)}
                       >
                         {op.label}
-                      </UiButton>
+                      </Button>
                     ))}
                   </div>
                 </div>
@@ -896,7 +888,7 @@ function AuditTimeline({
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {/* design-system-exempt: menu-option — audit kind filters. */}
         {kinds.map((k) => (
-          <UiButton action="switch" content="iconText" variant="plain"
+          <Button action="switch" content="iconText" variant="plain"
             key={k}
             type="button"
             onClick={() => toggle(k)}
@@ -906,15 +898,15 @@ function AuditTimeline({
           >
             <PresenceDot contentSize="small" className={`mr-1 align-middle ${AUDIT_META[k].dot}`} />
             {AUDIT_META[k].label}
-          </UiButton>
+          </Button>
         ))}
-        <UiButton action="refresh" variant="plain"
+        <Button action="refresh" variant="plain"
           type="button"
           onClick={onRefresh}
           className=" text-content-primary hover:text-content-strong ml-auto"
         >
           Refresh
-        </UiButton>
+        </Button>
       </div>
       {shown.length === 0 ? (
         <HelpLabel help={<> Advanced per-command and file detail requires{" "}
@@ -974,13 +966,13 @@ function OnboardForm(props: {
       <LocalHostSetup bots={p.bots} initialBotId={p.existingBotId} initialAgent={p.agentType} onDone={p.onDone} />
 
       <div>
-        <UiButton action={p.advancedOpen ? "collapse" : "expand"} variant="plain"
+        <Button action={p.advancedOpen ? "collapse" : "expand"} variant="plain"
           type="button"
           className=" text-content-primary hover:text-content-strong"
           onClick={() => p.setAdvancedOpen(!p.advancedOpen)}
         >
           {p.advancedOpen ? "▾" : "▸"} Advanced: start from an existing .toml
-        </UiButton>
+        </Button>
         {p.advancedOpen && (
           <div className="grid gap-3 mt-3">
             <AgentUpdates />

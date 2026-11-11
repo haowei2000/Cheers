@@ -179,7 +179,7 @@ pub fn package_version(spec: &str) -> Option<&str> {
 /// The package name without its npm scope (`@scope/pkg@1` → `pkg`). npm uses
 /// it as the command name for a string `bin`, and npx prefers the `bin` entry
 /// with this name.
-pub fn unscoped_package_name(spec: &str) -> String {
+fn unscoped_package_name(spec: &str) -> String {
     let pkg = package_name_unversioned(spec);
     pkg.rsplit('/').next().unwrap_or(&pkg).to_string()
 }
@@ -336,12 +336,10 @@ pub fn representative_binary_target(launch: &BinaryLaunch) -> Option<&BinaryTarg
         "linux-x86_64",
         "linux-aarch64",
     ];
-    for key in PREFER {
-        if let Some(t) = launch.targets.get(*key) {
-            return Some(t);
-        }
-    }
-    launch.targets.values().next()
+    PREFER
+        .iter()
+        .find_map(|key| launch.targets.get(*key))
+        .or_else(|| launch.targets.values().next())
 }
 
 /// Host platform id matching the ACP registry (`darwin-aarch64`, …).
@@ -394,41 +392,29 @@ pub fn parse_registry_json(raw: &str) -> Result<ParsedRegistry, String> {
     let mut packages = HashMap::new();
     let mut binaries = HashMap::new();
     for agent in file.agents {
-        if let Some(npx) = agent.distribution.npx {
-            if !npx.package.trim().is_empty() {
-                let env_keys: Vec<String> = npx.env.keys().cloned().collect();
-                packages.insert(
-                    agent.id.clone(),
-                    PackageLaunch {
-                        id: agent.id.clone(),
-                        name: agent.name.clone(),
-                        version: agent.version.clone(),
-                        package: npx.package,
-                        args: npx.args,
-                        env_keys,
-                        kind: DistKind::Npx,
-                    },
-                );
-                continue;
-            }
-        }
-        if let Some(uvx) = agent.distribution.uvx {
-            if !uvx.package.trim().is_empty() {
-                let env_keys: Vec<String> = uvx.env.keys().cloned().collect();
-                packages.insert(
-                    agent.id.clone(),
-                    PackageLaunch {
-                        id: agent.id.clone(),
-                        name: agent.name.clone(),
-                        version: agent.version.clone(),
-                        package: uvx.package,
-                        args: uvx.args,
-                        env_keys,
-                        kind: DistKind::Uvx,
-                    },
-                );
-                continue;
-            }
+        let package = [
+            (agent.distribution.npx, DistKind::Npx),
+            (agent.distribution.uvx, DistKind::Uvx),
+        ]
+        .into_iter()
+        .find_map(|(dist, kind)| {
+            dist.filter(|d| !d.package.trim().is_empty())
+                .map(|d| (d, kind))
+        });
+        if let Some((dist, kind)) = package {
+            packages.insert(
+                agent.id.clone(),
+                PackageLaunch {
+                    id: agent.id,
+                    name: agent.name,
+                    version: agent.version,
+                    env_keys: dist.env.keys().cloned().collect(),
+                    package: dist.package,
+                    args: dist.args,
+                    kind,
+                },
+            );
+            continue;
         }
         if let Some(raw_targets) = agent.distribution.binary {
             let mut targets = HashMap::new();

@@ -1,5 +1,5 @@
 import { HelpLabel } from "@/components/ui/help-text";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, Zap } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,8 @@ async function hidePanel(): Promise<void> {
     // Not in the desktop shell (or the window's already gone) — nothing to do.
   }
 }
+
+const peerName = (c: Channel) => c.peer_name || c.name || "Direct message";
 
 /** Compact composer rendered in its own always-on-top window (index.html?
  * quickpanel=1, summoned by ⌥⌘K). Pick a bot/DM, type a task, send it through
@@ -79,11 +81,6 @@ export function QuickPanel() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  const peerName = useMemo(
-    () => (c: Channel) => c.peer_name || c.name || "Direct message",
-    []
-  );
 
   return (
     <div className="h-screen h-dvh w-screen bg-panel text-content-primary flex flex-col overflow-hidden">

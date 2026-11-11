@@ -204,13 +204,8 @@ fn parse_envelope(frame: &Value) -> Result<CapabilityEnvelope, CapabilityError> 
         .and_then(Value::as_object)
         .ok_or_else(|| CapabilityError::Denied("missing acp_capability envelope".into()))?;
 
-    let delegation_id = obj
-        .get("delegation_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| CapabilityError::Denied("missing delegation_id".into()))?
-        .to_string();
+    let delegation_id = trimmed_str(obj.get("delegation_id"))
+        .ok_or_else(|| CapabilityError::Denied("missing delegation_id".into()))?;
     if Uuid::parse_str(&delegation_id).is_err() {
         return Err(CapabilityError::Denied("delegation_id must be UUID".into()));
     }
@@ -221,28 +216,13 @@ fn parse_envelope(frame: &Value) -> Result<CapabilityEnvelope, CapabilityError> 
     let ts_secs = parse_unix_seconds(ts_value)
         .ok_or_else(|| CapabilityError::Denied("ts must be unix seconds or RFC3339".into()))?;
 
-    let nonce = obj
-        .get("nonce")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string)
+    let nonce = trimmed_str(obj.get("nonce"))
         .ok_or_else(|| CapabilityError::Denied("missing nonce".into()))?;
 
-    let signature = obj
-        .get("signature")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string)
+    let signature = trimmed_str(obj.get("signature"))
         .ok_or_else(|| CapabilityError::Denied("missing signature".into()))?;
 
-    let request_id = obj
-        .get("request_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string);
+    let request_id = trimmed_str(obj.get("request_id"));
 
     Ok(CapabilityEnvelope {
         delegation_id,
@@ -356,13 +336,9 @@ fn signing_payload(frame_type: &str, envelope: &CapabilityEnvelope, frame: &Valu
 }
 
 fn action_allowed(allowed: &[String], action: &str) -> bool {
-    if allowed
+    allowed
         .iter()
         .any(|v| v == CAPABILITY_ACTION_WILDCARD || v == action)
-    {
-        return true;
-    }
-    false
 }
 
 fn resource_allowed(allowed: &[String], resource: Option<&str>) -> bool {
@@ -377,63 +353,39 @@ fn resource_allowed(allowed: &[String], resource: Option<&str>) -> bool {
     allowed.iter().any(|v| v == resource)
 }
 
-fn extract_frame_resource(frame: &Value) -> Option<String> {
-    frame
-        .get("resource")
+/// A string field, trimmed; `None` when absent, non-string, or blank.
+fn trimmed_str(value: Option<&Value>) -> Option<String> {
+    value
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .map(ToString::to_string)
-        .or_else(|| extract_channel_id(frame))
+}
+
+fn extract_frame_resource(frame: &Value) -> Option<String> {
+    trimmed_str(frame.get("resource")).or_else(|| extract_channel_id(frame))
 }
 
 fn extract_channel_id(frame: &Value) -> Option<String> {
-    frame
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .or_else(|| {
+    trimmed_str(frame.get("channel_id")).or_else(|| {
+        trimmed_str(
             frame
                 .get("params")
-                .and_then(|params| params.get("channel_id"))
-                .and_then(Value::as_str)
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty())
-        })
+                .and_then(|params| params.get("channel_id")),
+        )
+    })
 }
 
 fn extract_session_id(frame: &Value) -> Option<String> {
-    frame
-        .get("session_id")
-        .and_then(Value::as_str)
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-        .or_else(|| {
-            frame
-                .get("acp_session_id")
-                .and_then(Value::as_str)
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty())
-        })
+    trimmed_str(frame.get("session_id")).or_else(|| trimmed_str(frame.get("acp_session_id")))
 }
 
 fn extract_provider_session_key(frame: &Value) -> Option<String> {
-    frame
-        .get("provider_session_key")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(ToString::to_string)
+    trimmed_str(frame.get("provider_session_key"))
 }
 
 fn extract_provider_session_id(frame: &Value) -> Option<String> {
-    frame
-        .get("provider_session_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(ToString::to_string)
+    trimmed_str(frame.get("provider_session_id"))
 }
 
 fn extract_session_locator(frame: &Value) -> Option<SessionLocator> {
@@ -747,19 +699,19 @@ async fn load_delegation(
             .delegation_id
             .parse()
             .map_err(|_| CapabilityError::Denied("invalid delegation id".into()))?,
-        scope_type: row.scope_type.clone(),
-        scope_id: row.scope_id.clone(),
-        session_id: row.session_id.clone(),
-        allowed_actions: row.allowed_actions.clone(),
-        allowed_resources: row.allowed_resources.clone(),
-        max_uses: row.max_uses.clone().map(|value| value as i64),
-        use_count: row.use_count.clone() as i64,
-        expires_at: row.expires_at.clone(),
-        public_key: row.public_key.clone(),
-        algorithm: row.algorithm.clone(),
-        delegated_to: row.delegated_to.clone(),
-        status: row.status.clone(),
-        revoked: row.revoked.clone(),
+        scope_type: row.scope_type,
+        scope_id: row.scope_id,
+        session_id: row.session_id,
+        allowed_actions: row.allowed_actions,
+        allowed_resources: row.allowed_resources,
+        max_uses: row.max_uses.map(i64::from),
+        use_count: i64::from(row.use_count),
+        expires_at: row.expires_at,
+        public_key: row.public_key,
+        algorithm: row.algorithm,
+        delegated_to: row.delegated_to,
+        status: row.status,
+        revoked: row.revoked,
     })
 }
 
@@ -777,13 +729,32 @@ fn ensure_delegation_live(delegation: &DelegationRecord) -> Result<(), Capabilit
     Ok(())
 }
 
-async fn ensure_delegation_active(delegation: &DelegationRecord) -> Result<(), CapabilityError> {
+fn ensure_delegation_active(delegation: &DelegationRecord) -> Result<(), CapabilityError> {
     ensure_delegation_live(delegation)?;
 
     if let (Some(max), use_count) = (delegation.max_uses, delegation.use_count) {
         if use_count >= max {
             return Err(CapabilityError::Denied("delegation uses exhausted".into()));
         }
+    }
+    Ok(())
+}
+
+fn ensure_action_and_resource_allowed(
+    delegation: &DelegationRecord,
+    action: &str,
+    resource: Option<&str>,
+) -> Result<(), CapabilityError> {
+    if !action_allowed(&delegation.allowed_actions, action) {
+        return Err(CapabilityError::Denied(format!(
+            "action not allowed: {action}"
+        )));
+    }
+    if !resource_allowed(&delegation.allowed_resources, resource) {
+        return Err(CapabilityError::Denied(format!(
+            "resource not allowed: {}",
+            resource.unwrap_or("<none>")
+        )));
     }
     Ok(())
 }
@@ -944,20 +915,8 @@ pub async fn authorize_data_frame(
     )
     .await?;
 
-    ensure_delegation_active(&delegation).await?;
-
-    if !action_allowed(&delegation.allowed_actions, action) {
-        return Err(CapabilityError::Denied(format!(
-            "action not allowed: {action}"
-        )));
-    }
-
-    if !resource_allowed(&delegation.allowed_resources, resource.as_deref()) {
-        return Err(CapabilityError::Denied(format!(
-            "resource not allowed: {}",
-            resource.as_deref().unwrap_or("<none>")
-        )));
-    }
+    ensure_delegation_active(&delegation)?;
+    ensure_action_and_resource_allowed(&delegation, action, resource.as_deref())?;
 
     consume_nonce_and_bump(
         db,
@@ -1099,18 +1058,7 @@ async fn verify_delta_binding(
         None,
     )
     .await?;
-    if !action_allowed(&delegation.allowed_actions, action) {
-        return Err(CapabilityError::Denied(format!(
-            "action not allowed: {action}"
-        )));
-    }
-    if !resource_allowed(&delegation.allowed_resources, resource.as_deref()) {
-        return Err(CapabilityError::Denied(format!(
-            "resource not allowed: {}",
-            resource.as_deref().unwrap_or("<none>")
-        )));
-    }
-    Ok(())
+    ensure_action_and_resource_allowed(&delegation, action, resource.as_deref())
 }
 
 /// Return prepaid Delta uses a finished or abandoned stream did not spend.

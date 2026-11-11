@@ -128,18 +128,6 @@ fn preview_raw_input(raw: Option<&Value>) -> Option<String> {
     })
 }
 
-/// Result of normalizing a permission tool blob (+ optional frame title/body).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtractedToolRequest {
-    pub summary: String,
-    pub display_title: String,
-    pub command: Option<String>,
-    pub paths: Vec<String>,
-    pub kind: Option<String>,
-    pub cwd: Option<String>,
-    pub tool_title: Option<String>,
-}
-
 /// Normalize `tool` (and optional title/body) into a filled tool object plus
 /// display title / body suitable for `content_data` and audit `detail`.
 ///

@@ -68,9 +68,7 @@ COPY server/assets ./assets
 # change would otherwise be skipped by the same stale-artifact check. The find
 # starts at the RELATIVE path `assets`, so entries print as `assets/...` —
 # the pattern must be 'assets/*' (a '*/assets/*' pattern would never match).
-RUN find src assets /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
-       /app/packages/cheers-mcp-server/src \
-       /app/packages/cheers-interactive-core/src \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
+RUN find src assets /app/packages \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
     && cargo build --release
 
 # ── runtime ──────────────────────────────────────────────────────────────────

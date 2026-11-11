@@ -36,7 +36,6 @@ import {
   FolderPlus,
   History,
   Loader2,
-  PanelLeftOpen,
   RefreshCw,
   Save,
   X,
@@ -399,8 +398,6 @@ export function RemoteWorkspaceDialog({
   const [scoped, setScoped] = useState(true);
   const [canCreateSession, setCanCreateSession] = useState(false);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
-  // File tree sidebar collapsible state — defaults to open.
-  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Workspace policy metadata (allowed/effective roots, cwd, git availability) for the
   // selected bot + scope; backs the root picker. Best-effort — null hides the picker.
@@ -1067,44 +1064,41 @@ export function RemoteWorkspaceDialog({
     }
   }, [botId, initialPath, openFile, loadDir, entries]);
 
+  // Shared reset for every browse-context switch (scope, root, bot): back to the
+  // root listing of the new context with no open file, git state, or root choice.
+  const resetBrowse = useCallback(() => {
+    setEntries(null);
+    setTreeRoot(null);
+    setFile(null);
+    setEtag(null);
+    setConflict(null);
+    setCwd("");
+    setGit(null);
+    setDiff(null);
+    setLog(null);
+    setLogDone(false);
+    setRoot(null);
+    setRootSessionId(null);
+  }, []);
+
   // Flip the session/full-roots scope: reset to the root of the newly-scoped view
   // (the current cwd may not exist under the other root set). Nulling `entries`
   // re-triggers the mount effect above, which re-lists the root with the new scope.
   const toggleScoped = useCallback(() => {
     if (!confirmDiscardDirtyBuffer("changing the workspace scope", () => toggleScoped())) return;
     setScoped((s) => !s);
-    setEntries(null);
-    setTreeRoot(null);
-    setFile(null);
-    setEtag(null);
-    setConflict(null);
-    setCwd("");
-    setGit(null);
-    setDiff(null);
-    setLog(null);
-    setLogDone(false);
-    setRoot(null); // the other scope has a different effective root set
-    setRootSessionId(null);
-  }, [confirmDiscardDirtyBuffer]);
+    resetBrowse(); // the other scope has a different effective root set
+  }, [confirmDiscardDirtyBuffer, resetBrowse]);
 
   // Switch the browse to another root option (null = Auto): reset like a scope flip. A
   // session-workdir option also scopes the browse to its owning session (via
   // rootSessionId → effectiveSessionId) so the connector accepts the workdir as a root.
   const selectRoot = useCallback((opt: RootOption | null) => {
     if (!confirmDiscardDirtyBuffer("changing the workspace root", () => selectRoot(opt))) return;
+    resetBrowse();
     setRoot(opt?.path ?? null);
     setRootSessionId(opt?.sessionId ?? null);
-    setEntries(null);
-    setTreeRoot(null);
-    setFile(null);
-    setEtag(null);
-    setConflict(null);
-    setCwd("");
-    setGit(null);
-    setDiff(null);
-    setLog(null);
-    setLogDone(false);
-  }, [confirmDiscardDirtyBuffer]);
+  }, [confirmDiscardDirtyBuffer, resetBrowse]);
 
   // Live-push: the "workspace" board ticked → an agent finished a turn and may have
   // changed files on its machine. Debounce-refetch (full: a tick carries no paths);
@@ -1339,11 +1333,9 @@ export function RemoteWorkspaceDialog({
   };
   // What the bot TRIGGER says: the name alone. Availability stays in the menu — a
   // trigger has to fit a corner, an option only has to fit a menu.
-  const botLabel = (() => {
-    if (bots === null) return "Loading…";
-    const bot = bots.find((candidate) => candidate.bot_id === botId);
-    return bot ? bot.display_name || bot.username : "Select a bot";
-  })();
+  const botLabel = bots === null
+    ? "Loading…"
+    : selectedBot ? selectedBot.display_name || selectedBot.username : "Select a bot";
 
   // Grouped the way the native select's <optgroup>s were: a session workdir scopes
   // the browse to that session's root set, an allowed root is the bot-wide clamp.
@@ -1392,18 +1384,7 @@ export function RemoteWorkspaceDialog({
           if (value === (botId ?? "")) return;
           if (!confirmDiscardDirtyBuffer("switching bots", () => switchBot(value))) return;
           setBotId(value || null);
-          setEntries(null);
-          setCwd("");
-          setTreeRoot(null);
-          setFile(null);
-          setEtag(null);
-          setConflict(null);
-          setGit(null);
-          setDiff(null);
-          setLog(null);
-          setLogDone(false);
-          setRoot(null);
-          setRootSessionId(null);
+          resetBrowse();
           deepLinked.current = true;
         }}
         controlSize="compact"
@@ -1613,7 +1594,6 @@ export function RemoteWorkspaceDialog({
         // panes fill the remaining body height and keep their own internal scroll.
         <div className="flex flex-1 min-h-0 max-md:flex-col overflow-hidden rounded-sm bg-panel/30">
           {/* Tree pane */}
-          {sidebarOpen && (
             <div className="w-72 max-w-[40%] min-w-[220px] max-md:w-full max-md:max-w-none max-md:min-w-0 max-md:h-2/5 max-md:flex-none overflow-hidden flex flex-col border-r border-control/80 bg-panel/20 max-md:border-r-0 max-md:border-b">
               {/* Files / Changes / History switch — the latter two only for a git repo. */}
               {git && (
@@ -1867,7 +1847,6 @@ export function RemoteWorkspaceDialog({
               </>
             )}
           </div>
-        )}
 
           {/* Viewer / editor / diff pane. The open file's actions sit behind the same
               context surface as the rows; the editor's own text keeps the native menu
@@ -1891,20 +1870,6 @@ export function RemoteWorkspaceDialog({
             {diff !== null ? (
               <>
                 <div className="flex h-9 shrink-0 items-center gap-2 px-2 border-b border-control/80 font-utility text-compact">
-                  {!sidebarOpen && (
-                    <UiButton
-                      action="expand"
-                      content="icon"
-                      variant="plain"
-                      controlSize="compact"
-                      onClick={() => setSidebarOpen(true)}
-                      title="Show file tree"
-                      aria-label="Show file tree"
-                      className="rounded-sm hover:bg-control text-content-primary shrink-0"
-                    >
-                      <PanelLeftOpen className="w-3.5 h-3.5" />
-                    </UiButton>
-                  )}
                   {diff.kind === "commit" ? (
                     <>
                       <GitCommit className="w-3.5 h-3.5 text-content-muted shrink-0" />
@@ -1947,20 +1912,6 @@ export function RemoteWorkspaceDialog({
             ) : !file ? (
               <>
                 <div className="flex h-9 shrink-0 items-center gap-1 px-2 border-b border-control/80 font-utility text-compact text-content-muted">
-                  {!sidebarOpen && (
-                    <UiButton
-                      action="expand"
-                      content="icon"
-                      variant="plain"
-                      controlSize="compact"
-                      onClick={() => setSidebarOpen(true)}
-                      title="Show file tree"
-                      aria-label="Show file tree"
-                      className="rounded-sm hover:bg-control text-content-primary shrink-0"
-                    >
-                      <PanelLeftOpen className="w-3.5 h-3.5" />
-                    </UiButton>
-                  )}
                   <span className="text-content-muted font-utility text-compact">Preview</span>
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center text-compact text-content-muted p-4">
@@ -1974,20 +1925,6 @@ export function RemoteWorkspaceDialog({
                     stays on one line in a narrow panel; the filename shrinks
                     first (min-w-0) and every action is shrink-0. */}
                 <div className="flex h-9 shrink-0 items-center gap-1 px-2 border-b border-control/80 font-utility text-compact">
-                  {!sidebarOpen && (
-                    <UiButton
-                      action="expand"
-                      content="icon"
-                      variant="plain"
-                      controlSize="compact"
-                      onClick={() => setSidebarOpen(true)}
-                      title="Show file tree"
-                      aria-label="Show file tree"
-                      className="rounded-sm hover:bg-control text-content-primary shrink-0"
-                    >
-                      <PanelLeftOpen className="w-3.5 h-3.5" />
-                    </UiButton>
-                  )}
                   <span className="text-content-secondary truncate flex-1 min-w-0 font-medium" title={file.path}>
                     {file.filename}
                   </span>

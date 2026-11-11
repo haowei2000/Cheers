@@ -260,7 +260,7 @@ pub async fn rotate_host_credential(
     let Some(row) = row else {
         return Err(AppError::NotFound);
     };
-    if Some(row.status.clone()).as_deref() == Some("active") {
+    if row.status == "active" {
         kick_bot(&state, &bot_id);
     }
     crate::domain::bot_management_audit::record(

@@ -16,9 +16,7 @@ pub struct WorkspaceRpc {
 
 impl WorkspaceRpc {
     pub fn new() -> Self {
-        Self {
-            pending: DashMap::new(),
-        }
+        Self::default()
     }
 
     /// Register a pending request; await the returned receiver for the

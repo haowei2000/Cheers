@@ -7,8 +7,9 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
 pub use cheers_acp_registry::{
-    adapter_args_for, bin_name_from_cmd, cheers_key_for, featured_rank, host_platform,
-    package_name_unversioned, registry_id_for, BinaryLaunch, BinaryTarget, DistKind, PackageLaunch,
+    adapter_args_for, bin_name_from_cmd, binary_target_for_host, cheers_key_for, featured_rank,
+    host_platform, package_name_unversioned, registry_id_for, BinaryLaunch, DistKind,
+    PackageLaunch,
 };
 use cheers_acp_registry::{
     npm_manifest_url, parse_npm_bin, NpmBinCache, NpmLookup, ParsedRegistry, RegistryCache,
@@ -23,10 +24,6 @@ static NPM_BINS: LazyLock<Mutex<NpmBinCache>> =
 
 /// At most this many npm manifest fetches run at once.
 const NPM_FETCH_CONCURRENCY: usize = 8;
-
-pub fn binary_target_for_host(launch: &BinaryLaunch) -> Option<&BinaryTarget> {
-    launch.targets.get(host_platform())
-}
 
 fn fetch_text(url: &str) -> Result<String, String> {
     static CLIENT: LazyLock<Result<reqwest::blocking::Client, String>> = LazyLock::new(|| {
@@ -44,13 +41,9 @@ fn fetch_text(url: &str) -> Result<String, String> {
     resp.text().map_err(|e| e.to_string())
 }
 
-fn fetch_registry_body() -> Result<String, String> {
-    fetch_text(REGISTRY_URL)
-}
-
 fn cache_snapshot() -> ParsedRegistry {
     let mut guard = CACHE.lock().unwrap_or_else(|p| p.into_inner());
-    guard.snapshot(fetch_registry_body).0
+    guard.snapshot(|| fetch_text(REGISTRY_URL)).0
 }
 
 pub fn list_package_agents() -> Vec<PackageLaunch> {

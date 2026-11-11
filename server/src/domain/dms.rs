@@ -215,7 +215,6 @@ async fn is_blocked_with_connection(
     .fetch_one(connection)
     .await?
     .ok
-    .clone()
     .unwrap_or(false);
     Ok(ok)
 }
@@ -239,7 +238,7 @@ async fn dm_peer_with_connection(
     )
     .fetch_optional(connection)
     .await?
-    .and_then(|row| Some(row.member_id.clone()));
+    .map(|row| row.member_id);
     Ok(peer)
 }
 

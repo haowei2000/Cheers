@@ -23,6 +23,20 @@ import {
   type SceneIconComponent,
 } from "./sceneState";
 
+/** The gesture handlers a tab forwards to its context surface. */
+function contextSurfaceHandlers(contextSurface: ReturnType<typeof useContextSurface>) {
+  return {
+    onContextMenu: contextSurface.onContextMenu,
+    onKeyDown: contextSurface.onKeyDown,
+    onPointerDown: contextSurface.onPointerDown,
+    onPointerMove: contextSurface.onPointerMove,
+    onPointerUp: contextSurface.onPointerUp,
+    onPointerCancel: contextSurface.onPointerCancel,
+    onPointerLeave: contextSurface.onPointerLeave,
+    onClickCapture: contextSurface.onClickCapture,
+  };
+}
+
 export function SceneTab({
   label,
   Icon,
@@ -51,17 +65,6 @@ export function SceneTab({
     surfaceRef,
     actions: () => sceneTabContextActions(label, onSelect, onShowRaw, onAddToContext, contextAdded, contextAvailable),
   });
-  const contextHandlers = {
-    onContextMenu: contextSurface.onContextMenu,
-    onKeyDown: contextSurface.onKeyDown,
-    onPointerDown: contextSurface.onPointerDown,
-    onPointerMove: contextSurface.onPointerMove,
-    onPointerUp: contextSurface.onPointerUp,
-    onPointerCancel: contextSurface.onPointerCancel,
-    onPointerLeave: contextSurface.onPointerLeave,
-    onClickCapture: contextSurface.onClickCapture,
-  };
-
   const iconOnly = presentation === "icon";
   return (
     <UiButton
@@ -79,7 +82,7 @@ export function SceneTab({
       className={cn(
         "shrink-0 gap-1 -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60",
       )}
-      {...contextHandlers}
+      {...contextSurfaceHandlers(contextSurface)}
     >
       {presentation !== "text" && <Icon className={cn("h-4 w-4", selected && iconColor)} aria-hidden="true" />}
       {!iconOnly && <span className="truncate">{label}</span>}
@@ -371,14 +374,7 @@ export function ItemTab({
       className={cn(
         "shrink-0 gap-1 -mb-px transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60",
       )}
-      onContextMenu={contextSurface.onContextMenu}
-      onKeyDown={contextSurface.onKeyDown}
-      onPointerDown={contextSurface.onPointerDown}
-      onPointerMove={contextSurface.onPointerMove}
-      onPointerUp={contextSurface.onPointerUp}
-      onPointerCancel={contextSurface.onPointerCancel}
-      onPointerLeave={contextSurface.onPointerLeave}
-      onClickCapture={contextSurface.onClickCapture}
+      {...contextSurfaceHandlers(contextSurface)}
     >
       {presentation === "icon" ? <TabIcon className="h-4 w-4" aria-hidden="true" /> : label}
     </UiButton>

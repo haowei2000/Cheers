@@ -429,7 +429,6 @@ pub(super) fn spawn_bridge_io(
         runtime_tx,
         config,
         signer,
-        last_event_seq.clone(),
     );
     BridgeIoHandle {
         control_tx,
@@ -557,7 +556,6 @@ pub(super) fn spawn_data_socket(
     runtime_tx: mpsc::Sender<RuntimeInput>,
     config: BridgeSessionConfig,
     mut signer: Option<CapabilitySigner>,
-    _last_event_seq: Arc<AtomicU64>,
 ) {
     tokio::spawn(async move {
         use tokio::time::{interval_at, Instant as TokioInstant, MissedTickBehavior};
@@ -584,10 +582,8 @@ pub(super) fn spawn_data_socket(
                 maybe = priority_rx.recv(), if priority_open => match maybe {
                     Some(frame) => {
                         if !is_interactive_priority_frame(&frame) {
-                            if let Some(delta) = pending_delta.take() {
-                                if !write_data_frame(&mut socket, &mut signer, &runtime_tx, delta).await {
-                                    return;
-                                }
+                            if !flush_pending_delta(&mut socket, &mut signer, &runtime_tx, &mut pending_delta).await {
+                                return;
                             }
                             while let Ok(delta) = stream_rx.try_recv() {
                                 if !push_or_flush_delta(
@@ -601,10 +597,8 @@ pub(super) fn spawn_data_socket(
                                     return;
                                 }
                             }
-                            if let Some(delta) = pending_delta.take() {
-                                if !write_data_frame(&mut socket, &mut signer, &runtime_tx, delta).await {
-                                    return;
-                                }
+                            if !flush_pending_delta(&mut socket, &mut signer, &runtime_tx, &mut pending_delta).await {
+                                return;
                             }
                         }
                         if !write_data_frame(&mut socket, &mut signer, &runtime_tx, frame).await {
@@ -628,18 +622,14 @@ pub(super) fn spawn_data_socket(
                     }
                     None => {
                         stream_open = false;
-                        if let Some(delta) = pending_delta.take() {
-                            if !write_data_frame(&mut socket, &mut signer, &runtime_tx, delta).await {
-                                return;
-                            }
+                        if !flush_pending_delta(&mut socket, &mut signer, &runtime_tx, &mut pending_delta).await {
+                            return;
                         }
                     },
                 },
                 _ = tokio::time::sleep_until(delta_deadline), if pending_delta.is_some() => {
-                    if let Some(delta) = pending_delta.take() {
-                        if !write_data_frame(&mut socket, &mut signer, &runtime_tx, delta).await {
-                            return;
-                        }
+                    if !flush_pending_delta(&mut socket, &mut signer, &runtime_tx, &mut pending_delta).await {
+                        return;
                     }
                 },
                 _ = hb.tick() => {
@@ -723,6 +713,19 @@ async fn write_data_frame(
     true
 }
 
+/// Writes the pending Delta batch, if any. Returns false when the socket failed.
+async fn flush_pending_delta(
+    socket: &mut crate::bridge::BridgeWebSocket,
+    signer: &mut Option<CapabilitySigner>,
+    runtime_tx: &mpsc::Sender<RuntimeInput>,
+    pending: &mut Option<DataOutbound>,
+) -> bool {
+    match pending.take() {
+        Some(delta) => write_data_frame(socket, signer, runtime_tx, delta).await,
+        None => true,
+    }
+}
+
 /// Adds one Delta to the current adjacent batch or flushes the previous batch.
 ///
 /// The flush deadline is armed only when a new batch starts. Re-arming it on
@@ -744,10 +747,8 @@ async fn push_or_flush_delta(
     match merge_adjacent_delta(current, next) {
         Ok(()) => {}
         Err(next) => {
-            if let Some(current) = pending.take() {
-                if !write_data_frame(socket, signer, runtime_tx, current).await {
-                    return false;
-                }
+            if !flush_pending_delta(socket, signer, runtime_tx, pending).await {
+                return false;
             }
             *pending = Some(next);
             *deadline = tokio::time::Instant::now() + DELTA_COALESCE_WINDOW;
@@ -810,92 +811,6 @@ fn merge_adjacent_delta(
     current_delta.push_str(&delta);
     *current_seq = seq;
     Ok(())
-}
-
-pub(super) async fn reconnect_control_stream(
-    config: &BridgeSessionConfig,
-    ready: &BridgeReady,
-    runtime_tx: &mpsc::Sender<RuntimeInput>,
-    attempt: &mut u32,
-) -> anyhow::Result<crate::bridge::BridgeWebSocket> {
-    loop {
-        *attempt = attempt.saturating_add(1);
-        let delay = crate::bridge::compute_backoff(*attempt, config.reconnect);
-        tracing::warn!(
-            account = %config.account_id,
-            attempt = *attempt,
-            delay_ms = delay.as_millis(),
-            "Agent Bridge control stream reconnect scheduled"
-        );
-        tokio::time::sleep(delay).await;
-        match connect_control_stream(config, ready).await {
-            Ok((socket, _hello)) => {
-                tracing::info!(
-                    account = %config.account_id,
-                    "Agent Bridge control stream reconnected"
-                );
-                *attempt = 0;
-                return Ok(socket);
-            }
-            Err(err) if is_fatal_bridge_error(&err) => return Err(err),
-            Err(err) => {
-                let _ = runtime_tx
-                    .send(RuntimeInput::Adapter(RuntimeEvent::AdapterError {
-                        message: format!("Agent Bridge control reconnect failed: {err}"),
-                    }))
-                    .await;
-            }
-        }
-    }
-}
-
-pub(super) async fn reconnect_data_stream(
-    config: &BridgeSessionConfig,
-    runtime_tx: &mpsc::Sender<RuntimeInput>,
-    attempt: &mut u32,
-    last_event_seq: &Arc<AtomicU64>,
-) -> anyhow::Result<crate::bridge::BridgeWebSocket> {
-    loop {
-        *attempt = attempt.saturating_add(1);
-        let delay = crate::bridge::compute_backoff(*attempt, config.reconnect);
-        tracing::warn!(
-            account = %config.account_id,
-            attempt = *attempt,
-            delay_ms = delay.as_millis(),
-            "Agent Bridge data stream reconnect scheduled"
-        );
-        tokio::time::sleep(delay).await;
-        match connect_data_stream(config).await {
-            Ok((mut socket, hello)) => {
-                let resume_from = last_event_seq
-                    .load(Ordering::SeqCst)
-                    .max(hello.last_event_seq);
-                last_event_seq.store(resume_from, Ordering::SeqCst);
-                socket
-                    .send_json(&DataOutbound::Resume {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        last_event_seq: resume_from,
-                    })
-                    .await
-                    .context("failed to send Agent Bridge data resume frame")?;
-                tracing::info!(
-                    account = %config.account_id,
-                    last_event_seq = resume_from,
-                    "Agent Bridge data stream reconnected and resume requested"
-                );
-                *attempt = 0;
-                return Ok(socket);
-            }
-            Err(err) if is_fatal_bridge_error(&err) => return Err(err),
-            Err(err) => {
-                let _ = runtime_tx
-                    .send(RuntimeInput::Adapter(RuntimeEvent::AdapterError {
-                        message: format!("Agent Bridge data reconnect failed: {err}"),
-                    }))
-                    .await;
-            }
-        }
-    }
 }
 
 #[cfg(test)]

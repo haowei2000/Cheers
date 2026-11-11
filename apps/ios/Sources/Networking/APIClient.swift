@@ -316,18 +316,19 @@ struct APIClient: Sendable {
         )
     }
 
-    func startOAuth(provider: String, client: String = "ios", deviceName: String?) async throws -> OAuthStartResponse {
-        struct Body: Encodable {
-            let client: String
-            let deviceName: String?
-            enum CodingKeys: String, CodingKey {
-                case client
-                case deviceName = "device_name"
-            }
+    private struct OAuthStartBody: Encodable {
+        let client: String
+        let deviceName: String?
+        enum CodingKeys: String, CodingKey {
+            case client
+            case deviceName = "device_name"
         }
+    }
+
+    func startOAuth(provider: String, client: String = "ios", deviceName: String?) async throws -> OAuthStartResponse {
         return try await postJSON(
             "/auth/oauth/\(provider)/start",
-            body: Body(client: client, deviceName: deviceName),
+            body: OAuthStartBody(client: client, deviceName: deviceName),
             as: OAuthStartResponse.self
         )
     }
@@ -338,17 +339,9 @@ struct APIClient: Sendable {
         client: String = "ios",
         deviceName: String?
     ) async throws -> OAuthStartResponse {
-        struct Body: Encodable {
-            let client: String
-            let deviceName: String?
-            enum CodingKeys: String, CodingKey {
-                case client
-                case deviceName = "device_name"
-            }
-        }
         return try await postJSON(
             "/users/me/external-identities/\(provider)/oauth-start",
-            body: Body(client: client, deviceName: deviceName),
+            body: OAuthStartBody(client: client, deviceName: deviceName),
             as: OAuthStartResponse.self
         )
     }
@@ -458,10 +451,6 @@ struct APIClient: Sendable {
         try await getJSON("/users/me/external-identities/apple", as: AppleIdentityStatus.self)
     }
 
-    func unlinkApple() async throws {
-        try await deleteEmpty("/users/me/external-identities/apple")
-    }
-
     func externalIdentityStatus(provider: String) async throws -> ExternalIdentityStatusDto {
         try await getJSON("/users/me/external-identities/\(provider)", as: ExternalIdentityStatusDto.self)
     }
@@ -504,10 +493,6 @@ struct APIClient: Sendable {
         try await getJSON("/friends/blocks", as: [BlockedUserDto].self)
     }
 
-    func aiDisclosures(channelId: String) async throws -> [AIDataDisclosure] {
-        try await getJSON("/channels/\(channelId)/ai-disclosures", as: [AIDataDisclosure].self)
-    }
-
     func storedAIConsents() async throws -> [StoredAIConsent] {
         try await getJSON("/users/me/ai-consents", as: [StoredAIConsent].self)
     }
@@ -547,13 +532,7 @@ struct APIClient: Sendable {
     }
 
     func uploadUserAvatar(data: Data, contentType: String) async throws -> String {
-        struct Resp: Decodable {
-            let avatarURL: String
-            enum CodingKeys: String, CodingKey { case avatarURL = "avatar_url" }
-        }
-        var request = try makeRequest("POST", "/users/me/avatar", body: data)
-        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
-        return try decode(Resp.self, from: try await send(request)).avatarURL
+        try await uploadAvatar(path: "/users/me/avatar", data: data, contentType: contentType)
     }
 
     func uploadBotAvatar(botId: String, data: Data, contentType: String) async throws -> String {
@@ -1171,10 +1150,6 @@ struct APIClient: Sendable {
         return try await send(request)
     }
 
-    func listChannelFiles(channelId: String) async throws -> [MessageFileRef] {
-        try await getJSON("/channels/\(channelId)/files", as: [MessageFileRef].self)
-    }
-
     func uploadFile(
         channelId: String, filename: String, contentType: String, data: Data
     ) async throws -> MessageFileRef {
@@ -1217,6 +1192,15 @@ struct APIClient: Sendable {
 
     // MARK: Remote workspace
 
+    /// `bot_id` + `path`, then any extra items, then the optional `root`.
+    private func remoteWorkspaceQuery(
+        botId: String, path: String, root: String?, extra: [URLQueryItem] = []
+    ) -> [URLQueryItem] {
+        var query = [URLQueryItem(name: "bot_id", value: botId), URLQueryItem(name: "path", value: path)] + extra
+        if let root { query.append(URLQueryItem(name: "root", value: root)) }
+        return query
+    }
+
     func listRemoteWorkspaceBots(channelId: String) async throws -> [RemoteWorkspaceBot] {
         try await getJSON(
             "/channels/\(channelId)/workspace/bots", as: RemoteWorkspaceBotsResponse.self
@@ -1226,8 +1210,7 @@ struct APIClient: Sendable {
     func remoteWorkspaceTree(
         channelId: String, botId: String, path: String = "", root: String? = nil
     ) async throws -> RemoteWorkspaceTree {
-        var query = [URLQueryItem(name: "bot_id", value: botId), URLQueryItem(name: "path", value: path)]
-        if let root { query.append(URLQueryItem(name: "root", value: root)) }
+        let query = remoteWorkspaceQuery(botId: botId, path: path, root: root)
         return try await getJSON(
             "/channels/\(channelId)/workspace/tree", query: query, as: RemoteWorkspaceTree.self
         )
@@ -1236,8 +1219,7 @@ struct APIClient: Sendable {
     func remoteWorkspaceFile(
         channelId: String, botId: String, path: String, root: String? = nil
     ) async throws -> RemoteWorkspaceFile {
-        var query = [URLQueryItem(name: "bot_id", value: botId), URLQueryItem(name: "path", value: path)]
-        if let root { query.append(URLQueryItem(name: "root", value: root)) }
+        let query = remoteWorkspaceQuery(botId: botId, path: path, root: root)
         return try await getJSON(
             "/channels/\(channelId)/workspace/file", query: query, as: RemoteWorkspaceFile.self
         )
@@ -1247,8 +1229,7 @@ struct APIClient: Sendable {
         channelId: String, botId: String, path: String, root: String?,
         content: String, ifMatch: String?
     ) async throws -> RemoteWorkspaceWriteResult {
-        var query = [URLQueryItem(name: "bot_id", value: botId), URLQueryItem(name: "path", value: path)]
-        if let root { query.append(URLQueryItem(name: "root", value: root)) }
+        let query = remoteWorkspaceQuery(botId: botId, path: path, root: root)
         var request = try makeRequest(
             "PUT", "/channels/\(channelId)/workspace/file", query: query,
             body: Data(content.utf8)
@@ -1261,8 +1242,7 @@ struct APIClient: Sendable {
     func remoteGitStatus(
         channelId: String, botId: String, path: String = "", root: String? = nil
     ) async throws -> RemoteGitStatus {
-        var query = [URLQueryItem(name: "bot_id", value: botId), URLQueryItem(name: "path", value: path)]
-        if let root { query.append(URLQueryItem(name: "root", value: root)) }
+        let query = remoteWorkspaceQuery(botId: botId, path: path, root: root)
         return try await getJSON(
             "/channels/\(channelId)/workspace/git/status", query: query, as: RemoteGitStatus.self
         )
@@ -1272,9 +1252,10 @@ struct APIClient: Sendable {
         channelId: String, botId: String, path: String = "", staged: Bool = false,
         root: String? = nil
     ) async throws -> RemoteGitDiff {
-        var query = [URLQueryItem(name: "bot_id", value: botId), URLQueryItem(name: "path", value: path)]
-        if staged { query.append(URLQueryItem(name: "staged", value: "true")) }
-        if let root { query.append(URLQueryItem(name: "root", value: root)) }
+        let query = remoteWorkspaceQuery(
+            botId: botId, path: path, root: root,
+            extra: staged ? [URLQueryItem(name: "staged", value: "true")] : []
+        )
         return try await getJSON(
             "/channels/\(channelId)/workspace/git/diff", query: query, as: RemoteGitDiff.self
         )

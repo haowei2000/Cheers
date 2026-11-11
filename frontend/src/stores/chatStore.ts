@@ -43,6 +43,18 @@ interface ChatState {
   hydrateSelection: (workspaceId: string | null, channelId: string | null) => void;
 }
 
+/** Copy of `memory` with the workspace's last channel set, or forgotten when null. */
+function rememberChannel(
+  memory: Record<string, string>,
+  workspaceId: string,
+  channelId: string | null
+): Record<string, string> {
+  const map = { ...memory };
+  if (channelId) map[workspaceId] = channelId;
+  else delete map[workspaceId];
+  return map;
+}
+
 export const useChatStore = create<ChatState>()(
   persist(
     (set) => ({
@@ -85,10 +97,10 @@ export const useChatStore = create<ChatState>()(
         set((s) => {
           const wsId = s.selectedWorkspaceId;
           if (!wsId) return { selectedChannelId: id };
-          const map = { ...s.lastChannelByWorkspace };
-          if (id) map[wsId] = id;
-          else delete map[wsId];
-          return { selectedChannelId: id, lastChannelByWorkspace: map };
+          return {
+            selectedChannelId: id,
+            lastChannelByWorkspace: rememberChannel(s.lastChannelByWorkspace, wsId, id),
+          };
         }),
       requestChannelSettings: (id) => set({ channelSettingsRequestId: id }),
       consumeChannelSettingsRequest: () => set({ channelSettingsRequestId: null }),
@@ -105,18 +117,13 @@ export const useChatStore = create<ChatState>()(
             : { channels: [...s.channels, ch] }
         ),
       hydrateSelection: (workspaceId, channelId) =>
-        set((s) => {
-          const map = { ...s.lastChannelByWorkspace };
-          if (workspaceId) {
-            if (channelId) map[workspaceId] = channelId;
-            else delete map[workspaceId];
-          }
-          return {
-            selectedWorkspaceId: workspaceId,
-            selectedChannelId: channelId,
-            lastChannelByWorkspace: map,
-          };
-        }),
+        set((s) => ({
+          selectedWorkspaceId: workspaceId,
+          selectedChannelId: channelId,
+          lastChannelByWorkspace: workspaceId
+            ? rememberChannel(s.lastChannelByWorkspace, workspaceId, channelId)
+            : { ...s.lastChannelByWorkspace },
+        })),
     }),
     {
       name: "cheers.chat.selection",

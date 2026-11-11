@@ -2,7 +2,6 @@
 
 use serde_json::{json, Value};
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use super::{
     authorize_channel_write, db_err, resource_error, Principal, PrincipalType, ResourceResult,
@@ -19,11 +18,7 @@ pub async fn handle_code_status(
             "Code workspace status can only be reported by a Bot",
         ));
     }
-    let channel_id = params
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .and_then(|value| Uuid::parse_str(value).ok())
-        .ok_or_else(|| resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id = super::uuid_param(params, "channel_id")?;
     authorize_channel_write(db, principal, channel_id).await?;
 
     let profile = crate::domain::channel_profiles::get(db, &channel_id.to_string())

@@ -41,8 +41,6 @@ final class ActivityModel {
         }
     }
 
-    var pendingCount: Int { pending.count }
-
     /// Backfill from conversation previews: if a channel's latest message is an
     /// unresolved permission request, it's a pending approval worth showing on a
     /// cold start (before any live frame arrives). Live-only otherwise — older

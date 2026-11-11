@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useState } from "react";
 import { GitBranch, GitPullRequest, RotateCcw, FileText } from "lucide-react";
 import toast from "react-hot-toast";
@@ -20,7 +19,7 @@ import {
 } from "@/lib/desktopConnector";
 
 /** An app that can open a workspace dir (Finder + installed editors). */
-interface Opener {
+export interface Opener {
   key: string;
   label: string;
 }
@@ -194,16 +193,16 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                 >
                   {f.status.trim() || "?"}
                 </span>}
-                actions={<><UiButton action="preview" variant="plain"
+                actions={<><Button action="preview" variant="plain"
                   type="button"
                   onClick={() => void toggleDiff(f.path)}
                   className="text-content-primary hover:text-content-strong"
                   title={f.path}
                 >
                   View diff
-                </UiButton>
+                </Button>
                 {primaryOpener && (
-                  <UiButton action="open" variant="plain"
+                  <Button action="open" variant="plain"
                     type="button"
                     title={`Open in ${primaryOpener.label}`}
                     aria-label={`Open in ${primaryOpener.label}`}
@@ -219,9 +218,9 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                     }
                   >
                     <FileText className="w-3.5 h-3.5" />
-                  </UiButton>
+                  </Button>
                 )}
-                <UiButton action="discard" variant="plain"
+                <Button action="discard" variant="plain"
                   type="button"
                   title="Discard changes (revert)"
                   aria-label="Discard changes"
@@ -230,7 +229,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                   onClick={() => void revert(f.path)}
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                </UiButton>
+                </Button>
                 </>}
                 className="border-0"
               />

@@ -64,35 +64,9 @@ impl RedisFanout {
 
         Ok(fanout)
     }
-
-    /// 供 ConnectionManager 注册本地浏览器连接（subscribe 时调用）。
-    pub fn register_user(
-        &self,
-        user_id: Uuid,
-        session_id: &str,
-        conn_id: Uuid,
-        tx: mpsc::Sender<SharedFrame>,
-        close_tx: mpsc::Sender<CloseReason>,
-    ) {
-        self.local
-            .register_user(user_id, session_id, conn_id, tx, close_tx);
-    }
-    pub fn subscribe_channel(
-        &self,
-        channel_id: Uuid,
-        conn_id: Uuid,
-        tx: mpsc::Sender<SharedFrame>,
-    ) {
-        self.local.subscribe_channel(channel_id, conn_id, tx);
-    }
-    pub fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
-        self.local.unsubscribe_channel(channel_id, conn_id);
-    }
-    pub fn deregister_user(&self, user_id: Uuid, conn_id: Uuid) {
-        self.local.deregister_user(user_id, conn_id);
-    }
 }
 
+/// ConnectionManager 经此注册本地浏览器连接，全部委托给内部 local。
 impl LocalRegistry for RedisFanout {
     fn register_user(
         &self,
@@ -132,7 +106,7 @@ impl LocalRegistry for RedisFanout {
 impl Fanout for RedisFanout {
     async fn broadcast_channel(&self, channel_id: Uuid, frame: WireFrame) {
         let subject = channel_subject(channel_id);
-        publish(&self.publisher.clone(), &subject, &frame).await;
+        publish(&self.publisher, &subject, &frame).await;
     }
 
     async fn broadcast_channel_to_users(
@@ -165,7 +139,7 @@ impl Fanout for RedisFanout {
 
     async fn broadcast_user(&self, user_id: Uuid, frame: WireFrame) {
         let subject = user_subject(user_id);
-        publish(&self.publisher.clone(), &subject, &frame).await;
+        publish(&self.publisher, &subject, &frame).await;
     }
 
     fn kick_user(&self, user_id: Uuid) {

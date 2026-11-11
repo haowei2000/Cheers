@@ -1,6 +1,5 @@
 import { apiJson } from "./client";
 import type { Message } from "@/types";
-import { parseSuggestedQuestions, type SuggestedQuestion } from "@/features/chat/suggestedQuestions";
 import { parseLocator } from "@/features/chat/locator";
 import type { ResourceInteraction } from "@/features/chat/workbench/interaction";
 
@@ -74,13 +73,4 @@ export function sendResourceInteraction(channelId: string, event: ResourceIntera
       interaction: event,
     },
   });
-}
-
-/** Private, non-message request addressed to the bot that authored a reply. */
-export async function requestSuggestedQuestions(channelId: string, msgId: string): Promise<SuggestedQuestion[]> {
-  const result = await apiJson<{ suggestions: unknown }>(
-    `/channels/${channelId}/messages/${msgId}/suggestions`,
-    { method: "POST" },
-  );
-  return parseSuggestedQuestions(result.suggestions);
 }

@@ -62,6 +62,15 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** A signed-in page inside the desktop page frame. */
+function ProtectedPage({ children }: { children: React.ReactNode }) {
+  return (
+    <DesktopPageFrame>
+      <RequireAuth>{children}</RequireAuth>
+    </DesktopPageFrame>
+  );
+}
+
 // Session expiry ends the session. Sensitive operations use StepUpDialog instead
 // and keep the current route, caches, drafts, and refresh token intact.
 function SessionExpiredTakeover() {
@@ -176,7 +185,7 @@ export default function App() {
         <Routes>
         <Route path="/login" element={<DesktopPageFrame><LoginPage /></DesktopPageFrame>} />
         <Route path="/auth/callback" element={<DesktopPageFrame><OAuthCallbackPage /></DesktopPageFrame>} />
-        <Route path="/mcp-authorize" element={<DesktopPageFrame><RequireAuth><McpAuthorizePage /></RequireAuth></DesktopPageFrame>} />
+        <Route path="/mcp-authorize" element={<ProtectedPage><McpAuthorizePage /></ProtectedPage>} />
         <Route path="/register" element={<DesktopPageFrame><RegisterPage /></DesktopPageFrame>} />
         <Route path="/forgot" element={<DesktopPageFrame><ForgotPasswordPage /></DesktopPageFrame>} />
         <Route path="/reset" element={<DesktopPageFrame><ResetPasswordPage /></DesktopPageFrame>} />
@@ -197,56 +206,11 @@ export default function App() {
             </RequireAuth>
           }
         />
-        <Route
-          path="/settings/*"
-          element={
-            <DesktopPageFrame>
-              <RequireAuth>
-                <SettingsPage />
-              </RequireAuth>
-            </DesktopPageFrame>
-          }
-        />
-        <Route
-          path="/friends/*"
-          element={
-            <DesktopPageFrame>
-              <RequireAuth>
-                <FriendsPage />
-              </RequireAuth>
-            </DesktopPageFrame>
-          }
-        />
-        <Route
-          path="/fleet/*"
-          element={
-            <DesktopPageFrame>
-              <RequireAuth>
-                <FleetPage />
-              </RequireAuth>
-            </DesktopPageFrame>
-          }
-        />
-        <Route
-          path="/activity"
-          element={
-            <DesktopPageFrame>
-              <RequireAuth>
-                <ActivityPage />
-              </RequireAuth>
-            </DesktopPageFrame>
-          }
-        />
-        <Route
-          path="/permissions"
-          element={
-            <DesktopPageFrame>
-              <RequireAuth>
-                <PermissionsPage />
-              </RequireAuth>
-            </DesktopPageFrame>
-          }
-        />
+        <Route path="/settings/*" element={<ProtectedPage><SettingsPage /></ProtectedPage>} />
+        <Route path="/friends/*" element={<ProtectedPage><FriendsPage /></ProtectedPage>} />
+        <Route path="/fleet/*" element={<ProtectedPage><FleetPage /></ProtectedPage>} />
+        <Route path="/activity" element={<ProtectedPage><ActivityPage /></ProtectedPage>} />
+        <Route path="/permissions" element={<ProtectedPage><PermissionsPage /></ProtectedPage>} />
         <Route path="*" element={<Navigate to="/chat" replace />} />
         </Routes>
         <SessionExpiredTakeover />

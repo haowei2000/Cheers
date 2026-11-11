@@ -241,24 +241,22 @@ async fn load_where(
 
     let Some(row) = row else { return Ok(None) };
     let key = master_key(config);
-    let access_enc: String = row.access_token_enc.clone();
-    let refresh_enc: Option<String> = row.refresh_token_enc.clone();
-    let stored_subject: String = row.subject_type.clone();
 
     Ok(Some(Credential {
-        credential_id: row.credential_id.clone(),
-        integration_id: row.integration_id.clone(),
-        subject_type: SubjectType::parse(&stored_subject)
-            .ok_or_else(|| anyhow::anyhow!("unknown subject_type {stored_subject}"))?,
-        subject_id: row.subject_id.clone(),
-        external_account: row.external_account.clone(),
-        access_token: Secret::new(crypto::decrypt_secret(&key, &access_enc)?),
-        refresh_token: refresh_enc
+        subject_type: SubjectType::parse(&row.subject_type)
+            .ok_or_else(|| anyhow::anyhow!("unknown subject_type {}", row.subject_type))?,
+        access_token: Secret::new(crypto::decrypt_secret(&key, &row.access_token_enc)?),
+        refresh_token: row
+            .refresh_token_enc
             .map(|blob| crypto::decrypt_secret(&key, &blob).map(Secret::new))
             .transpose()?,
-        scopes: row.scopes.clone(),
-        expires_at: row.expires_at.clone(),
-        revoked_at: row.revoked_at.clone(),
+        credential_id: row.credential_id,
+        integration_id: row.integration_id,
+        subject_id: row.subject_id,
+        external_account: row.external_account,
+        scopes: row.scopes,
+        expires_at: row.expires_at,
+        revoked_at: row.revoked_at,
     }))
 }
 

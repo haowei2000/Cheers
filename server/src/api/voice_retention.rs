@@ -129,13 +129,14 @@ pub async fn delete_transcript_segment(
     )
     .await;
     // Notify the room so browsers hide the segment.
+    let channel_uuid = Uuid::parse_str(&channel_id)
+        .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     state
         .fanout
         .broadcast_channel(
-            Uuid::parse_str(&channel_id)
-                .map_err(|_| AppError::BadRequest("invalid channel id".into()))?,
+            channel_uuid,
             WireFrame::channel(
-                Uuid::parse_str(&channel_id).unwrap(),
+                channel_uuid,
                 "voice_transcript_deleted",
                 json!({ "channel_seq": seq, "channel_id": channel_id }),
             ),
@@ -179,13 +180,14 @@ pub async fn update_voice_config(
         }),
     )
     .await;
+    let channel_uuid = Uuid::parse_str(&channel_id)
+        .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     state
         .fanout
         .broadcast_channel(
-            Uuid::parse_str(&channel_id)
-                .map_err(|_| AppError::BadRequest("invalid channel id".into()))?,
+            channel_uuid,
             WireFrame::channel(
-                Uuid::parse_str(&channel_id).unwrap(),
+                channel_uuid,
                 "voice_config_updated",
                 json!({ "channel_id": channel_id }),
             ),

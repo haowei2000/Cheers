@@ -293,39 +293,35 @@ fn yaml_insert_raw(
         return Err(patch_error("insert index exceeds sequence length"));
     }
 
+    let item_at = |indent: usize| -> Result<String, (String, String)> {
+        match raw_item {
+            Some(item) => Ok(item),
+            None => yaml_sequence_item(
+                value.ok_or_else(|| patch_error("insert value is required"))?,
+                indent,
+            ),
+        }
+    };
+
     match feature.kind() {
         FeatureKind::BlockSequence if !sequence.is_empty() => {
-            let (offset, indent) = if index < sequence.len() {
-                let child = yaml_route(&[path, &[PatchComponent::Index(index)]].concat());
-                let child_indent = doc
-                    .query_exact(&child)
-                    .map_err(|error| patch_error(error.to_string()))?
-                    .map(|item| item.location.point_span.0 .1.saturating_sub(2))
-                    .ok_or_else(|| patch_error("sequence item has no value"))?;
-                let span = doc
-                    .removal_span(&child)
-                    .map_err(|error| patch_error(error.to_string()))?;
-                (span.start, child_indent)
+            // Insert before the item now at `index`, or after the last one when appending.
+            let anchor = index.min(sequence.len() - 1);
+            let child = yaml_route(&[path, &[PatchComponent::Index(anchor)]].concat());
+            let indent = doc
+                .query_exact(&child)
+                .map_err(|error| patch_error(error.to_string()))?
+                .map(|item| item.location.point_span.0 .1.saturating_sub(2))
+                .ok_or_else(|| patch_error("sequence item has no value"))?;
+            let span = doc
+                .removal_span(&child)
+                .map_err(|error| patch_error(error.to_string()))?;
+            let offset = if index < sequence.len() {
+                span.start
             } else {
-                let child =
-                    yaml_route(&[path, &[PatchComponent::Index(sequence.len() - 1)]].concat());
-                let child_indent = doc
-                    .query_exact(&child)
-                    .map_err(|error| patch_error(error.to_string()))?
-                    .map(|item| item.location.point_span.0 .1.saturating_sub(2))
-                    .ok_or_else(|| patch_error("sequence item has no value"))?;
-                let span = doc
-                    .removal_span(&child)
-                    .map_err(|error| patch_error(error.to_string()))?;
-                (span.end, child_indent)
+                span.end
             };
-            let item = match raw_item {
-                Some(item) => item,
-                None => yaml_sequence_item(
-                    value.ok_or_else(|| patch_error("insert value is required"))?,
-                    indent,
-                )?,
-            };
+            let item = item_at(indent)?;
             source.insert_str(offset, &item);
             Ok(())
         }
@@ -335,13 +331,7 @@ fn yaml_insert_raw(
             } else {
                 line_indent(source, feature.location.byte_span.0) + 2
             };
-            let item = match raw_item {
-                Some(item) => item,
-                None => yaml_sequence_item(
-                    value.ok_or_else(|| patch_error("insert value is required"))?,
-                    indent,
-                )?,
-            };
+            let item = item_at(indent)?;
             let replacement = if path.is_empty() {
                 item
             } else {
@@ -358,6 +348,13 @@ fn yaml_insert_raw(
         )),
         _ => Err(patch_error("insert target must be a sequence")),
     }
+}
+
+fn op_index(op: &Value, key: &str, missing: &'static str) -> Result<usize, (String, String)> {
+    op.get(key)
+        .and_then(Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or_else(|| patch_error(missing))
 }
 
 fn value_at_path<'a>(
@@ -439,11 +436,7 @@ fn apply_value_op(root: &mut Value, op: &Value) -> Result<(), (String, String)> 
             }
         }
         "insert" => {
-            let index = op
-                .get("index")
-                .and_then(Value::as_u64)
-                .and_then(|n| usize::try_from(n).ok())
-                .ok_or_else(|| patch_error("insert.index is required"))?;
+            let index = op_index(op, "index", "insert.index is required")?;
             let next = op
                 .get("value")
                 .cloned()
@@ -484,16 +477,8 @@ fn apply_value_op(root: &mut Value, op: &Value) -> Result<(), (String, String)> 
             }
         }
         "move" => {
-            let from = op
-                .get("from")
-                .and_then(Value::as_u64)
-                .and_then(|n| usize::try_from(n).ok())
-                .ok_or_else(|| patch_error("move.from is required"))?;
-            let to = op
-                .get("to")
-                .and_then(Value::as_u64)
-                .and_then(|n| usize::try_from(n).ok())
-                .ok_or_else(|| patch_error("move.to is required"))?;
+            let from = op_index(op, "from", "move.from is required")?;
+            let to = op_index(op, "to", "move.to is required")?;
             let items = value_at_path_mut(root, &path)?
                 .as_array_mut()
                 .ok_or_else(|| patch_error("move target must be a sequence"))?;
@@ -569,11 +554,7 @@ fn apply_yaml_op(source: &mut String, op: &Value) -> Result<(), (String, String)
             }
         }
         "insert" => {
-            let index = op
-                .get("index")
-                .and_then(Value::as_u64)
-                .and_then(|n| usize::try_from(n).ok())
-                .ok_or_else(|| patch_error("insert.index is required"))?;
+            let index = op_index(op, "index", "insert.index is required")?;
             yaml_insert_raw(source, &path, index, None, op.get("value"))?;
         }
         "remove" => {
@@ -583,16 +564,8 @@ fn apply_yaml_op(source: &mut String, op: &Value) -> Result<(), (String, String)
             source.replace_range(span, "");
         }
         "move" => {
-            let from = op
-                .get("from")
-                .and_then(Value::as_u64)
-                .and_then(|n| usize::try_from(n).ok())
-                .ok_or_else(|| patch_error("move.from is required"))?;
-            let to = op
-                .get("to")
-                .and_then(Value::as_u64)
-                .and_then(|n| usize::try_from(n).ok())
-                .ok_or_else(|| patch_error("move.to is required"))?;
+            let from = op_index(op, "from", "move.from is required")?;
+            let to = op_index(op, "to", "move.to is required")?;
             let parsed = parse_structured("value.yaml", source)
                 .ok_or_else(|| patch_error("file is not valid YAML"))?;
             let length = value_at_path(&parsed, &path)?
@@ -1126,7 +1099,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
 
 /// `fs.mv` — move/rename one node and all descendants.
 pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id = extract_channel_id(params)?;
+    let channel_id = super::channel_id_or_bad_request(params)?;
     check_fs_write(db, principal, channel_id).await?;
     let from = normalize_path(
         params.get("from").and_then(|v| v.as_str()).unwrap_or(""),
@@ -1393,20 +1366,12 @@ fn extract_channel_path(
     params: &Value,
     allow_empty: bool,
 ) -> Result<(Uuid, String), (String, String)> {
-    let channel_id = extract_channel_id(params)?;
+    let channel_id = super::channel_id_or_bad_request(params)?;
     let path = normalize_path(
         params.get("path").and_then(|v| v.as_str()).unwrap_or(""),
         allow_empty,
     )?;
     Ok((channel_id, path))
-}
-
-fn extract_channel_id(params: &Value) -> Result<Uuid, (String, String)> {
-    params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))
 }
 
 /// A bare uuid as the whole path is almost certainly a misused attachment file_id — the

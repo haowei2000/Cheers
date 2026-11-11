@@ -287,19 +287,6 @@ struct FriendsView: View {
         errorText = nil
     }
 
-    private func resolveAvatarURL(_ raw: String?) -> URL? {
-        guard let raw, !raw.isEmpty else { return nil }
-        if let absolute = URL(string: raw), absolute.scheme != nil { return absolute }
-        guard let base = app.baseURL,
-              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
-            return nil
-        }
-        components.path = ""
-        components.query = nil
-        components.fragment = nil
-        return URL(string: raw, relativeTo: components.url)?.absoluteURL
-    }
-
     private var blockedList: some View {
         Group {
             if blocked.isEmpty {
@@ -335,7 +322,7 @@ struct FriendsView: View {
             seedId: id,
             name: name,
             size: Theme.avatarList,
-            imageURL: resolveAvatarURL(rawURL)
+            imageURL: app.resolveServerResourceURL(rawURL)
         ))
     }
 

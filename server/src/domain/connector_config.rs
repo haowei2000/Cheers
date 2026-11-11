@@ -24,6 +24,10 @@ use crate::domain::agent_catalog::{self, BuiltinLaunch};
 const CONTROL_PATH: &str = "/ws/agent-bridge/control";
 const DATA_PATH: &str = "/ws/agent-bridge/data";
 
+/// adapter.command when the real one is unknown. Absolute and nonexistent, so
+/// install scripts refuse it instead of resolving a same-named program on PATH.
+const PLACEHOLDER_COMMAND: &str = "/path/to/your-acp-agent";
+
 /// Fallback public base when `CHEERS_CONNECTOR_PUBLIC_BASE` is unset. Points at
 /// the gateway directly; for local kind this requires a `kubectl port-forward`
 /// (or set the env to the frontend NodePort `ws://localhost:30080`, which nginx
@@ -56,8 +60,13 @@ struct AgentPreset {
     allowed_modes: Vec<String>,
     /// policy.config.allowed_config_options — opaque ACP config option ids.
     allowed_config_options: Vec<String>,
+}
+
+impl AgentPreset {
     /// True when `command` is a placeholder the user must replace before it runs.
-    needs_edit: bool,
+    fn needs_edit(&self) -> bool {
+        self.command == PLACEHOLDER_COMMAND
+    }
 }
 
 fn strings(xs: &[&str]) -> Vec<String> {
@@ -74,19 +83,17 @@ fn preset_from_builtin(launch: &BuiltinLaunch) -> AgentPreset {
         permission_mode: launch.permission_mode.map(str::to_string),
         allowed_modes: strings(launch.allowed_modes),
         allowed_config_options: strings(launch.allowed_config_options),
-        needs_edit: false,
     }
 }
 
 fn generic_preset() -> AgentPreset {
     AgentPreset {
-        command: "/path/to/your-acp-agent".into(),
+        command: PLACEHOLDER_COMMAND.into(),
         args: vec![],
         env_allow: strings(&["HOME", "PATH"]),
         permission_mode: None,
         allowed_modes: vec![],
         allowed_config_options: vec![],
-        needs_edit: true,
     }
 }
 
@@ -97,12 +104,10 @@ fn preset_from_package(launch: &PackageLaunch) -> AgentPreset {
             env_allow.push(k.clone());
         }
     }
-    // npm unreachable, or a package with several unrelated commands: render the
-    // package-name guess but flag it so the user sets the real ACP command.
-    let (command, needs_edit) = match acp_registry::adapter_command_for(launch) {
-        Some(command) => (command, false),
-        None => (acp_registry::unscoped_package_name(&launch.package), true),
-    };
+    // npm unreachable, or a package with several unrelated commands: never guess
+    // from the package name (`@minimax-ai/code` would launch VS Code's `code`).
+    let command =
+        acp_registry::adapter_command_for(launch).unwrap_or_else(|| PLACEHOLDER_COMMAND.into());
     AgentPreset {
         command,
         args: acp_registry::adapter_args_for(launch),
@@ -110,7 +115,6 @@ fn preset_from_package(launch: &PackageLaunch) -> AgentPreset {
         permission_mode: None,
         allowed_modes: vec![],
         allowed_config_options: strings(&["model"]),
-        needs_edit,
     }
 }
 
@@ -138,7 +142,6 @@ fn preset_from_binary(launch: &BinaryLaunch) -> AgentPreset {
         permission_mode: None,
         allowed_modes: vec![],
         allowed_config_options: strings(&["model"]),
-        needs_edit: false,
     }
 }
 
@@ -412,7 +415,7 @@ pub fn render_toml(params: &RenderParams) -> String {
         .collect::<Vec<_>>()
         .join(", ");
 
-    let edit_banner = if preset.needs_edit {
+    let edit_banner = if preset.needs_edit() {
         "#\n# ⚠ adapter.command below is a PLACEHOLDER — replace it with your ACP\n#   agent binary (absolute path or a command on PATH) before starting.\n"
     } else {
         ""
@@ -758,7 +761,7 @@ mod tests {
             token_ref: TokenRef::HostFile("secrets/mybot.token".into()),
         });
         assert!(toml.contains("PLACEHOLDER"));
-        assert!(toml.contains("/path/to/your-acp-agent"));
+        assert!(toml.contains(PLACEHOLDER_COMMAND));
     }
 
     #[test]
@@ -817,7 +820,35 @@ mod tests {
             public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/multi.token".into()),
         });
-        assert!(toml.contains("command = \"multi-tool\""));
+        assert!(toml.contains(&format!("command = \"{PLACEHOLDER_COMMAND}\"")));
+        assert!(!toml.contains("command = \"multi-tool\""));
+        assert!(toml.contains("PLACEHOLDER"));
+    }
+
+    #[test]
+    fn unreachable_npm_never_guesses_command_from_package_name() {
+        let _lock = crate::domain::acp_registry::test_registry_lock();
+        crate::domain::acp_registry::seed_cache_for_test(
+            r#"{
+              "agents": [{
+                "id": "minimax",
+                "name": "MiniMax",
+                "version": "1.0.0",
+                "distribution": {
+                  "npx": { "package": "@minimax-ai/code@1.0.0", "args": ["--acp"] }
+                }
+              }]
+            }"#,
+        );
+        let toml = render_toml(&RenderParams {
+            account_id: "mini".into(),
+            agent_type: "minimax".into(),
+            public_base: "ws://localhost:30080".into(),
+            token_ref: TokenRef::HostFile("secrets/mini.token".into()),
+        });
+        assert!(toml.contains(&format!("command = \"{PLACEHOLDER_COMMAND}\"")));
+        assert!(!toml.contains("command = \"code\""));
+        assert!(toml.contains(r#"args    = ["--acp"]"#));
         assert!(toml.contains("PLACEHOLDER"));
     }
 

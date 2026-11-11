@@ -41,8 +41,9 @@ export function bustAllBotControls(botId: string): void {
 
 export function useBotControls(channelId: string, botId: string | null, selectedSessionId: string) {
   const queryKey = queryKeys.botSessionControls(channelId, botId ?? "");
-  const initialUpdates = useRef({ key: JSON.stringify(queryKey), count: queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0 });
-  if (initialUpdates.current.key !== JSON.stringify(queryKey)) initialUpdates.current = { key: JSON.stringify(queryKey), count: queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0 };
+  const keyText = JSON.stringify(queryKey);
+  const initialUpdates = useRef({ key: keyText, count: queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0 });
+  if (initialUpdates.current.key !== keyText) initialUpdates.current = { key: keyText, count: queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0 };
   const query = useQuery({
     ...botControlsQuery(channelId, botId ?? ""),
     enabled: Boolean(botId),

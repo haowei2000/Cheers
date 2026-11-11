@@ -270,11 +270,13 @@ export function RendererHost({
     }
   }, [missingExtension, renderer.id, renderer.extensionId, handleFailure]);
 
-  if (runtimeError) {
+  const fallbackReason = runtimeError
+    || (missingExtension ? `Renderer extension not installed: ${renderer.extensionId}` : null);
+  if (fallbackReason) {
     return (
       <RendererFallbackView
         rendererTitle={renderer.title}
-        reason={runtimeError}
+        reason={fallbackReason}
         path={path}
         session={session}
         annotations={annotations}
@@ -285,21 +287,7 @@ export function RendererHost({
     );
   }
 
-  if (renderer.source === "extension") {
-    if (!extension) {
-      return (
-        <RendererFallbackView
-          rendererTitle={renderer.title}
-          reason={`Renderer extension not installed: ${renderer.extensionId}`}
-          path={path}
-          session={session}
-          annotations={annotations}
-          activeAnnotationId={activeAnnotationId}
-          onSelectAnnotation={onSelectAnnotation}
-          onRetry={handleRetry}
-        />
-      );
-    }
+  if (extension) {
     // whitelisted, channel-scoped reader handed to the extension (host API)
     const readChannel = (resource: string, params: Record<string, unknown>) => {
       if (!CHANNEL_READ_WHITELIST.has(resource)) {

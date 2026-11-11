@@ -9,7 +9,10 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    api::middleware::Claims, app_state::AppState, domain::acp_capability, errors::AppError,
+    api::{bots::is_admin, middleware::Claims},
+    app_state::AppState,
+    domain::acp_capability,
+    errors::AppError,
 };
 
 #[derive(Deserialize)]
@@ -146,6 +149,34 @@ struct DelegationRow {
     updated_at: chrono::DateTime<chrono::Utc>,
     note: Option<String>,
 }
+
+impl From<DelegationRow> for DelegationItem {
+    fn from(row: DelegationRow) -> Self {
+        Self {
+            delegation_id: row.delegation_id,
+            bot_id: row.bot_id,
+            scope_type: row.scope_type,
+            scope_id: row.scope_id,
+            session_id: row.session_id,
+            allowed_actions: row.allowed_actions,
+            allowed_resources: row.allowed_resources,
+            max_uses: row.max_uses.map(i64::from),
+            use_count: row.use_count as i64,
+            expires_at: row.expires_at,
+            public_key: row.public_key,
+            algorithm: row.algorithm,
+            delegated_to: row.delegated_to,
+            status: row.status,
+            revoked: row.revoked,
+            revoked_at: row.revoked_at,
+            granted_by: row.granted_by,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            note: row.note,
+        }
+    }
+}
+
 pub async fn list_delegations(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -185,33 +216,7 @@ pub async fn list_delegations(
         .await?
     };
 
-    let mut items = Vec::with_capacity(rows.len());
-    for row in rows {
-        items.push(DelegationItem {
-            delegation_id: row.delegation_id.clone(),
-            bot_id: row.bot_id.clone(),
-            scope_type: row.scope_type.clone(),
-            scope_id: row.scope_id.clone(),
-            session_id: row.session_id.clone(),
-            allowed_actions: row.allowed_actions.clone(),
-            allowed_resources: row.allowed_resources.clone(),
-            max_uses: row.max_uses.clone().map(i64::from),
-            use_count: row.use_count.clone() as i64,
-            expires_at: row.expires_at.clone(),
-            public_key: row.public_key.clone(),
-            algorithm: row.algorithm.clone(),
-            delegated_to: row.delegated_to.clone(),
-            status: row.status.clone(),
-            revoked: row.revoked.clone(),
-            revoked_at: row.revoked_at.clone(),
-            granted_by: row.granted_by.clone(),
-            created_at: row.created_at.clone(),
-            updated_at: row.updated_at.clone(),
-            note: row.note.clone(),
-        });
-    }
-
-    Ok(Json(items))
+    Ok(Json(rows.into_iter().map(DelegationItem::from).collect()))
 }
 
 pub async fn list_reject_logs(
@@ -234,7 +239,7 @@ pub async fn list_reject_logs_admin(
     Extension(claims): Extension<Claims>,
     Query(query): Query<CapabilityRejectLogAdminQuery>,
 ) -> Result<Json<CapabilityRejectLogPage>, AppError> {
-    if !matches!(claims.role.as_str(), "admin" | "system_admin") {
+    if !is_admin(&claims) {
         return Err(AppError::Forbidden(
             "only admin can query cross-bot rejection logs".into(),
         ));
@@ -279,25 +284,25 @@ async fn list_reject_logs_by_filter(
     let mut items = Vec::with_capacity(rows.len().min(params.limit as usize));
     for row in rows {
         items.push(CapabilityRejectLogItem {
-            log_id: row.log_id.clone(),
-            bot_id: row.bot_id.clone(),
-            provider_account_id: row.provider_account_id.clone(),
-            delegation_id: row.delegation_id.clone(),
-            decision_scope_type: row.decision_scope_type.clone(),
-            decision_scope_id: row.decision_scope_id.clone(),
-            frame_type: row.frame_type.clone(),
-            action: row.action.clone(),
-            request_id: row.request_id.clone(),
-            request_session_id: row.request_session_id.clone(),
-            resolved_session_id: row.resolved_session_id.clone(),
-            resolved_session_status: row.resolved_session_status.clone(),
-            resolved_session_scope_type: row.resolved_session_scope_type.clone(),
-            resolved_session_scope_id: row.resolved_session_scope_id.clone(),
-            session_locator_source: row.session_locator_source.clone(),
-            session_locator_value: row.session_locator_value.clone(),
-            resource: row.resource.clone(),
-            decision_reason: row.decision_reason.clone(),
-            created_at: row.created_at.clone(),
+            log_id: row.log_id,
+            bot_id: row.bot_id,
+            provider_account_id: row.provider_account_id,
+            delegation_id: row.delegation_id,
+            decision_scope_type: row.decision_scope_type,
+            decision_scope_id: row.decision_scope_id,
+            frame_type: row.frame_type,
+            action: row.action,
+            request_id: row.request_id,
+            request_session_id: row.request_session_id,
+            resolved_session_id: row.resolved_session_id,
+            resolved_session_status: row.resolved_session_status,
+            resolved_session_scope_type: row.resolved_session_scope_type,
+            resolved_session_scope_id: row.resolved_session_scope_id,
+            session_locator_source: row.session_locator_source,
+            session_locator_value: row.session_locator_value,
+            resource: row.resource,
+            decision_reason: row.decision_reason,
+            created_at: row.created_at,
         });
     }
 
@@ -431,7 +436,8 @@ pub async fn create_delegation(
         .map_err(|err| AppError::BadRequest(err.to_string()))?;
 
     let delegation_id = Uuid::new_v4();
-    let row = sqlx::query!(
+    let row = sqlx::query_as!(
+        DelegationRow,
         "INSERT INTO acp_capability_delegations (
             delegation_id, bot_id, scope_type, scope_id, session_id,
             allowed_actions, allowed_resources, max_uses, use_count, expires_at,
@@ -464,28 +470,7 @@ pub async fn create_delegation(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(DelegationItem {
-        delegation_id: row.delegation_id.clone(),
-        bot_id: row.bot_id.clone(),
-        scope_type: row.scope_type.clone(),
-        scope_id: row.scope_id.clone(),
-        session_id: row.session_id.clone(),
-        allowed_actions: row.allowed_actions.clone(),
-        allowed_resources: row.allowed_resources.clone(),
-        max_uses: row.max_uses.clone().map(i64::from),
-        use_count: row.use_count.clone() as i64,
-        expires_at: row.expires_at.clone(),
-        public_key: row.public_key.clone(),
-        algorithm: row.algorithm.clone(),
-        delegated_to: row.delegated_to.clone(),
-        status: row.status.clone(),
-        revoked: row.revoked.clone(),
-        revoked_at: row.revoked_at.clone(),
-        granted_by: row.granted_by.clone(),
-        created_at: row.created_at.clone(),
-        updated_at: row.updated_at.clone(),
-        note: row.note.clone(),
-    }))
+    Ok(Json(row.into()))
 }
 
 pub async fn revoke_delegation(
@@ -517,15 +502,20 @@ pub async fn revoke_delegation(
 }
 
 fn normalize_scope_type(raw: String) -> Result<String, AppError> {
-    match raw.trim().to_lowercase().as_str() {
+    let scope_type = raw.trim().to_lowercase();
+    if matches!(
+        scope_type.as_str(),
         acp_capability::CAPABILITY_SCOPE_GLOBAL
-        | acp_capability::CAPABILITY_SCOPE_WORKSPACE
-        | acp_capability::CAPABILITY_SCOPE_CHANNEL
-        | acp_capability::CAPABILITY_SCOPE_SESSION
-        | acp_capability::CAPABILITY_SCOPE_USER => Ok(raw.trim().to_lowercase()),
-        _ => Err(AppError::BadRequest(
+            | acp_capability::CAPABILITY_SCOPE_WORKSPACE
+            | acp_capability::CAPABILITY_SCOPE_CHANNEL
+            | acp_capability::CAPABILITY_SCOPE_SESSION
+            | acp_capability::CAPABILITY_SCOPE_USER
+    ) {
+        Ok(scope_type)
+    } else {
+        Err(AppError::BadRequest(
             "scope_type must be one of global|workspace|channel|session|user".into(),
-        )),
+        ))
     }
 }
 
@@ -564,7 +554,7 @@ async fn ensure_bot_owner_or_admin(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    if matches!(claims.role.as_str(), "admin" | "system_admin") {
+    if is_admin(claims) {
         return Ok(());
     }
 
