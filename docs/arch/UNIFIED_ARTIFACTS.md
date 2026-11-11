@@ -170,7 +170,7 @@ which view can show a text format.
 | --- | --- | --- |
 | Message card (`cheers:artifact/<id>`) | Reference store: title, type, availability; text previews through the Desk preview | None (read-only) |
 | Canvas node (`source.kind: artifact`) | Reference store: title, type, availability, source excerpt | None |
-| Artifacts library | Catalog list; routed client for the open artifact | Routed client |
+| Artifacts library | Catalog list, optionally canvases only (`type: canvas`); creates canvases; routed client for the open artifact | Routed client |
 | Collections | Routed client for canvases; a failed lookup opens the path | Routed client for canvases, provider client otherwise |
 
 Not yet:

@@ -170,6 +170,11 @@ This kind is a canvas-document addition: the published extension schema
 A canvas is itself an artifact. Both the Artifacts library and Collections edit it
 through `channel.artifacts.patch`, which checks the artifact version.
 
+The library lists canvases on their own (`channel.artifacts.list` with `type: canvas`,
+filtered on the gateway because the list is paged) and creates one from a name: a bare
+name becomes `canvases/<name>.canvas.yaml`, created with `channel.artifacts.create` as
+`canvas: 1` with empty node and edge lists, and opens in the canvas view.
+
 ## Addressing
 
 Goal 4 is what makes the two views *one document* rather than two editors that share a
