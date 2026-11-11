@@ -12,7 +12,10 @@ import { sourcePathKey } from "../annotations";
 import { applyPatchOps, invertPatchOps, type PatchOp } from "../patchOps";
 import { canvasLayout } from "./layout";
 import { connectOps, pinNodeOps, removeNodeOps } from "./ops";
-import { nodeTitle, parseCanvas, type CanvasNode, type CanvasRect, type CanvasSide } from "./document";
+import { nodeLocator, parseCanvas, type CanvasDocument, type CanvasNode, type CanvasRect, type CanvasSide } from "./document";
+import { artifactExcerpt, artifactNodeDetail, artifactNodeTitle } from "./artifactRefs";
+import type { ArtifactReference } from "../../artifacts/referenceStore";
+import { useArtifactReferences } from "../../artifacts/useArtifactReference";
 import {
   activateCanvasNode,
   canvasNodeKeyAction,
@@ -90,7 +93,18 @@ function offsetFor(side: CanvasSide, reach: number): { x: number; y: number } {
   }
 }
 
-function NodeBody({ node }: { node: CanvasNode }) {
+/** The artifact ids a canvas references, as one stable key. The canvas file holds only
+ *  the id; the title, availability and source live in the channel's reference store, so
+ *  a rename or a deletion shows up here without anyone editing the canvas. */
+function referencedArtifactIds(document_: CanvasDocument | null): string {
+  const set = new Set<string>();
+  for (const node of document_?.nodes ?? []) {
+    if (node.kind === "source" && node.source.kind === "artifact") set.add(node.source.artifactId);
+  }
+  return [...set].sort().join(",");
+}
+
+function NodeBody({ node, artifact }: { node: CanvasNode; artifact?: ArtifactReference }) {
   if (node.kind === "text") {
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 text-compact text-content-secondary">
@@ -100,23 +114,37 @@ function NodeBody({ node }: { node: CanvasNode }) {
   }
   // A source node is a CARD, not a live render. Mounting a lens per node would nest a
   // third interactive layer inside the drag and the pan; docs/arch/CANVAS.md keeps that
-  // for last, and until then the card says what it points at and opens it on click.
-  const detail = node.source.kind === "fs" ? node.source.path : node.source.verb;
+  // for last, and until then the card says what it points at and opens it on click. An
+  // artifact card also quotes its source as inert text: nothing in it runs or links.
+  const detail =
+    node.source.kind === "fs" ? node.source.path
+    : node.source.kind === "artifact" ? artifactNodeDetail(node.source.artifactId, artifact)
+    : node.source.verb;
+  const Icon = node.source.kind === "resource" ? Database : FileText;
   return (
     <div className="flex min-h-0 flex-1 items-start gap-2 px-3 pb-3">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-control text-content-secondary">
-        {node.source.kind === "fs" ? <FileText className="h-4 w-4" /> : <Database className="h-4 w-4" />}
+        <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-compact text-content-secondary" title={detail}>{detail}</span>
         {node.view && <span className="mt-1 block truncate text-minimal text-content-muted">{node.view}</span>}
+        {artifact?.head && (
+          <pre data-canvas-excerpt className="mt-2 overflow-hidden whitespace-pre-wrap break-all font-code text-minimal leading-reading text-content-muted">
+            {artifactExcerpt(artifact.head)}
+          </pre>
+        )}
       </span>
     </div>
   );
 }
 
-export function CanvasLens({ data, onOps, requestContextPick, openLocator }: LensProps) {
+export function CanvasLens({ data, onOps, requestContextPick, openLocator, artifactRefs }: LensProps) {
   const document_ = useMemo(() => parseCanvas(data), [data]);
+  useArtifactReferences(artifactRefs, useMemo(() => referencedArtifactIds(document_), [document_]));
+  const artifactOf = (node: CanvasNode): ArtifactReference | undefined =>
+    node.kind === "source" && node.source.kind === "artifact" ? artifactRefs?.snapshot(node.source.artifactId) : undefined;
+  const titleOf = (node: CanvasNode): string => artifactNodeTitle(node, artifactOf(node));
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 24, y: 24 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -315,11 +343,8 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
   const openSource = useCallback(
     (node: CanvasNode) => {
       if (!openLocator || node.kind !== "source") return;
-      const uri =
-        node.source.kind === "fs"
-          ? `cheers:desk/${node.source.path}`
-          : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`;
-      openLocator(uri);
+      const uri = nodeLocator(node);
+      if (uri) openLocator(uri);
     },
     [openLocator]
   );
@@ -413,17 +438,13 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       event.stopPropagation();
       setSelectedId(node.id);
       const isSource = node.kind === "source";
-      const uri = isSource
-        ? node.source.kind === "fs"
-          ? `cheers:desk/${node.source.path}`
-          : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`
-        : undefined;
+      const uri = nodeLocator(node);
 
       const extraActions: ContextAction[] = [];
       if (isSource && openLocator) {
         extraActions.push({
           id: "open-source",
-          label: `Open ${nodeTitle(node)}`,
+          label: `Open ${titleOf(node)}`,
           icon: <ExternalLink className="h-4 w-4" />,
           run: () => openSource(node),
         });
@@ -442,7 +463,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
       });
 
       requestContextPick(event, {
-        label: nodeTitle(node),
+        label: titleOf(node),
         locator: uri,
         sourcePath: ["nodes", node.at],
         extraActions,
@@ -587,12 +608,7 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
             const rect = rectOf(node.id);
             if (!rect) return null;
             const selected = selectedId === node.id;
-            const nodeUri =
-              node.kind === "source"
-                ? node.source.kind === "fs"
-                  ? `cheers:desk/${node.source.path}`
-                  : `cheers:${node.source.verb.replace(/^channel\./, "").replace(/\.read$/, "")}`
-                : undefined;
+            const nodeUri = nodeLocator(node);
             return (
               <div
                 key={node.id}
@@ -604,10 +620,10 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 data-workbench-context-target="canvas-node"
                 data-workbench-anchor={sourcePathKey(["nodes", node.at])}
                 data-cheers-locator={nodeUri}
-                data-cheers-label={nodeTitle(node)}
+                data-cheers-label={titleOf(node)}
                 role="option"
                 aria-selected={selected}
-                aria-label={`${nodeTitle(node)}${node.rect ? ", pinned" : ""}`}
+                aria-label={`${titleOf(node)}${node.rect ? ", pinned" : ""}`}
                 tabIndex={activeTabId === node.id ? 0 : -1}
                 className={`absolute flex flex-col rounded-sm elevation-raised ring-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                   selected ? selectedContainerClasses : "bg-panel ring-zinc-700 hover:ring-zinc-500"
@@ -619,10 +635,10 @@ export function CanvasLens({ data, onOps, requestContextPick, openLocator }: Len
                 onDoubleClick={() => openSource(node)}
               >
                 <div className="flex shrink-0 items-center gap-2 px-3 py-2">
-                  <span className="min-w-0 flex-1 truncate text-compact font-medium text-content-primary">{nodeTitle(node)}</span>
+                  <span className="min-w-0 flex-1 truncate text-compact font-medium text-content-primary">{titleOf(node)}</span>
                   {node.rect && <span className="shrink-0 text-minimal text-content-muted">pinned</span>}
                 </div>
-                <NodeBody node={node} />
+                <NodeBody node={node} artifact={artifactOf(node)} />
                 {selected && !readOnly &&
                   SIDES.map((side) => (
                     <span

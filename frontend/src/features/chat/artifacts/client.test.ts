@@ -37,6 +37,42 @@ describe("artifact references", () => {
     await session.actions.save();
     expect(session.snapshot()).toMatchObject({ version: 8, sourceVersion: 2 });
   });
+  it("gives every surface one client, so one artifact has one session", async () => {
+    const calls: { resource: string; params: Record<string, unknown> }[] = [];
+    const send = async (resource: string, params: Record<string, unknown>) => {
+      calls.push({ resource, params });
+      return { kind: "text", content: "", truncated: false, artifact: { artifact_id: params.artifact_id, path: null, version: 1, source_version: 1 } };
+    };
+    const base = makeFsClient(send, "channel");
+    const board = { artifact_id: "board", path: "board.canvas.yaml", version: 1 } as Artifact;
+    const library = artifactEditorClient(base, send, "channel", board);
+    // A refreshed copy of the same artifact, and a different artifact, from another surface.
+    const collection = artifactEditorClient(base, send, "channel", { ...board, version: 2 });
+    const other = artifactEditorClient(base, send, "channel", { artifact_id: "notes", path: "notes.md", version: 1 } as Artifact);
+    expect(collection).toBe(library);
+    expect(other).toBe(library);
+    expect(fileSessionController(collection, "board.canvas.yaml")).toBe(fileSessionController(library, "board.canvas.yaml"));
+    await library.read("board.canvas.yaml");
+    await library.read("notes.md");
+    expect(calls.map(({ params }) => params.artifact_id)).toEqual(["board", "notes"]);
+  });
+  it("follows a rename and a recreated file to the right artifact", async () => {
+    const calls: { resource: string; params: Record<string, unknown> }[] = [];
+    const send = async (resource: string, params: Record<string, unknown>) => {
+      calls.push({ resource, params });
+      return { kind: "text", content: "", truncated: false, path: params.path, version: 1, is_dir: false,
+        artifact: { artifact_id: params.artifact_id, path: null, version: 1, source_version: 1 } };
+    };
+    const base = makeFsClient(send, "channel");
+    const editor = artifactEditorClient(base, send, "channel", { artifact_id: "first", path: "a.md" } as Artifact);
+    artifactEditorClient(base, send, "channel", { artifact_id: "first", path: "b.md" } as Artifact);
+    await editor.read("a.md");
+    await editor.read("b.md");
+    expect(calls.map(({ resource }) => resource)).toEqual(["fs.read", "channel.artifacts.read"]);
+    artifactEditorClient(base, send, "channel", { artifact_id: "second", path: "b.md" } as Artifact);
+    await editor.read("b.md");
+    expect(calls[2].params.artifact_id).toBe("second");
+  });
   it("round-trips the stable identity through composer context", () => {
     const uri = "cheers:artifact/49ca7c5f-37cb-4f02-831c-e36da3492361";
     const item = locatorToContextItem(uri, "Report")!;

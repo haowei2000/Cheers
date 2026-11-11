@@ -14,20 +14,7 @@ import { FileGrid } from "../fileView";
 import { locatorToContextItem, useContextPickStore } from "../context/contextPick";
 import { parseLocator } from "../locator";
 import { artifactEditorClient, makeArtifactClient, type Artifact, type ArtifactContent } from "./client";
-
-const availabilityLabel: Record<Artifact["availability"], string> = {
-  ready: "Ready", pending: "Preparing", expired: "Expired", deleted: "Deleted", failed: "Failed",
-};
-
-export function artifactType(artifact: Pick<Artifact, "title" | "content_type">): string {
-  const format = formatOf(artifact.title);
-  if (format === "html" || format === "react") return "Interactive page";
-  if (/\.canvas\.(json|ya?ml)$/i.test(artifact.title)) return "Canvas";
-  if (format === "markdown") return "Document";
-  if (artifact.content_type?.startsWith("image/")) return "Image";
-  if (artifact.content_type === "application/pdf") return "PDF";
-  return "File";
-}
+import { artifactType, availabilityLabel } from "./presentation";
 
 /** One shared library for authored documents and delivered files. FilePanel is
  * still the source/preview editing host, so there is no second editing buffer. */

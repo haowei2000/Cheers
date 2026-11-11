@@ -7,7 +7,9 @@ import { Tip } from "@/components/ui/tip";
 import { LocatorOpenContext } from "./messageLinks";
 import { parseLocator } from "./locator";
 
-interface PreviewMetadata { path?:string; version?:number; refreshing:boolean; refresh:()=>void }
+/** `title` and `type` come from the artifact catalog when the link names an artifact:
+ * the link itself carries only an id. */
+export interface PreviewMetadata { path?:string; title?:string; type?:string; version?:number; refreshing:boolean; refresh:()=>void }
 export const ResourceEnclosureMetadataContext=createContext<((metadata:PreviewMetadata|undefined)=>void)|null>(null);
 
 function resourceLabel(uri:string) {
@@ -18,7 +20,7 @@ function resourceLabel(uri:string) {
     return "Document";
   }
   const kind=target?.kind==="resource"?target.resourceKind:target?.kind;
-  return ({desk:"Desk file",inbox:"Attachment",ws:"Workspace file",msg:"Message",plan:"Plan",sessions:"Sessions",cost:"Usage",activity:"Activity"} as Record<string,string>)[kind??""]??"Resource";
+  return ({desk:"Desk file",artifact:"Artifact",inbox:"Attachment",ws:"Workspace file",msg:"Message",plan:"Plan",sessions:"Sessions",cost:"Usage",activity:"Activity"} as Record<string,string>)[kind??""]??"Resource";
 }
 
 /** A specialized message attachment: title navigation and interactive preview are siblings.
@@ -31,14 +33,14 @@ export function ResourceEnclosure({uri,title,description,number,children}:{uri:s
   const detailsId=useId();
   const target=parseLocator(uri);
   const fallback=target?.kind==="desk"?target.path.split("/").pop():resourceLabel(uri);
-  const label=title||fallback||"Linked resource";
+  const label=title||metadata?.title||fallback||"Linked resource";
   return <section className="resource-enclosure min-w-0 rounded-sm bg-panel" aria-label={label}>
     <ResourceEnclosureMetadataContext.Provider value={setMetadata}>
       <header className="flex min-w-0 items-start gap-3 p-4 pb-3">
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-center gap-2 text-caption">
             <EditorialIcon name="attachment" contentSize="small" />
-            <span className="font-utility">Enclosure {String(number).padStart(2,"0")} · {metadata?.path?resourceLabel(`cheers:desk/${metadata.path}`):resourceLabel(uri)}</span>
+            <span className="font-utility">Enclosure {String(number).padStart(2,"0")} · {metadata?.type??(metadata?.path?resourceLabel(`cheers:desk/${metadata.path}`):resourceLabel(uri))}</span>
           </div>
           <a href={`#workspace-ref-${encodeURIComponent(uri)}`} onClick={event=>{event.preventDefault();openLocator?.(uri);}}
             className="group inline-flex max-w-full items-center gap-2 rounded-sm font-utility text-regular font-semibold text-content-primary underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"

@@ -149,6 +149,27 @@ exists to avoid. It is distinct from `viewOnly`, which claims the lens never edi
 
 `table` and `kanban` benefit immediately: editing one cell stops rewriting the file.
 
+### A node can reference an artifact
+
+A source may name an artifact by its stable id instead of a path:
+
+```yaml
+  - id: roadmap
+    source: { kind: artifact, id: 0f8b6c2e-4d3a-4b1c-9e7f-2a5d8c1b3e60 }
+```
+
+The canvas file holds only the id. The title, type, availability and the opening lines of
+the source come from the channel's artifact reference store
+([UNIFIED_ARTIFACTS.md](UNIFIED_ARTIFACTS.md#web-client-model)), so a rename or a deletion
+shows on the card without anyone editing the canvas, and an id the viewer cannot read
+shows "Unavailable" without saying whether it exists. The node's address is
+`cheers:artifact/<id>`. The card quotes source as inert text; it does not mount a lens.
+This kind is a canvas-document addition: the published extension schema
+(`PanelSourceContribution`) is not widened.
+
+A canvas is itself an artifact. Both the Artifacts library and Collections edit it
+through `channel.artifacts.patch`, which checks the artifact version.
+
 ## Addressing
 
 Goal 4 is what makes the two views *one document* rather than two editors that share a

@@ -554,13 +554,17 @@ fn apply_yaml_op(source: &mut String, op: &Value) -> Result<(), (String, String)
                     let indent = parent.location.point_span.0 .1;
                     let addition =
                         indent_fragment(&yaml_fragment(&Value::Object(mapping))?, indent);
+                    // `indent_fragment` pads continuation lines only; the key's own line
+                    // starts a new line here and needs the same padding, or a key added
+                    // to a sequence item lands at column 0 and leaves the item.
+                    let padding = " ".repeat(indent);
                     let offset = parent.location.byte_span.1;
-                    let prefix = if source[..offset].ends_with('\n') {
-                        ""
+                    let insertion = if source[..offset].ends_with('\n') {
+                        format!("{padding}{addition}\n")
                     } else {
-                        "\n"
+                        format!("\n{padding}{addition}")
                     };
-                    source.insert_str(offset, &format!("{prefix}{addition}"));
+                    source.insert_str(offset, &insertion);
                 }
             }
         }
@@ -1601,6 +1605,52 @@ mod tests {
                 {"name":"x","done":false}
             ])
         );
+    }
+
+    #[test]
+    fn yaml_patch_adds_a_key_to_an_indented_mapping() {
+        // A new key lands at the mapping's own indentation. At the top level that is
+        // column 0 either way, so only a nested mapping or a sequence item (a canvas
+        // node gaining its `rect` pin) shows whether the first line is indented.
+        let rect = json!({"x":1,"y":2});
+        let cases = [
+            (
+                "nodes:\n  - id: a\n    text: x\n  - id: b\n    text: y\n",
+                vec!["nodes".into(), json!(0), "rect".into()],
+            ),
+            (
+                "nodes:\n  - id: a\n    text: x\nedges: []\n",
+                vec!["nodes".into(), json!(0), "rect".into()],
+            ),
+            (
+                "nodes:\n  - id: a\n    text: x\n",
+                vec!["nodes".into(), json!(0), "rect".into()],
+            ),
+            (
+                "outer:\n  inner: 1\nafter: 2\n",
+                vec!["outer".into(), "rect".into()],
+            ),
+        ];
+        for (input, path) in cases {
+            let op = json!({"op":"set","path":path,"value":rect});
+            let output = apply_structured_ops("canvas.yaml", input, std::slice::from_ref(&op))
+                .unwrap_or_else(|error| panic!("op {op} failed against:\n{input}\n{error:?}"));
+            let expected = {
+                let mut value: serde_json::Value = serde_yaml::from_str(input).unwrap();
+                let mut target = &mut value;
+                for part in &path[..path.len() - 1] {
+                    target = match part {
+                        serde_json::Value::String(key) => &mut target[key.as_str()],
+                        index => &mut target[index.as_u64().unwrap() as usize],
+                    };
+                }
+                target["rect"] = rect.clone();
+                value
+            };
+            let actual: serde_json::Value = serde_yaml::from_str(&output)
+                .unwrap_or_else(|error| panic!("invalid YAML:\n{output}\n{error}"));
+            assert_eq!(actual, expected, "patched:\n{output}");
+        }
     }
 
     #[test]
