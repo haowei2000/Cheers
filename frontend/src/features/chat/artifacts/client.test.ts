@@ -84,10 +84,14 @@ describe("artifact references", () => {
     const calls: unknown[] = [];
     const client = makeArtifactClient(async (resource, params) => { calls.push({ resource, params }); return {}; }, "current");
     await client.list("cursor");
+    await client.list(undefined, "canvas");
+    await client.create("canvases/plan.canvas.yaml", "canvas: 1\n", "key-1");
     await client.resolve("cheers:desk/report.md");
     await client.resolvePath("Quarterly report #1.html");
     expect(calls).toEqual([
       { resource: "channel.artifacts.list", params: { channel_id: "current", limit: 50, before: "cursor" } },
+      { resource: "channel.artifacts.list", params: { channel_id: "current", limit: 50, type: "canvas" } },
+      { resource: "channel.artifacts.create", params: { channel_id: "current", path: "canvases/plan.canvas.yaml", content: "canvas: 1\n", idempotency_key: "key-1" } },
       { resource: "channel.artifacts.resolve", params: { channel_id: "current", uri: "cheers:desk/report.md" } },
       { resource: "channel.artifacts.resolve", params: { channel_id: "current", path: "Quarterly report #1.html" } },
     ]);

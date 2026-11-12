@@ -18,6 +18,10 @@ export interface Artifact {
   expires_at: string | null;
 }
 
+/** The catalog filters by type on the gateway: the list is paged, so a filter applied to
+ *  one loaded page would hide matches on the next. */
+export type ArtifactListType = "canvas";
+
 export interface ArtifactPage { artifacts: Artifact[]; next_cursor: string | null }
 export interface ArtifactContent {
   uri?: string;
@@ -30,9 +34,14 @@ export interface ArtifactContent {
 
 export function makeArtifactClient(send: SendResourceReq, channelId: string) {
   return {
-    list: (before?: string) => send("channel.artifacts.list", {
-      channel_id: channelId, limit: 50, ...(before ? { before } : {}),
+    list: (before?: string, type?: ArtifactListType) => send("channel.artifacts.list", {
+      channel_id: channelId, limit: 50, ...(before ? { before } : {}), ...(type ? { type } : {}),
     }) as Promise<ArtifactPage>,
+    /** Create-only: an existing path is never overwritten. A retry with the same key
+     *  returns the first result instead of failing on the path it already created. */
+    create: (path: string, content: string, idempotencyKey: string) => send("channel.artifacts.create", {
+      channel_id: channelId, path, content, idempotency_key: idempotencyKey,
+    }) as Promise<{ artifact: Artifact }>,
     get: (artifactId: string) => send("channel.artifacts.get", {
       channel_id: channelId, artifact_id: artifactId,
     }) as Promise<Artifact>,
