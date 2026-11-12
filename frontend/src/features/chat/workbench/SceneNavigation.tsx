@@ -325,7 +325,7 @@ export function WorkbenchHierarchyNavigation({
   return (
     <div className="relative min-w-0 max-w-full overflow-hidden">
       {controls()}
-      <div {...({ inert: "" } as Record<string, string>)} className="pointer-events-none absolute invisible w-max" ref={textProbe}>{controls(true, false)}</div>
+      <div inert className="pointer-events-none absolute invisible w-max" ref={textProbe}>{controls(true, false)}</div>
     </div>
   );
 }

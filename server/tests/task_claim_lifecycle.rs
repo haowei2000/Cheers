@@ -372,10 +372,10 @@ async fn expiry_projects_both_pending_and_executing_claims_once(db: PgPool) {
     let before_pending = pending.claim_state(&db).await;
     let before_executing = executing.claim_state(&db).await;
     let before_events = pending.events.snapshot();
-    for update in task_claims::expire(&db).await.unwrap() {
-        publish_claim_update(pending.fanout.as_ref(), &update).await;
-        panic!("already expired claims must not generate another transition");
-    }
+    assert!(
+        task_claims::expire(&db).await.unwrap().is_empty(),
+        "already expired claims must not generate another transition"
+    );
     assert_eq!(pending.claim_state(&db).await, before_pending);
     assert_eq!(executing.claim_state(&db).await, before_executing);
     assert_eq!(pending.events.snapshot(), before_events);
