@@ -47,10 +47,7 @@ use crate::bridge::{
     ServerCapabilities, SessionConfigOverrides, TaskAcceptanceStatus, TaskExecution,
     BRIDGE_PROTOCOL_VERSION,
 };
-use crate::bridge_session::{
-    connect_control_stream, connect_data_stream, BridgeReady, BridgeSession, BridgeSessionConfig,
-    BridgeSessionParts,
-};
+use crate::bridge_session::{BridgeReady, BridgeSession, BridgeSessionConfig, BridgeSessionParts};
 use crate::config::{
     AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy, McpDelivery,
     PermissionTimeoutAction, PromptPolicy,
@@ -389,6 +386,24 @@ impl AccountRuntime {
     }
 }
 
+/// Canonicalize `target` and require it to stay inside `root_canon`: the shared
+/// containment gate of every path-resolving workspace op.
+async fn canonicalize_in_root(
+    target: &std::path::Path,
+    root_canon: &std::path::Path,
+) -> Result<PathBuf, (String, String)> {
+    let canon = tokio::fs::canonicalize(target)
+        .await
+        .map_err(|e| ("E_NOT_FOUND".to_string(), e.to_string()))?;
+    if !canon.starts_with(root_canon) {
+        return Err((
+            "E_FORBIDDEN_PATH".to_string(),
+            "path escapes workspace root".to_string(),
+        ));
+    }
+    Ok(canon)
+}
+
 /// Resolve a workspace reference to a git working directory (+ optional pathspec).
 /// `target` is the already-joined candidate path (absolute ref, or root-joined
 /// relative); `root_canon` is the canonical chosen root. Canonicalizes `target`
@@ -400,15 +415,7 @@ async fn resolve_git_target(
     root_canon: &std::path::Path,
 ) -> Result<(PathBuf, Option<PathBuf>), (String, String)> {
     let err = |c: &str, m: String| (c.to_string(), m);
-    let canon = tokio::fs::canonicalize(target)
-        .await
-        .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
-    if !canon.starts_with(root_canon) {
-        return Err(err(
-            "E_FORBIDDEN_PATH",
-            "path escapes workspace root".into(),
-        ));
-    }
+    let canon = canonicalize_in_root(target, root_canon).await?;
     let md = tokio::fs::metadata(&canon)
         .await
         .map_err(|e| err("E_IO", e.to_string()))?;
@@ -479,6 +486,27 @@ async fn run_git(
                 ("E_IO".to_string(), format!("git spawn failed: {e}"))
             }
         })
+}
+
+/// [`run_git`] for an output-producing op: rejects stdout over `max` bytes as
+/// `E_TOO_LARGE` ("`<what>` exceeds read cap") and a non-zero exit as `E_GIT`.
+async fn run_git_capped(
+    git_dir: &std::path::Path,
+    args: &[&str],
+    max: u64,
+    what: &str,
+) -> Result<std::process::Output, (String, String)> {
+    let out = run_git(git_dir, args).await?;
+    if out.stdout.len() as u64 > max {
+        return Err((
+            "E_TOO_LARGE".to_string(),
+            format!("{what} exceeds read cap"),
+        ));
+    }
+    if !out.status.success() {
+        return Err(("E_GIT".to_string(), git_stderr(&out)));
+    }
+    Ok(out)
 }
 
 /// Trimmed git stderr for surfacing a failed (non-zero) git invocation.
@@ -1285,13 +1313,8 @@ impl RuntimeContext {
                 ..
             } => {
                 if !ack_was_pending {
-                    if let Some(value) = permission_resolution {
-                        if let Ok(resolution) =
-                            serde_json::from_value::<PermissionResolution>(value)
-                        {
-                            self.handle_permission_resolution(resolution).await?;
-                        }
-                    }
+                    self.apply_inline_permission_resolution(permission_resolution)
+                        .await?;
                 }
             }
             DataInbound::WorkspaceReq {
@@ -1600,15 +1623,9 @@ impl RuntimeContext {
         }
         match op {
             "ls" => {
-                let dir = tokio::fs::canonicalize(&target)
+                let dir = canonicalize_in_root(&target, &root_canon)
                     .await
-                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
-                if !dir.starts_with(&root_canon) {
-                    return Err(err(
-                        "E_FORBIDDEN_PATH",
-                        "path escapes workspace root".into(),
-                    ));
-                }
+                    .map_err(|(c, m)| (c, m, None))?;
                 let mut rd = tokio::fs::read_dir(&dir)
                     .await
                     .map_err(|e| err("E_IO", e.to_string()))?;
@@ -1659,15 +1676,9 @@ impl RuntimeContext {
             // a watcher can NEVER observe outside effective_roots. Returns the watch
             // handle; fs changes stream back later as unsolicited `workspace_event`s.
             "watch" => {
-                let dir = tokio::fs::canonicalize(&target)
+                let dir = canonicalize_in_root(&target, &root_canon)
                     .await
-                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
-                if !dir.starts_with(&root_canon) {
-                    return Err(err(
-                        "E_FORBIDDEN_PATH",
-                        "path escapes workspace root".into(),
-                    ));
-                }
+                    .map_err(|(c, m)| (c, m, None))?;
                 let md = tokio::fs::metadata(&dir)
                     .await
                     .map_err(|e| err("E_IO", e.to_string()))?;
@@ -1677,15 +1688,9 @@ impl RuntimeContext {
                 self.start_watch(dir, &root_canon).await
             }
             "read" => {
-                let file = tokio::fs::canonicalize(&target)
+                let file = canonicalize_in_root(&target, &root_canon)
                     .await
-                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
-                if !file.starts_with(&root_canon) {
-                    return Err(err(
-                        "E_FORBIDDEN_PATH",
-                        "path escapes workspace root".into(),
-                    ));
-                }
+                    .map_err(|(c, m)| (c, m, None))?;
                 let md = tokio::fs::metadata(&file)
                     .await
                     .map_err(|e| err("E_IO", e.to_string()))?;
@@ -1906,15 +1911,14 @@ impl RuntimeContext {
                 }
                 match op {
                     "git_status" => {
-                        let out = run_git(&git_dir, &["status", "--porcelain=v2", "--branch"])
-                            .await
-                            .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git status exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
+                        let out = run_git_capped(
+                            &git_dir,
+                            &["status", "--porcelain=v2", "--branch"],
+                            MAX_READ,
+                            "git status",
+                        )
+                        .await
+                        .map_err(|(c, m)| (c, m, None))?;
                         let raw = String::from_utf8_lossy(&out.stdout).to_string();
                         let st = parse_status_porcelain_v2(&raw);
                         Ok(serde_json::json!({
@@ -1943,15 +1947,9 @@ impl RuntimeContext {
                             args.push("--");
                             args.push(ps);
                         }
-                        let out = run_git(&git_dir, &args)
+                        let out = run_git_capped(&git_dir, &args, MAX_READ, "git diff")
                             .await
                             .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git diff exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
                         Ok(serde_json::json!({
                             "diff": String::from_utf8_lossy(&out.stdout),
                             "staged": staged,
@@ -1982,15 +1980,9 @@ impl RuntimeContext {
                             args.push("--");
                             args.push(ps);
                         }
-                        let out = run_git(&git_dir, &args)
+                        let out = run_git_capped(&git_dir, &args, MAX_READ, "git show")
                             .await
                             .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git show exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
                         Ok(serde_json::json!({
                             "commit": commit,
                             "path": commit_path,
@@ -2002,7 +1994,7 @@ impl RuntimeContext {
                         // body) so the UI can render a per-commit file tree without
                         // fetching the full patch. `--format=` suppresses the header.
                         let commit = validate_hex_commit(commit).map_err(|(c, m)| (c, m, None))?;
-                        let out = run_git(
+                        let out = run_git_capped(
                             &git_dir,
                             &[
                                 "show",
@@ -2013,15 +2005,11 @@ impl RuntimeContext {
                                 "--format=",
                                 commit,
                             ],
+                            MAX_READ,
+                            "git show",
                         )
                         .await
                         .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git show exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
                         let files = parse_name_status(&String::from_utf8_lossy(&out.stdout));
                         Ok(serde_json::json!({ "commit": commit, "files": files }))
                     }
@@ -2042,15 +2030,9 @@ impl RuntimeContext {
                         if skip > 0 {
                             args.push(&skip_str);
                         }
-                        let out = run_git(&git_dir, &args)
+                        let out = run_git_capped(&git_dir, &args, MAX_READ, "git log")
                             .await
                             .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git log exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
                         let stdout = String::from_utf8_lossy(&out.stdout);
                         let commits: Vec<Value> = stdout
                             .lines()
@@ -2323,17 +2305,11 @@ impl RuntimeContext {
                     .await;
                 return Ok(());
             }
-            self.send_terminal(DataOutbound::Error {
-                v: BRIDGE_PROTOCOL_VERSION,
-                client_msg_id: Uuid::new_v4().to_string(),
-                execution: task.execution.clone(),
-                msg_id: task.msg_id.clone(),
-                message: "local daemon policy does not allow prompts".to_string(),
-                provider_session_key: Some(task.provider_session_key.clone()),
-                provider_session_id: None,
-                session_id: task.session_id.clone(),
-                acp_capability: None,
-            })
+            self.send_terminal(task_error_frame(
+                &task,
+                "local daemon policy does not allow prompts".to_string(),
+                None,
+            ))
             .await?;
             return Ok(());
         }
@@ -2378,26 +2354,14 @@ impl RuntimeContext {
             Err(err) => {
                 let message = err.to_string();
                 tracing::error!(account = %self.account_id, "ensure_acp_session failed: {message}");
-                if evaluation_id.is_some() {
-                    if let Some(evaluation_id) = evaluation_id {
-                        let _ = self
-                            .io
-                            .send_data(silent_result(&task, evaluation_id, None, Some(message)))
-                            .await;
-                    }
+                if let Some(evaluation_id) = evaluation_id {
+                    let _ = self
+                        .io
+                        .send_data(silent_result(&task, evaluation_id, None, Some(message)))
+                        .await;
                 } else {
-                    self.send_terminal(DataOutbound::Error {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        client_msg_id: Uuid::new_v4().to_string(),
-                        execution: task.execution.clone(),
-                        msg_id: task.msg_id.clone(),
-                        message,
-                        provider_session_key: Some(task.provider_session_key.clone()),
-                        provider_session_id: None,
-                        session_id: task.session_id.clone(),
-                        acp_capability: None,
-                    })
-                    .await?;
+                    self.send_terminal(task_error_frame(&task, message, None))
+                        .await?;
                 }
                 return Ok(());
             }
@@ -2475,18 +2439,8 @@ impl RuntimeContext {
                     ))
                     .await;
             } else {
-                self.send_terminal(DataOutbound::Error {
-                    v: BRIDGE_PROTOCOL_VERSION,
-                    client_msg_id: Uuid::new_v4().to_string(),
-                    execution: task.execution.clone(),
-                    msg_id: task.msg_id.clone(),
-                    message: message.into(),
-                    provider_session_key: Some(task.provider_session_key.clone()),
-                    provider_session_id: None,
-                    session_id: task.session_id.clone(),
-                    acp_capability: None,
-                })
-                .await?;
+                self.send_terminal(task_error_frame(&task, message.into(), None))
+                    .await?;
             }
             return Ok(());
         }
@@ -2576,17 +2530,11 @@ impl RuntimeContext {
                     ))
                     .await?;
             } else {
-                self.send_terminal(DataOutbound::Error {
-                    v: BRIDGE_PROTOCOL_VERSION,
-                    client_msg_id: Uuid::new_v4().to_string(),
-                    execution: task.execution.clone(),
-                    msg_id: task.msg_id.clone(),
+                self.send_terminal(task_error_frame(
+                    task,
                     message,
-                    provider_session_key: Some(task.provider_session_key.clone()),
-                    provider_session_id: Some(acp_session_id.to_string()),
-                    session_id: task.session_id.clone(),
-                    acp_capability: None,
-                })
+                    Some(acp_session_id.to_string()),
+                ))
                 .await?;
             }
             return Ok(());
@@ -2714,17 +2662,11 @@ impl RuntimeContext {
                         .await?;
                 } else {
                     let terminal_ack = self
-                        .send_terminal(DataOutbound::Error {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            client_msg_id: Uuid::new_v4().to_string(),
-                            execution: task.execution.clone(),
-                            msg_id: task.msg_id.clone(),
-                            message: message.clone(),
-                            provider_session_key: Some(task.provider_session_key.clone()),
-                            provider_session_id: Some(acp_session_id.to_string()),
-                            session_id: task.session_id.clone(),
-                            acp_capability: None,
-                        })
+                        .send_terminal(task_error_frame(
+                            task,
+                            message.clone(),
+                            Some(acp_session_id.to_string()),
+                        ))
                         .await?;
                     if !terminal_ack_ok(&terminal_ack) {
                         self.trace(
@@ -3898,6 +3840,25 @@ fn silent_result(
             content,
             error,
         }
+    }
+}
+
+/// The terminal `error` frame that fails an ordinary (non-evaluation) task.
+fn task_error_frame(
+    task: &TaskCommand,
+    message: String,
+    provider_session_id: Option<String>,
+) -> DataOutbound {
+    DataOutbound::Error {
+        v: BRIDGE_PROTOCOL_VERSION,
+        client_msg_id: Uuid::new_v4().to_string(),
+        execution: task.execution.clone(),
+        msg_id: task.msg_id.clone(),
+        message,
+        provider_session_key: Some(task.provider_session_key.clone()),
+        provider_session_id,
+        session_id: task.session_id.clone(),
+        acp_capability: None,
     }
 }
 

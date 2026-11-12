@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.artifact_id, a.channel_id, a.source_kind, a.source_id, a.title, a.path, a.content_type, a.size_bytes, a.version, a.source_version, a.source_status, a.internal, a.created_by, a.created_at, a.updated_at, a.expires_at, a.deleted_at FROM artifacts a WHERE a.channel_id = $1 AND a.deleted_at IS NULL\n         AND ($2 OR NOT a.internal)\n         AND ($3::text IS NULL OR (a.created_at, a.artifact_id) <\n              (SELECT c.created_at, c.artifact_id FROM artifacts c WHERE c.channel_id = $1 AND c.artifact_id = $3))\n         ORDER BY a.created_at DESC, a.artifact_id DESC LIMIT $4",
+  "query": "SELECT a.artifact_id, a.channel_id, a.source_kind, a.source_id, a.title, a.path, a.content_type, a.size_bytes, a.version, a.source_version, a.source_status, a.internal, a.created_by, a.created_at, a.updated_at, a.expires_at, a.deleted_at FROM artifacts a WHERE a.channel_id = $1 AND a.deleted_at IS NULL\n         AND ($2 OR NOT a.internal)\n         AND ($3::text IS NULL OR (a.created_at, a.artifact_id) <\n              (SELECT c.created_at, c.artifact_id FROM artifacts c WHERE c.channel_id = $1 AND c.artifact_id = $3))\n         AND (NOT $5 OR a.path ~* '\\.canvas\\.(ya?ml|json)$')\n         ORDER BY a.created_at DESC, a.artifact_id DESC LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -94,7 +94,8 @@
         "Text",
         "Bool",
         "Text",
-        "Int8"
+        "Int8",
+        "Bool"
       ]
     },
     "nullable": [
@@ -117,5 +118,5 @@
       true
     ]
   },
-  "hash": "174b5d544e045feda9fcbd326a7dd33d20f646d0aaa0129bef3325e2268c55f7"
+  "hash": "c068a9d80ba29b4dbc064f26114e52fb2f8f18c9262ae3bdd3eac0e73d6b91b9"
 }

@@ -5,6 +5,7 @@ import { ResourceRefCards, resourceRefCards } from "./ResourceRefCards";
 import { ResourceCardProvider } from "./ResourceCardContext";
 import { makeFsClient } from "./workbench/fsClient";
 import { fileResourceStore } from "./workbench/fileResource";
+import { artifactReferenceStore } from "./artifacts/referenceStore";
 import example from "./workbench/lens/a2ui/example.a2ui.json";
 
 describe("resource reference cards", () => {
@@ -39,6 +40,34 @@ describe("resource reference cards", () => {
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<iframe");
+  });
+  it("resolves an artifact link through the catalog: title, type and the source preview", async () => {
+    const id = "0f8b6c2e-4d3a-4b1c-9e7f-2a5d8c1b3e60";
+    const artifact = { artifact_id: id, title: "roadmap.md", source_kind: "text", source_id: "f1", path: "dev/roadmap.md",
+      content_type: "text/markdown", size_bytes: 9, version: 3, availability: "ready" };
+    const send = vi.fn(async (verb: string) => verb === "channel.artifacts.get" ? artifact
+      : { artifact, content: "# Roadmap", kind: "text", truncated: false });
+    const fs = makeFsClient(send, "channel");
+    fileResourceStore(fs).publish("dev/roadmap.md", { path: "dev/roadmap.md", content: "# Roadmap", version: 2, is_dir: false });
+    await artifactReferenceStore(send, "channel").load(id);
+    const open = vi.fn();
+    const html = renderToStaticMarkup(<ResourceCardProvider fs={fs} channelId="channel" filesTick={0} sendResourceReq={send} openLocator={open} composeMessage={vi.fn()}>
+      <LocatorOpenContext.Provider value={open}><ResourceRefCards cards={[{ v: 1, kind: "resource_ref", uri: `cheers:artifact/${id}` }]} /></LocatorOpenContext.Provider>
+    </ResourceCardProvider>);
+    expect(html).toContain('aria-label="Preview of dev/roadmap.md"');
+    expect(html).toContain("Roadmap</h1>");
+    expect(html).not.toContain("Loading artifact");
+  });
+  it("says why an artifact link cannot be previewed instead of showing nothing", async () => {
+    const id = "1f8b6c2e-4d3a-4b1c-9e7f-2a5d8c1b3e61";
+    const send = vi.fn(async () => ({ artifact_id: id, title: "report.pdf", source_kind: "attachment", source_id: "f2", path: null,
+      content_type: "application/pdf", size_bytes: 9, version: 1, availability: "expired" }));
+    await artifactReferenceStore(send, "channel").load(id);
+    const open = vi.fn();
+    const html = renderToStaticMarkup(<ResourceCardProvider fs={makeFsClient(send, "channel")} channelId="channel" filesTick={0} sendResourceReq={send} openLocator={open} composeMessage={vi.fn()}>
+      <LocatorOpenContext.Provider value={open}><ResourceRefCards cards={[{ v: 1, kind: "resource_ref", uri: `cheers:artifact/${id}` }]} /></LocatorOpenContext.Provider>
+    </ResourceCardProvider>);
+    expect(html).toContain("Expired. Ask the author to deliver a new copy.");
   });
   it("keeps only supported versioned Cheers resource references", () => {
     const cards = resourceRefCards({ cards: [

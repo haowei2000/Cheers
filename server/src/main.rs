@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use server::domain::runtime_settings::{self, RuntimeSettingsStore, RuntimeValues};
 use server::gateway::realtime::manager::ConnectionManager;
 use server::gateway::stream::StreamRegistry;
 use server::{api, gateway, infra, router, AppState, Config};
@@ -222,6 +223,12 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let runtime_settings = Arc::new(RuntimeSettingsStore::new(RuntimeValues::from_config(
+        &config,
+    )));
+    runtime_settings.reload(&db).await?;
+    runtime_settings::spawn_reloader(db.clone(), runtime_settings.clone());
+
     let state = AppState {
         db,
         config: config.clone(),
@@ -236,6 +243,7 @@ async fn main() -> anyhow::Result<()> {
         web_push,
         push,
         mcp_delivery: Arc::default(),
+        runtime_settings,
     };
 
     // Recover admitted dispatches from the existing run ledger. Socket
@@ -261,11 +269,7 @@ async fn main() -> anyhow::Result<()> {
     // Approval-card TTL sweeper: finalize permission cards that were never
     // resolved and whose connector died before its own timeout could cancel
     // them, so they don't hang pending forever (no other server-side expiry).
-    gateway::approval_sweeper::spawn(
-        state.clone(),
-        config.approval_sweep_interval_secs,
-        config.approval_card_ttl_secs,
-    );
+    gateway::approval_sweeper::spawn(state.clone(), config.approval_sweep_interval_secs);
 
     // Reap spent/expired host pairing codes (audit follow-up L2):
     // the per-owner/per-bot caps count only live codes, so terminal rows would

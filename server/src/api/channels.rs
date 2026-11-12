@@ -8,7 +8,9 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    api::middleware::Claims, app_state::AppState, errors::AppError,
+    api::{bots::is_admin, middleware::Claims},
+    app_state::AppState,
+    errors::AppError,
     gateway::realtime::frame::WireFrame,
 };
 
@@ -254,7 +256,7 @@ pub async fn list_channels(
          ORDER BY c.created_at DESC",
         &claims.sub,
         q.workspace_id.as_deref(),
-        claims.role == "system_admin" || claims.role == "admin",
+        is_admin(&claims),
     )
     .fetch_all(&state.db)
     .await?;
@@ -353,7 +355,7 @@ pub async fn create_dm(
              ) AS "value!" "#,
             target_id.to_string(),
             &claims.sub,
-            matches!(claims.role.as_str(), "system_admin" | "admin"),
+            is_admin(&claims),
         )
         .fetch_one(&state.db)
         .await?;
@@ -576,7 +578,7 @@ pub async fn create_channel(
     )
     .fetch_optional(&mut *tx)
     .await?;
-    let platform_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
+    let platform_admin = is_admin(&claims);
     if !can_create_channel(workspace_role.as_deref(), platform_admin) {
         return Err(AppError::Forbidden("workspace member required".into()));
     }
@@ -604,9 +606,7 @@ pub async fn create_channel(
             ));
         }
         let owner_id: Option<String> = bot.created_by.clone();
-        if owner_id.as_deref() != Some(claims.sub.as_str())
-            && !matches!(claims.role.as_str(), "system_admin" | "admin")
-        {
+        if owner_id.as_deref() != Some(claims.sub.as_str()) && !is_admin(&claims) {
             return Err(AppError::Forbidden(
                 "initial bots must be owned by the channel creator".into(),
             ));
@@ -764,7 +764,7 @@ pub async fn create_channel(
     // Initial bots use the same owner-approval semantics as later additions.
     for (bot_id, owner_id) in &initial_bots {
         if owner_id.as_deref() == Some(claims.sub.as_str())
-            || (owner_id.is_none() && matches!(claims.role.as_str(), "system_admin" | "admin"))
+            || (owner_id.is_none() && is_admin(&claims))
         {
             bind_bot_to_channel(
                 &state,
@@ -776,7 +776,7 @@ pub async fn create_channel(
                 Vec::new(),
             )
             .await?;
-        } else if matches!(claims.role.as_str(), "system_admin" | "admin") {
+        } else if is_admin(&claims) {
             let owner_id = owner_id.clone().ok_or_else(|| {
                 AppError::Forbidden("ownerless bots may only be added by an admin".into())
             })?;
@@ -805,15 +805,13 @@ pub async fn create_channel(
     }
 
     // Live push for any founding-member invites (best-effort; durable in DB).
-    if !invited_users.is_empty() {
-        for uid in &invited_users {
-            crate::api::notifications::deliver_notification_by_id(
-                &state,
-                uid,
-                &format!("channel:{channel_id}"),
-            )
-            .await?;
-        }
+    for uid in &invited_users {
+        crate::api::notifications::deliver_notification_by_id(
+            &state,
+            uid,
+            &format!("channel:{channel_id}"),
+        )
+        .await?;
     }
     let mut response = dto(ChannelDto {
         channel_id: row.channel_id.clone(),
@@ -864,7 +862,7 @@ pub async fn get_channel(
          LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
          WHERE c.channel_id = $3",
         &claims.sub,
-        claims.role == "system_admin" || claims.role == "admin",
+        is_admin(&claims),
         &channel_id,
     )
     .fetch_optional(&state.db)
@@ -992,10 +990,7 @@ pub async fn list_notification_preferences(
             &claims.sub,
         ).fetch_all(&state.db)
     .await?;
-    let channel_ids: Vec<String> = rows
-        .into_iter()
-        .filter_map(|r| Some(r.channel_id.clone()))
-        .collect();
+    let channel_ids: Vec<String> = rows.into_iter().map(|r| r.channel_id).collect();
     Ok(Json(json!({ "channel_ids": channel_ids })))
 }
 
@@ -1358,7 +1353,7 @@ pub async fn add_channel_member(
             ));
         }
         let caller_is_owner = owner_id.as_deref() == Some(claims.sub.as_str());
-        let platform_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
+        let platform_admin = is_admin(&claims);
         let legacy_admin = owner_id.is_none() && platform_admin;
         if bot_add_requires_session_create(caller_is_owner, legacy_admin, platform_admin) {
             let caller_role = caller_channel_role(&state, &channel_id, &claims.sub).await;
@@ -1570,18 +1565,12 @@ pub async fn add_channel_member(
         .await?;
     }
 
-    let status = if workspace_status.as_deref() == Some("active") {
-        "pending"
-    } else {
-        "pending_workspace"
-    };
-
     Ok(Json(json!({
         "channel_id": channel_id,
         "member_id": body.member_id,
         "member_type": "user",
         "role": role,
-        "status": status,
+        "status": pending_channel_invite_status(workspace_status.as_deref()),
     })))
 }
 
@@ -2004,7 +1993,7 @@ mod tests {
 fn membership_actor(claims: &Claims) -> crate::domain::channel_memberships::Actor<'_> {
     crate::domain::channel_memberships::Actor {
         user_id: &claims.sub,
-        platform_admin: matches!(claims.role.as_str(), "system_admin" | "admin"),
+        platform_admin: is_admin(claims),
     }
 }
 
@@ -2060,7 +2049,7 @@ async fn caller_channel_is_owner(
     channel_id: &str,
     claims: &Claims,
 ) -> Result<bool, AppError> {
-    if matches!(claims.role.as_str(), "system_admin" | "admin") {
+    if is_admin(claims) {
         return Ok(true);
     }
     let role: Option<String> = sqlx::query_scalar!(

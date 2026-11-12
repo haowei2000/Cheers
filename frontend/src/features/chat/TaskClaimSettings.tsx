@@ -110,34 +110,26 @@ export function TaskClaimSettings({
     setDraft(policies[bot.member_id] ?? createDefaults);
     setMode({ kind: "edit", id: bot.member_id });
   };
+  const persist = async (botId: string, policy: ClaimPolicy, success: string, failure: string) => {
+    setSaving(true);
+    try {
+      const { channel_id: _, bot_id: __, ...saved } = await updateBotMonitoring(channelId, botId, policy);
+      setPolicies((current) => ({ ...current, [botId]: saved }));
+      setMode({ kind: "browse" });
+      toast.success(success);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : failure);
+    } finally {
+      setSaving(false);
+    }
+  };
   const save = async () => {
     const botId = mode.kind === "edit" ? mode.id : draftBotId;
     if (!botId) return;
-    setSaving(true);
-    try {
-      const { channel_id: _, bot_id: __, ...saved } = await updateBotMonitoring(channelId, botId, draft);
-      setPolicies((current) => ({ ...current, [botId]: saved }));
-      setMode({ kind: "browse" });
-      toast.success(mode.kind === "add" ? "Claim policy added" : "Claim policy saved");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save claim policy");
-    } finally {
-      setSaving(false);
-    }
+    await persist(botId, draft, mode.kind === "add" ? "Claim policy added" : "Claim policy saved", "Failed to save claim policy");
   };
-  const remove = async (botId: string) => {
-    setSaving(true);
-    try {
-      const { channel_id: _, bot_id: __, ...saved } = await updateBotMonitoring(channelId, botId, defaults);
-      setPolicies((current) => ({ ...current, [botId]: saved }));
-      setMode({ kind: "browse" });
-      toast.success("Claim policy removed");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to remove claim policy");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const remove = (botId: string) =>
+    persist(botId, defaults, "Claim policy removed", "Failed to remove claim policy");
 
   const editorBot = bots.find((bot) => bot.member_id === draftBotId);
   const editor = (editorMode: "add" | "edit", key?: string) => (

@@ -33,10 +33,11 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
   const surfaceRef = useRef<HTMLDivElement>(null);
   const voiceEnabled = hasChannelFeature(channel, CHANNEL_FEATURE_VOICE);
   const participants = voicePresence?.participants ?? [];
+  const mentionLabel = `${channel.mention_count} unread mention${channel.mention_count === 1 ? "" : "s"}`;
   const unread = (channel.mention_count ?? 0) > 0 ? (
     <UnreadBadge
-      title={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
-      aria-label={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
+      title={mentionLabel}
+      aria-label={mentionLabel}
       tone="mention"
       contentSize="regular"
     >
@@ -85,13 +86,11 @@ function ChannelItem({ channel, selected, onClick, voicePresence, onSettings, on
             <Avatar name={channel.name} src={channel.avatar_url} id={channel.channel_id} size="small" />
           ) : channel.type === "dm" ? (
             <Avatar name={channel.name} id={channel.channel_id} size="small" />
-          ) : channel.type === "private" ? (
-            <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center transition-colors", !selected && "text-content-muted/70")}>
-              <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-            </span>
           ) : (
             <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center transition-colors", !selected && "text-content-muted/70")}>
-              <Hash className="h-3.5 w-3.5" aria-hidden="true" />
+              {channel.type === "private"
+                ? <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                : <Hash className="h-3.5 w-3.5" aria-hidden="true" />}
             </span>
           )
         }

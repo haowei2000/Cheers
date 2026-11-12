@@ -35,11 +35,7 @@ pub fn normalize_scope_type(raw: &str) -> &str {
     }
 }
 
-fn scope_columns(
-    scope_type: &str,
-    scope_id: &str,
-    _task_id: Option<&str>,
-) -> (Option<String>, Option<String>) {
+fn scope_columns(scope_type: &str, scope_id: &str) -> (Option<String>, Option<String>) {
     let scope_id = scope_id.to_string();
     match scope_type {
         SESSION_SCOPE_CHANNEL => (Some(scope_id), None),
@@ -52,20 +48,7 @@ fn scope_columns(
 fn fallback_task_id(scope_type: &str, scope_id: &str, provided: Option<&str>) -> Option<String> {
     match scope_type {
         SESSION_SCOPE_TASK => Some(scope_id.to_string()),
-        SESSION_SCOPE_CHANNEL => provided.and_then(|v| {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.to_string())
-            }
-        }),
-        _ => provided.and_then(|v| {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.to_string())
-            }
-        }),
+        _ => provided.filter(|v| !v.is_empty()).map(str::to_string),
     }
 }
 
@@ -496,9 +479,8 @@ pub async fn resolve_primary_session(
     .await
     .map_err(AppError::Db)?;
     Ok(row.and_then(|r| {
-        let sid = Some(r.session_id.clone()).and_then(|v| Uuid::parse_str(&v).ok())?;
-        let key = Some(r.provider_session_key.clone())?;
-        Some((sid, key))
+        let sid = Uuid::parse_str(&r.session_id).ok()?;
+        Some((sid, r.provider_session_key))
     }))
 }
 
@@ -810,7 +792,7 @@ async fn upsert_session_binding<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    let (channel_id, binding_task_id) = scope_columns(scope_type, scope_id, task_id.as_deref());
+    let (channel_id, binding_task_id) = scope_columns(scope_type, scope_id);
     // Conflict target is `uq_cheers_session_binding_session_scope` (session_id,
     // scope_type, scope_id) — this session's OWN prior binding to this scope,
     // not the bot+scope primary-only partial index. A session demoted to

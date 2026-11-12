@@ -81,6 +81,12 @@ export function titleAndPreview(message: Message) {
   };
 }
 
+/** Persisted topic-pane width, or the default when absent or too narrow. */
+function storedTopicWidth(key: string) {
+  const stored = Number(window.localStorage.getItem(key));
+  return Number.isFinite(stored) && stored >= 260 ? stored : 320;
+}
+
 /** Format a server timestamp as a compact relative-activity label. */
 function relativeActivity(value: string) {
   const time = new Date(value).getTime();
@@ -183,10 +189,7 @@ export function DiscussionView({
   const selectedId = searchParams.get("discussion");
   const [isWide, setIsWide] = useState(false);
   const splitKey = `cheers:discussion-split:${channelId}`;
-  const [topicWidth, setTopicWidth] = useState(() => {
-    const stored = Number(window.localStorage.getItem(splitKey));
-    return Number.isFinite(stored) && stored >= 260 ? stored : 320;
-  });
+  const [topicWidth, setTopicWidth] = useState(() => storedTopicWidth(splitKey));
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -231,8 +234,7 @@ export function DiscussionView({
   }, [onComposerContextChange]);
 
   useEffect(() => {
-    const stored = Number(window.localStorage.getItem(splitKey));
-    setTopicWidth(Number.isFinite(stored) && stored >= 260 ? stored : 320);
+    setTopicWidth(storedTopicWidth(splitKey));
   }, [splitKey]);
 
   const threadMessages = useMemo(() => {
@@ -490,6 +492,10 @@ export function DiscussionView({
     </section>
   );
 
+  const rootCopy = detail ? titleAndPreview(detail.root) : null;
+  const rootSenderName = detail
+    ? detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"
+    : "";
   const detailPane = (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
       {(selectedId || creating) && !isWide && (
@@ -512,24 +518,24 @@ export function DiscussionView({
             <div className="mx-auto max-w-208">
               <div className="flex items-center gap-3">
                 <Avatar
-                  name={detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}
+                  name={rootSenderName}
                   id={detail.root.sender_id}
                   size="regular"
                 />
                 <div className="flex min-w-0 flex-1 items-baseline gap-2">
                   <h2
                     className="truncate font-display text-comfortable font-semibold leading-7 tracking-display text-content-primary"
-                    title={[titleAndPreview(detail.root).title, titleAndPreview(detail.root).preview].filter(Boolean).join("\n")}
+                    title={[rootCopy!.title, rootCopy!.preview].filter(Boolean).join("\n")}
                   >
-                    {titleAndPreview(detail.root).title}
-                    {titleAndPreview(detail.root).preview && (
+                    {rootCopy!.title}
+                    {rootCopy!.preview && (
                       <span className="ml-2 font-reading text-regular font-normal text-content-muted">
-                        — {titleAndPreview(detail.root).preview}
+                        — {rootCopy!.preview}
                       </span>
                     )}
                   </h2>
                   <span className="shrink-0 font-utility text-compact text-content-muted">
-                    {detail.root.sender_name ?? senderNames?.get(detail.root.sender_id) ?? "Unknown"}
+                    {rootSenderName}
                   </span>
                 </div>
               </div>

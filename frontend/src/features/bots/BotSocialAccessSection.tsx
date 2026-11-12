@@ -29,43 +29,43 @@ export function BotSocialAccessSection({ botId }: { botId: string }) {
     load();
   }, [load]);
 
-  async function handleVisibilityChange(next: "public" | "friends" | "private") {
+  async function savePolicy(
+    patch: Parameters<typeof updateBotSocialPolicy>[1],
+    success: string,
+    failure: string,
+  ) {
+    setBusy(true);
+    try {
+      await updateBotSocialPolicy(botId, patch);
+      toast.success(success);
+    } catch {
+      toast.error(failure);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleVisibilityChange(next: "public" | "friends" | "private") {
     setVisibility(next);
-    setBusy(true);
-    try {
-      await updateBotSocialPolicy(botId, { visibility: next });
-      toast.success("Discovery visibility updated");
-    } catch {
-      toast.error("Failed to update visibility");
-    } finally {
-      setBusy(false);
-    }
+    return savePolicy({ visibility: next }, "Discovery visibility updated", "Failed to update visibility");
   }
 
-  async function handleFriendPolicyChange(next: "open" | "require_approval" | "disabled") {
+  function handleFriendPolicyChange(next: "open" | "require_approval" | "disabled") {
     setFriendPolicy(next);
-    setBusy(true);
-    try {
-      await updateBotSocialPolicy(botId, { friend_policy: next });
-      toast.success("Friend request policy updated");
-    } catch {
-      toast.error("Failed to update friend request policy");
-    } finally {
-      setBusy(false);
-    }
+    return savePolicy(
+      { friend_policy: next },
+      "Friend request policy updated",
+      "Failed to update friend request policy",
+    );
   }
 
-  async function handleInvitePolicyChange(next: "open" | "require_approval") {
+  function handleInvitePolicyChange(next: "open" | "require_approval") {
     setInvitePolicy(next);
-    setBusy(true);
-    try {
-      await updateBotSocialPolicy(botId, { invite_policy: next });
-      toast.success("Channel invitation policy updated");
-    } catch {
-      toast.error("Failed to update invitation policy");
-    } finally {
-      setBusy(false);
-    }
+    return savePolicy(
+      { invite_policy: next },
+      "Channel invitation policy updated",
+      "Failed to update invitation policy",
+    );
   }
 
   if (loading) {

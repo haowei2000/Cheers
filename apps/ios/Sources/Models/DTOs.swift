@@ -2233,7 +2233,6 @@ struct ConfigOption: Decodable, Identifiable {
     let options: [ConfigChoice]?
 
     var id: String { optionId }
-    var isModel: Bool { optionId.lowercased().contains("model") }
 
     enum CodingKeys: String, CodingKey {
         case optionId = "id"

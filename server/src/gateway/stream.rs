@@ -871,21 +871,19 @@ pub async fn handle_done(
 
     let channel_id = details
         .channel_id
-        .clone()
         .parse()
         .map_err(|_| TerminalError::rejected("INTERNAL_ERROR", "invalid channel_id"))?;
     let channel_seq = details
         .channel_seq
-        .clone()
         .ok_or_else(|| sqlx::Error::Decode(Box::new(sqlx::error::UnexpectedNullError)))
         .map_err(TerminalError::database(
             "stream.done: read channel_seq column",
         ))?;
     let file_ids: Vec<String> =
-        serde_json::from_value(details.file_ids.clone().unwrap_or(serde_json::Value::Null))
+        serde_json::from_value(details.file_ids.unwrap_or(serde_json::Value::Null))
             .unwrap_or_default();
-    let msg_type = details.msg_type.clone();
-    let reply_to_msg_id = details.reply_to_msg_id.clone();
+    let msg_type = details.msg_type;
+    let reply_to_msg_id = details.reply_to_msg_id;
 
     // Resolve attachment metadata, including the status of retired historical
     // records, so the live frame can render unavailable attachments explicitly.
@@ -912,10 +910,10 @@ pub async fn handle_done(
             "files": files,
             // session_id (and any other bot-turn metadata) stamped at placeholder
             // create — keep it on finalize so Reply can reuse session/model.
-            "content_data": details.content_data.clone(),
+            "content_data": details.content_data,
             // Preserve the F2 handoff card on the finalized bot message (round-trips
             // via the DTO too; here it keeps the card without a history refetch).
-            "context_bundle": details.context_bundle.clone(),
+            "context_bundle": details.context_bundle,
         }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
@@ -961,13 +959,10 @@ pub async fn handle_session_update(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(ToString::to_string);
-    let metadata = frame.get("metadata").and_then(|value| {
-        if value.is_object() {
-            Some(value.clone())
-        } else {
-            None
-        }
-    });
+    let metadata = frame
+        .get("metadata")
+        .filter(|value| value.is_object())
+        .cloned();
     if provider_session_key.is_none() && provider_session_id.is_none() && metadata.is_none() {
         return Err(
             "session_update missing provider_session_key, provider_session_id, and metadata",
@@ -1294,20 +1289,16 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
     .ok_or("message not found")?;
 
     // owner 必须是当前 bot
-    let sender_id: String = row.sender_id.clone();
-    if sender_id != bot_id.to_string() {
+    if row.sender_id != bot_id.to_string() {
         return Err("ownership check failed: msg_id not owned by this bot");
     }
 
     // 占位必须仍 active
-    let is_partial: bool = row.is_partial.clone();
-    let content: String = row.content.clone();
-    if !is_partial && !content.is_empty() {
+    if !row.is_partial && !row.content.is_empty() {
         return Err("message already finalized");
     }
 
-    let channel_id_str: String = row.channel_id.clone();
-    channel_id_str.parse().map_err(|_| "invalid channel_id")
+    row.channel_id.parse().map_err(|_| "invalid channel_id")
 }
 
 #[cfg(test)]

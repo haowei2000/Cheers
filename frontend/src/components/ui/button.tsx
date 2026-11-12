@@ -155,8 +155,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const inheritedSize = useControlSize(controlSize);
-    const resolvedSize = inheritedSize;
+    const resolvedSize = useControlSize(controlSize);
     // Fill-only labels exceed the 128px slot budget on purpose; rendering one
     // in a slot-width button would truncate it.
     if (DEV && content !== "icon" && action && isFillActionKey(action) && controlWidth !== "fill") {

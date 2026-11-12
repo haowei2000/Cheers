@@ -57,15 +57,6 @@ enum ToolEventType: String, CaseIterable, Hashable {
         case .gitStatus, .gitDiff, .gitRemote, .gitCommand: return "arrow.triangle.branch"
         }
     }
-
-    var isGit: Bool {
-        switch self {
-        case .gitStatus, .gitDiff, .gitShow, .gitLog, .gitCommit, .gitRemote, .gitCommand:
-            return true
-        default:
-            return false
-        }
-    }
 }
 
 struct ToolPresentation: Hashable {

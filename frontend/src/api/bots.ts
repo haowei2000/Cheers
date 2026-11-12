@@ -14,7 +14,10 @@ export interface AcpAgentInfo {
   name: string;
   version?: string;
   package?: string;
+  command?: string;
   args?: string[];
+  /** Env var for headless API-key auth, when the agent supports one. */
+  api_key_env?: string | null;
   source: string;
   installable: boolean;
 }
@@ -247,28 +250,6 @@ export async function deleteHostRecord(botId: string, hostId: string): Promise<v
 export interface Reachability {
   public_base: string;
   configured: boolean;
-}
-
-export interface ConnectorConfig {
-  bot_id: string;
-  account_id: string;
-  agent_type: string;
-  credential_file: string;
-  control_url: string;
-  data_url: string;
-  config_toml: string;
-  reachability: Reachability;
-  note?: string;
-}
-
-/** Connector config skeleton. Pairing is still required to obtain the
- * host-bound credential referenced by this file. */
-export async function getConnectorConfig(
-  botId: string,
-  agentType?: AgentType
-): Promise<ConnectorConfig> {
-  const q = agentType ? `?agent_type=${encodeURIComponent(agentType)}` : "";
-  return apiJson<ConnectorConfig>(`/bots/${botId}/connector-config${q}`);
 }
 
 export interface HostPairing {

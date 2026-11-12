@@ -103,13 +103,6 @@ object Format {
         return (abs(hash) % 8 + 8) % 8
     }
 
-    /** "1.2 MB" style file size. */
-    fun fileSize(bytes: Long): String = when {
-        bytes >= 1_048_576 -> String.format(Locale.US, "%.1f MB", bytes / 1_048_576.0)
-        bytes >= 1024 -> String.format(Locale.US, "%.1f KB", bytes / 1024.0)
-        else -> "$bytes B"
-    }
-
     /**
      * Login form URL -> Retrofit base URL: add http://, strip trailing slashes,
      * append /api/v1 when missing, end with exactly one "/".

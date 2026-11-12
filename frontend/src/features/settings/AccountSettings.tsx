@@ -378,6 +378,10 @@ export function SignOutAction({ onSignOut }: { onSignOut: () => Promise<void> })
   );
 }
 
+function providerLabel(provider: ExternalIdentityStatus["provider"]): string {
+  return provider === "apple" ? "Apple" : provider === "github" ? "GitHub" : "Google";
+}
+
 export function ExternalIdentitiesCard() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -399,7 +403,7 @@ export function ExternalIdentitiesCard() {
   const unlinkIdentity = useMutation({
     mutationFn: unlinkExternalIdentity,
     onSuccess: async (_, provider) => {
-      toast.success(`${provider === "apple" ? "Apple" : provider === "github" ? "GitHub" : "Google"} unlinked`);
+      toast.success(`${providerLabel(provider)} unlinked`);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.externalIdentities }),
         queryClient.invalidateQueries({ queryKey: queryKeys.authSessions }),
@@ -417,7 +421,7 @@ export function ExternalIdentitiesCard() {
     const next = new URLSearchParams(searchParams);
     next.delete("link_provider");
     setSearchParams(next, { replace: true });
-    toast.success(`${provider === "github" ? "GitHub" : "Google"} linked`);
+    toast.success(`${providerLabel(provider)} linked`);
   }), [queryClient, searchParams, setSearchParams]);
 
   function dismissLinkRequest() {
@@ -436,7 +440,7 @@ export function ExternalIdentitiesCard() {
 
   async function linkOAuth(identity: ExternalIdentityStatus) {
     if (identity.provider !== "google" && identity.provider !== "github") return;
-    const label = identity.provider === "github" ? "GitHub" : "Google";
+    const label = providerLabel(identity.provider);
     if (!identity.recent_authentication) {
       toast.error(`Confirm your identity, then link ${label}.`);
       return;
@@ -472,12 +476,12 @@ export function ExternalIdentitiesCard() {
           icon={Link2}
           className="mb-4"
           action={requestedIdentity?.recent_authentication ? {
-            label: `Link ${requestedProvider === "github" ? "GitHub" : "Google"}`,
+            label: `Link ${providerLabel(requestedProvider)}`,
             onClick: () => void linkOAuth(requestedIdentity),
           } : undefined}
           onDismiss={dismissLinkRequest}
         >
-          You&apos;re signed in. Link {requestedProvider === "github" ? "GitHub" : "Google"} to use it next time.
+          You&apos;re signed in. Link {providerLabel(requestedProvider)} to use it next time.
         </Banner>
       )}
       {identities.isError ? (
@@ -492,7 +496,7 @@ export function ExternalIdentitiesCard() {
           {(identities.data ?? []).filter((identity) =>
             identity.linked || identity.provider === "google" || identity.provider === "github"
           ).map((identity) => {
-            const label = identity.provider === "apple" ? "Apple" : identity.provider === "github" ? "GitHub" : "Google";
+            const label = providerLabel(identity.provider);
             if (unlinkTarget?.provider === identity.provider) {
               return (
                 <CollectionConfirmationItem

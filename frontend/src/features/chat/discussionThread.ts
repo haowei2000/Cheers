@@ -2,6 +2,7 @@
 
 import type { Message } from "@/types";
 import { mergeMessageContentData } from "./taskClaimProjection";
+import { permissionSourceId as anchoredSourceId } from "./messageTree";
 
 /** Whether a message belongs to a discussion root (including the root itself). */
 export function inDiscussionThread(message: Message, rootId: string): boolean {
@@ -11,10 +12,7 @@ export function inDiscussionThread(message: Message, rootId: string): boolean {
 }
 
 function permissionSourceId(message: Message): string | null {
-  if (message.msg_type !== "permission") return null;
-  const source = (message.content_data as { source_msg_id?: unknown } | null | undefined)
-    ?.source_msg_id;
-  return typeof source === "string" && source.length > 0 ? source : null;
+  return message.msg_type === "permission" ? anchoredSourceId(message) : null;
 }
 
 /** Overlay live WS rows (partials, permission cards) onto the REST thread. */

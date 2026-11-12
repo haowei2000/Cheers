@@ -166,13 +166,27 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
         .get("include_internal")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    // A type filter has to run here, not in the client: the list is paged, so filtering
+    // one loaded page would hide matches that sit on a later one. A canvas is named by
+    // its file name, the same rule the Web client uses to offer the canvas view.
+    let canvases_only = match params.get("type") {
+        None | Some(Value::Null) => false,
+        Some(Value::String(kind)) if kind == "canvas" => true,
+        Some(_) => {
+            return Err(super::resource_error(
+                "INVALID_PARAMS",
+                "type must be \"canvas\" when given",
+            ))
+        }
+    };
     let mut rows = sqlx::query_as!(Artifact,
         "SELECT a.artifact_id, a.channel_id, a.source_kind, a.source_id, a.title, a.path, a.content_type, a.size_bytes, a.version, a.source_version, a.source_status, a.internal, a.created_by, a.created_at, a.updated_at, a.expires_at, a.deleted_at FROM artifacts a WHERE a.channel_id = $1 AND a.deleted_at IS NULL
          AND ($2 OR NOT a.internal)
          AND ($3::text IS NULL OR (a.created_at, a.artifact_id) <
               (SELECT c.created_at, c.artifact_id FROM artifacts c WHERE c.channel_id = $1 AND c.artifact_id = $3))
+         AND (NOT $5 OR a.path ~* '\\.canvas\\.(ya?ml|json)$')
          ORDER BY a.created_at DESC, a.artifact_id DESC LIMIT $4",
-        channel_id.to_string(), include_internal, before, limit + 1
+        channel_id.to_string(), include_internal, before, limit + 1, canvases_only
     ).fetch_all(db).await.map_err(super::db_err("artifacts.list"))?;
     let more = rows.len() > limit as usize;
     rows.truncate(limit as usize);

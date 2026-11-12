@@ -9,18 +9,12 @@ use super::*;
 pub(super) const PROMPT_CONTRACT_VERSION: u32 = 2;
 
 pub(super) fn pinned_digest(pinned: &[String]) -> String {
-    use sha2::{Digest, Sha256};
-
     let active: Vec<&str> = pinned
         .iter()
         .map(String::as_str)
         .filter(|block| !block.trim().is_empty())
         .collect();
-    let bytes = serde_json::to_vec(&active).expect("string list is serializable");
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    etag_of(&serde_json::to_vec(&active).expect("string list is serializable"))
 }
 
 pub(super) fn bridge_ready_from_initialize(

@@ -394,3 +394,46 @@ async fn artifact_pagination_and_authorization_use_channel_scope(db: PgPool) {
     .await
     .is_err());
 }
+
+#[sqlx::test]
+async fn artifact_list_filters_canvases_across_pages(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    for path in [
+        "plan.canvas.yaml",
+        "notes.md",
+        "map.canvas.json",
+        "page.html",
+        "canvas.md",
+    ] {
+        create(&db, ch, &p, path).await;
+    }
+    let first =
+        artifacts::handle_list(&db, &p, &json!({"channel_id":ch,"limit":1,"type":"canvas"}))
+            .await
+            .unwrap();
+    let second = artifacts::handle_list(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"limit":1,"type":"canvas","before":first["next_cursor"]}),
+    )
+    .await
+    .unwrap();
+    let titles = |page: &Value| {
+        page["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["title"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(titles(&first), ["map.canvas.json"]);
+    assert_eq!(titles(&second), ["plan.canvas.yaml"]);
+    assert!(second["next_cursor"].is_null());
+    assert_eq!(
+        artifacts::handle_list(&db, &p, &json!({"channel_id":ch,"type":"page"}))
+            .await
+            .unwrap_err()
+            .0,
+        "INVALID_PARAMS"
+    );
+}

@@ -23,8 +23,8 @@ export type InteractionResult =
 export type InteractionDispatcher = ((intent: WorkbenchInteraction) => Promise<InteractionResult>) & {
   capabilities: readonly WorkbenchInteraction["kind"][];
 };
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ACTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const ACTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
 function jsonInputs(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Form inputs must be an object.");
   const serialized = JSON.stringify(input);

@@ -23,6 +23,7 @@ import { OperationsItem } from "@/components/ui/item";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
+import { EXPIRY_OPTIONS, expiresAtFor } from "./grantLabels";
 
 export function BotToBotGrantsSection({ botId }: { botId: string }) {
   const [data, setData] = useState<BotGrants | null>(null);
@@ -92,11 +93,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
         subject_id: subjectId,
         grant,
         decision,
-        expires_at: expiry === "preserve"
-          ? editing?.expires_at || undefined
-          : expiry
-            ? new Date(Date.now() + Number(expiry) * 1000).toISOString()
-            : undefined,
+        expires_at: expiresAtFor(expiry, editing?.expires_at),
       });
       await load();
       reset();
@@ -168,12 +165,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
       <Field label="Expiry">
         <Select controlSize="regular" value={expiry} onChange={(event) => setExpiry(event.target.value)}>
           {editorMode === "edit" && editing?.expires_at && <option value="preserve">Keep current expiry</option>}
-          <option value="">Permanent</option>
-          <option value="3600">1 hour</option>
-          <option value="28800">8 hours</option>
-          <option value="86400">1 day</option>
-          <option value="604800">7 days</option>
-          <option value="2592000">30 days</option>
+          {EXPIRY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </Select>
       </Field>
     </CollectionEditorItem>

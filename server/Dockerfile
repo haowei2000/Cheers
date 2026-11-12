@@ -20,9 +20,12 @@ COPY packages/cheers-mcp-server/Cargo.toml \
      /app/packages/cheers-mcp-server/Cargo.toml
 COPY packages/cheers-interactive-core/Cargo.toml \
      /app/packages/cheers-interactive-core/Cargo.toml
+COPY packages/cheers-acp-registry/Cargo.toml \
+     /app/packages/cheers-acp-registry/Cargo.toml
 RUN mkdir -p src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
        /app/packages/cheers-mcp-server/src \
        /app/packages/cheers-interactive-core/src \
+       /app/packages/cheers-acp-registry/src \
     && echo 'fn main() {}' > src/main.rs \
     && : > src/lib.rs \
     && : > /app/packages/cheers-acp-connector-rs/bridge-protocol/src/lib.rs \
@@ -30,10 +33,12 @@ RUN mkdir -p src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
     && : > /app/packages/cheers-mcp-server/src/lib.rs \
     && echo 'fn main() {}' > /app/packages/cheers-interactive-core/src/main.rs \
     && : > /app/packages/cheers-interactive-core/src/lib.rs \
+    && : > /app/packages/cheers-acp-registry/src/lib.rs \
     && cargo build --release \
     && rm -rf src /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
        /app/packages/cheers-mcp-server/src \
-       /app/packages/cheers-interactive-core/src
+       /app/packages/cheers-interactive-core/src \
+       /app/packages/cheers-acp-registry/src
 
 # ── 2) Real build ────────────────────────────────────────────────────────────
 # Copy the actual sources; only `server` + `cheers-bridge-protocol` recompile
@@ -44,6 +49,7 @@ COPY packages/cheers-acp-connector-rs/bridge-protocol \
      /app/packages/cheers-acp-connector-rs/bridge-protocol
 COPY packages/cheers-mcp-server /app/packages/cheers-mcp-server
 COPY packages/cheers-interactive-core /app/packages/cheers-interactive-core
+COPY packages/cheers-acp-registry /app/packages/cheers-acp-registry
 COPY design-system/a2ui-catalog.json /app/design-system/a2ui-catalog.json
 COPY frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json /app/frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json
 COPY server/src ./src
@@ -62,9 +68,7 @@ COPY server/assets ./assets
 # change would otherwise be skipped by the same stale-artifact check. The find
 # starts at the RELATIVE path `assets`, so entries print as `assets/...` —
 # the pattern must be 'assets/*' (a '*/assets/*' pattern would never match).
-RUN find src assets /app/packages/cheers-acp-connector-rs/bridge-protocol/src \
-       /app/packages/cheers-mcp-server/src \
-       /app/packages/cheers-interactive-core/src \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
+RUN find src assets /app/packages \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
     && cargo build --release
 
 # ── runtime ──────────────────────────────────────────────────────────────────

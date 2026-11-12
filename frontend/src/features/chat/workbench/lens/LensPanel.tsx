@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import type { FsClient } from "../fsClient";
 import { canEditData, canPatch, useFileSession, type FileSession } from "../jsonFile";
 import { annotationsFor, notesOnTarget, type AnnotationDoc } from "../annotations";
-import type { LensContextTarget } from "./registry";
+import type { LensContextTarget, LensProps } from "./registry";
 import { getLens } from "./registry";
 import { inspectableIdLineRange, sourcePathLineRange, uniqueSourceTextRange } from "../contextSource";
 import { LensAnnotationOverlay } from "./LensAnnotationOverlay";
@@ -29,6 +29,7 @@ export function LensView({
   onSelectAnnotation,
   onRevealSource,
   openLocator,
+  artifactRefs,
   inspectorActive,
   onFormSubmit,
   artifactId,
@@ -54,6 +55,7 @@ export function LensView({
    *  header: one buffer must not grow two Save buttons or report "Saved" twice. */
   standalone?: boolean;
   openLocator?: (uri: string) => void;
+  artifactRefs?: LensProps["artifactRefs"];
   inspectorActive?: boolean;
   artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
@@ -180,6 +182,7 @@ export function LensView({
             readOnly: !writable,
             requestContextPick,
             openLocator,
+            artifactRefs,
             inspectorActive,
             onFormSubmit,
             onInteraction,
@@ -224,6 +227,7 @@ export function LensPanel({
   channelId,
   reloadTick,
   openLocator,
+  artifactRefs,
   inspectorActive,
   onFormSubmit,
   artifactId,
@@ -237,6 +241,7 @@ export function LensPanel({
   channelId: string;
   reloadTick?: number;
   openLocator?: (uri: string) => void;
+  artifactRefs?: LensProps["artifactRefs"];
   inspectorActive?: boolean;
   artifactId?: string;
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
@@ -262,6 +267,7 @@ export function LensPanel({
       channelId={channelId}
       standalone
       openLocator={openLocator}
+      artifactRefs={artifactRefs}
       inspectorActive={inspectorActive}
       onFormSubmit={onFormSubmit}
       artifactId={artifactId}

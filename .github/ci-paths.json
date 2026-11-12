@@ -24,6 +24,7 @@
           "fixtures/desktop-onboarding/**",
           "fixtures/workbench/**",
           "packages/cheers-acp-connector-rs/bridge-protocol/**",
+          "packages/cheers-acp-registry/**",
           "packages/cheers-interactive-core/**",
           "packages/cheers-mcp-server/**"
         ],
@@ -52,6 +53,7 @@
         ],
         "desktop": [
           "apps/macos/**",
+          "packages/cheers-acp-registry/**",
           "fixtures/desktop-onboarding/**"
         ],
         "ios": [
@@ -79,6 +81,7 @@
           "server/**",
           ".cargo/config.toml",
           "packages/cheers-acp-connector-rs/bridge-protocol/**",
+          "packages/cheers-acp-registry/**",
           "packages/cheers-interactive-core/**",
           "packages/cheers-mcp-server/**",
           "design-system/a2ui-catalog.json",

@@ -1,5 +1,4 @@
 import { HelpLabel } from "@/components/ui/help-text";
-import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { FolderPlus, Settings2 } from "lucide-react";
@@ -183,15 +182,9 @@ export function ConnectorConfigForm({
         <Field label="Agent">
           <AgentPicker
             value={agentKey}
-            onPick={(key, cmdPath) => {
+            onPick={(key, cmdPath, args) => {
               setAgentKey(key);
-              if (cmdPath) {
-                // Subcommand ACP agents (OpenCode / Cursor) need `acp` in args —
-                // matching the gateway connector_config presets.
-                const adapter_args =
-                  key === "opencode" || key === "cursor" ? ["acp"] : [];
-                patch({ adapter_command: cmdPath, adapter_args });
-              }
+              if (cmdPath) patch({ adapter_command: cmdPath, adapter_args: args });
             }}
           />
         </Field>
@@ -203,7 +196,7 @@ export function ConnectorConfigForm({
               placeholder="/opt/homebrew/bin/codex-acp"
             />
           </div>
-          <UiButton action="more" content="iconText" variant="plain"
+          <Button action="more" content="iconText" variant="plain"
             type="button"
             title="Command arguments"
             onClick={() => setArgsOpen((o) => !o)}
@@ -213,7 +206,7 @@ export function ConnectorConfigForm({
  }`}
           >
             <Settings2 className="w-3.5 h-3.5" />
-          </UiButton>
+          </Button>
         </div>
         {argsOpen && (
           <Field label="Command arguments (one per line)">
@@ -234,7 +227,7 @@ export function ConnectorConfigForm({
             className="font-code text-compact"
             placeholder={"~/Projects\n~/.cheers/workspace"}
           />
-          <UiButton action="add" content="iconText" variant="plain"
+          <Button action="add" content="iconText" variant="plain"
             type="button"
             className="mt-1  text-accent-400 hover:text-accent-300 flex items-center gap-1"
             onClick={() =>
@@ -246,7 +239,7 @@ export function ConnectorConfigForm({
             }
           >
             <FolderPlus className="w-3.5 h-3.5" />
-          </UiButton>
+          </Button>
         </Field>
         <Field label="Default working directory">
           <div className="flex gap-2">
@@ -268,7 +261,7 @@ export function ConnectorConfigForm({
             <p className="mt-1 text-compact text-warning-400">
               This directory is not under any workspace root — the connector will
               refuse to start.{" "}
-              <UiButton action="add" variant="plain"
+              <Button action="add" variant="plain"
                 type="button"
                 className="underline hover:text-warning-300"
                 onClick={() => {
@@ -279,7 +272,7 @@ export function ConnectorConfigForm({
                 }}
               >
                 Add it to workspace roots
-              </UiButton>
+              </Button>
             </p>
           )}
         </Field>
@@ -296,13 +289,13 @@ export function ConnectorConfigForm({
 
       {/* ── More ── */}
       <div>
-        <UiButton action="more" variant="plain"
+        <Button action="more" variant="plain"
           type="button"
           className=" text-content-primary hover:text-content-strong"
           onClick={() => setMore((m) => !m)}
         >
           {more ? "▾" : "▸"} More settings
-        </UiButton>
+        </Button>
         {more && (
           <div className="grid gap-3 mt-3 pl-2 border-l border-zinc-800">
             <CheckboxField

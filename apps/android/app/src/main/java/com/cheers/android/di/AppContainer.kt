@@ -6,8 +6,11 @@ import com.cheers.android.data.SessionStore
 import com.cheers.android.data.api.CheersApi
 import com.cheers.android.data.auth.SessionAuthInterceptor
 import com.cheers.android.data.auth.SessionIdentity
+import com.cheers.android.data.auth.SessionRefreshResult
 import com.cheers.android.data.auth.WriteOnceInterceptor
 import com.cheers.android.data.repo.AuthRepository
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -86,12 +89,7 @@ class AppContainer(context: Context) {
         cachedApi?.let { (cachedUrl, api) -> if (cachedUrl == baseUrl) return api }
         synchronized(apiLock) {
             cachedApi?.let { (cachedUrl, api) -> if (cachedUrl == baseUrl) return api }
-            val api = Retrofit.Builder()
-                .baseUrl(baseUrl)
-                .client(httpClient)
-                .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-                .build()
-                .create(CheersApi::class.java)
+            val api = retrofitApi(baseUrl, httpClient)
             cachedApi = baseUrl to api
             return api
         }
@@ -102,18 +100,32 @@ class AppContainer(context: Context) {
         cachedProtectedApi?.let { (identity, api) -> if (identity == session.identity) return api }
         synchronized(apiLock) {
             cachedProtectedApi?.let { (identity, api) -> if (identity == session.identity) return api }
-            val api = Retrofit.Builder()
-                .baseUrl(session.serverUrl)
-                .client(
-                    protectedTransport.newBuilder()
-                        .addInterceptor(SessionAuthInterceptor(session, sessionStore, authRepository))
-                        .build(),
-                )
-                .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-                .build()
-                .create(CheersApi::class.java)
+            val api = retrofitApi(
+                session.serverUrl,
+                protectedTransport.newBuilder()
+                    .addInterceptor(SessionAuthInterceptor(session, sessionStore, authRepository))
+                    .build(),
+            )
             cachedProtectedApi = session.identity to api
             return api
+        }
+    }
+
+    private fun retrofitApi(baseUrl: String, client: OkHttpClient): CheersApi = Retrofit.Builder()
+        .baseUrl(baseUrl)
+        .client(client)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+        .create(CheersApi::class.java)
+
+    /** Bind each call to one login; refresh never retargets an older screen. */
+    suspend fun scopedApi(expected: SessionIdentity?): CheersApi {
+        if (expected == null) throw CancellationException("No active session")
+        return when (val result = authRepository.validSession(expected)) {
+            is SessionRefreshResult.Fresh -> apiFor(result.session)
+            SessionRefreshResult.Retryable -> throw IOException("Connection temporarily unavailable")
+            SessionRefreshResult.Ended, SessionRefreshResult.Stale ->
+                throw CancellationException("Session changed")
         }
     }
 

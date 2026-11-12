@@ -39,6 +39,13 @@ function desktopStepUpContext(): { serverBase: string; accessToken: string } {
   return { serverBase, accessToken };
 }
 
+/** The desktop shell's selected gateway; desktop sign-in calls need one. */
+function desktopServerBase(): string {
+  const serverBase = getServerBase();
+  if (!serverBase) throw new Error("Choose a Cheers server first");
+  return serverBase;
+}
+
 export function startStepUpFlow(actionClass: string): Promise<StepUpFlowResponse> {
   if (isTauri()) {
     return invokeDesktop("desktop_start_step_up", {
@@ -155,14 +162,13 @@ export function loginFlowPasskeyOptions(transactionId: string): Promise<Record<s
   });
 }
 
-export function verifyLoginFlowPassword(
+export async function verifyLoginFlowPassword(
   transactionId: string,
   password: string,
   rememberDevice = true
 ): Promise<LoginResponse> {
   if (isTauri()) {
-    const serverBase = getServerBase();
-    if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
+    const serverBase = desktopServerBase();
     return invokeDesktop("desktop_login_flow_password", { serverBase, transactionId, password, rememberDevice });
   }
   return apiJson(`/auth/flows/${transactionId}/password`, {
@@ -171,24 +177,22 @@ export function verifyLoginFlowPassword(
   });
 }
 
-export function sendLoginFlowEmail(transactionId: string): Promise<Record<string, unknown>> {
+export async function sendLoginFlowEmail(transactionId: string): Promise<Record<string, unknown>> {
   if (isTauri()) {
-    const serverBase = getServerBase();
-    if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
+    const serverBase = desktopServerBase();
     return invokeDesktop("desktop_login_flow_email_send", { serverBase, transactionId });
   }
   return apiJson(`/auth/flows/${transactionId}/email/send`, { method: "POST", body: "{}" });
 }
 
-export function verifyLoginFlowCode(
+export async function verifyLoginFlowCode(
   transactionId: string,
   method: "email" | "totp" | "recovery_code",
   code: string,
   rememberDevice = true
 ): Promise<LoginResponse> {
   if (isTauri()) {
-    const serverBase = getServerBase();
-    if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
+    const serverBase = desktopServerBase();
     return invokeDesktop("desktop_login_flow_code", { serverBase, transactionId, method, code, rememberDevice });
   }
   const suffix = method === "email" ? "email/verify" : "totp/verify";
@@ -198,14 +202,13 @@ export function verifyLoginFlowCode(
   });
 }
 
-export function verifyLoginFlowPasskey(
+export async function verifyLoginFlowPasskey(
   transactionId: string,
   credential: Record<string, unknown>,
   rememberDevice = true
 ): Promise<LoginResponse> {
   if (isTauri()) {
-    const serverBase = getServerBase();
-    if (!serverBase) return Promise.reject(new Error("Choose a Cheers server first"));
+    const serverBase = desktopServerBase();
     return invokeDesktop<LoginResponse>("desktop_login_flow_passkey_verify", {
       serverBase,
       transactionId,
@@ -226,8 +229,7 @@ export async function login(credentials: {
   device_name?: string;
 }): Promise<LoginResponse> {
   if (isTauri()) {
-    const serverBase = getServerBase();
-    if (!serverBase) throw new Error("Choose a Cheers server first");
+    const serverBase = desktopServerBase();
     return invokeDesktop<LoginResponse>("desktop_password_login", {
       serverBase,
       login: credentials.login,
@@ -251,8 +253,7 @@ export async function verifyTwoFactorLogin(
   body: TwoFactorVerifyRequest
 ): Promise<LoginResponse> {
   if (isTauri()) {
-    const serverBase = getServerBase();
-    if (!serverBase) throw new Error("Choose a Cheers server first");
+    const serverBase = desktopServerBase();
     return invokeDesktop<LoginResponse>("desktop_verify_factor", {
       serverBase,
       transactionId: body.transaction_id,
@@ -475,8 +476,7 @@ export async function passkeyFactorVerify(input: {
   remember_device?: boolean;
 }): Promise<LoginResponse> {
   if (isTauri()) {
-    const serverBase = getServerBase();
-    if (!serverBase) throw new Error("Choose a Cheers server first");
+    const serverBase = desktopServerBase();
     return invokeDesktop("desktop_verify_passkey_factor", {
       serverBase,
       transactionId: input.transaction_id,
@@ -508,8 +508,7 @@ export async function startOAuth(provider: "apple" | "google" | "github"): Promi
 
 export async function exchangeOAuthHandoff(code: string): Promise<LoginResponse> {
   if (isTauri()) {
-    const serverBase = getServerBase();
-    if (!serverBase) throw new Error("Choose a Cheers server first");
+    const serverBase = desktopServerBase();
     return invokeDesktop<LoginResponse>("desktop_oauth_handoff", { serverBase, code });
   }
   return apiJson<LoginResponse>("/auth/oauth/handoff", {

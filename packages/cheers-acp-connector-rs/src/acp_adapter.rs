@@ -7,7 +7,6 @@
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, HashMap};
-use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,10 +19,11 @@ use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{Child, ChildStdin};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 
+use crate::acp_runtime::{request_id_key, spawn_agent};
 use crate::acp_semantics::{
     apply_settings_to_config, auth_failure_hint, default_client_capabilities,
     permission_options_from_params, ACP_PROTOCOL_VERSION,
@@ -127,16 +127,11 @@ impl AcpAdapter {
     }
 
     pub fn supports_load_session(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("loadSession"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().load_session
     }
 
-    fn agent_capabilities(&self) -> Option<&Value> {
-        self.initialize_response
-            .as_ref()
-            .and_then(|value| value.get("agentCapabilities"))
+    fn agent_capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities::from_initialize(self.initialize_response.as_ref())
     }
 
     /// Whether the agent accepts image content blocks in a prompt
@@ -144,43 +139,27 @@ impl AcpAdapter {
     /// spec says the client must not send a modality the agent never advertised,
     /// so we degrade images to a text summary instead of pushing blocks blindly.
     pub fn supports_prompt_image(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("promptCapabilities"))
-            .and_then(|value| value.get("image"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().prompt_image
     }
 
     /// Whether the agent accepts audio content blocks in a prompt
     /// (`agentCapabilities.promptCapabilities.audio`). Same default-deny rule
     /// as images: never push a modality the agent didn't advertise.
     pub fn supports_prompt_audio(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("promptCapabilities"))
-            .and_then(|value| value.get("audio"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().prompt_audio
     }
 
     /// Whether the agent supports the optional HTTP MCP transport
     /// (`agentCapabilities.mcpCapabilities.http`). stdio MCP is the ACP baseline
     /// and needs no capability; only the `http`/`sse` transports are gated.
     pub fn supports_mcp_http(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("mcpCapabilities"))
-            .and_then(|value| value.get("http"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().mcp_http
     }
 
     /// Whether the agent supports the optional SSE MCP transport
     /// (`agentCapabilities.mcpCapabilities.sse`).
     pub fn supports_mcp_sse(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("mcpCapabilities"))
-            .and_then(|value| value.get("sse"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().mcp_sse
     }
 
     async fn spawn_peer(&mut self) -> anyhow::Result<()> {
@@ -188,37 +167,7 @@ impl AcpAdapter {
             return Ok(());
         }
 
-        let mut command = Command::new(&self.config.command);
-        command
-            .args(&self.config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if !self.config.inherit_env {
-            command.env_clear();
-        }
-        if let Some(cwd) = &self.config.cwd {
-            command.current_dir(cwd);
-        }
-        for (key, value) in &self.config.env {
-            command.env(key, value);
-        }
-
-        let mut child = command.spawn().with_context(|| {
-            format!(
-                "failed to start ACP agent account={} command={}",
-                self.account_id, self.config.command
-            )
-        })?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow!("ACP agent stdin was not piped"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow!("ACP agent stdout was not piped"))?;
-        let stderr = child.stderr.take();
+        let (child, stdin, stdout) = spawn_agent(&self.account_id, &self.config)?;
 
         *self.writer.lock().await = Some(stdin);
         spawn_stdout_reader(
@@ -229,9 +178,6 @@ impl AcpAdapter {
             self.request_routes.clone(),
             self.event_tx.clone(),
         );
-        if let Some(stderr) = stderr {
-            spawn_stderr_reader(self.account_id.clone(), stderr);
-        }
 
         self.child = Some(child);
         Ok(())
@@ -297,21 +243,7 @@ impl AcpAdapter {
             }
         };
         self.request_routes.lock().await.remove(&route_key);
-        match reply {
-            JsonRpcReply::Result(value) => Ok(value),
-            JsonRpcReply::Error(error) => Err(anyhow!(
-                "ACP request failed method={} id={} code={} message={}{}",
-                method,
-                id,
-                error.code,
-                error.message,
-                error
-                    .data
-                    .as_ref()
-                    .map(|data| format!(" data={data}"))
-                    .unwrap_or_default()
-            )),
-        }
+        reply_into_result(method, id, reply)
     }
 
     async fn notify(&mut self, method: &str, params: Value) -> anyhow::Result<()> {
@@ -409,21 +341,7 @@ impl AcpRequester {
                 return Err(anyhow!("ACP request timeout method={method} id={id}"));
             }
         };
-        match reply {
-            JsonRpcReply::Result(value) => Ok(value),
-            JsonRpcReply::Error(error) => Err(anyhow!(
-                "ACP request failed method={} id={} code={} message={}{}",
-                method,
-                id,
-                error.code,
-                error.message,
-                error
-                    .data
-                    .as_ref()
-                    .map(|data| format!(" data={data}"))
-                    .unwrap_or_default()
-            )),
-        }
+        reply_into_result(method, id, reply)
     }
 
     pub(crate) async fn prompt(
@@ -719,7 +637,7 @@ impl RuntimeAdapter for AcpAdapter {
     }
 
     fn capabilities(&self) -> AgentCapabilities {
-        AgentCapabilities::from_initialize(self.initialize_response.as_ref())
+        self.agent_capabilities()
     }
 
     fn initialize_response(&self) -> Option<Value> {
@@ -784,15 +702,6 @@ fn spawn_stdout_reader(
         *writer.lock().await = None;
         fail_all_pending(&pending, "ACP stdout closed").await;
         tracing::warn!(account = %account_id, "ACP stdout reader stopped");
-    });
-}
-
-fn spawn_stderr_reader(account_id: String, stderr: tokio::process::ChildStderr) {
-    tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            tracing::info!(account = %account_id, "[acp stderr] {}", line);
-        }
     });
 }
 
@@ -1014,6 +923,10 @@ async fn handle_peer_request(
             None => None,
         };
         let valid = serde_json::from_value::<CreateElicitationRequest>(params.clone()).is_ok();
+        let cancel = || {
+            serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
+                .expect("elicitation cancel serializes")
+        };
         let response = if valid && (acp_session_id.is_some() || request_route.is_some()) {
             let (tx, rx) = oneshot::channel();
             if event_tx
@@ -1026,17 +939,12 @@ async fn handle_peer_request(
                 .await
                 .is_ok()
             {
-                rx.await.unwrap_or_else(|_| {
-                    serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
-                        .expect("elicitation cancel serializes")
-                })
+                rx.await.unwrap_or_else(|_| cancel())
             } else {
-                serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
-                    .expect("elicitation cancel serializes")
+                cancel()
             }
         } else {
-            serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
-                .expect("elicitation cancel serializes")
+            cancel()
         };
         let response = serde_json::from_value::<CreateElicitationResponse>(response)
             .unwrap_or_else(|_| CreateElicitationResponse::new(ElicitationAction::Cancel));
@@ -1100,13 +1008,6 @@ async fn handle_peer_request(
     Ok(())
 }
 
-/// Canonicalizes JSON-RPC request IDs without conflating strings and numbers.
-fn request_id_key(value: &Value) -> Option<String> {
-    matches!(value, Value::String(_) | Value::Number(_))
-        .then(|| serde_json::to_string(value).ok())
-        .flatten()
-}
-
 /// Writes a JSON-RPC success reply carrying an ACP `RequestPermissionResponse`.
 ///
 /// The response shape is owned by the official `agent-client-protocol-schema`
@@ -1129,6 +1030,24 @@ async fn write_permission_response(
         }),
     )
     .await
+}
+
+fn reply_into_result(method: &str, id: u64, reply: JsonRpcReply) -> anyhow::Result<Value> {
+    match reply {
+        JsonRpcReply::Result(value) => Ok(value),
+        JsonRpcReply::Error(error) => Err(anyhow!(
+            "ACP request failed method={} id={} code={} message={}{}",
+            method,
+            id,
+            error.code,
+            error.message,
+            error
+                .data
+                .as_ref()
+                .map(|data| format!(" data={data}"))
+                .unwrap_or_default()
+        )),
+    }
 }
 
 async fn write_json_line(writer: &SharedWriter, value: &Value) -> anyhow::Result<()> {

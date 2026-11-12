@@ -34,6 +34,7 @@ import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { CreateBotDialog } from "@/features/bots/CreateBotDialog";
 import { CreateHostWizard } from "@/features/bots/CreateHostWizard";
 import { BotDetailPanel } from "@/features/bots/BotDetailPanel";
+import { mcpStateTone } from "@/features/bots/hostLifecycle";
 import type { BotItem } from "@/types";
 import { FleetAudit } from "./FleetAudit";
 import { FleetBots } from "./FleetBots";
@@ -142,7 +143,7 @@ export default function FleetPage() {
   useFleetLive(liveChannelIds, () => void refreshLive());
   const selectedBot = catalog.find((bot) => bot.bot_id === route.botId);
   const actionableCount = approvals.filter((approval) => approval.actionable).length;
-  const hostIssues = hosts.filter((item) => !item.revoked_at && (item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed")).length;
+  const hostIssues = hosts.filter((item) => !item.revoked_at && mcpStateTone(item.mcp_connection_state) === "warning").length;
   const manageableBots = catalog.filter((bot) => bot.can_manage);
 
   function openBot(botId: string, tab = "overview") { navigate(`/fleet/bots/${botId}/${tab}`); }

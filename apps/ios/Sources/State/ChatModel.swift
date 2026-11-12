@@ -100,8 +100,6 @@ final class ChatModel {
     /// Composer session target: nil = Auto (route by @mention to each bot's
     /// primary), else pins delivery to one bot session.
     var selectedSessionId: String?
-    /// Owning bot of the pinned session (nil for Auto) — used by model settings.
-    var selectedSessionBotId: String?
     /// Bot members of this channel — the session/model picker's candidate bots.
     private(set) var botMembers: [ChannelMemberDto] = []
     private(set) var channelMembers: [ChannelMemberDto] = []
@@ -457,20 +455,19 @@ final class ChatModel {
     }
 
     func startDiscussion() {
-        selectedDiscussionId = nil
-        selectedDiscussionRoot = nil
-        discussionReplies = []
-        discussionHasMoreBefore = false
-        isCreatingDiscussion = true
-        replyTo = nil
+        resetDiscussionSelection(creating: true)
     }
 
     func closeDiscussion() {
+        resetDiscussionSelection(creating: false)
+    }
+
+    private func resetDiscussionSelection(creating: Bool) {
         selectedDiscussionId = nil
         selectedDiscussionRoot = nil
         discussionReplies = []
         discussionHasMoreBefore = false
-        isCreatingDiscussion = false
+        isCreatingDiscussion = creating
         replyTo = nil
     }
 
@@ -652,7 +649,6 @@ final class ChatModel {
         }
 
         if let bot {
-            selectedSessionBotId = bot.senderId
             selectedSessionId = MessageTree.messageSessionId(bot)
             if let candidate = mentionPool.first(where: { $0.id == bot.senderId }) {
                 composerPrefillMention = candidate
@@ -672,10 +668,6 @@ final class ChatModel {
                 kind: "message"
             ))
         }
-    }
-
-    func cancelReply() {
-        replyTo = nil
     }
 
     // MARK: Sending
@@ -791,23 +783,12 @@ final class ChatModel {
         }
     }
 
-    var streamingMessageIds: [String] {
-        messages.filter { $0.isBot && $0.isPartial == true }.map(\.msgId)
-    }
-
     func stopTurn(msgId: String) async {
         guard let api = app?.api else { return }
         do {
             try await api.cancelMessage(channelId: channel.channelId, msgId: msgId)
         } catch {
             report(error)
-        }
-    }
-
-    func stopAllTurns() async {
-        let ids = streamingMessageIds
-        await withTaskGroup(of: Void.self) { group in
-            for id in ids { group.addTask { await self.stopTurn(msgId: id) } }
         }
     }
 
@@ -980,13 +961,13 @@ final class ChatModel {
         case .subscribed(let channelId) where channelId == channel.channelId:
             if channel.isDiscuss {
                 scheduleDiscussionRefresh()
+                scheduleClaimRevalidation()
             } else {
                 Task {
                     await catchUp()
                     scheduleClaimRevalidation()
                 }
             }
-            if channel.isDiscuss { scheduleClaimRevalidation() }
         case .message(let channelId, let message) where channelId == channel.channelId:
             upsert(message)
             followBottomTick += 1

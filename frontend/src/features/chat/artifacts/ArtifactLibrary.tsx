@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText } from "lucide-react";
+import { FileText, Layers, Workflow } from "lucide-react";
 import { ActionButton } from "@/components/ui/action-button";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
+import { ChoiceGroup } from "@/components/ui/choice-button";
+import { Input } from "@/components/ui/input";
+import { isComposing } from "@/lib/ime";
 import { Banner } from "@/components/ui/banner";
 import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { SurfaceSpinner } from "@/components/ui/spinner";
@@ -13,21 +16,9 @@ import { formatOf } from "../workbench/renderers/registry";
 import { FileGrid } from "../fileView";
 import { locatorToContextItem, useContextPickStore } from "../context/contextPick";
 import { parseLocator } from "../locator";
-import { artifactEditorClient, makeArtifactClient, type Artifact, type ArtifactContent } from "./client";
-
-const availabilityLabel: Record<Artifact["availability"], string> = {
-  ready: "Ready", pending: "Preparing", expired: "Expired", deleted: "Deleted", failed: "Failed",
-};
-
-export function artifactType(artifact: Pick<Artifact, "title" | "content_type">): string {
-  const format = formatOf(artifact.title);
-  if (format === "html" || format === "react") return "Interactive page";
-  if (/\.canvas\.(json|ya?ml)$/i.test(artifact.title)) return "Canvas";
-  if (format === "markdown") return "Document";
-  if (artifact.content_type?.startsWith("image/")) return "Image";
-  if (artifact.content_type === "application/pdf") return "PDF";
-  return "File";
-}
+import { artifactEditorClient, makeArtifactClient, type Artifact, type ArtifactContent, type ArtifactListType } from "./client";
+import { EMPTY_CANVAS, canvasPathFor } from "./newCanvas";
+import { artifactType, availabilityLabel } from "./presentation";
 
 /** One shared library for authored documents and delivered files. FilePanel is
  * still the source/preview editing host, so there is no second editing buffer. */
@@ -41,6 +32,17 @@ export function ArtifactLibrary({ ctx, target, onDirtyChange }: {
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | ArtifactListType>("all");
+  // The name being typed for a new canvas; null when the field is closed. The key is
+  // fixed per opened field and name, so a retried Enter replays instead of colliding
+  // with the canvas it already created.
+  const [canvasName, setCanvasName] = useState<string | null>(null);
+  const createKey = useRef("");
+  const [creating, setCreating] = useState(false);
+  const naming = canvasName !== null;
+  const nameField = useRef<HTMLInputElement>(null);
+  // The field opens because the person pressed "New canvas"; typing is the next step.
+  useEffect(() => { if (naming) nameField.current?.focus(); }, [naming]);
   const generation = useRef(0);
   const openingGeneration = useRef(0);
   const dirty = useRef(false);
@@ -57,7 +59,7 @@ export function ArtifactLibrary({ ctx, target, onDirtyChange }: {
     setLoading(true);
     setError(null);
     try {
-      const page = await client.list(before);
+      const page = await client.list(before, filter === "all" ? undefined : filter);
       if (request !== generation.current) return;
       setItems((current) => before
         ? [...new Map([...current, ...page.artifacts].map((item) => [item.artifact_id, item])).values()]
@@ -68,7 +70,7 @@ export function ArtifactLibrary({ ctx, target, onDirtyChange }: {
     } finally {
       if (request === generation.current) setLoading(false);
     }
-  }, [client]);
+  }, [client, filter]);
 
   useEffect(() => {
     const requests = generation;
@@ -90,6 +92,27 @@ export function ArtifactLibrary({ ctx, target, onDirtyChange }: {
       if (request === openingGeneration.current) setOpening(false);
     }
   }, [client]);
+
+  const createCanvas = async () => {
+    const path = canvasPathFor(canvasName ?? "");
+    if (!path) { setCanvasName(null); return; }
+    setCreating(true);
+    setError(null);
+    try {
+      const { artifact } = await client.create(path, EMPTY_CANVAS, `${createKey.current}:${path}`);
+      setCanvasName(null);
+      // Supersede an open started while this create was in flight; that open no longer
+      // clears its own spinner, so this does.
+      openingGeneration.current++;
+      setOpening(false);
+      setSelected(artifact);
+      void refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not create the canvas");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   useEffect(() => {
     const requests = openingGeneration;
@@ -142,6 +165,9 @@ export function ArtifactLibrary({ ctx, target, onDirtyChange }: {
           if (item) addContext(ctx.channelId, item);
         }} />
       </ButtonGroup>}
+      {!selected && <ActionButton action="add" context="toolbar" accessibleLabel="New canvas"
+        disabled={naming}
+        onClick={() => { createKey.current = crypto.randomUUID(); setCanvasName(""); }} />}
     </div>
     {error && <Banner severity="error">{error}</Banner>}
     {opening ? <SurfaceSpinner /> : selected ? (
@@ -156,13 +182,32 @@ export function ArtifactLibrary({ ctx, target, onDirtyChange }: {
         }} />
       ) : <AttachmentContent key={selected.artifact_id} artifact={selected} ctx={ctx} />
     ) : <div className="min-h-0 flex-1 overflow-y-auto p-2" aria-busy={loading}>
+      <ChoiceGroup ariaLabel="Show" value={filter} onChange={setFilter} className="mb-2"
+        options={[
+          { value: "all", label: "All", leading: <Layers /> },
+          { value: "canvas", label: "Canvases", leading: <Workflow /> },
+        ]} />
+      {naming && <div className="mb-2 flex items-center gap-2 px-2">
+        <Workflow className="h-4 w-4 shrink-0 text-content-muted" aria-hidden="true" />
+        <Input ref={nameField} value={canvasName} disabled={creating} aria-label="New canvas name"
+          placeholder="Canvas name, e.g. roadmap" controlSize="regular" className="flex-1"
+          onChange={(event) => setCanvasName(event.target.value)}
+          onKeyDown={(event) => {
+            if (isComposing(event)) return;
+            if (event.key === "Enter") { event.preventDefault(); void createCanvas(); }
+            else if (event.key === "Escape") setCanvasName(null);
+          }}
+          onBlur={() => { if (!canvasName.trim() && !creating) setCanvasName(null); }} />
+      </div>}
       <ItemList presentationLevel="medium" controlSize="regular" aria-label="Artifacts">
         {items.map((item) => <WorkbenchItem key={item.artifact_id} title={item.title}
           leading={<FileText className="h-4 w-4" aria-hidden="true" />}
           status={item.availability === "ready" ? artifactType(item) : availabilityLabel[item.availability]}
           onClick={() => { void open(item.uri); }} />)}
       </ItemList>
-      {loading ? <SurfaceSpinner /> : !items.length && !error ? <p className="p-4 text-regular text-content-muted">No artifacts yet. Upload a file or ask a Bot to create one.</p> : null}
+      {loading ? <SurfaceSpinner /> : !items.length && !error ? <p className="p-4 text-regular text-content-muted">{filter === "canvas"
+        ? "No canvases yet. Create one, or ask a Bot to lay out a canvas."
+        : "No artifacts yet. Upload a file or ask a Bot to create one."}</p> : null}
       {next && <Button action="more" variant="secondary" disabled={loading} onClick={() => { void refresh(next); }}>Load more</Button>}
     </div>}
   </div>;

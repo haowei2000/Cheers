@@ -447,15 +447,15 @@ fn git_presentation(
 /// Returns `None` for non-tool payloads. Callers must preserve a producer-owned
 /// `data.presentation`; it is more authoritative than gateway inference.
 pub fn classify_typed(data: &Value) -> Option<ToolPresentation> {
-    let data = Value::Object(data.as_object()?.clone());
-    let command = command_from(&data);
+    data.as_object()?;
+    let command = command_from(data);
     if let Some(command) = command {
         if let Some(captures) = git_regex().captures(command) {
-            return Some(git_presentation(command, &captures, &data));
+            return Some(git_presentation(command, &captures, data));
         }
     }
 
-    let explicit = tool_name(&data);
+    let explicit = tool_name(data);
     let alias = explicit.and_then(|name| alias_regex().captures(name));
     let alias_op = alias
         .as_ref()
@@ -518,13 +518,13 @@ pub fn classify_typed(data: &Value) -> Option<ToolPresentation> {
             ToolEventType::ShellCommand,
             "tool_name",
         ),
-        _ if path_from(&data).is_some() => (
+        _ if path_from(data).is_some() => (
             ToolFamily::File,
             "access",
             ToolEventType::FileAccess,
             "input.path",
         ),
-        _ if query_from(&data).is_some() => (
+        _ if query_from(data).is_some() => (
             ToolFamily::Web,
             "search",
             ToolEventType::WebSearch,
@@ -545,7 +545,7 @@ pub fn classify_typed(data: &Value) -> Option<ToolPresentation> {
     };
     Some(add_context(
         ToolPresentation::new(family, operation, event_type, confidence, matched_by),
-        &data,
+        data,
     ))
 }
 

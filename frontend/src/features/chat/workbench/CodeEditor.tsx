@@ -136,6 +136,11 @@ function syncLanguageFor(path: string): Extension {
   return [];
 }
 
+function hasSyncLanguage(path: string): boolean {
+  const p = path.toLowerCase();
+  return p.endsWith(".json") || p.endsWith(".md") || p.endsWith(".markdown");
+}
+
 // Async language resolution for arbitrary repo files (.ts/.rs/.py/Dockerfile/…). Each grammar
 // is a dynamic import (Vite code-splits it into its own chunk), so only the languages a user
 // actually opens are ever fetched. Returns null when no language matches (→ plain text).
@@ -144,8 +149,7 @@ async function loadLanguageFor(path: string): Promise<Extension | null> {
   const desc = LanguageDescription.matchFilename(languages, filename);
   if (!desc) return null;
   try {
-    const support = await desc.load();
-    return support;
+    return await desc.load();
   } catch {
     return null; // grammar failed to load → stay plain text, never crash the editor
   }
@@ -393,9 +397,8 @@ export function CodeEditor({
   // here we load the matching grammar and swap it in when it resolves. Guarded so a slow load
   // for a file the user already navigated away from is dropped (pathRef holds the latest path).
   useEffect(() => {
-    const p = path.toLowerCase();
     // md/json are already highlighted synchronously by syncLanguageFor — no async load needed.
-    if (p.endsWith(".json") || p.endsWith(".md") || p.endsWith(".markdown")) return;
+    if (hasSyncLanguage(path)) return;
     let cancelled = false;
     void loadLanguageFor(path).then((support) => {
       const view = viewRef.current;

@@ -165,11 +165,7 @@ fn list_in(dir: &Path) -> Result<Vec<PersonalExtension>, String> {
         if bytes.len() > MAX_PACKAGE_BYTES {
             continue;
         }
-        result.push(PersonalExtension {
-            id: id.to_string(),
-            content_base64: STANDARD.encode(&bytes),
-            sha256: sha256(&bytes),
-        });
+        result.push(personal_extension(id, &bytes));
     }
     result.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(result)
@@ -187,11 +183,15 @@ fn read_package(path: &Path) -> Result<PersonalExtension, String> {
     if bytes.len() > MAX_PACKAGE_BYTES {
         return Err("extension exceeds 4 MiB".into());
     }
-    Ok(PersonalExtension {
+    Ok(personal_extension(id, &bytes))
+}
+
+fn personal_extension(id: &str, bytes: &[u8]) -> PersonalExtension {
+    PersonalExtension {
         id: id.to_string(),
-        content_base64: STANDARD.encode(&bytes),
-        sha256: sha256(&bytes),
-    })
+        content_base64: STANDARD.encode(bytes),
+        sha256: sha256(bytes),
+    }
 }
 
 fn install_in(

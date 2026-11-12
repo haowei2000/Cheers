@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
-    api::{channels::ensure_channel_admin, middleware::Claims},
+    api::{bots::is_admin, channels::ensure_channel_admin, middleware::Claims},
     app_state::AppState,
     domain::{
         channel_profiles::{
@@ -66,7 +66,7 @@ pub async fn get_profile(
     )
     .fetch_one(&state.db)
     .await?;
-    if !visible && !matches!(claims.role.as_str(), "system_admin" | "admin") {
+    if !visible && !is_admin(&claims) {
         return Err(AppError::Forbidden("channel membership required".into()));
     }
     let mut profile = channel_profiles::get(&state.db, &channel_id).await?;
@@ -103,8 +103,8 @@ async fn enrich_execution_target_state(
     let parsed_bot = Uuid::parse_str(bot_id).ok();
     let online = match (&row, parsed_bot) {
         (Some(row), Some(bot_id)) => {
-            Some(row.status.clone()).as_deref() == Some("active")
-                && row.revoked_at.clone().is_none()
+            row.status == "active"
+                && row.revoked_at.is_none()
                 && state.bot_locator.is_online(bot_id).await
         }
         _ => false,
@@ -115,10 +115,10 @@ async fn enrich_execution_target_state(
         .ok_or_else(|| AppError::Internal("Code profile status must be a JSON object".into()))?;
     status.insert("target_online".into(), Value::Bool(online));
     if let Some(row) = row {
-        status.insert("target_device".into(), json!(row.device_name.clone()));
+        status.insert("target_device".into(), json!(row.device_name));
         status.insert(
             "target_bot_name".into(),
-            json!(row.bot_name.clone().unwrap_or_default()),
+            json!(row.bot_name.unwrap_or_default()),
         );
     }
     Ok(())

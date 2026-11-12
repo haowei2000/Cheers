@@ -2,10 +2,13 @@ import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, u
 import { ActionButton } from "@/components/ui/action-button";
 import { ChevronUp, Eye } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
-import { ResourceEnclosureMetadataContext } from "./ResourceEnclosure";
+import { ResourceEnclosureMetadataContext, type PreviewMetadata } from "./ResourceEnclosure";
+import { useArtifactReference } from "./artifacts/useArtifactReference";
+import { artifactType, availabilityLabel } from "./artifacts/presentation";
+import { FileGrid } from "./fileView";
 import { ControlTrigger } from "@/components/ui/control-trigger";
-import { parseLocator } from "./locator";
-import { ResourceCardContext } from "./ResourceCardContext";
+import { formatLocator, parseLocator } from "./locator";
+import { ResourceCardContext, ResourceCardProvider } from "./ResourceCardContext";
 import { useNearViewport } from "@/hooks/useNearViewport";
 import { fileResourceStore } from "./workbench/fileResource";
 import { formatFor, errMsg } from "./workbench/jsonFile";
@@ -14,8 +17,6 @@ import { ArtifactLens } from "./workbench/lens/ArtifactLens";
 import { resolveDeskResource,type ResolvedDeskResource } from "@/api/resources";
 import { sendResourceInteraction } from "@/api/messages";
 import { makeFsClient } from "./workbench/fsClient";
-import { ResourceCardProvider } from "./ResourceCardContext";
-import { formatLocator } from "./locator";
 
 function GlobalPreview({uri}:{uri:string}) {
   const parent=useContext(ResourceCardContext)!;
@@ -107,20 +108,58 @@ function DeskPreview({ path, active }: { path: string; active: boolean }) {
   </div>;
 }
 
+/** A card that names an artifact by id. The catalog supplies what the link cannot: the
+ * title, the type, whether it can still be opened, and where its source is. A text
+ * artifact then previews through the same Desk preview as a path link, so the two never
+ * render one file differently. */
+function ArtifactPreview({ artifactId, active }: { artifactId: string; active: boolean }) {
+  const host = useContext(ResourceCardContext)!;
+  const store = host.artifactRefs;
+  const reference = useArtifactReference(store, artifactId);
+  const report = useContext(ResourceEnclosureMetadataContext);
+  const { artifact, loading } = reference;
+  const describe = useCallback((inner?: PreviewMetadata) => {
+    if (!artifact) return report?.(undefined);
+    report?.({ refreshing: loading, refresh: () => { void store?.load(artifactId); }, ...inner,
+      title: artifact.title, type: artifactType(artifact), version: artifact.version });
+  }, [report, artifact, loading, store, artifactId]);
+  const source = artifact?.availability === "ready" && artifact.source_kind === "text" ? artifact.path : null;
+  useEffect(() => {
+    // With a source, the Desk preview below reports (through `describe`) instead.
+    if (source) return;
+    describe();
+    return () => report?.(undefined);
+  }, [describe, report, source]);
+  if (reference.missing) return <p role="status" className="text-body-secondary">This artifact is unavailable.</p>;
+  if (!artifact) return <p role="status" className="text-body-secondary">Loading artifact…</p>;
+  if (artifact.availability !== "ready") return <p role="status" className="text-body-secondary">
+    {availabilityLabel[artifact.availability]}. {artifact.availability === "expired" ? "Ask the author to deliver a new copy." : "This artifact is not available to open."}
+  </p>;
+  if (source) return <ResourceEnclosureMetadataContext.Provider value={describe}>
+    <DeskPreview key={source} path={source} active={active} />
+  </ResourceEnclosureMetadataContext.Provider>;
+  return <FileGrid channelId={host.channelId} files={[{ file_id: artifact.source_id, original_filename: artifact.title,
+    content_type: artifact.content_type ?? undefined, size_bytes: artifact.size_bytes }]} />;
+}
+
 /** Do not fetch every card in message history. Offscreen cards keep their
  * ordinary URI entry; visible Desk cards join the shared authorized file read. */
 export function ResourceInlinePreview({ uri }: { uri: string }) {
   const host = useContext(ResourceCardContext);
   const target = parseLocator(uri);
-  const canPreview = !!host && (target?.kind === "desk" || (target?.kind==="resource"&&target.resourceKind==="desk"));
+  const canPreview = !!host && (target?.kind === "desk" || (target?.kind==="resource"&&target.resourceKind==="desk")
+    || (target?.kind === "artifact" && !!host.artifactRefs));
   const element = useRef<HTMLDivElement>(null);
   const visible = useNearViewport(element, { rootMargin: "160px", enabled: canPreview });
   const [activated, setActivated] = useState(visible);
   useEffect(() => {
     if (visible) setActivated(true);
   }, [visible]);
-  if (!host || !(target?.kind === "desk" || (target?.kind==="resource"&&target.resourceKind==="desk"))) return null;
+  if (!host || !canPreview || !target) return null;
   return <div ref={element} className="min-w-0 px-4 pb-4 font-utility text-regular">
-    {activated ? target.kind==="resource"?<GlobalPreview uri={uri}/>:<DeskPreview key={target.path} path={target.path} active={visible} /> : <p className="text-body-secondary">Preview loads when this card is visible.</p>}
+    {!activated ? <p className="text-body-secondary">Preview loads when this card is visible.</p>
+      : target.kind === "artifact" ? <ArtifactPreview key={target.artifactId} artifactId={target.artifactId} active={visible} />
+      : target.kind === "resource" ? <GlobalPreview uri={uri}/>
+      : target.kind === "desk" ? <DeskPreview key={target.path} path={target.path} active={visible} /> : null}
   </div>;
 }

@@ -64,6 +64,10 @@ export interface CatalogData {
   entries: (CatalogPackageEntry | { kind: "builtin"; id: string; [key: string]: unknown })[];
 }
 
+function reasonMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
 export function WorkbenchManager() {
   const desktop = isTauri();
   const [official, setOfficial] = useState<ExtensionSummary[]>([]);
@@ -90,7 +94,7 @@ export function WorkbenchManager() {
         setPersonal(parsed);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reasonMessage(reason));
     }
   }, [desktop]);
 
@@ -114,7 +118,7 @@ export function WorkbenchManager() {
         }
       })
       .catch((err) => {
-        if (alive) setCatalogError(err instanceof Error ? err.message : String(err));
+        if (alive) setCatalogError(reasonMessage(err));
       })
       .finally(() => {
         if (alive) setCatalogLoadingState(false);
@@ -132,7 +136,7 @@ export function WorkbenchManager() {
       const extension = await parseExtensionPackageOffThread(await file.arrayBuffer(), scope);
       setCandidate({ extension, scope, source: "file", sourceLabel: file.name });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reasonMessage(reason));
     }
   }, []);
 
@@ -151,7 +155,7 @@ export function WorkbenchManager() {
       clearExtensionInstallIntent();
     } catch (reason) {
       clearExtensionInstallIntent();
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reasonMessage(reason));
     } finally {
       catalogLoading.current = false;
     }
@@ -175,7 +179,7 @@ export function WorkbenchManager() {
         }
         setCandidate({ extension, scope, source: "official-catalog", sourceLabel: entry.title.en });
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(reasonMessage(reason));
       }
     },
     [desktop]
@@ -204,11 +208,13 @@ export function WorkbenchManager() {
       setCandidate(null);
       await reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reasonMessage(reason));
     } finally {
       setInstalling(false);
     }
   }, [candidate, installing, reload]);
+
+  const temporary = listTemporaryExtensions();
 
   return (
     <SettingsSection title="Workbench extensions" icon={Blocks}>
@@ -261,7 +267,7 @@ export function WorkbenchManager() {
             </div>}
           />;
         })}
-        {listTemporaryExtensions().map(({ extension, status, error: runtimeError }) => {
+        {temporary.map(({ extension, status, error: runtimeError }) => {
           const permissions = permissionSummary(extension.manifest);
           return <WorkbenchItem
             key={`temporary:${extension.manifest.id}`}
@@ -271,7 +277,7 @@ export function WorkbenchManager() {
             actions={<UiButton action="remove" content="icon" variant="plain" aria-label={`Remove temporary ${extension.manifest.title}`} title="Remove temporary extension" onClick={() => removeTemporaryExtension(extension.manifest.id)} className="text-content-primary hover:text-danger-400"><X className="h-3.5 w-3.5" /></UiButton>}
           />;
         })}
-        {official.length === 0 && personal.length === 0 && listTemporaryExtensions().length === 0 && <WorkbenchItem title="No extensions installed" />}
+        {official.length === 0 && personal.length === 0 && temporary.length === 0 && <WorkbenchItem title="No extensions installed" />}
       </ItemSection>
 
       <ItemSection

@@ -526,8 +526,8 @@ pub async fn resolve_provider_account_id_for_bot(
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
-    .and_then(|row| Some(row.binding_config.clone()))
-    .ok_or(AppError::NotFound)?;
+    .ok_or(AppError::NotFound)?
+    .binding_config;
 
     let value = binding_config.ok_or(AppError::NotFound)?;
     resolve_provider_account_id_from_binding_config(&value).ok_or(AppError::NotFound)
@@ -564,38 +564,22 @@ fn resolve_provider_account_id_from_binding_config(
         Some(value.to_string())
     }
 
-    if let Some(acp) = binding_config
-        .get("acp")
-        .and_then(serde_json::Value::as_object)
-    {
-        for key in [
-            "provider_account_id",
-            "provider_account",
-            "account_id",
-            "account",
-            "agent_id",
-            "id",
-        ] {
-            if let Some(v) = acp.get(key).and_then(trim_or_none) {
-                return Some(v);
-            }
-        }
-    }
-
-    for key in [
+    const KEYS: [&str; 6] = [
         "provider_account_id",
         "provider_account",
         "account_id",
         "account",
         "agent_id",
         "id",
-    ] {
-        if let Some(v) = binding_config.get(key).and_then(trim_or_none) {
-            return Some(v);
-        }
-    }
-
-    None
+    ];
+    // The nested `acp` object wins over the top-level keys.
+    let acp = binding_config.get("acp").filter(|acp| acp.is_object());
+    acp.into_iter()
+        .chain(std::iter::once(binding_config))
+        .find_map(|config| {
+            KEYS.iter()
+                .find_map(|key| config.get(*key).and_then(trim_or_none))
+        })
 }
 
 fn normalize_file_ids(file_ids: &[String]) -> Vec<String> {

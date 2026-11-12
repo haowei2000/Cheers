@@ -77,19 +77,9 @@ fn strip_ansi(s: &str) -> String {
 
 /// Value of ` key=` up to the next space (simple fields, no spaces).
 fn field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
-    let needle = format!("{key}=");
-    let mut idx = 0;
-    while let Some(pos) = line[idx..].find(&needle) {
-        let at = idx + pos;
-        if at == 0 || line.as_bytes()[at - 1] == b' ' {
-            let start = at + needle.len();
-            let val = &line[start..];
-            let end = val.find(' ').unwrap_or(val.len());
-            return Some(&val[..end]);
-        }
-        idx = at + needle.len();
-    }
-    None
+    let val = field_rest(line, key)?;
+    let end = val.find(' ').unwrap_or(val.len());
+    Some(&val[..end])
 }
 
 /// Value of ` key=` to end-of-line (for `raw=`/`outcome=`, which hold spaces).

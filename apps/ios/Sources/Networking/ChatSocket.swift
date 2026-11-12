@@ -35,10 +35,6 @@ struct PresencePayload: Decodable {
     }
 }
 
-private struct VoiceTranscriptPayload: Decodable {
-    let data: VoiceTranscriptSegment
-}
-
 private struct BotUnavailablePayload: Decodable {
     let botId: String
     let placeholderMsgId: String
@@ -195,13 +191,6 @@ final class ChatSocket: NSObject {
         }
     }
 
-    func unsubscribe(channelId: String) {
-        subscriptions.remove(channelId)
-        if isAuthed {
-            sendJSON(["type": "unsubscribe", "channel_id": channelId])
-        }
-    }
-
     /// Replaces the desired subscription set (conversation list calls this on
     /// every reload). Replacing — instead of only ever adding — prunes channels
     /// the user left; replaying one of those after a reconnect makes the server
@@ -289,11 +278,7 @@ final class ChatSocket: NSObject {
         receiveTask = nil
         pingTask?.cancel()
         pingTask = nil
-        if let code {
-            task?.cancel(with: code, reason: nil)
-        } else {
-            task?.cancel(with: .goingAway, reason: nil)
-        }
+        task?.cancel(with: code ?? .goingAway, reason: nil)
         task = nil
         isAuthed = false
         failPendingResources(.notConnected)
@@ -474,8 +459,12 @@ final class ChatSocket: NSObject {
     }
 
     private func handleFrame(_ text: String) {
+        let decoder = JSONDecoder()
         guard let data = text.data(using: .utf8),
-              let head = try? JSONDecoder().decode(FrameHead.self, from: data) else { return }
+              let head = try? decoder.decode(FrameHead.self, from: data) else { return }
+        func payload<T: Decodable>(_ type: T.Type) -> T? {
+            (try? decoder.decode(DataEnvelope<T>.self, from: data))?.data
+        }
 
         switch head.type {
         // ---- Control frames (ServerControl) ----
@@ -499,7 +488,7 @@ final class ChatSocket: NSObject {
                 onEvent?(.subscribed(channelId: channelId))
             }
         case "subscription_error":
-            if let frame = try? JSONDecoder().decode(SubscriptionErrorFrame.self, from: data) {
+            if let frame = try? decoder.decode(SubscriptionErrorFrame.self, from: data) {
                 Self.logger.notice("Realtime subscription refused code=\(frame.code ?? "unknown", privacy: .public)")
                 // Don't replay a refused channel after every reconnect; a model
                 // that regains access subscribes again.
@@ -513,28 +502,24 @@ final class ChatSocket: NSObject {
 
         // ---- Event envelope frames (WireFrame) ----
         case "message":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<MessageDto>.self, from: data) {
-                onEvent?(.message(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let message = payload(MessageDto.self) {
+                onEvent?(.message(channelId: channelId, message))
             }
         case "message_stream":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<StreamDelta>.self, from: data) {
-                onEvent?(.messageStream(channelId: channelId, msgId: payload.data.msgId, delta: payload.data.delta))
+            if let channelId = head.channelId, let stream = payload(StreamDelta.self) {
+                onEvent?(.messageStream(channelId: channelId, msgId: stream.msgId, delta: stream.delta))
             }
         case "message_done":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<MessageDto>.self, from: data) {
-                onEvent?(.messageDone(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let message = payload(MessageDto.self) {
+                onEvent?(.messageDone(channelId: channelId, message))
             }
         case "message_deleted":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<DeletedPayload>.self, from: data) {
-                onEvent?(.messageDeleted(channelId: channelId, msgId: payload.data.msgId))
+            if let channelId = head.channelId, let deleted = payload(DeletedPayload.self) {
+                onEvent?(.messageDeleted(channelId: channelId, msgId: deleted.msgId))
             }
         case "bot_unavailable":
             if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<BotUnavailablePayload>.self, from: data) {
+               let payload = try? decoder.decode(DataEnvelope<BotUnavailablePayload>.self, from: data) {
                 onEvent?(.botUnavailable(
                     channelId: channelId,
                     botId: payload.data.botId,
@@ -543,7 +528,7 @@ final class ChatSocket: NSObject {
             }
         case "suggestions_updated", "cards_updated":
             if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<ContentDataPayload>.self, from: data) {
+               let payload = try? decoder.decode(DataEnvelope<ContentDataPayload>.self, from: data) {
                 onEvent?(.contentDataUpdated(
                     channelId: channelId,
                     msgId: payload.data.msgId,
@@ -552,7 +537,7 @@ final class ChatSocket: NSObject {
             }
         case "file_transcribed":
             if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<FileTranscribedPayload>.self, from: data) {
+               let payload = try? decoder.decode(DataEnvelope<FileTranscribedPayload>.self, from: data) {
                 onEvent?(.fileTranscribed(
                     channelId: channelId,
                     fileId: payload.data.fileId,
@@ -569,38 +554,34 @@ final class ChatSocket: NSObject {
                 onEvent?(.taskClaimUpdated(update))
             }
         case "bot_trace":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<TraceEventDto>.self, from: data) {
-                onEvent?(.botTrace(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let trace = payload(TraceEventDto.self) {
+                onEvent?(.botTrace(channelId: channelId, trace))
             }
         case "member_updated":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<MemberUpdatedPayload>.self, from: data) {
-                onEvent?(.memberUpdated(channelId: channelId, memberId: payload.data.memberId))
+            if let channelId = head.channelId, let member = payload(MemberUpdatedPayload.self) {
+                onEvent?(.memberUpdated(channelId: channelId, memberId: member.memberId))
             }
         case "presence":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<PresencePayload>.self, from: data) {
-                onEvent?(.presence(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let presence = payload(PresencePayload.self) {
+                onEvent?(.presence(channelId: channelId, presence))
             }
         case "voice_transcript_final":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(VoiceTranscriptPayload.self, from: data) {
-                onEvent?(.voiceTranscript(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let segment = payload(VoiceTranscriptSegment.self) {
+                onEvent?(.voiceTranscript(channelId: channelId, segment))
             }
         case "notification":
-            if let payload = try? JSONDecoder().decode(DataEnvelope<NotificationDto>.self, from: data) {
-                onEvent?(.notification(payload.data))
+            if let notification = payload(NotificationDto.self) {
+                onEvent?(.notification(notification))
             } else if let channelId = Self.directMessageChannelId(fromNotificationFrame: data) {
                 onEvent?(.dmCreated(channelId: channelId))
             }
         case "notification_resolved":
-            if let payload = try? JSONDecoder().decode(DataEnvelope<NotificationResolvedPayload>.self, from: data) {
-                onEvent?(.notificationResolved(id: payload.data.id))
+            if let resolved = payload(NotificationResolvedPayload.self) {
+                onEvent?(.notificationResolved(id: resolved.id))
             }
         case "dm_created":
-            if let payload = try? JSONDecoder().decode(DataEnvelope<DMCreatedPayload>.self, from: data) {
-                onEvent?(.dmCreated(channelId: payload.data.channelId))
+            if let created = payload(DMCreatedPayload.self) {
+                onEvent?(.dmCreated(channelId: created.channelId))
             }
         case "resource_res":
             if let response = Self.resourceResponse(from: data),
@@ -609,8 +590,7 @@ final class ChatSocket: NSObject {
             }
         case "board_signal":
             if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<BoardSignalPayload>.self, from: data),
-               let board = payload.data.board {
+               let board = payload(BoardSignalPayload.self)?.board {
                 onEvent?(.boardSignal(channelId: channelId, board: board))
             }
 

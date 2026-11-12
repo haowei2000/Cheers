@@ -10,6 +10,9 @@ import {
 import type { WorkbenchContext } from "./context";
 import type { FsEntry } from "./fsClient";
 import { useFileSession } from "./jsonFile";
+import { artifactEditorClient, makeArtifactClient, type Artifact } from "../artifacts/client";
+import { canvasLookupKey, settleCanvasLookup, type CanvasLookup } from "./canvasArtifactLookup";
+import { channelFileClient } from "./channelFileClient";
 import { filterCollaborators } from "./collab";
 import { useAnnotations, resolveAnnotation } from "./annotations";
 import { inspectableIdLineRange } from "./contextSource";
@@ -34,6 +37,15 @@ export interface SceneWorkbenchCoordinatorOptions {
   legacyEnvironment?: string | null;
   templates: TemplateManifest[];
   onAddTab: (collectionId: string, path: string) => Promise<boolean>;
+}
+
+/** The Collection that indexes `path`, else the Other scene. */
+function owningScene(
+  order: WorkbenchSceneState["order"],
+  items: WorkbenchSceneState["items"],
+  path: string,
+): string {
+  return order.find((id) => (items[id] ?? []).includes(path)) ?? OTHER_SCENE;
 }
 
 export function useSceneWorkbenchCoordinator({
@@ -148,8 +160,39 @@ export function useSceneWorkbenchCoordinator({
         ? storedSelection
         : activePaths[0]) ?? null;
 
+  // A canvas is an artifact (docs/arch/UNIFIED_ARTIFACTS.md P4), so its edits go through
+  // the catalog: `channel.artifacts.patch` checks the artifact version, the same check the
+  // Artifacts library makes, rather than the provider's. The session waits for the lookup.
+  // Opening on the path and switching clients once it lands would swap the session out
+  // from under an edit made in between. If the lookup fails, the canvas opens on its path
+  // as it did before artifacts, rather than not at all.
+  const canvasPath = selectedPath && isCanvasPath(selectedPath) ? selectedPath : null;
+  // Only the channel's current client is replaced. A pinned historical revision has its
+  // own read-only client, and the catalog would serve (and patch) the latest instead.
+  const canvasKey = canvasPath && ctx.fs === channelFileClient(ctx.sendResourceReq, ctx.channelId)
+    ? canvasLookupKey(ctx.channelId, canvasPath)
+    : null;
+  const [canvasLookup, setCanvasLookup] = useState<CanvasLookup | null>(null);
+  useEffect(() => {
+    if (!canvasKey || !canvasPath) return;
+    let alive = true;
+    const settle = (artifact: Artifact | null) => {
+      if (alive) setCanvasLookup((current) => settleCanvasLookup(current, canvasKey, artifact));
+    };
+    makeArtifactClient(ctx.sendResourceReq, ctx.channelId).resolvePath(canvasPath).then(settle, () => settle(null));
+    return () => { alive = false; };
+    // Re-asked on every file change: a canvas deleted and recreated at this path is a
+    // new artifact, and the old id would fail every read.
+  }, [canvasKey, canvasPath, ctx.sendResourceReq, ctx.channelId, ctx.filesTick]);
+  const settledCanvas = canvasLookup?.key === canvasKey ? canvasLookup : null;
+  const canvasArtifact = settledCanvas?.artifact ?? null;
+  const sessionFs = useMemo(
+    () => canvasArtifact ? artifactEditorClient(ctx.fs, ctx.sendResourceReq, ctx.channelId, canvasArtifact) : ctx.fs,
+    [canvasArtifact, ctx.fs, ctx.sendResourceReq, ctx.channelId],
+  );
+
   // Shared session for the selected item (Raw edits text, Preview renders data)
-  const session = useFileSession(ctx.fs, selectedPath ?? "");
+  const session = useFileSession(sessionFs, canvasKey && !settledCanvas ? "" : selectedPath ?? "");
 
   // Live-push: reload file on server change
   const filesTick = ctx.filesTick ?? 0;
@@ -258,8 +301,7 @@ export function useSceneWorkbenchCoordinator({
 
   const onSelectAnnotationFile = useCallback(
     (path: string) => {
-      const owner = reconciled.order.find((id) => (reconciled.items[id] ?? []).includes(path));
-      const targetScene = owner ?? OTHER_SCENE;
+      const targetScene = owningScene(reconciled.order, reconciled.items, path);
       setActiveScene(targetScene);
       selectPath(path, targetScene);
       showRaw(path, true);
@@ -285,18 +327,16 @@ export function useSceneWorkbenchCoordinator({
   useEffect(() => {
     const target = ctx.openTarget;
     if (!target || !renderers[target]) return;
-    const owner = reconciled.order.find((id) => (reconciled.items[id] ?? []).includes(target));
-    setActiveScene(owner ?? OTHER_SCENE);
-    setSelectedByScene((previous) => ({ ...previous, [owner ?? OTHER_SCENE]: target }));
+    const owner = owningScene(reconciled.order, reconciled.items, target);
+    setActiveScene(owner);
+    setSelectedByScene((previous) => ({ ...previous, [owner]: target }));
   }, [ctx.openTarget, renderers, reconciled]);
 
   const addTabAndSelect = useCallback((path: string) => {
     void onAddTab(activeScene, path).then((added) => {
-      if (!added) return;
-      setSelectedByScene((previous) => ({ ...previous, [activeScene]: path }));
-      localStorage.setItem(`${storagePrefix}.item.${activeScene}`, path);
+      if (added) selectPath(path, activeScene);
     });
-  }, [activeScene, onAddTab, storagePrefix]);
+  }, [activeScene, onAddTab, selectPath]);
 
   return {
     contents,

@@ -1169,10 +1169,6 @@ async fn log_capability_denial(
             "data frame rejected by capability check"
         );
     } else {
-        let frame_type = frame
-            .get("type")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
         tracing::warn!(
             bot_id = %bot.bot_id,
             frame_type = frame_type,
@@ -1866,8 +1862,12 @@ async fn handle_terminal_frame(
             }
             // User-triggered turn complete → BotReply APNs (skipped for bot@bot
             // triggers and when Mention already covers the same user).
+            // The channel lookup is shared with the workspace tick below.
+            let mut channel: Option<Option<Uuid>> = None;
             if let (Some(mid), Some(trigger)) = (msg_id, trigger_msg_id) {
-                if let Some(cid) = channel_of_bot_message(&state.db, bot.bot_id, mid).await {
+                let cid = channel_of_bot_message(&state.db, bot.bot_id, mid).await;
+                channel = Some(cid);
+                if let Some(cid) = cid {
                     crate::notify::push_bot_reply_apns(state, cid, bot.bot_id, trigger, mid);
                 }
             }
@@ -1880,7 +1880,11 @@ async fn handle_terminal_frame(
             // verified ownership but consumes the channel_id internally.
             if let Some(mid) = msg_id {
                 if state.bot_locator.is_online(bot.bot_id).await {
-                    if let Some(cid) = channel_of_bot_message(&state.db, bot.bot_id, mid).await {
+                    let cid = match channel {
+                        Some(cid) => cid,
+                        None => channel_of_bot_message(&state.db, bot.bot_id, mid).await,
+                    };
+                    if let Some(cid) = cid {
                         let wire = WireFrame::channel(
                             cid,
                             "board_signal",
@@ -2152,25 +2156,14 @@ async fn handle_permission_request_frame(
         tracing::warn!(%channel_id, error = %err, "permission_request: trace write failed");
     }
 
-    let wire = WireFrame::channel(
+    let wire = bot_card_frame(
         channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": msg_id,
-            "channel_id": channel_id,
-            "channel_seq": channel_seq,
-            "sender_type": "bot",
-            "sender_id": bot.bot_id,
-            "content": content,
-            "msg_type": "permission",
-            "is_partial": false,
-            "reply_to_msg_id": null,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "content_data": content_data,
-        }),
+        msg_id,
+        Some(channel_seq),
+        bot.bot_id,
+        &content,
+        "permission",
+        content_data,
     );
     // Live per-subscriber SEE: only members allowed to SEE permission_request get
     // the card frame (RESPOND still separately gates who may *answer* it).
@@ -2462,16 +2455,14 @@ async fn handle_elicitation_request_frame(
         .fanout
         .broadcast_channel(
             channel_id,
-            WireFrame::channel(
+            bot_card_frame(
                 channel_id,
-                "message",
-                json!({
-                    "v": MESSAGE_SCHEMA_VERSION, "msg_id": msg_id, "channel_id": channel_id,
-                    "channel_seq": channel_seq, "sender_type":"bot", "sender_id":bot.bot_id,
-                    "content":message, "msg_type":"elicitation", "is_partial":false,
-                    "reply_to_msg_id":null, "file_ids":[], "mentions":[], "files":[],
-                    "content_data":content_data,
-                }),
+                msg_id,
+                Some(channel_seq),
+                bot.bot_id,
+                message,
+                "elicitation",
+                content_data,
             ),
         )
         .await;
@@ -2523,17 +2514,16 @@ async fn handle_elicitation_terminal_frame(
         .await
     };
     if let Ok(Some(row)) = row {
-        let channel_id = Some(row.channel_id.clone()).and_then(|v| v.parse::<Uuid>().ok());
-        if let Some(channel_id) = channel_id {
+        if let Ok(channel_id) = row.channel_id.parse::<Uuid>() {
             state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "message", json!({
                 "v": MESSAGE_SCHEMA_VERSION,
-                "msg_id": row.msg_id.clone(),
+                "msg_id": row.msg_id,
                 "channel_id": channel_id,
-                "channel_seq": row.channel_seq.clone().unwrap_or_default(),
+                "channel_seq": row.channel_seq.unwrap_or_default(),
                 "sender_type":"bot", "sender_id":bot.bot_id,
-                "content":row.content.clone(),
+                "content":row.content,
                 "msg_type":"elicitation", "is_partial":false, "file_ids":[], "mentions":[], "files":[],
-                "content_data":row.content_data.clone().unwrap_or(Value::Null),
+                "content_data":row.content_data.unwrap_or(Value::Null),
             }))).await;
         }
     }
@@ -2561,7 +2551,7 @@ async fn handle_auth_required_frame(
         "auth_required: load agent profile",
     ))?
     .unwrap_or_else(|| "generic".to_string());
-    let agent_profile = crate::domain::agent_profile::profile(&agent_type);
+    let agent_profile = crate::domain::agent_catalog::profile(&agent_type);
 
     let method_id = frame
         .get("method_id")
@@ -2674,25 +2664,14 @@ async fn handle_auth_required_frame(
         );
     }
 
-    let wire = WireFrame::channel(
+    let wire = bot_card_frame(
         channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": msg_id,
-            "channel_id": channel_id,
-            "channel_seq": channel_seq,
-            "sender_type": "bot",
-            "sender_id": bot.bot_id,
-            "content": content,
-            "msg_type": "auth_required",
-            "is_partial": false,
-            "reply_to_msg_id": null,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "content_data": content_data,
-        }),
+        msg_id,
+        Some(channel_seq),
+        bot.bot_id,
+        &content,
+        "auth_required",
+        content_data,
     );
     state.fanout.broadcast_channel(channel_id, wire).await;
     Ok(msg_id)
@@ -2749,25 +2728,14 @@ async fn handle_auth_cancel_frame(frame: &Value, state: &AppState, bot: &BotInfo
                 target.insert(k.clone(), v.clone());
             }
         }
-        let wire = WireFrame::channel(
+        let wire = bot_card_frame(
             pending.channel_id,
-            "message",
-            json!({
-                "v": MESSAGE_SCHEMA_VERSION,
-                "msg_id": pending.msg_id,
-                "channel_id": pending.channel_id,
-                "channel_seq": pending.channel_seq,
-                "sender_type": "bot",
-                "sender_id": pending.bot_id,
-                "content": pending.content,
-                "msg_type": "auth_required",
-                "is_partial": false,
-                "reply_to_msg_id": null,
-                "file_ids": [],
-                "mentions": [],
-                "files": [],
-                "content_data": content_data,
-            }),
+            pending.msg_id,
+            pending.channel_seq,
+            pending.bot_id,
+            &pending.content,
+            "auth_required",
+            content_data,
         );
         state
             .fanout
@@ -2816,6 +2784,39 @@ async fn handle_permission_cancel_frame(frame: &Value, state: &AppState, bot: &B
     }
 }
 
+/// Channel `message` frame for a committed bot card (permission / elicitation /
+/// auth_required). One shape so the card frames cannot drift apart.
+pub(crate) fn bot_card_frame(
+    channel_id: Uuid,
+    msg_id: Uuid,
+    channel_seq: Option<i64>,
+    bot_id: Uuid,
+    content: &str,
+    msg_type: &str,
+    content_data: Value,
+) -> WireFrame {
+    WireFrame::channel(
+        channel_id,
+        "message",
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION,
+            "msg_id": msg_id,
+            "channel_id": channel_id,
+            "channel_seq": channel_seq,
+            "sender_type": "bot",
+            "sender_id": bot_id,
+            "content": content,
+            "msg_type": msg_type,
+            "is_partial": false,
+            "reply_to_msg_id": null,
+            "file_ids": [],
+            "mentions": [],
+            "files": [],
+            "content_data": content_data,
+        }),
+    )
+}
+
 async fn ensure_bot_channel_member(
     db: &PgPool,
     bot_id: Uuid,
@@ -2835,7 +2836,6 @@ async fn ensure_bot_channel_member(
         "ensure_bot_channel_member: select membership exists",
     ))?
     .ok
-    .clone()
     .unwrap_or(false);
 
     if is_member {
@@ -2860,8 +2860,7 @@ async fn channel_of_bot_message(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Opti
     .await
     .ok()
     .flatten()
-    .and_then(|row| Some(row.channel_id.clone()))
-    .and_then(|s| s.parse::<Uuid>().ok())
+    .and_then(|row| row.channel_id.parse::<Uuid>().ok())
 }
 
 fn client_msg_id(frame: &Value) -> Option<String> {
@@ -3073,22 +3072,15 @@ async fn resolve_host(
 
     // Admin kill-switch: a disabled bot may not establish the bridge, so a kicked
     // connector can't immediately reconnect.
-    let is_disabled: bool = row.is_disabled.clone();
-    if is_disabled {
+    if row.is_disabled {
         return Err(AuthFailure::BotUnavailable);
     }
-    let status: String = row.status.clone();
-    let revoked = row.revoked_at.clone().is_some();
-    if revoked || status != "active" {
+    if row.revoked_at.is_some() || row.status != "active" {
         return Err(AuthFailure::BotUnavailable);
     }
 
-    let bot_id: Uuid = Some(row.bot_id.clone())
-        .and_then(|raw| raw.parse().ok())
-        .ok_or(AuthFailure::InvalidToken)?;
-    let host_id: Uuid = Some(row.host_id.clone())
-        .and_then(|raw| raw.parse().ok())
-        .ok_or(AuthFailure::InvalidToken)?;
+    let bot_id: Uuid = row.bot_id.parse().map_err(|_| AuthFailure::InvalidToken)?;
+    let host_id: Uuid = row.host_id.parse().map_err(|_| AuthFailure::InvalidToken)?;
     let connector_version = connector
         .and_then(|value| value.get("version"))
         .and_then(Value::as_str);
@@ -3158,7 +3150,7 @@ async fn bot_has_active_delegation(db: &PgPool, bot_id: &Uuid) -> bool {
     .fetch_one(db)
     .await
     .ok()
-    .and_then(|row| row.ok.clone())
+    .and_then(|row| row.ok)
     .unwrap_or(false)
 }
 
@@ -3173,29 +3165,24 @@ fn resolve_bot_provider_account_id(binding_config: Option<&Value>) -> Option<Str
         Some(value.to_string())
     }
 
-    if let Some(acp) = top.get("acp").and_then(Value::as_object) {
-        for key in [
-            "provider_account_id",
-            "provider_account",
-            "account_id",
-            "account",
-            "agent_id",
-            "id",
-        ] {
-            if let Some(v) = acp.get(key).and_then(trim_or_none) {
-                return Some(v);
-            }
-        }
-    }
-
-    for key in [
+    const KEYS: [&str; 6] = [
         "provider_account_id",
         "provider_account",
         "account_id",
         "account",
         "agent_id",
         "id",
-    ] {
+    ];
+
+    if let Some(acp) = top.get("acp").and_then(Value::as_object) {
+        for key in KEYS {
+            if let Some(v) = acp.get(key).and_then(trim_or_none) {
+                return Some(v);
+            }
+        }
+    }
+
+    for key in KEYS {
         if let Some(v) = top.get(key).and_then(trim_or_none) {
             return Some(v);
         }

@@ -530,11 +530,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/channels/:channel_id/voice/consent",
-            post(api::voice::grant_consent),
-        )
-        .route(
-            "/api/v1/channels/:channel_id/voice/consent",
-            delete(api::voice::withdraw_consent),
+            post(api::voice::grant_consent).delete(api::voice::withdraw_consent),
         )
         .route(
             "/api/v1/channels/:channel_id/voice/transcript/export",
@@ -970,6 +966,19 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/admin/settings/stt/test",
             post(api::stt_settings::test_settings),
+        )
+        // Admin instance settings: reviewed runtime overrides (no restart).
+        .route(
+            "/api/v1/admin/settings/runtime",
+            get(api::runtime_settings::list_settings),
+        )
+        .route(
+            "/api/v1/admin/settings/runtime/:key",
+            put(api::runtime_settings::put_setting),
+        )
+        .route(
+            "/api/v1/admin/settings/runtime/:key/revisions",
+            get(api::runtime_settings::list_revisions),
         )
         .route(
             "/api/v1/mcp/oauth/authorize",

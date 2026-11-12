@@ -1418,13 +1418,14 @@ pub async fn grant_consent(
     )?;
 
     // Notify the room so other participants see the consent state refresh.
+    let channel_uuid = Uuid::parse_str(&channel_id)
+        .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     state
         .fanout
         .broadcast_channel(
-            Uuid::parse_str(&channel_id)
-                .map_err(|_| AppError::BadRequest("invalid channel id".into()))?,
+            channel_uuid,
             WireFrame::channel(
-                Uuid::parse_str(&channel_id).unwrap(),
+                channel_uuid,
                 "voice_consent_updated",
                 json!({
                     "voice_session_id": voice_session_id,
@@ -1476,13 +1477,14 @@ pub async fn withdraw_consent(
     .execute(&state.db)
     .await?;
 
+    let channel_uuid = Uuid::parse_str(&channel_id)
+        .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     state
         .fanout
         .broadcast_channel(
-            Uuid::parse_str(&channel_id)
-                .map_err(|_| AppError::BadRequest("invalid channel id".into()))?,
+            channel_uuid,
             WireFrame::channel(
-                Uuid::parse_str(&channel_id).unwrap(),
+                channel_uuid,
                 "voice_consent_updated",
                 json!({
                     "voice_session_id": voice_session_id,

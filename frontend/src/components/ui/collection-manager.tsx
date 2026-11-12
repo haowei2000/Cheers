@@ -67,6 +67,10 @@ export function CollectionManager({
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const isSearching = showSearch && (searchOpen || Boolean(query));
+  const closeSearch = () => {
+    onQueryChange("");
+    setSearchOpen(false);
+  };
 
   const addControl = showAdd ? (
     <ActionButton
@@ -97,10 +101,7 @@ export function CollectionManager({
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                onQueryChange("");
-                setSearchOpen(false);
-              }
+              if (event.key === "Escape") closeSearch();
             }}
             placeholder={searchPlaceholder}
           />
@@ -111,10 +112,7 @@ export function CollectionManager({
               type="button"
               controlSize={controlSize}
               accessibleLabel="Close search"
-              onClick={() => {
-                onQueryChange("");
-                setSearchOpen(false);
-              }}
+              onClick={closeSearch}
             />
             {headerAction}
             {addControl}

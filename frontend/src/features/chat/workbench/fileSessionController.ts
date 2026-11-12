@@ -43,8 +43,9 @@ export function createFileSessionController(fs: FsClient, path: string, options?
     if (autoSaveTimer !== undefined) clearTimeout(autoSaveTimer);
     autoSaveTimer = undefined;
   };
+  const idle = () => !listeners.size && !state.dirty && !pendingOperation && autoSaveTimer === undefined;
   const detachIfIdle = () => {
-    if (!listeners.size && !state.dirty && !pendingOperation && autoSaveTimer === undefined) {
+    if (idle()) {
       resourceUnsubscribe?.();
       resourceUnsubscribe = undefined;
     }
@@ -270,7 +271,7 @@ export function createFileSessionController(fs: FsClient, path: string, options?
       return pendingLoad;
     },
     actions,
-    idle: () => !listeners.size && !state.dirty && !pendingOperation && autoSaveTimer === undefined,
+    idle,
     dispose() { disposed = true; clearAutoSave(); resourceUnsubscribe?.(); resourceUnsubscribe = undefined; },
   };
 }

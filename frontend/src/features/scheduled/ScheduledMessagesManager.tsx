@@ -53,6 +53,10 @@ interface FormState {
   sourceAutomationId?: string;
 }
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function localInput(date: Date): string {
   const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return shifted.toISOString().slice(0, 16);
@@ -200,7 +204,7 @@ export function ScheduledMessagesManager() {
       await reload();
       toast.success(form.id ? "Scheduled task updated" : "Scheduled task created");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(errorText(error));
     } finally {
       setSaving(false);
     }
@@ -213,7 +217,7 @@ export function ScheduledMessagesManager() {
       await updateScheduledMessage(task.id, toInput(next));
       await reload();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(errorText(error));
     }
   };
 
@@ -248,8 +252,8 @@ export function ScheduledMessagesManager() {
             status={<span className={task.lastError ? "text-danger-400" : "text-content-muted"}>{scheduleLabel(task)}</span>}
             metadata={task.sourceExtensionId ? `Extension: ${task.sourceExtensionId}:${task.sourceAutomationId}` : undefined}
             actions={<>
-              <UiButton action="start" content="icon" variant="plain" title="Run now" aria-label={`Run ${task.title} now`} onClick={async () => { try { await runScheduledMessageNow(task.id); toast.success("Message sent"); await reload(); } catch (error) { toast.error(error instanceof Error ? error.message : String(error)); } }}><CirclePlay className="h-3.5 w-3.5" /></UiButton>
-              <UiButton action="review" content="icon" variant="plain" title="Run history" aria-label={`Run history for ${task.title}`} onClick={async () => { try { setHistory({ task, runs: await listScheduledMessageRuns(task.id) }); } catch (error) { toast.error(error instanceof Error ? error.message : String(error)); } }}><History className="h-3.5 w-3.5" /></UiButton>
+              <UiButton action="start" content="icon" variant="plain" title="Run now" aria-label={`Run ${task.title} now`} onClick={async () => { try { await runScheduledMessageNow(task.id); toast.success("Message sent"); await reload(); } catch (error) { toast.error(errorText(error)); } }}><CirclePlay className="h-3.5 w-3.5" /></UiButton>
+              <UiButton action="review" content="icon" variant="plain" title="Run history" aria-label={`Run history for ${task.title}`} onClick={async () => { try { setHistory({ task, runs: await listScheduledMessageRuns(task.id) }); } catch (error) { toast.error(errorText(error)); } }}><History className="h-3.5 w-3.5" /></UiButton>
               {!(task.schedule.kind === "once" && !task.nextRunAt && task.lastRunAt) && <UiButton action={task.enabled ? "disable" : "enable"} content="icon" variant="plain" title={task.enabled ? "Pause" : "Resume"} aria-label={`${task.enabled ? "Pause" : "Resume"} ${task.title}`} onClick={() => void toggle(task)}>{task.enabled ? <CirclePause className="h-3.5 w-3.5" /> : <CirclePlay className="h-3.5 w-3.5" />}</UiButton>}
               <InlineEditActions
                 label={task.title}

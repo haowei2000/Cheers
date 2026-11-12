@@ -409,6 +409,7 @@ export function FloatingPanel({
 
   const hasContext = panelContext != null || portalContextPresent;
   const docked = Boolean(managed && !managed.floating);
+  const dragHandleProps = managed?.dragProps ?? drag.handleProps;
   const chromeTop = `${chromeHeight + (docked ? 0 : 16)}px`;
   const panelStyle = {
     ...style,
@@ -570,7 +571,7 @@ export function FloatingPanel({
           <PanelContextContext.Provider value={contextHost}>
           {/* Underlay drag strip spanning the full width of the chrome header */}
           <div
-            {...(managed?.dragProps ?? drag.handleProps)}
+            {...dragHandleProps}
             data-floating-panel-drag-strip=""
             className="pointer-events-auto absolute inset-x-0 top-0 z-20 hidden cursor-grab select-none active:cursor-grabbing md:block"
             style={{ height: "var(--floating-panel-chrome-top, 3.5rem)" }}
@@ -587,7 +588,7 @@ export function FloatingPanel({
               // the two sides then differ by 8px and the band reads as ragged.
               controlSize={FLOATING_CHROME_CONTROL_SIZE}
               className="pointer-events-auto min-w-0 flex-nowrap overflow-hidden cursor-grab active:cursor-grabbing"
-              {...(managed?.dragProps ?? drag.handleProps)}
+              {...dragHandleProps}
             >
             {/* The grip and the panel's mark ARE the first item of this island, not a
                 separate pill beside it. Two surfaces read as two groups and cost the gap
@@ -597,7 +598,7 @@ export function FloatingPanel({
                 corner while being the one thing you never click. It stays where it is the
                 only identity there is — the collapsed pill and the mobile header. */}
             <div
-              {...(managed?.dragProps ?? drag.handleProps)}
+              {...dragHandleProps}
               ref={setTitleElement}
               data-floating-panel-handle=""
               data-floating-panel-title=""
@@ -688,7 +689,7 @@ export function FloatingPanel({
           </div>
 
           <div
-            {...(managed?.dragProps ?? drag.handleProps)}
+            {...dragHandleProps}
             data-floating-panel-handle=""
             className={cn("min-h-11 shrink-0 flex-nowrap cursor-grab select-none items-center gap-2 border-b border-control/80 bg-canvas/35 px-3 active:cursor-grabbing md:hidden", docked ? "hidden" : "flex")}
           >

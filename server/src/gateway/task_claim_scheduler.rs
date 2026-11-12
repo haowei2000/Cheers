@@ -331,15 +331,16 @@ async fn schedule_one(
         tx.commit().await?;
         return Ok(());
     };
-    let immediate = row
-        .policy
-        .get("immediate_triggers")
-        .and_then(Value::as_array)
-        .is_some_and(|triggers| {
-            triggers.iter().filter_map(Value::as_str).any(|keyword| {
-                !keyword.is_empty() && newest.text.to_lowercase().contains(&keyword.to_lowercase())
-            })
-        });
+    let immediate =
+        row.policy
+            .get("immediate_triggers")
+            .and_then(Value::as_array)
+            .is_some_and(|triggers| {
+                let newest_text = newest.text.to_lowercase();
+                triggers.iter().filter_map(Value::as_str).any(|keyword| {
+                    !keyword.is_empty() && newest_text.contains(&keyword.to_lowercase())
+                })
+            });
     if !immediate
         && Utc::now()
             .signed_duration_since(newest.created_at)
@@ -479,13 +480,6 @@ pub async fn complete(
 /// `window` shape: `{"start":"22:00","end":"07:00"}`. Windows that cross midnight
 /// (start > end) are supported. Missing/invalid fields → not quiet (fail open).
 fn in_quiet_window(window: &serde_json::Value) -> bool {
-    let (start, end) = match (
-        window.get("start").and_then(|v| v.as_str()),
-        window.get("end").and_then(|v| v.as_str()),
-    ) {
-        (Some(s), Some(e)) => (s, e),
-        _ => return false,
-    };
     let parse = |hhmm: &str| -> Option<(u32, u32)> {
         let mut parts = hhmm.split(':');
         let h = parts.next()?.parse::<u32>().ok()?;
@@ -496,13 +490,9 @@ fn in_quiet_window(window: &serde_json::Value) -> bool {
             None
         }
     };
-    let (sh, sm) = match parse(start) {
-        Some(v) => v,
-        None => return false,
-    };
-    let (eh, em) = match parse(end) {
-        Some(v) => v,
-        None => return false,
+    let bound = |key: &str| window.get(key).and_then(|v| v.as_str()).and_then(parse);
+    let (Some((sh, sm)), Some((eh, em))) = (bound("start"), bound("end")) else {
+        return false;
     };
     let now = chrono::Local::now();
     let minutes = now.time().hour() * 60 + now.time().minute();

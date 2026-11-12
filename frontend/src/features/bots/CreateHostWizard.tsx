@@ -1,7 +1,6 @@
 import { isPointerFocus, markPointerInteraction, whenPointerRests } from "@/lib/hoverIntent";
 import { Tip } from "@/components/ui/tip";
 import { HelpLabel } from "@/components/ui/help-text";
-import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { notify, messageOf } from "@/lib/notify";
@@ -44,13 +43,6 @@ import { Button } from "@/components/ui/button";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import type { BotItem } from "@/types";
 
-const FALLBACK_AGENTS: AcpAgentInfo[] = [
-  { id: "claude", name: "Claude", source: "builtin", installable: true },
-  { id: "codex", name: "Codex", source: "builtin", installable: true },
-  { id: "opencode", name: "OpenCode", source: "builtin", installable: true },
-  { id: "generic", name: "Something else", source: "builtin", installable: false },
-];
-
 function botLabel(bot: BotItem | undefined): string {
   if (!bot) return "—";
   return `${bot.display_name || bot.username} (@${bot.username})`;
@@ -68,7 +60,7 @@ function CopyBtn({
   const [done, setDone] = useState(false);
   const label = done ? "Copied" : title;
   return (
-    <UiButton
+    <Button
       action="copy"
       variant="plain"
       content="icon"
@@ -92,7 +84,7 @@ function CopyBtn({
       ) : (
         <Copy className="w-3.5 h-3.5" />
       )}
-    </UiButton>
+    </Button>
   );
 }
 
@@ -250,7 +242,8 @@ export function CreateHostWizard({
 
   // Step 0 — choose an existing bot and this host's agent.
   const [agentType, setAgentType] = useState<AgentType>("codex");
-  const [agentCatalog, setAgentCatalog] = useState<AcpAgentInfo[]>(FALLBACK_AGENTS);
+  const [agentCatalog, setAgentCatalog] = useState<AcpAgentInfo[]>([]);
+  const [agentCatalogError, setAgentCatalogError] = useState<string | null>(null);
   const [existingId, setExistingId] = useState(initialBotId ?? bots[0]?.bot_id ?? "");
   const [bot, setBot] = useState<BotItem | null>(() => {
     if (initialBotId) {
@@ -283,10 +276,8 @@ export function CreateHostWizard({
 
   useEffect(() => {
     listAcpAgents()
-      .then((agents) => {
-        if (agents.length) setAgentCatalog(agents);
-      })
-      .catch(() => {});
+      .then(setAgentCatalog)
+      .catch((e) => setAgentCatalogError(messageOf(e)));
   }, []);
 
   useEffect(() => {
@@ -413,15 +404,8 @@ export function CreateHostWizard({
   const terminalCommand = pairing
     ? `CHEERS_PAIRING_CODE='${pairing.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
-  const needsApiKeyHint =
-    agentType === "claude" ||
-    agentType === "claude-acp" ||
-    agentType === "codex" ||
-    agentType === "codex-acp";
-  const apiKeyVar =
-    agentType === "codex" || agentType === "codex-acp"
-      ? "OPENAI_API_KEY"
-      : "ANTHROPIC_API_KEY";
+  const selectedAgent = agentCatalog.find((a) => a.id === agentType);
+  const apiKeyVar = selectedAgent?.api_key_env;
   const commandWithKey = pairing
     ? `${apiKeyVar}='…' CHEERS_PAIRING_CODE='${pairing.pairing_code}' bash <(curl -fsSL ${installUrl})`
     : "";
@@ -489,13 +473,18 @@ export function CreateHostWizard({
               label="Agent type"
               htmlFor={agentFieldId}
               hint="The ACP adapter this device will run. It is fixed when the pending host is created."
+              error={agentCatalogError && `Couldn't load agents: ${agentCatalogError}`}
             >
               <UiSelect
                 id={agentFieldId}
                 value={agentType}
                 onChange={(e) => repick({ agent: e.target.value })}
                 controlSize="regular"
+                disabled={!agentCatalog.length}
               >
+                {!agentCatalog.length && (
+                  <option value={agentType}>{agentCatalogError ? "Unavailable" : "Loading agents…"}</option>
+                )}
                 {agentCatalog.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
@@ -507,11 +496,11 @@ export function CreateHostWizard({
 
             <div className="flex justify-end items-center gap-2">
               {localDesktop && (
-                <Button action="installHere" content="iconText" variant="secondary" onClick={setupLocally} loading={busy}>
+                <Button action="installHere" content="iconText" variant="secondary" onClick={setupLocally} loading={busy} disabled={!selectedAgent}>
                   <Laptop className="w-4 h-4" />
                 </Button>
               )}
-              <Button action="continue" onClick={validateAndAdvance} loading={busy} disabled={!bots.length} />
+              <Button action="continue" onClick={validateAndAdvance} loading={busy} disabled={!bots.length || !selectedAgent} />
             </div>
           </div>
         )}
@@ -543,7 +532,7 @@ export function CreateHostWizard({
                       pair it with @{bot.username}, and keep it running in the background as a system
                       service (launchd/systemd) that restarts on reboot.
                     </p>
-                    {needsApiKeyHint && (
+                    {apiKeyVar && (
                       <div className="rounded-sm bg-amber-500/10 p-2 space-y-2">
                         <p className="text-minimal font-medium text-warning-200">
                           Headless API-key auth
@@ -645,7 +634,7 @@ export function CreateHostWizard({
             />
 
             <div className="flex items-center justify-between pt-1">
-              <UiButton
+              <Button
                 action="back"
                 content="iconText"
                 variant="plain"
@@ -653,7 +642,7 @@ export function CreateHostWizard({
                 onClick={() => setStep(0)}
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-              </UiButton>
+              </Button>
               <Button
                 action="done"
                 onClick={() => {
@@ -762,7 +751,7 @@ function PairingSection({
         </span>
         <div className="flex items-center gap-2">
           {pairing && !connected && (
-            <UiButton
+            <Button
               action="revoke"
               content="iconText"
               variant="secondary"
@@ -772,7 +761,7 @@ function PairingSection({
               loading={busy}
             >
               <Trash2 className="w-3.5 h-3.5" />
-            </UiButton>
+            </Button>
           )}
           <Button
             action={pairing ? "replace" : "create"}

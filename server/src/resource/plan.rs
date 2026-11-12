@@ -21,11 +21,7 @@ use super::{authorize_channel_read, Principal, ResourceResult};
 
 /// `resource_req { resource: "channel.plan.read", params: { channel_id } }`
 pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))?;
+    let channel_id: Uuid = super::channel_id_or_bad_request(params)?;
     authorize_channel_read(db, principal, channel_id).await?;
 
     // Optional session scope: NULL → all sessions; else only that session.
