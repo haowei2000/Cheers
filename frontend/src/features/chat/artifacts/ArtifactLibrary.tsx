@@ -101,7 +101,10 @@ export function ArtifactLibrary({ ctx, target, onDirtyChange }: {
     try {
       const { artifact } = await client.create(path, EMPTY_CANVAS, `${createKey.current}:${path}`);
       setCanvasName(null);
+      // Supersede an open started while this create was in flight; that open no longer
+      // clears its own spinner, so this does.
       openingGeneration.current++;
+      setOpening(false);
       setSelected(artifact);
       void refresh();
     } catch (reason) {
