@@ -1,5 +1,17 @@
-- venue: Replace with a target venue
-  deadline: ""
-  timezone: ""
-  source: ""
-  checked: ""
+columns:
+  - key: venue
+    label: Venue
+  - key: deadline
+    label: Deadline
+  - key: timezone
+    label: Timezone
+  - key: source
+    label: Official source
+  - key: checked
+    label: Checked
+rows:
+  - venue: Replace with a target venue
+    deadline: ""
+    timezone: ""
+    source: ""
+    checked: ""

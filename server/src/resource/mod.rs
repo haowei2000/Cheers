@@ -1,4 +1,5 @@
 pub mod activity;
+mod artifact_views;
 pub mod artifacts;
 pub mod bot_status;
 pub mod channel_info;

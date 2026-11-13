@@ -14,7 +14,7 @@ interface Manifest {
   icon?: string;
   contributes: {
     scenes?: Array<{ id: string; title: string; definition: string }>;
-    renderers?: Array<{ id: string; title: string; entry: string; style?: string; match?: string[] }>;
+    renderers?: Array<{ id: string; title: string; entry: string; style?: string; match?: string[] | { suffix: string } }>;
     automations?: Array<{
       id: string;
       title: string;

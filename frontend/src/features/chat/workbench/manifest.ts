@@ -27,11 +27,11 @@ export interface PanelDef {
    *  to be indexed by. The source union is shared with lane panels; a scene takes the
    *  fs half of it rather than respelling one. */
   source: { kind: "fs"; path: string };
-  /** A renderer reference: "auto" (host picks by content), "builtin:<lens>", or a
+  /** A renderer reference: "auto" (host picks by filename), "builtin:<lens>", or a
    *  resolved "personal:<extension>:<renderer>". Omitted = "auto", matching the
    *  package grammar's default — read it through `viewOf`. */
   view?: string;
-  config?: unknown; // view config (e.g. table columns)
+  config?: unknown; // Legacy package field, ignored; settings belong in file content.
 }
 
 export { AUTO_VIEW } from "./manifestConstants";
@@ -73,7 +73,7 @@ export function validateManifest(m: unknown): m is TemplateManifest {
     if (typeof item.id !== "string" || typeof item.title !== "string") return false;
     const source = item.source as Record<string, unknown> | undefined;
     if (!source || source.kind !== "fs" || typeof source.path !== "string" || !source.path) return false;
-    // Omitted = "auto": the host picks by content. A named view must resolve to compiled
+    // Omitted = "auto": the host picks by filename. A named view must resolve to compiled
     // UI, so a manifest can never reference a lens that does not exist. A `personal:`
     // view reaches a sandboxed renderer and is resolved by the renderer registry, not here.
     if (item.view === undefined) return true;

@@ -101,6 +101,14 @@ impl Artifact {
         let mut value = serde_json::to_value(self).expect("artifact fields serialize");
         value["uri"] = json!(format!("cheers:artifact/{}", self.artifact_id));
         value["availability"] = json!(self.availability());
+        value["type"] = json!(super::artifact_views::view_for(
+            self.path.as_deref().unwrap_or(&self.title)
+        )
+        .unwrap_or(if self.kind() == SourceKind::Text {
+            "source"
+        } else {
+            "download"
+        }));
         value
     }
 }
@@ -218,16 +226,23 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
         .get("include_internal")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    // A type filter has to run here, not in the client: the list is paged, so filtering
-    // one loaded page would hide matches that sit on a later one. A canvas is named by
-    // its file name, the same rule the Web client uses to offer the canvas view.
-    let canvases_only = match params.get("type") {
-        None | Some(Value::Null) => false,
-        Some(Value::String(kind)) if kind == "canvas" => true,
+    // Filter before pagination, using the same suffix table as the clients.
+    let suffixes: Option<Vec<String>> = match params.get("type") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(kind)) => Some(
+            super::artifact_views::VIEWS
+                .iter()
+                .find(|row| &row.view == kind)
+                .ok_or_else(|| {
+                    super::resource_error("INVALID_PARAMS", "unknown artifact view type")
+                })?
+                .suffixes
+                .clone(),
+        ),
         Some(_) => {
             return Err(super::resource_error(
                 "INVALID_PARAMS",
-                "type must be \"canvas\" when given",
+                "type must be a string",
             ))
         }
     };
@@ -236,9 +251,10 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
          AND ($2 OR NOT a.internal)
          AND ($3::text IS NULL OR (a.created_at, a.artifact_id) <
               (SELECT c.created_at, c.artifact_id FROM artifacts c WHERE c.channel_id = $1 AND c.artifact_id = $3))
-         AND (NOT $5 OR a.path ~* '\\.canvas\\.(ya?ml|json)$')
+         AND ($5::text[] IS NULL OR EXISTS (SELECT 1 FROM unnest($5::text[]) AS suffix
+              WHERE right(lower(COALESCE(a.path, a.title)), char_length(suffix)) = suffix))
          ORDER BY a.created_at DESC, a.artifact_id DESC LIMIT $4",
-        channel_id.to_string(), include_internal, before, limit + 1, canvases_only
+        channel_id.to_string(), include_internal, before, limit + 1, suffixes.as_deref()
     ).fetch_all(db).await.map_err(super::db_err("artifacts.list"))?;
     let more = rows.len() > limit as usize;
     rows.truncate(limit as usize);

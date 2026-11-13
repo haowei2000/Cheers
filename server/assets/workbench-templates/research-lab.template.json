@@ -1,6 +1,6 @@
 {
   "id": "cheers-research-lab",
-  "version": 1,
+  "version": 2,
   "title": "Research lab",
   "items": [
     {
@@ -8,34 +8,7 @@
       "title": "Experiments",
       "source": {
         "kind": "fs",
-        "path": "lab/experiments.yaml"
-      },
-      "view": "builtin:table",
-      "config": {
-        "columns": [
-          {
-            "key": "name",
-            "label": "Run"
-          },
-          {
-            "key": "status",
-            "label": "Status",
-            "options": [
-              "queued",
-              "running",
-              "done",
-              "failed"
-            ]
-          },
-          {
-            "key": "metric",
-            "label": "Best metric"
-          },
-          {
-            "key": "notes",
-            "label": "Notes"
-          }
-        ]
+        "path": "lab/experiments.table.yaml"
       }
     },
     {
@@ -43,58 +16,54 @@
       "title": "Metrics",
       "source": {
         "kind": "fs",
-        "path": "lab/metrics.yaml"
-      },
-      "view": "builtin:chart"
+        "path": "lab/metrics.chart.yaml"
+      }
     },
     {
       "id": "submissions",
       "title": "Submissions",
       "source": {
         "kind": "fs",
-        "path": "lab/submissions.yaml"
-      },
-      "view": "builtin:table",
-      "config": {
-        "columns": [
-          {
-            "key": "paper",
-            "label": "Paper"
-          },
-          {
-            "key": "venue",
-            "label": "Venue"
-          },
-          {
-            "key": "status",
-            "label": "Status",
-            "options": [
-              "drafting",
-              "submitted",
-              "review",
-              "rebuttal",
-              "accepted",
-              "rejected"
-            ]
-          },
-          {
-            "key": "deadline",
-            "label": "Deadline"
-          }
-        ]
+        "path": "lab/submissions.table.yaml"
       }
     }
   ],
   "seed": {
-    "lab/experiments.yaml": [
-      {
-        "name": "baseline",
-        "status": "queued",
-        "metric": "",
-        "notes": "replace me"
-      }
-    ],
-    "lab/metrics.yaml": {
+    "lab/experiments.table.yaml": {
+      "columns": [
+        {
+          "key": "name",
+          "label": "Run"
+        },
+        {
+          "key": "status",
+          "label": "Status",
+          "options": [
+            "queued",
+            "running",
+            "done",
+            "failed"
+          ]
+        },
+        {
+          "key": "metric",
+          "label": "Best metric"
+        },
+        {
+          "key": "notes",
+          "label": "Notes"
+        }
+      ],
+      "rows": [
+        {
+          "name": "baseline",
+          "status": "queued",
+          "metric": "",
+          "notes": "replace me"
+        }
+      ]
+    },
+    "lab/metrics.chart.yaml": {
       "series": [
         {
           "name": "loss",
@@ -107,15 +76,43 @@
         }
       ]
     },
-    "lab/submissions.yaml": [
-      {
-        "paper": "First paper",
-        "venue": "",
-        "status": "drafting",
-        "deadline": ""
-      }
-    ],
-    "prompts/lab-conventions.md": "# Lab conventions\n\n- Every run gets a row in `lab/experiments.yaml`; update `status` as it moves.\n- Append `[step, value]` points to `lab/metrics.yaml` while training.\n- Paper state lives in `lab/submissions.yaml` — keep `deadline` as YYYY-MM-DD.\n"
+    "lab/submissions.table.yaml": {
+      "columns": [
+        {
+          "key": "paper",
+          "label": "Paper"
+        },
+        {
+          "key": "venue",
+          "label": "Venue"
+        },
+        {
+          "key": "status",
+          "label": "Status",
+          "options": [
+            "drafting",
+            "submitted",
+            "review",
+            "rebuttal",
+            "accepted",
+            "rejected"
+          ]
+        },
+        {
+          "key": "deadline",
+          "label": "Deadline"
+        }
+      ],
+      "rows": [
+        {
+          "paper": "First paper",
+          "venue": "",
+          "status": "drafting",
+          "deadline": ""
+        }
+      ]
+    },
+    "prompts/lab-conventions.md": "# Lab conventions\n\n- Every run gets a row in `lab/experiments.table.yaml`; update `status` as it moves.\n- Append `[step, value]` points to `lab/metrics.chart.yaml` while training.\n- Paper state lives in `lab/submissions.table.yaml` — keep `deadline` as YYYY-MM-DD.\n"
   },
   "pin": [
     "prompts/lab-conventions.md"

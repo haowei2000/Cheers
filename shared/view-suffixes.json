@@ -1,0 +1,102 @@
+[
+  {
+    "view": "markdown",
+    "title": "Markdown",
+    "suffixes": [
+      ".md",
+      ".markdown"
+    ]
+  },
+  {
+    "view": "html",
+    "title": "HTML Canvas",
+    "suffixes": [
+      ".html",
+      ".htm"
+    ]
+  },
+  {
+    "view": "react",
+    "title": "React Canvas",
+    "suffixes": [
+      ".tsx",
+      ".jsx"
+    ]
+  },
+  {
+    "view": "canvas",
+    "title": "Canvas",
+    "suffixes": [
+      ".canvas.yaml",
+      ".canvas.yml",
+      ".canvas.json"
+    ]
+  },
+  {
+    "view": "chart",
+    "title": "Chart",
+    "suffixes": [
+      ".chart.yaml",
+      ".chart.yml",
+      ".chart.json"
+    ]
+  },
+  {
+    "view": "table",
+    "title": "Table",
+    "suffixes": [
+      ".table.yaml",
+      ".table.yml",
+      ".table.json"
+    ]
+  },
+  {
+    "view": "kanban",
+    "title": "Kanban",
+    "suffixes": [
+      ".kanban.yaml",
+      ".kanban.yml",
+      ".kanban.json"
+    ]
+  },
+  {
+    "view": "codemap",
+    "title": "Codemap",
+    "suffixes": [
+      ".codemap.yaml",
+      ".codemap.yml",
+      ".codemap.json"
+    ]
+  },
+  {
+    "view": "a2ui",
+    "title": "Interactive UI",
+    "suffixes": [
+      ".a2ui.yaml",
+      ".a2ui.yml",
+      ".a2ui.json"
+    ]
+  },
+  {
+    "view": "image",
+    "title": "Image",
+    "suffixes": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".gif",
+      ".webp",
+      ".svg",
+      ".avif",
+      ".bmp",
+      ".ico"
+    ]
+  },
+  {
+    "view": "pdf",
+    "title": "PDF",
+    "suffixes": [
+      ".pdf"
+    ]
+  }
+]

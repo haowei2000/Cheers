@@ -590,3 +590,35 @@ async fn artifact_mutations_only_touch_the_named_file(db: PgPool) {
     .unwrap();
     assert_eq!(deleted["deleted"], 1);
 }
+
+#[sqlx::test]
+async fn artifact_view_types_follow_names_before_pagination(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    for path in [
+        "first.table.yaml",
+        "generic.json",
+        "second.TABLE.JSON",
+        "report.chart.yaml",
+    ] {
+        create(&db, ch, &p, path).await;
+    }
+    let first = artifacts::handle_list(&db, &p, &json!({"channel_id":ch,"type":"table","limit":1}))
+        .await
+        .unwrap();
+    assert_eq!(first["artifacts"][0]["type"], "table");
+    assert_eq!(first["artifacts"][0]["path"], "second.TABLE.JSON");
+    let next = artifacts::handle_list(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"type":"table","limit":1,"before":first["next_cursor"]}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(next["artifacts"][0]["path"], "first.table.yaml");
+    assert!(next["next_cursor"].is_null());
+    let generic =
+        artifacts::handle_resolve(&db, &p, &json!({"channel_id":ch,"path":"generic.json"}))
+            .await
+            .unwrap();
+    assert_eq!(generic["type"], "source");
+}

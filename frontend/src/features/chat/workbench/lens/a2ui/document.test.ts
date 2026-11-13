@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import example from "./example.a2ui.json";
 import { a2uiPresentation, acceptsA2UIDocument, parseA2UIDocument, readBinding, setDataPath } from "./document";
-import { candidatesFor } from "../../renderers/registry";
+import { viewFor } from "../../renderers/registry";
 
 const copy = () => JSON.parse(JSON.stringify(example));
 
@@ -29,8 +29,8 @@ describe("persisted A2UI protocol and Cheers catalog", () => {
     const [surface] = parseA2UIDocument(example);
     expect(surface.components.get("topic")?.sourcePath).toEqual(["messages", 1, "updateComponents", "components", 3]);
     expect(readBinding({ path: "/report/topic" }, surface.data)).toBe("Resource-oriented UI");
-    expect(candidatesFor("forms/report.json", JSON.stringify(example), [])[0].id).toBe("builtin:a2ui");
-    expect(candidatesFor("form.yaml", "a2ui: v0.9.1\nmessages: []", [])).toEqual([]);
+    expect(viewFor("forms/report.a2ui.json")?.id).toBe("builtin:a2ui");
+    expect(viewFor("form.yaml")).toBeUndefined();
   });
   it("applies component replacement, data removal, and surface deletion in order", () => {
     const doc = copy();

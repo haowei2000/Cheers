@@ -50,6 +50,9 @@ export function mutateWorkbenchConfiguration(
         });
         return document;
       }
+      delete document.bindings;
+      delete document.configs;
+      delete document.views;
       document._doc = WB_DOC;
       const content = JSON.stringify(document, null, 2);
       try {

@@ -24,9 +24,6 @@ const mockContext: WorkbenchContext = {
   pinned: [],
   togglePin: vi.fn(),
   rendererExtensions: [],
-  bindings: {},
-  setBinding: vi.fn(),
-  configs: {},
 };
 
 const mockSession: FileSession = {
@@ -94,9 +91,8 @@ describe("RendererErrorBoundary", () => {
     const renderer: RendererDesc = {
       id: "personal:custom:board",
       title: "Board",
-      format: ["json"],
+      suffixes: [".json"],
       source: "extension",
-      match: {},
     };
 
     const boundary = new RendererErrorBoundary({
@@ -120,9 +116,8 @@ describe("RendererErrorBoundary", () => {
     const renderer: RendererDesc = {
       id: "personal:custom:board",
       title: "Board",
-      format: ["json"],
+      suffixes: [".json"],
       source: "extension",
-      match: {},
     };
 
     const boundary = new RendererErrorBoundary({
@@ -148,11 +143,10 @@ describe("RendererHost", () => {
     const extensionRenderer: RendererDesc = {
       id: "personal:missing-ext:renderer",
       title: "Missing Ext",
-      format: ["json"],
+      suffixes: [".json"],
       source: "extension",
       extensionId: "missing-ext",
       rendererId: "renderer",
-      match: {},
     };
 
     const markup = renderWithTheme(
@@ -172,10 +166,9 @@ describe("RendererHost", () => {
     const builtinRenderer: RendererDesc = {
       id: "builtin:markdown",
       title: "Markdown",
-      format: ["markdown"],
+      suffixes: [".json"],
       source: "builtin",
       lensId: "markdown",
-      match: {},
     };
 
     const markup = renderWithTheme(

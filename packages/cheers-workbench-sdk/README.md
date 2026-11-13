@@ -12,6 +12,12 @@ The packer bundles each `src/renderers/<id>.ts[x]` entry as a single IIFE and wr
 
 `examples/scene-renderer` combines a scene, seed file, and minimal writable renderer. `examples/network-renderer` demonstrates the explicit `network: unrestricted` permission and install warning.
 
+Renderers declare `"match": { "suffix": ".notes.md" }`. File names select the view;
+legacy match arrays load but no longer select a renderer. Built-in suffixes are
+reserved, and duplicate extension claims are disabled. Use a unique compound suffix
+in scene seed paths. File view settings belong in the document: tables may use
+`{ "columns": [...], "rows": [...] }`, or a plain array with inferred columns.
+
 `contributes.automations` declares inert scheduled-message templates. Each template has
 an ID, title, message, and either an interval or daily `defaultSchedule`. Daily templates
 may omit the timezone so Cheers uses the creating user's local IANA timezone.

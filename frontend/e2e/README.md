@@ -13,6 +13,8 @@ and do not pre-create the test user, Personal workspace, or workspace membership
    **Private** channels. Check the actual request's workspace and visibility.
 4. Reload after each creation, checking the gateway's persisted list and the
    visible, selected channel. Both channels must remain visible at the end.
+5. Create a legacy-named artifact through the authenticated WebSocket, rename it
+   using the library's view-change action, and open its table from the real gateway.
 
 ## Fixture contract
 

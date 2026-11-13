@@ -4,6 +4,30 @@ Status: approved for P0 → F1 (2026-11-13). D1–D4 confirmed by the owner.
 Implementation gates remain open. When a phase lands,
 mark its gate and say what verified it.
 
+Implementation progress (2026-11-13):
+
+- P0: plan PR #876 and artifact delete/rename PR #877 merged. The latter includes
+  the Bugbot fix restricting ID mutations to exactly one file; all required CI passed.
+- F1: implemented on `feat/artifact-view-by-name`, pending PR/CI and deployment.
+  Shared suffix selection, source/error fallback, extension suffix declarations,
+  library rename diagnostics, and bot guidance are implemented. New official seeds
+  use suffix names; table columns live beside `rows` in the file. Existing files are
+  never automatically renamed. Legacy content matching is retained only for the
+  read-only migration report over loaded library pages.
+- Local validation: 1,301 frontend tests, typecheck, design-system/security checks,
+  production build; 549 gateway unit tests and 13 artifact integration tests;
+  37 MCP tests, 256 connector tests (one ignored), and five SDK tests passed.
+  Headless Chrome fixture checks cover all text views, malformed-source fallback,
+  and library rename at 390/768/1280 widths in light/dark themes.
+- Real-stack validation: the rebuilt source gateway and isolated PostgreSQL passed
+  the browser registration/channel flow plus artifact creation over WebSocket,
+  library rename, and opening the renamed table. Four browser scenarios passed.
+  Extension file panels also obey suffixes and ignore manifest view/config overrides
+  (two focused regression tests passed).
+- Still open: release deployment and ordered connector release/daemon upgrade.
+  The real-stack test uses an isolated local gateway, not the deployed kind cluster.
+  F2–F6 and native-client F5 work have not started.
+
 This plan replaces the layered model in [UNIFIED_ARTIFACTS.md](UNIFIED_ARTIFACTS.md),
 where an artifact is a catalog row over two content providers. The catalog identity,
 version, availability and `cheers:artifact/<id>` link contract from that document

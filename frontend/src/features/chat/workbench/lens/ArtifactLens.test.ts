@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatOf, candidatesFor } from "../renderers/registry";
+import { formatOf } from "../renderers/formats";
+import { viewFor } from "../renderers/registry";
 import { artifactCsp, buildArtifactHtml } from "./ArtifactLens";
 import { compileArtifactTsx } from "./artifactCompiler";
 import { runInNewContext } from "node:vm";
@@ -13,8 +14,8 @@ describe("ArtifactLens format & registry matching", () => {
     expect(formatOf("dev/preview.htm")).toBe("html");
     expect(formatOf("src/Widget.tsx")).toBe("react");
     expect(formatOf("components/Button.jsx")).toBe("react");
-    expect(candidatesFor("page.html", "<div>Hello</div>", [])[0].id).toBe("builtin:html");
-    expect(candidatesFor("Card.tsx", "export default function Card() { return <div>Card</div>; }", [])[0].id).toBe("builtin:react");
+    expect(viewFor("page.html")?.id).toBe("builtin:html");
+    expect(viewFor("Card.tsx")?.id).toBe("builtin:react");
   });
 });
 

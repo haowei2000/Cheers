@@ -1,5 +1,16 @@
 # Model-authored interactive resources
 
+File names select views. `read_ui_contract.view_suffixes` exposes the shared table in
+`shared/view-suffixes.json`: use `.canvas.yaml`, `.chart.json`, `.table.yaml`,
+`.kanban.json`, `.codemap.yaml`, or `.a2ui.json` (JSON/YAML variants are supported).
+Generic JSON/YAML opens as source. Keep view settings in the file; Workbench bindings
+and the view picker are retired. Existing files are not renamed automatically; the
+Artifacts library offers rename suggestions. Extensions declare `match.suffix`, such
+as `.gantt.yaml`; built-in suffixes are reserved and duplicate extension claims are disabled.
+Create with `artifact_create`, edit with `artifact_update`/`artifact_patch`, and share
+`artifact.uri`. `artifact_put` is planned for F4 and is not available yet.
+
+
 > Implemented for the React Web/Tauri Workbench. [中文](INTERACTIVE_RESOURCES.zh-CN.md)
 
 An interactive UI is an ordinary channel file, opened using an ordinary resource
@@ -16,9 +27,9 @@ loader, or navigation surface. Existing file access and revision checks apply.
    MCP `resources/read` also serves `cheers://help/interactive-ui`,
    `/catalog`, and `/example`. The canonical local catalog is
    `design-system/a2ui-catalog.json`.
-2. Use existing channel file tools (`fs.write`, or `fs.patch` for structured
-   changes) to persist a JSON/YAML document, for example `forms/report.a2ui.json`.
-3. Return `cheers:desk/forms/report.a2ui.json` in the reply. Call
+2. Use `artifact_create`, or `artifact_update`/`artifact_patch` for existing
+   artifacts, to persist a document such as `forms/report.a2ui.json`.
+3. Return the resulting `artifact.uri` (`cheers:artifact/<id>`) in the reply. Call
    `set_resource_cards` with the current reply's `msg_id` and existing v1
    `resource_ref` cards before finishing: partial replies stage `pending_cards`,
    and stream completion promotes them atomically into `cards`. Opening that card reaches Workbench and

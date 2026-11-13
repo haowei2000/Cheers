@@ -49,7 +49,7 @@ import {
   rangedFileContextItem,
 } from "@/features/chat/context/contextPick";
 import { formatLocator } from "@/features/chat/locator";
-import { previewOptions } from "../renderers/registry";
+import { viewFor } from "../renderers/registry";
 import { DropdownSelect } from "@/components/ui/dropdown-select";
 import { FloatingPanelActionPortal } from "@/components/ui/floating-panel";
 import { RendererHost } from "../renderers/RendererHost";
@@ -141,7 +141,7 @@ function basename(path: string) {
 export function FilePanel({ ctx, initialTreeOpen = true, onDirtyChange }: {
   ctx: WorkbenchContext; initialTreeOpen?: boolean; onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const { fs, rendererExtensions, bindings, setBinding, configs, pinned, togglePin } = ctx;
+  const { fs, rendererExtensions, pinned, togglePin } = ctx;
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   // Paths the user has forced to Raw. Everything else follows the content: Preview when
@@ -162,7 +162,6 @@ export function FilePanel({ ctx, initialTreeOpen = true, onDirtyChange }: {
       return next;
     });
   }, []);
-  const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const [status, setStatus] = useState<string | null>(null);
   const [isInspectorActive, setIsInspectorActive] = useState(false);
   const addContext = useContextPickStore((s) => s.add);
@@ -346,16 +345,6 @@ export function FilePanel({ ctx, initialTreeOpen = true, onDirtyChange }: {
       ];
     },
   });
-
-  useEffect(() => {
-    if (!selected) return;
-    setFailedRenderers((current) => {
-      if (!current[selected]) return current;
-      const next = { ...current };
-      delete next[selected];
-      return next;
-    });
-  }, [selected]);
 
   const refresh = useCallback(async () => {
     try {
@@ -726,28 +715,8 @@ export function FilePanel({ ctx, initialTreeOpen = true, onDirtyChange }: {
           </div>
         ) : (
           (() => {
-            // content-aware: only renderers that ACCEPT this file's content are offered.
-            // The user's explicit binding (if resolvable) leads; otherwise best match.
-            //
-            // Matched against `parsedText` — the text the lens's `data` was parsed from —
-            // so the renderer chosen for a file is the one that will actually be handed
-            // its data. Matching on a buffer the preview did not render is how an unsaved
-            // Raw edit used to offer a renderer the file could not feed, and how clearing
-            // the buffer used to disable Preview for a file that renders fine.
-            const options = previewOptions(
-              selected,
-              session.parsedText,
-              rendererExtensions,
-              bindings[selected],
-              failedRenderers[selected]
-            );
-            const bound = bindings[selected] ? options.find((renderer) => renderer.id === bindings[selected]) : undefined;
-            const previewRenderer = options[0];
-            // no matching renderer => raw, whatever the toggle says — header (Save,
-            // dirty dot) and body must agree on which mode is actually showing
+            const previewRenderer = viewFor(selected, rendererExtensions);
             const effMode = rawPaths.has(selected) || !previewRenderer ? "raw" : "preview";
-
-            const rendererLabel = bound?.title ?? "Auto";
 
             return (
               <>
@@ -771,52 +740,9 @@ export function FilePanel({ ctx, initialTreeOpen = true, onDirtyChange }: {
                     selected: false,
                     disabled: !previewRenderer,
                     onSelect: () => {
-                      setFailedRenderers((current) => ({ ...current, [selected]: [] }));
                       showRaw(selected, effMode === "preview");
                     },
                   }}
-                />
-                {/* Renderer picker: Auto clears the binding and follows the best content
-                    match, so a stale or wrong binding always has a way out. A
-                    DropdownSelect, not a native one — a native select sizes itself to its
-                    longest option, and an extension's title carries its extension id. */}
-                <FloatingPanelActionPortal
-                  action={{
-                    id: "renderer",
-                    label: `Renderer: ${rendererLabel}`,
-                    priority: "secondary",
-                    icon: Layers,
-                    control: (
-                      <DropdownSelect
-                        ariaLabel="Renderer for Preview (Auto = best content match)"
-                        leading={<Layers className="h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />}
-                        label={rendererLabel}
-                        value={bound?.id ?? ""}
-                        options={[
-                          { value: "", label: "Auto" },
-                          ...options.map((renderer) => {
-                            const extension = renderer.source === "extension"
-                              ? rendererExtensions.find((candidate) => candidate.extensionId === renderer.extensionId)
-                              : undefined;
-                            const mark = extension?.transient ? "⏱ " : extension?.origin === "personal" ? "💻 " : "";
-                            return {
-                              value: renderer.id,
-                              label: `${mark}${renderer.title}${renderer.source === "extension" ? ` · ${renderer.extensionId}` : ""}`,
-                            };
-                          }),
-                        ]}
-                        onSelect={(value: string) => {
-                          setFailedRenderers((current) => ({ ...current, [selected]: [] }));
-                          setBinding(selected, value || null);
-                        }}
-                        controlSize="compact"
-                        controlWidth="fill"
-                        className="min-w-0"
-                        menuClassName="max-w-72"
-                      />
-                    ),
-                  }}
-                  active={effMode === "preview" && Boolean(bound || options.length > 1)}
                 />
                 <FloatingPanelActionPortal
                   action={{
@@ -952,33 +878,13 @@ export function FilePanel({ ctx, initialTreeOpen = true, onDirtyChange }: {
                       ctx={ctx}
                       path={selected}
                       renderer={previewRenderer}
-                      config={configs[selected]}
                       session={session}
                       annotations={{ doc: annotations.doc, onAnnotate, onRemove: onRemoveNote }}
                       activeAnnotationId={activeAnnotationId}
                       onSelectAnnotation={setActiveAnnotationId}
                       onRevealSource={(line) => { showRaw(selected, true); setRevealLine(line); }}
                       inspectorActive={isInspectorActive}
-                      onFailure={(rendererId, reason) => {
-                        const updatedFailed = [...new Set([...(failedRenderers[selected] ?? []), rendererId])];
-                        setFailedRenderers((current) => ({
-                          ...current,
-                          [selected]: updatedFailed,
-                        }));
-                        const nextOptions = previewOptions(
-                          selected,
-                          session.parsedText,
-                          rendererExtensions,
-                          bindings[selected],
-                          updatedFailed
-                        );
-                        if (nextOptions.length > 0) {
-                          setStatus(`${previewRenderer.title} failed: ${reason}. Switched to ${nextOptions[0].title}.`);
-                        } else {
-                          showRaw(selected, true);
-                          setStatus(`${previewRenderer.title} failed: ${reason}. Degraded to Raw mode.`);
-                        }
-                      }}
+
                     />
                   </div>
                 ) : (

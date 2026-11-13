@@ -1,5 +1,15 @@
 # 模型生成的交互资源
 
+文件名决定视图。`read_ui_contract.view_suffixes` 返回
+`shared/view-suffixes.json` 中的共享后缀表，例如 `.canvas.yaml`、`.chart.json`、
+`.table.yaml`、`.kanban.json`、`.codemap.yaml`、`.a2ui.json`（支持 JSON/YAML 变体）。
+普通 JSON/YAML 显示源码；视图设置放在文件中，不再使用 Workbench 绑定或视图选择器。
+现有文件不会自动重命名，Artifacts 库提供重命名建议。扩展使用 `match.suffix`
+声明后缀（例如 `.gantt.yaml`）；内置后缀保留，重复的扩展后缀声明禁用。
+使用 `artifact_create` 创建、`artifact_update`/`artifact_patch` 编辑，并分享
+`artifact.uri`。`artifact_put` 属于 F4，目前尚未提供。
+
+
 > 已接入 React Web/Tauri Workbench。[English](INTERACTIVE_RESOURCES.md)
 
 交互界面是一份普通频道文件，通过普通资源 URI 打开，由现有 Workbench 的
@@ -13,8 +23,9 @@
    也可通过 MCP resources/read 读取
    `cheers://help/interactive-ui`、`/catalog`、`/example`。
    本地规范源文件是 `design-system/a2ui-catalog.json`。
-2. 用现有 `fs.write` 写入 `forms/report.a2ui.json`，结构化修改使用 `fs.patch`。
-3. 回复 `cheers:desk/forms/report.a2ui.json`。在完成前调用 `set_resource_cards`，
+2. 用 `artifact_create` 创建 `forms/report.a2ui.json`，已有文件使用
+   `artifact_update` 或 `artifact_patch` 修改。
+3. 回复返回的 `artifact.uri`（`cheers:artifact/<id>`）。在完成前调用 `set_resource_cards`，
    使用当前回复的 msg_id 和 v1 resource_ref。流式期间暂存 pending_cards，
    回复完成时原子发布为 cards，不需要另发一条重复消息。
    Desk 卡片在回复内显示 minimal 预览，小表单可直接填写和提交；Expand 在聊天里
