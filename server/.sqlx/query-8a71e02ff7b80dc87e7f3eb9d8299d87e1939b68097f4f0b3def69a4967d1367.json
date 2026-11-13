@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT artifact_id, channel_id, source_kind, source_id, title, path, content_type, size_bytes, version, source_version, source_status, internal, created_by, created_at, updated_at, expires_at, deleted_at FROM artifacts WHERE channel_id = $1 AND source_kind = $2 AND source_id = $3",
+  "query": "SELECT * FROM artifacts WHERE channel_id = $1 AND source_kind = 'text' AND path = $2 AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -60,38 +60,42 @@
       },
       {
         "ordinal": 11,
+        "name": "source_fingerprint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
         "name": "internal",
         "type_info": "Bool"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_by",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "expires_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
         "Text",
         "Text"
       ]
@@ -109,6 +113,7 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false,
@@ -116,5 +121,5 @@
       true
     ]
   },
-  "hash": "c6f51287d8f1690930a2d2eef87f56d10c3aa3604fb222be3c765d8e4220cdec"
+  "hash": "8a71e02ff7b80dc87e7f3eb9d8299d87e1939b68097f4f0b3def69a4967d1367"
 }

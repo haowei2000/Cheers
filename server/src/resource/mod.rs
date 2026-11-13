@@ -243,7 +243,7 @@ pub async fn dispatch(
         "channel.artifacts.create" => artifacts::handle_create(db, &principal, &params).await,
         "channel.artifacts.update" => artifacts::handle_update(db, &principal, &params).await,
         "channel.artifacts.patch" => artifacts::handle_patch(db, &principal, &params).await,
-        "channel.artifacts.deliver" => files::handle_create(db, &principal, &params).await,
+        "channel.artifacts.deliver" => artifacts::handle_deliver(db, &principal, &params).await,
         "channel.artifacts.upload_prepare" => {
             uploads::handle_prepare(db, &principal, &params).await
         }
