@@ -1,5 +1,9 @@
 # Unified artifacts
 
+> ⚠️ PARTLY SUPERSEDED (2026-11-13): the storage split (text in `context_files`, bytes in
+> object storage) and the renderer picker are replaced by [FLAT_ARTIFACTS.md](FLAT_ARTIFACTS.md)
+> once its phases land. Identity, versions, availability and links below still apply.
+
 Status: implementation in progress. This document records the target contract and
 the migration gates; a checked gate means verified implementation, not a proposal.
 
