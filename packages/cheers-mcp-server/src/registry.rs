@@ -389,7 +389,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
         db(
             "channel.artifacts.list",
             read_tool("artifact_list", "List channel artifacts",
-                "List documents, interactive pages, canvases and delivered files together. Pass type \"canvas\" to list only canvases. Follow next_cursor with before. Internal configuration files are hidden by default.",
+                "List documents, interactive pages, canvases and delivered files together. Filter by a built-in view type from read_ui_contract.view_suffixes (for example canvas or table). Follow next_cursor with before. Internal configuration files are hidden by default.",
                 &[
                     Param::req("channel_id", ParamKind::String),
                     Param::opt("limit", ParamKind::Integer),

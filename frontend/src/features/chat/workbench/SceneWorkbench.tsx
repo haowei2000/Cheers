@@ -443,31 +443,12 @@ export function SceneWorkbench({
                         ctx={ctx}
                         path={selectedPath}
                         renderer={activeRenderer}
-                        config={ctx.configs[selectedPath]}
                         session={coord.session}
                         annotations={{ doc: coord.annotations.doc, onAnnotate: coord.onAnnotate, onRemove: coord.onRemoveNote }}
                               onSelectAnnotation={coord.setActiveAnnotationId}
                         onRevealSource={(line) => { coord.showRaw(selectedPath, true); coord.setRevealLine(line); }}
                         inspectorActive={coord.isInspectorActive}
-                        onFailure={(rendererId, reason) => {
-                          const updatedFailed = [...new Set([...(coord.failedRenderers[selectedPath] ?? []), rendererId])];
-                          coord.setFailedRenderers((current) => ({
-                            ...current,
-                            [selectedPath]: updatedFailed,
-                          }));
-                          const nextRenderer = rendererFor(
-                            selectedPath,
-                            coord.session.text,
-                            ctx,
-                            updatedFailed
-                          );
-                          if (nextRenderer) {
-                            coord.setStatus(`${activeRenderer.title} failed: ${reason}. Switched to ${nextRenderer.title}.`);
-                          } else {
-                            coord.showRaw(selectedPath, true);
-                            coord.setStatus(`${activeRenderer.title} failed: ${reason}. Degraded to Raw mode.`);
-                          }
-                        }}
+
                       />
                     ) : (
                       <Suspense fallback={<div className="h-full bg-canvas" aria-busy="true" />}>

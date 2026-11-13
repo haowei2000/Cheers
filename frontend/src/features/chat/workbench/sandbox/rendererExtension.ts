@@ -1,5 +1,6 @@
 /** Host-evaluated file matching rules for personal extension renderers. */
 export interface RendererMatch {
+  suffix?: string;
   format?: string | string[];
   glob?: string;
   requireAll?: string[];

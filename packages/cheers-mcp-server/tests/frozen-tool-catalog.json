@@ -385,7 +385,7 @@
       "destructiveHint": false,
       "readOnlyHint": true
     },
-    "description": "List documents, interactive pages, canvases and delivered files together. Pass type \"canvas\" to list only canvases. Follow next_cursor with before. Internal configuration files are hidden by default.",
+    "description": "List documents, interactive pages, canvases and delivered files together. Filter by a built-in view type from read_ui_contract.view_suffixes (for example canvas or table). Follow next_cursor with before. Internal configuration files are hidden by default.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {

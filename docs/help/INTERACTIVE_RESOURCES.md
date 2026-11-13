@@ -1,5 +1,16 @@
 # Model-authored interactive resources
 
+File names select views. `read_ui_contract.view_suffixes` exposes the shared table in
+`shared/view-suffixes.json`: use `.canvas.yaml`, `.chart.json`, `.table.yaml`,
+`.kanban.json`, `.codemap.yaml`, or `.a2ui.json` (JSON/YAML variants are supported).
+Generic JSON/YAML opens as source. Keep view settings in the file; Workbench bindings
+and the view picker are retired. Existing files are not renamed automatically; the
+Artifacts library offers rename suggestions. Extensions declare `match.suffix`, such
+as `.gantt.yaml`; built-in suffixes are reserved and duplicate extension claims are disabled.
+Create with `artifact_create`, edit with `artifact_update`/`artifact_patch`, and share
+`artifact.uri`. `artifact_put` is planned for F4 and is not available yet.
+
+
 > Implemented for the React Web/Tauri Workbench. [中文](INTERACTIVE_RESOURCES.zh-CN.md)
 
 An interactive UI is an ordinary channel file, opened using an ordinary resource

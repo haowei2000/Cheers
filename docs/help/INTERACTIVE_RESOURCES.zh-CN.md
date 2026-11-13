@@ -1,5 +1,15 @@
 # 模型生成的交互资源
 
+文件名决定视图。`read_ui_contract.view_suffixes` 返回
+`shared/view-suffixes.json` 中的共享后缀表，例如 `.canvas.yaml`、`.chart.json`、
+`.table.yaml`、`.kanban.json`、`.codemap.yaml`、`.a2ui.json`（支持 JSON/YAML 变体）。
+普通 JSON/YAML 显示源码；视图设置放在文件中，不再使用 Workbench 绑定或视图选择器。
+现有文件不会自动重命名，Artifacts 库提供重命名建议。扩展使用 `match.suffix`
+声明后缀（例如 `.gantt.yaml`）；内置后缀保留，重复的扩展后缀声明禁用。
+使用 `artifact_create` 创建、`artifact_update`/`artifact_patch` 编辑，并分享
+`artifact.uri`。`artifact_put` 属于 F4，目前尚未提供。
+
+
 > 已接入 React Web/Tauri Workbench。[English](INTERACTIVE_RESOURCES.md)
 
 交互界面是一份普通频道文件，通过普通资源 URI 打开，由现有 Workbench 的

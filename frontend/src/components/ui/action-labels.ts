@@ -26,6 +26,7 @@ export const slotActionLabels = {
   dismiss: "Dismiss",
   done: "Done",
   edit: "Edit",
+  rename: "Rename",
   enable: "Turn on",
   generate: "Generate",
   install: "Install",

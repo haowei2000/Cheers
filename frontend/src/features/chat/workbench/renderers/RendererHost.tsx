@@ -191,7 +191,6 @@ export function RendererHost({
   ctx,
   path,
   renderer,
-  config,
   session,
   annotations,
   activeAnnotationId,
@@ -204,7 +203,6 @@ export function RendererHost({
   ctx: WorkbenchContext;
   path: string;
   renderer: RendererDesc;
-  config?: unknown; // built-in lens config (e.g. table columns), from .workbench.json configs
   /** The host's file session, when the host ALSO shows this file another way (Raw).
    *  Both views must share one buffer/version/dirty flag. Absent => this is the file's
    *  only view and the lens host opens its own session. */
@@ -270,7 +268,7 @@ export function RendererHost({
     }
   }, [missingExtension, renderer.id, renderer.extensionId, handleFailure]);
 
-  const fallbackReason = runtimeError
+  const fallbackReason = session?.parseError || runtimeError
     || (missingExtension ? `Renderer extension not installed: ${renderer.extensionId}` : null);
   if (fallbackReason) {
     return (
@@ -351,7 +349,6 @@ export function RendererHost({
           session={session}
           artifactId={path === ctx.openTarget ? ctx.artifactId : undefined}
           lensId={lensId}
-          config={config}
           channelId={ctx.channelId}
           annotations={annotations}
           activeAnnotationId={activeAnnotationId}
@@ -370,7 +367,6 @@ export function RendererHost({
           path={path}
           artifactId={path === ctx.openTarget ? ctx.artifactId : undefined}
           lensId={lensId}
-          config={config}
           channelId={ctx.channelId}
           reloadTick={ctx.filesTick}
           openLocator={openResource}

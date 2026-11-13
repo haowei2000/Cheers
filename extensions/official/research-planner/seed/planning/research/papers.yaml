@@ -1,4 +1,20 @@
-- title: First paper
-  target: ""
-  status: idea
-  owner: ""
+columns:
+  - key: title
+    label: Paper
+  - key: target
+    label: Target venue
+  - key: status
+    label: Status
+    options:
+      - idea
+      - drafting
+      - internal-review
+      - ready
+      - submitted
+  - key: owner
+    label: Owner
+rows:
+  - title: First paper
+    target: ""
+    status: idea
+    owner: ""

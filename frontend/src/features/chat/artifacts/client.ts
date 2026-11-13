@@ -42,6 +42,9 @@ export function makeArtifactClient(send: SendResourceReq, channelId: string) {
     create: (path: string, content: string, idempotencyKey: string) => send("channel.artifacts.create", {
       channel_id: channelId, path, content, idempotency_key: idempotencyKey,
     }) as Promise<{ artifact: Artifact }>,
+    rename: (artifactId: string, newPath: string, version: number) => send("channel.artifacts.rename", {
+      channel_id: channelId, artifact_id: artifactId, new_path: newPath, if_version: version,
+    }) as Promise<{ artifact: Artifact }>,
     get: (artifactId: string) => send("channel.artifacts.get", {
       channel_id: channelId, artifact_id: artifactId,
     }) as Promise<Artifact>,

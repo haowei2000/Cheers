@@ -1,6 +1,6 @@
 {
   "id": "cheers-team-ops",
-  "version": 1,
+  "version": 2,
   "title": "Team ops",
   "items": [
     {
@@ -8,43 +8,7 @@
       "title": "Servers",
       "source": {
         "kind": "fs",
-        "path": "ops/servers.yaml"
-      },
-      "view": "builtin:table",
-      "config": {
-        "columns": [
-          {
-            "key": "name",
-            "label": "Server"
-          },
-          {
-            "key": "env",
-            "label": "Env",
-            "options": [
-              "prod",
-              "staging",
-              "dev"
-            ]
-          },
-          {
-            "key": "status",
-            "label": "Status",
-            "options": [
-              "up",
-              "degraded",
-              "down",
-              "retired"
-            ]
-          },
-          {
-            "key": "owner",
-            "label": "Owner"
-          },
-          {
-            "key": "notes",
-            "label": "Notes"
-          }
-        ]
+        "path": "ops/servers.table.yaml"
       }
     },
     {
@@ -52,35 +16,7 @@
       "title": "Assets",
       "source": {
         "kind": "fs",
-        "path": "ops/assets.yaml"
-      },
-      "view": "builtin:table",
-      "config": {
-        "columns": [
-          {
-            "key": "asset",
-            "label": "Asset"
-          },
-          {
-            "key": "kind",
-            "label": "Kind",
-            "options": [
-              "domain",
-              "cert",
-              "license",
-              "account",
-              "hardware"
-            ]
-          },
-          {
-            "key": "owner",
-            "label": "Owner"
-          },
-          {
-            "key": "renewal",
-            "label": "Renews"
-          }
-        ]
+        "path": "ops/assets.table.yaml"
       }
     },
     {
@@ -88,30 +24,91 @@
       "title": "On-call",
       "source": {
         "kind": "fs",
-        "path": "ops/oncall.yaml"
-      },
-      "view": "builtin:kanban"
+        "path": "ops/oncall.kanban.yaml"
+      }
     }
   ],
   "seed": {
-    "ops/servers.yaml": [
-      {
-        "name": "example-box",
-        "env": "prod",
-        "status": "up",
-        "owner": "",
-        "notes": "replace me"
-      }
-    ],
-    "ops/assets.yaml": [
-      {
-        "asset": "example.com",
-        "kind": "domain",
-        "owner": "",
-        "renewal": ""
-      }
-    ],
-    "ops/oncall.yaml": {
+    "ops/servers.table.yaml": {
+      "columns": [
+        {
+          "key": "name",
+          "label": "Server"
+        },
+        {
+          "key": "env",
+          "label": "Env",
+          "options": [
+            "prod",
+            "staging",
+            "dev"
+          ]
+        },
+        {
+          "key": "status",
+          "label": "Status",
+          "options": [
+            "up",
+            "degraded",
+            "down",
+            "retired"
+          ]
+        },
+        {
+          "key": "owner",
+          "label": "Owner"
+        },
+        {
+          "key": "notes",
+          "label": "Notes"
+        }
+      ],
+      "rows": [
+        {
+          "name": "example-box",
+          "env": "prod",
+          "status": "up",
+          "owner": "",
+          "notes": "replace me"
+        }
+      ]
+    },
+    "ops/assets.table.yaml": {
+      "columns": [
+        {
+          "key": "asset",
+          "label": "Asset"
+        },
+        {
+          "key": "kind",
+          "label": "Kind",
+          "options": [
+            "domain",
+            "cert",
+            "license",
+            "account",
+            "hardware"
+          ]
+        },
+        {
+          "key": "owner",
+          "label": "Owner"
+        },
+        {
+          "key": "renewal",
+          "label": "Renews"
+        }
+      ],
+      "rows": [
+        {
+          "asset": "example.com",
+          "kind": "domain",
+          "owner": "",
+          "renewal": ""
+        }
+      ]
+    },
+    "ops/oncall.kanban.yaml": {
       "columns": [
         {
           "name": "Watch",
@@ -127,7 +124,7 @@
         }
       ]
     },
-    "prompts/ops-conventions.md": "# Ops conventions\n\n- Inventory lives in `ops/servers.yaml`; keep `status` honest — alerts read it.\n- Anything with an expiry (domains, certs, licenses) goes in `ops/assets.yaml` with `renewal` as YYYY-MM-DD.\n- Incidents move across `ops/oncall.yaml`: Watch → Investigating → Resolved.\n"
+    "prompts/ops-conventions.md": "# Ops conventions\n\n- Inventory lives in `ops/servers.table.yaml`; keep `status` honest — alerts read it.\n- Anything with an expiry (domains, certs, licenses) goes in `ops/assets.table.yaml` with `renewal` as YYYY-MM-DD.\n- Incidents move across `ops/oncall.kanban.yaml`: Watch → Investigating → Resolved.\n"
   },
   "pin": [
     "prompts/ops-conventions.md"

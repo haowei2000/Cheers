@@ -1,5 +1,21 @@
-- risk: Submission date has not been verified
-  impact: high
-  owner: ""
-  mitigation: Check the venue's official call for papers
-  reviewDate: ""
+columns:
+  - key: risk
+    label: Risk
+  - key: impact
+    label: Impact
+    options:
+      - low
+      - medium
+      - high
+  - key: owner
+    label: Owner
+  - key: mitigation
+    label: Mitigation
+  - key: reviewDate
+    label: Review date
+rows:
+  - risk: Submission date has not been verified
+    impact: high
+    owner: ""
+    mitigation: Check the venue's official call for papers
+    reviewDate: ""

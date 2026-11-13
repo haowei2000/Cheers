@@ -24,6 +24,7 @@ COPY frontend/ ./
 # The App Store policy/support pages live in website/ as their single source of
 # truth. Vite copies the selected public pages into dist during closeBundle.
 COPY website/ ../website/
+COPY shared/ ../shared/
 COPY design-system/a2ui-catalog.json ../design-system/a2ui-catalog.json
 RUN pnpm run build
 
