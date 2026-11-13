@@ -1,6 +1,7 @@
 # Flat artifacts
 
-Status: proposed (2026-11-13). Nothing below is implemented yet. When a phase lands,
+Status: approved for P0 → F1 (2026-11-13). D1–D4 confirmed by the owner.
+Implementation gates remain open. When a phase lands,
 mark its gate and say what verified it.
 
 This plan replaces the layered model in [UNIFIED_ARTIFACTS.md](UNIFIED_ARTIFACTS.md),
@@ -21,7 +22,7 @@ stay; the two providers and the view picker go.
 4. **Extensions own a suffix.** An installed renderer extension claims a compound
    suffix (for example `.gantt.yaml`) and is the only view for it.
 
-Open, to confirm before the phase that needs it:
+D1–D4 confirmed on 2026-11-13; D5 remains open until phase R:
 
 - **D1 (F1).** Existing files are not renamed automatically; the library lists files
   whose view changed and offers a rename.
@@ -103,7 +104,7 @@ until F6. Sizes are rough: S ≈ a day, M ≈ a few days, L ≈ a week or more.
 - Open PRs for `feat/artifact-delete-rename` (artifact_delete/rename, module cleanup)
   and `design/flat-artifacts` (this document). Delete the merged
   `fix/artifact-deliver-integrity` branch.
-- Confirm D1–D4.
+- [x] Confirm D1–D4 (owner approved P0 → F1 on 2026-11-13).
 - Optional, separate PR: the ~15 `clone` on `Copy` clippy findings and two unused
   `.sqlx` files. Not blocking: CI runs clippy with `|| true`.
 
