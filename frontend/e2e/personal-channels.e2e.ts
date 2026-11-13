@@ -152,7 +152,7 @@ test("an ordinary user registers, signs in, and creates persisted Public and Pri
   await expect(page.getByRole("separator", { name: "Direct messages", exact: true })).toBeVisible();
   await expect(page).toHaveURL((url) => url.pathname === `/chat/${personal.workspace_id}`);
 
-  const channels = [];
+  const channels: Awaited<ReturnType<typeof createAndReloadChannel>>[] = [];
   for (const visibility of ["public", "private"] as const) {
     channels.push(await test.step(`Create and reload a ${visibility} Personal channel`, () =>
       createAndReloadChannel(page, personal.workspace_id, visibility)));
