@@ -1,252 +1,44 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Shield } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
-import { ItemSection, OperationsItem } from "@/components/ui/item";
-import toast from "react-hot-toast";
+import { Bell } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { UnreadBadge } from "@/components/ui/unread-badge";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useActivityUiStore } from "@/stores/activityUiStore";
-import { useChatStore } from "@/stores/chatStore";
-import { useAuthStore } from "@/stores/authStore";
-import { listWorkspaces } from "@/api/workspaces";
-import { listChannels, listDms } from "@/api/channels";
-import {
-  acceptNotification,
-  declineNotification,
-  notificationKey,
-  type NotificationItem,
-} from "@/api/notifications";
-import { getAllFleet, getFleetBadge, type FleetApproval } from "@/api/fleet";
-import { PermissionCard } from "@/features/chat/PermissionCard";
-import type { Message } from "@/types";
+import { getFleetBadge } from "@/api/fleet";
+import { ActivityInbox } from "@/features/activity/ActivityInbox";
 
-async function refreshLists() {
-  try {
-    useChatStore.getState().setWorkspaces(await listWorkspaces());
-  } catch {
-    /* non-fatal */
-  }
-  const { selectedWorkspaceId, personalWorkspace, setChannels } =
-    useChatStore.getState();
-  if (!selectedWorkspaceId) return;
-  const isPersonal =
-    !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
-  try {
-    const [chs, dms] = await Promise.all([
-      listChannels(selectedWorkspaceId),
-      isPersonal ? listDms().catch(() => []) : Promise.resolve([]),
-    ]);
-    setChannels([...chs, ...dms]);
-  } catch {
-    /* non-fatal */
-  }
-}
-
-function label(n: NotificationItem): string {
-  return n.kind === "channel_invite" || n.kind === "bot_channel_invite"
-    ? `#${n.title}`
-    : n.title;
-}
-
-function kindLabel(n: NotificationItem): string {
-  switch (n.kind) {
-    case "friend_request":
-      return "Friend request";
-    case "channel_invite":
-      return "Channel invite";
-    case "bot_channel_invite":
-      return "Bot approval";
-    default:
-      return "Workspace invite";
-  }
-}
-
-function toCardMessage(a: FleetApproval, botName?: string): Message {
-  return {
-    msg_id: a.message_id,
-    sender_id: a.bot_id,
-    sender_type: "bot",
-    sender_name: botName,
-    content: "",
-    created_at: a.created_at,
-    msg_type: "permission",
-    content_data: a.content_data,
-  };
-}
-
-/** Activity rail control — approvals + invites (`docs/arch/CLIENT_NAV_IA.md`). */
+/** The rail owns its badge; inbox content and actions are shared with /activity. */
 export function ActivityCenter() {
   const navigate = useNavigate();
-  const open = useActivityUiStore((s) => s.open);
-  const setOpen = useActivityUiStore((s) => s.setOpen);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [approvals, setApprovals] = useState<FleetApproval[]>([]);
+  const open = useActivityUiStore(state => state.open);
+  const setOpen = useActivityUiStore(state => state.setOpen);
   const [approvalCount, setApprovalCount] = useState(0);
-  const items = useNotificationStore((s) => s.items);
-  const remove = useNotificationStore((s) => s.remove);
-  const user = useAuthStore((s) => s.user);
-  const inviteCount = items.length;
-  const badge = inviteCount + approvalCount;
-
-  const refreshBadge = () =>
-    getFleetBadge()
-      .then((r) => setApprovalCount(r.count))
-      .catch(() => {});
-
-  function approvalResolved(messageId: string) {
-    setApprovals((current) => current.filter((a) => a.message_id !== messageId));
-    setApprovalCount((current) => Math.max(0, current - 1));
-    void refreshBadge();
-  }
-
-  useEffect(() => {
-    let alive = true;
-    const loadBadge = () =>
-      getFleetBadge()
-        .then((r) => alive && setApprovalCount(r.count))
-        .catch(() => {});
-    loadBadge();
-    const t = window.setInterval(loadBadge, 60_000);
-    window.addEventListener("focus", loadBadge);
-    return () => {
-      alive = false;
-      window.clearInterval(t);
-      window.removeEventListener("focus", loadBadge);
-    };
+  const inviteCount = useNotificationStore(state => state.items.length);
+  const refreshBadge = useCallback(async () => {
+    try { const value = await getFleetBadge(); setApprovalCount(value.count); }
+    catch { /* The inbox exposes load failures; retain the last known badge. */ }
   }, []);
-
-  // Activity and its badge share the same user-level, global Fleet source.
   useEffect(() => {
-    if (!open) return;
     let alive = true;
-    void getAllFleet().then((result) => {
-      if (!alive) return;
-      setApprovals(result.approvals.filter((approval) => approval.actionable));
-      void refreshBadge();
-    }).catch(() => {});
-    return () => {
-      alive = false;
+    const load = async () => {
+      try { const value = await getFleetBadge(); if (alive) setApprovalCount(value.count); }
+      catch { /* Retain the badge during transient polling failures. */ }
     };
-  }, [open]);
-
-  async function act(n: NotificationItem, accept: boolean) {
-    const key = notificationKey(n);
-    setBusy(key);
-    try {
-      if (accept) await acceptNotification(n);
-      else await declineNotification(n);
-      remove(n);
-      toast.success(accept ? `Joined ${label(n)}` : "Declined");
-      if (accept) await refreshLists();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Operation failed");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const empty = approvals.length === 0 && items.length === 0;
-
-  return (
-    <>
-      <IconButton
-        onClick={() => navigate("/activity")}
-        label="Activity — approvals & invites"
-        className="relative text-content-primary"
-      >
-        <Bell className="w-4 h-4" />
-        {badge > 0 && (
-          <UnreadBadge
-            contentSize="small"
-            tone={approvalCount > 0 ? "approval" : "unread"}
-            className="absolute -right-0.5 -top-0.5"
-            title={`${badge} pending activities`}
-            aria-label={`${badge} pending activities`}
-          >
-            {badge}
-          </UnreadBadge>
-        )}
-      </IconButton>
-
-      {open && (
-        <Dialog title="Activity" onClose={() => setOpen(false)}>
-          <div className="space-y-5">
-            {empty && (
-              <EmptyState
-                icon={Bell}
-                title="Nothing waiting"
-                hint="Approvals, friend requests, and invitations appear here."
-              />
-            )}
-
-            {approvals.length > 0 && (
-              <ItemSection
-                presentationLevel="medium"
-                controlSize="regular"
-                label={<span className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-warning-400" />
-                  Needs approval
-                </span>}
-              >
-                  {approvals.map((a) => (
-                    <div role="listitem" key={a.message_id} className="space-y-1 py-1">
-                      <p className="text-minimal uppercase tracking-label text-content-muted mb-1">
-                        {a.channel_name.trim() ? `#${a.channel_name}` : "Direct message"}
-                      </p>
-                      <PermissionCard
-                        message={toCardMessage(a)}
-                        channelId={a.channel_id}
-                        currentUserId={user?.user_id}
-                        approverOverride
-                        onResolved={() => approvalResolved(a.message_id)}
-                      />
-                    </div>
-                  ))}
-              </ItemSection>
-            )}
-
-            {items.length > 0 && (
-              <ItemSection label="Invites" presentationLevel="medium" controlSize="regular">
-                {items.map((n) => {
-                  const key = notificationKey(n);
-                  return (
-                    <OperationsItem
-                      key={key}
-                      title={`${kindLabel(n)} · ${label(n)}${n.actor_name ? ` · from ${n.actor_name}` : ""}`}
-                      status={<span className="max-w-36 truncate text-compact text-content-muted" title={[n.role ? `Role ${n.role}` : "Needs your response", n.bot_name, n.requested_cwd].filter(Boolean).join(" · ")}>
-                        {n.role ? `Role ${n.role}` : "Response required"}
-                      </span>}
-                      actions={<><Button action="accept"
-                        controlSize="compact"
-                        loading={busy === key}
-                        onClick={() => void act(n, true)}
-                      >
-                        Accept
-                      </Button>
-                      <Button action="decline"
-                        variant="ghost"
-                        controlSize="compact"
-                        disabled={busy === key}
-                        onClick={() => void act(n, false)}
-                      >
-                        Decline
-                      </Button>
-                      </>}
-                    />
-                  );
-                })}
-              </ItemSection>
-            )}
-          </div>
-        </Dialog>
-      )}
-    </>
-  );
+    void load();
+    const timer = window.setInterval(() => void load(), 60_000);
+    window.addEventListener("focus", load);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", load); };
+  }, []);
+  const badge = inviteCount + approvalCount;
+  return <>
+    <IconButton onClick={() => navigate("/activity")} label="Activity — approvals & invites" className="relative text-content-primary">
+      <Bell className="h-4 w-4" />
+      {badge > 0 && <UnreadBadge contentSize="small" tone={approvalCount > 0 ? "approval" : "unread"} className="absolute -right-0.5 -top-0.5" title={`${badge} pending activities`} aria-label={`${badge} pending activities`}>{badge}</UnreadBadge>}
+    </IconButton>
+    {open && <Dialog title="Activity" onClose={() => setOpen(false)}><ActivityInbox onResolved={() => void refreshBadge()} /></Dialog>}
+  </>;
 }
-
-/** @deprecated Use ActivityCenter — kept for any stray imports. */
+/** @deprecated Use ActivityCenter. */
 export const NotificationCenter = ActivityCenter;

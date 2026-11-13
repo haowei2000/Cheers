@@ -825,7 +825,7 @@ function RegularMessageItem({
       ];
     }
     const next: ContextAction[] = [
-      { id: "reply", label: "Reply", icon: <MessageCircleMore className="h-4 w-4" />, run: () => actions.onReply(message) },
+      { id: "reply", label: "Reply", icon: <MessageCircleMore className="h-4 w-4" />, restoreFocus: false, run: () => actions.onReply(message) },
       { id: "copy", label: "Copy message", icon: <Copy className="h-4 w-4" />, run: () => copyMessage(message) },
       { id: "forward", label: "Forward", icon: <Forward className="h-4 w-4" />, run: () => actions.onForward(message) },
       { id: "select", label: "Select message", icon: <CheckSquare className="h-4 w-4" />, run: () => actions.onToggleSelect(message) },
@@ -887,6 +887,7 @@ function RegularMessageItem({
             ? [{
                 id: "reply-with-quote",
                 label: "Reply with quote",
+                restoreFocus: false,
                 icon: <TextQuote className="h-4 w-4" />,
                 run: () => actions.onReplyWithQuote?.(message, selection.text),
               } satisfies ContextAction]

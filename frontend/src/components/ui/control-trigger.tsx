@@ -46,12 +46,13 @@ export const ControlTrigger = forwardRef<HTMLButtonElement, ControlTriggerProps>
         aria-expanded={ariaExpanded}
         aria-pressed={isTab || ariaExpanded !== undefined ? undefined : selected || undefined}
         className={cn(
-          "inline-flex min-w-0 items-center justify-center gap-1 overflow-hidden font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex min-w-0 items-center gap-1 overflow-hidden font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50",
+          square ? "justify-center" : "justify-start text-left",
           controlTextClasses[size],
           square ? controlSquareClasses[size] : controlHeightClasses[size],
           !square && (
             controlWidth === "fill"
-              ? "w-full"
+              ? "w-full px-3"
               : controlWidth === "content"
                 ? "w-auto max-w-full px-2"
                 : "w-24 max-w-full px-3"
@@ -59,10 +60,10 @@ export const ControlTrigger = forwardRef<HTMLButtonElement, ControlTriggerProps>
           isTab
             ? tabClasses(selected)
             : cn(
-                "rounded-sm transition-all duration-150",
+                "rounded-sm",
                 selected
                   ? selectedClasses("ring")
-                  : "bg-transparent ring-1 ring-inset ring-transparent text-content-primary hover:bg-control/40 hover:ring-zinc-300/80 dark:hover:ring-zinc-700/80 hover:text-content-strong active:bg-control-active",
+                  : "bg-transparent text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
               ),
           className,
         )}

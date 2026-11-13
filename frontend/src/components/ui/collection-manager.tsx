@@ -6,7 +6,7 @@ import { ButtonGroup } from "./button-group";
 import { ActionButton } from "./action-button";
 import { controlMinHeightClasses } from "./control-size";
 import { SearchInput } from "./search-input";
-import { ItemList, OperationsItem } from "./item";
+import { ItemList } from "./item";
 import type { PresentationLevel } from "./presentation";
 import type { ControlSize } from "./control-size";
 import { HelpLabel } from "./help-text";
@@ -17,6 +17,10 @@ export type CollectionMode =
   | { kind: "add" }
   | { kind: "edit"; id: string }
   | { kind: "delete"; id: string };
+
+type CollectionAddProps =
+  | { showAdd: false; addLabel?: string; onAdd?: () => void }
+  | { showAdd?: true; addLabel: string; onAdd: () => void };
 
 /**
  * Canonical shell for searchable, editable collections such as Claims, Links,
@@ -50,10 +54,7 @@ export function CollectionManager({
   query: string;
   onQueryChange: (query: string) => void;
   searchPlaceholder?: string;
-  addLabel: string;
-  onAdd: () => void;
   addDisabled?: boolean;
-  showAdd?: boolean;
   showSearch?: boolean;
   /** Hide the collection's local toolbar when its title and actions live in panel chrome. */
   showHeader?: boolean;
@@ -64,7 +65,7 @@ export function CollectionManager({
   controlSize?: ControlSize;
   children: ReactNode;
   className?: string;
-}) {
+} & CollectionAddProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const isSearching = showSearch && (searchOpen || Boolean(query));
   const closeSearch = () => {
@@ -262,31 +263,29 @@ export function CollectionConfirmationItem({
 }: {
   title: ReactNode;
   description: ReactNode;
-  action: "delete" | "remove" | "revoke" | "unlink";
+  action: "delete" | "remove" | "revoke" | "unlink" | "block";
   prompt: ReactNode;
   onCancel: () => void;
   onConfirm: () => void;
   busy?: boolean;
 }) {
   return (
-    <OperationsItem
-      presentationLevel="medium"
-      controlSize="regular"
-      leading={<AlertTriangle className="h-4 w-4 text-danger-400" />}
-      title={title}
-      subtitle={description}
-      criticalStatus={(
-        <span className="font-utility text-compact font-semibold uppercase tracking-label text-danger-400">
-          {prompt}
-        </span>
-      )}
-      actions={(
-        <>
+    <div role="listitem" data-collection-mode="delete" className="rounded-sm bg-control px-3 py-2">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-danger-400" aria-hidden="true" />
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="break-words font-utility text-regular font-semibold text-content-primary">{title}</p>
+          <p className="font-utility text-compact text-danger-400">{prompt}</p>
+          <p className="break-words font-utility text-compact text-content-secondary">{description}</p>
+        </div>
+      </div>
+      <div className="mt-2 flex justify-end">
+        <ButtonGroup label="Confirmation actions" controlSize="compact">
           <ActionButton action="cancel" context="confirmation" controlSize="compact" onClick={onCancel} disabled={busy} />
           <ActionButton action={action} context="confirmation" controlSize="compact" loading={busy} onClick={onConfirm} />
-        </>
-      )}
-    />
+        </ButtonGroup>
+      </div>
+    </div>
   );
 }
 

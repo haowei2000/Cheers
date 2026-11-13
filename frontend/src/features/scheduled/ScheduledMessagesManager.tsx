@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CalendarClock, CirclePause, CirclePlay, History, Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -135,6 +135,8 @@ export function ScheduledMessagesManager() {
   const [personalTemplates, setPersonalTemplates] = useState<TemplateOption[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
+  const initialForm = useRef<FormState | null>(null);
+  function openForm(value: FormState) { initialForm.current = value; setForm(value); }
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [history, setHistory] = useState<{ task: ScheduledMessage; runs: ScheduledMessageRun[] } | null>(null);
@@ -231,7 +233,7 @@ export function ScheduledMessagesManager() {
         label="Tasks"
         presentationLevel="max"
         controlSize="regular"
-        action={<UiButton action="create" content="iconText" variant="plain" controlSize="compact" onClick={() => setForm(emptyForm())}><Plus className="h-3.5 w-3.5" /></UiButton>}
+        action={<UiButton action="create" content="iconText" variant="plain" controlSize="compact" onClick={() => openForm(emptyForm())}><Plus className="h-3.5 w-3.5" /></UiButton>}
       >
         {tasks.map((task) => deletingId === task.id ? (
           <CollectionConfirmationItem
@@ -258,7 +260,7 @@ export function ScheduledMessagesManager() {
               <InlineEditActions
                 label={task.title}
                 editing={false}
-                onEdit={() => setForm(editForm(task))}
+                onEdit={() => openForm(editForm(task))}
                 onSave={() => undefined}
                 onCancel={() => undefined}
               />
@@ -270,7 +272,7 @@ export function ScheduledMessagesManager() {
       </ItemSection>
       </SettingsCard>
 
-      {form && <Dialog title={form.id ? "Edit scheduled task" : "New scheduled task"} onClose={() => setForm(null)} maxWidth="max-w-lg">
+      {form && <Dialog title={form.id ? "Edit scheduled task" : "New scheduled task"} onClose={() => setForm(null)} dirty={JSON.stringify(form) !== JSON.stringify(initialForm.current)} busy={saving} maxWidth="max-w-lg">
         <div className="space-y-4 p-5">
           {!form.id && templates.length > 0 && <Field label="Extension template">
             <UiSelect defaultValue="" onChange={(event) => {

@@ -571,6 +571,38 @@ export function ItemGallery() {
         </div>
       </section>
 
+      <section aria-labelledby="button-alignment-register" className="mt-4 border-y border-zinc-700 py-3">
+        <div className="mb-3 border-b border-zinc-600 pb-2">
+          <h2 id="button-alignment-register" className="font-display text-comfortable font-semibold tracking-display">Button Alignment</h2>
+          <p className="font-utility text-compact text-content-muted">Left-aligned labels · grouped icon and text · flat surfaces</p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {controlSizes.map(size => (
+            <ControlSizeProvider key={size} size={size}>
+              <div role="group" aria-label={`${size} button alignment`} className="min-w-0 space-y-3">
+                <p className="font-utility text-compact text-content-muted">{size}</p>
+                {(["primary", "secondary", "ghost", "danger"] as const).map(variant => (
+                  <fieldset key={variant} className="min-w-0 space-y-1">
+                    <legend className="font-utility text-compact text-content-muted">{variant}</legend>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button action="cancel" variant={variant} />
+                      <Button action="create" content="iconText" variant={variant}><Plus className="h-4 w-4" /></Button>
+                      <Button action="close" content="icon" variant={variant} aria-label={`${size} ${variant} close`}><X className="h-4 w-4" /></Button>
+                    </div>
+                  </fieldset>
+                ))}
+                <Button action="create" content="iconText" controlWidth="fill" variant="secondary"><Plus className="h-4 w-4" /></Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button action="save" content="iconText" variant="secondary" loading><Plus className="h-4 w-4" /></Button>
+                  <Button action="save" content="iconText" variant="secondary" disabled><Plus className="h-4 w-4" /></Button>
+                </div>
+                <Button action="save" content="iconText" variant="secondary" selected><Plus className="h-4 w-4" /></Button>
+              </div>
+            </ControlSizeProvider>
+          ))}
+        </div>
+      </section>
+
       <section aria-labelledby="action-register" className="mt-4 border-y border-zinc-700 py-3">
         <div className="mb-3 border-b border-zinc-600 pb-2">
           <p className="font-utility text-compact font-semibold uppercase tracking-overline text-content-muted">Action + context contract</p>

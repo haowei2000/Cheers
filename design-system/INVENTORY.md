@@ -10,6 +10,7 @@ primitive but remaining local recipes, **legacy** is still feature-owned, and
 | Family | Web | iOS | Android | Current drift / next migration |
 |---|---|---|---|---|
 | Presentation environment | shared | shared | shared | Explicit level overrides responsive/container defaults on every client. |
+| Web route page shell | shared | unavailable | unavailable | Settings, Fleet, Friends, Permissions, and Activity use PageLayout; specialized chat/workbench layouts remain separate. AsyncContent owns loading/error/retry boundaries. |
 | Button | partial | partial | partial | Web `IconButton` is shared; direct controls are ratcheted and should migrate by semantic action. Native system buttons remain appropriate but feature-owned visual wrappers must move into primitives. |
 | Choice / segmented selection | shared | partial | unavailable | Web `ChoiceGroup` owns radio semantics, roving focus, icon-text anatomy, and selected state. iOS currently uses platform toggles in channel creation but has no registered shared choice anatomy. |
 | Input / search | shared | partial | partial | Web `Input`, `InputWithLeadingIcon`, and `SearchInput` own field anatomy, icon geometry, focus/error state, and mobile sizing. Native clients retain platform fields but still lack shared error/help slots. |
