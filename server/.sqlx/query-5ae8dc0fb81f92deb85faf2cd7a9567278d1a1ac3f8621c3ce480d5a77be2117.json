@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE artifact_revisions SET verification_error='expired before copy' WHERE artifact_id=$1 AND version=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ae8dc0fb81f92deb85faf2cd7a9567278d1a1ac3f8621c3ce480d5a77be2117"
+}

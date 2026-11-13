@@ -182,7 +182,7 @@ jobs:
         run: cargo test --features integration
 
       # These need object storage, so `cargo test` above skips them.
-      - name: Agent upload tests (real RustFS)
+      - name: Agent upload and artifact storage tests (real RustFS)
         env:
           INTEGRATION_S3_ENDPOINT: http://localhost:9000
           INTEGRATION_S3_ACCESS_KEY: cheers-ci-access-key
@@ -190,7 +190,7 @@ jobs:
           S3_BUCKET: cheers-ci
         run: |
           timeout 60 bash -c 'until curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/rustfs/health/live | grep -Eq "200|403"; do sleep 1; done'
-          cargo test --features integration --test agent_uploads -- --ignored
+          cargo test --features integration --test agent_uploads --test artifact_store -- --ignored
 
       # Known warnings remain informational, but reuse the artifacts above.
       - name: Clippy (non-blocking)

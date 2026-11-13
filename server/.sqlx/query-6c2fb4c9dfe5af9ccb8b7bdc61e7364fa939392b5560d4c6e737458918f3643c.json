@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM artifact_object_jobs WHERE artifact_id=$1 AND version=$2 AND lease_token=$3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c2fb4c9dfe5af9ccb8b7bdc61e7364fa939392b5560d4c6e737458918f3643c"
+}

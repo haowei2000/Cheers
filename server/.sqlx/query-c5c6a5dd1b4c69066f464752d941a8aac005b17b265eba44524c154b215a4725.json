@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.object_key,r.object_bucket,r.sha256,r.snapshot,a.source_kind FROM artifact_revisions r JOIN artifacts a USING(artifact_id) WHERE r.artifact_id=$1 AND r.version=$2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "object_bucket",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "sha256",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "snapshot",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "source_kind",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "c5c6a5dd1b4c69066f464752d941a8aac005b17b265eba44524c154b215a4725"
+}
