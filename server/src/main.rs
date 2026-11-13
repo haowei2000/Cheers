@@ -155,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
     }
     // Let the resource layer (channel.files.read / inbox_open) read chat-file bytes.
     server::resource::files::init_s3(s3.clone(), config.s3_bucket.clone());
+    server::resource::artifact_store::spawn(db.clone(), s3.clone(), config.s3_bucket.clone());
     server::resource::uploads::init(
         config.agent_upload_url_base(),
         config.agent_upload_max_mib as i64 * 1024 * 1024,

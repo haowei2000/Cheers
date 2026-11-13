@@ -8,7 +8,7 @@ Implementation progress (2026-11-13):
 
 - P0: plan PR #876 and artifact delete/rename PR #877 merged. The latter includes
   the Bugbot fix restricting ID mutations to exactly one file; all required CI passed.
-- F1: implemented on `feat/artifact-view-by-name`, pending PR/CI and deployment.
+- F1: merged in PR #878; all nine CI checks passed. Deployment remains separate.
   Shared suffix selection, source/error fallback, extension suffix declarations,
   library rename diagnostics, and bot guidance are implemented. New official seeds
   use suffix names; table columns live beside `rows` in the file. Existing files are
@@ -26,7 +26,8 @@ Implementation progress (2026-11-13):
   (two focused regression tests passed).
 - Still open: release deployment and ordered connector release/daemon upgrade.
   The real-stack test uses an isolated local gateway, not the deployed kind cluster.
-  F2–F6 and native-client F5 work have not started.
+  F2 is implemented on `feat/artifact-dual-write`, with validation in progress.
+  F3–F6 and native-client F5 work have not started.
 
 This plan replaces the layered model in [UNIFIED_ARTIFACTS.md](UNIFIED_ARTIFACTS.md),
 where an artifact is a catalog row over two content providers. The catalog identity,
@@ -158,11 +159,32 @@ until F6. Sizes are rough: S ≈ a day, M ≈ a few days, L ≈ a week or more.
 
 ### F2. Dual write to object storage (M, gateway)
 
+Implementation choice: during expansion, dual write uses a transactional outbox.
+The existing provider transaction captures the revision and enqueues its copy in
+the same commit. The worker writes immutable version keys, reads them back to
+verify SHA-256, and conditionally publishes the head metadata only if that version
+is still current. This preserves successful provider writes during S3 outages;
+object metadata can temporarily lag. F4's object-first write contract remains the
+target once reads switch. F3, not this migration, enqueues historical revisions.
+
+`ARTIFACT_OBJECT_MIRROR=false` stops copying, verification and orphan cleanup;
+intents continue accumulating and resume when re-enabled. Inspect pending work in
+`artifact_object_jobs` (`attempts`, `next_attempt_at`, `last_error`). A two-minute
+lease and a one-minute copy timeout allow crashed attempts to be reclaimed.
+`artifact_revisions.verification_error` reports missing or mismatched copies.
+The worker preserves attachment buckets/keys; only newly generated text keys
+enter the cleanup ledger. Cleanup requires no remaining revision or job and a
+one-day grace period, so this does not apply revision retention.
+New Bot deliveries have no expiry; human uploads keep their seven-day TTL.
+Existing attachment expiry is unchanged. A queued attachment that expires before
+copying records `expired before copy` rather than retrying a deliberately removed
+object forever. Attachment keys never enter the text-object orphan ledger.
+
 - Migration: `artifacts` gains `object_key`, `sha256`, `legacy_id`;
   `artifact_revisions` gains `object_key`, `sha256`; `snapshot` becomes nullable.
 - `resource/artifact_store.rs`: `put` (object, then conditional row update), `read`
   (object if present, else the old provider), orphan sweep.
-- Every writer also writes the object: `fs.write/patch/edit/append`, the artifact
+- Every writer atomically queues the object's revision: `fs.write/patch/edit/append`, the artifact
   verbs, `channel.files.create`, uploads, and human uploads in `api/files.rs`.
   Attachments are already in S3, so they only record `object_key`.
 - Reads are unchanged. A background check compares object sha256 with the row and

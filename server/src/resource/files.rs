@@ -343,7 +343,7 @@ pub(super) struct DeliveredFile<'a> {
     pub size_bytes: i32,
 }
 
-/// Record a stored object as a channel attachment with a 7-day TTL. Its artifact comes from
+/// Bot deliveries do not expire; human deliveries retain their 7-day TTL. The artifact comes from
 /// the `file_records` trigger, so it commits with this row.
 pub(super) async fn record_delivered_file(
     tx: &mut sqlx::PgConnection,
@@ -360,7 +360,8 @@ pub(super) async fn record_delivered_file(
     .await
     .map_err(super::db_err("files.create: select channel workspace_id"))?;
 
-    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
+    let expires_at = (principal.principal_type == super::PrincipalType::User)
+        .then(|| chrono::Utc::now() + chrono::Duration::days(7));
     sqlx::query!(
         "INSERT INTO file_records
             (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,

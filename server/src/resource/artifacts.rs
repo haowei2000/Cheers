@@ -26,6 +26,18 @@ struct Artifact {
     #[allow(dead_code)]
     #[serde(skip)]
     source_fingerprint: String,
+    #[allow(dead_code)]
+    #[serde(skip)]
+    object_key: Option<String>,
+    #[allow(dead_code)]
+    #[serde(skip)]
+    object_bucket: Option<String>,
+    #[allow(dead_code)]
+    #[serde(skip)]
+    sha256: Option<String>,
+    #[allow(dead_code)]
+    #[serde(skip)]
+    legacy_id: Option<String>,
     internal: bool,
     created_by: Option<String>,
     created_at: DateTime<Utc>,
@@ -287,8 +299,13 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .fetch_one(db)
         .await
         .map_err(super::db_err("artifacts.read revision"))?;
-        let text = row
-            .snapshot
+        let snapshot = row.snapshot.ok_or_else(|| {
+            super::resource_error(
+                "E_STORAGE_UNAVAILABLE",
+                "revision provider snapshot is unavailable",
+            )
+        })?;
+        let text = snapshot
             .get("content")
             .and_then(Value::as_str)
             .unwrap_or("");
