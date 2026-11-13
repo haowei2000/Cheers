@@ -19,8 +19,13 @@ Implementation progress (2026-11-13):
   37 MCP tests, 256 connector tests (one ignored), and five SDK tests passed.
   Headless Chrome fixture checks cover all text views, malformed-source fallback,
   and library rename at 390/768/1280 widths in light/dark themes.
-- Still open: full live-stack acceptance against the rebuilt gateway and ordered
-  connector release/daemon upgrade. Fixture screenshots do not close that gate.
+- Real-stack validation: the rebuilt source gateway and isolated PostgreSQL passed
+  the browser registration/channel flow plus artifact creation over WebSocket,
+  library rename, and opening the renamed table. Four browser scenarios passed.
+  Extension file panels also obey suffixes and ignore manifest view/config overrides
+  (two focused regression tests passed).
+- Still open: release deployment and ordered connector release/daemon upgrade.
+  The real-stack test uses an isolated local gateway, not the deployed kind cluster.
   F2–F6 and native-client F5 work have not started.
 
 This plan replaces the layered model in [UNIFIED_ARTIFACTS.md](UNIFIED_ARTIFACTS.md),

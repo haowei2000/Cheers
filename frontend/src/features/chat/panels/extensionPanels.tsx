@@ -1,6 +1,7 @@
 import { LayoutGrid } from "lucide-react";
 import { AUTO_VIEW, builtinLensId } from "@/features/chat/workbench/manifest";
 import { getLens } from "@/features/chat/workbench/lens/registry";
+import { viewFor } from "@/features/chat/workbench/renderers/registry";
 import "@/features/chat/workbench/lens/builtins"; // side effect: register builtin lenses
 import type { ExtensionSummary } from "@/features/chat/workbench/extensions/api";
 import type { PanelContribution as ManifestPanel } from "@/features/chat/workbench/extensions/package";
@@ -30,9 +31,12 @@ export function registerExtensionPanels(extensions: ExtensionSummary[]): void {
   for (const extension of extensions) {
     for (const panel of extension.panels ?? []) {
       // `self:` views are personal-scope renderer code and do not resolve here.
-      const lensId = builtinLensId(panel.view ?? AUTO_VIEW);
+      const fileSource = panel.source.kind === "fs";
+      const lensId = panel.source.kind === "fs"
+        ? viewFor(panel.source.path)?.lensId
+        : builtinLensId(panel.view ?? AUTO_VIEW);
       const lens = lensId ? getLens(lensId) : undefined;
-      if (!lens) continue; // an unresolvable view renders nothing rather than throwing
+      if (!lens && !fileSource) continue;
       const source = sourceOf(panel);
       registerPanel(
         defineDataPanel({
@@ -41,9 +45,9 @@ export function registerExtensionPanels(extensions: ExtensionSummary[]): void {
           icon: LayoutGrid,
           source,
           render: (data) =>
-            lens.render({
+            lens ? lens.render({
               data,
-              config: panel.config,
+              config: fileSource ? undefined : panel.config,
               // The SOURCE decides, never the view — guardrail 3 in
               // docs/arch/PANEL_MODEL.md. `readOnly` removes the edit affordances
               // rather than leaving them inert: an Add row that silently does nothing
@@ -51,7 +55,7 @@ export function registerExtensionPanels(extensions: ExtensionSummary[]): void {
               // so onChange stays a no-op for now and the flag is what the user sees.
               readOnly: true,
               onChange: () => {},
-            }),
+            }) : <pre className="overflow-auto whitespace-pre-wrap p-2">{typeof data === "string" ? data : JSON.stringify(data, null, 2)}</pre>,
         })
       );
     }

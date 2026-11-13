@@ -27,9 +27,9 @@ loader, or navigation surface. Existing file access and revision checks apply.
    MCP `resources/read` also serves `cheers://help/interactive-ui`,
    `/catalog`, and `/example`. The canonical local catalog is
    `design-system/a2ui-catalog.json`.
-2. Use existing channel file tools (`fs.write`, or `fs.patch` for structured
-   changes) to persist a JSON/YAML document, for example `forms/report.a2ui.json`.
-3. Return `cheers:desk/forms/report.a2ui.json` in the reply. Call
+2. Use `artifact_create`, or `artifact_update`/`artifact_patch` for existing
+   artifacts, to persist a document such as `forms/report.a2ui.json`.
+3. Return the resulting `artifact.uri` (`cheers:artifact/<id>`) in the reply. Call
    `set_resource_cards` with the current reply's `msg_id` and existing v1
    `resource_ref` cards before finishing: partial replies stage `pending_cards`,
    and stream completion promotes them atomically into `cards`. Opening that card reaches Workbench and

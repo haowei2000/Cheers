@@ -23,8 +23,9 @@
    也可通过 MCP resources/read 读取
    `cheers://help/interactive-ui`、`/catalog`、`/example`。
    本地规范源文件是 `design-system/a2ui-catalog.json`。
-2. 用现有 `fs.write` 写入 `forms/report.a2ui.json`，结构化修改使用 `fs.patch`。
-3. 回复 `cheers:desk/forms/report.a2ui.json`。在完成前调用 `set_resource_cards`，
+2. 用 `artifact_create` 创建 `forms/report.a2ui.json`，已有文件使用
+   `artifact_update` 或 `artifact_patch` 修改。
+3. 回复返回的 `artifact.uri`（`cheers:artifact/<id>`）。在完成前调用 `set_resource_cards`，
    使用当前回复的 msg_id 和 v1 resource_ref。流式期间暂存 pending_cards，
    回复完成时原子发布为 cards，不需要另发一条重复消息。
    Desk 卡片在回复内显示 minimal 预览，小表单可直接填写和提交；Expand 在聊天里
