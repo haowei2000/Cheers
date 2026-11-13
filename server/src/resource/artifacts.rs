@@ -21,6 +21,11 @@ struct Artifact {
     version: i64,
     source_version: i64,
     source_status: String,
+    // Queries select `*`, so every catalog column needs a field; this one is
+    // the trigger's change detector and is not part of the response.
+    #[allow(dead_code)]
+    #[serde(skip)]
+    source_fingerprint: String,
     internal: bool,
     created_by: Option<String>,
     created_at: DateTime<Utc>,
@@ -29,18 +34,65 @@ struct Artifact {
     deleted_at: Option<DateTime<Utc>>,
 }
 
+/// Which provider holds the content. The catalog's CHECK constraint admits only these.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SourceKind {
+    Text,
+    Attachment,
+}
+
+impl SourceKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            SourceKind::Text => "text",
+            SourceKind::Attachment => "attachment",
+        }
+    }
+}
+
+/// Derived on every read, never stored: expiry depends on the current time.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Availability {
+    Ready,
+    Pending,
+    Expired,
+    Deleted,
+    Failed,
+}
+
+impl Availability {
+    fn as_str(self) -> &'static str {
+        match self {
+            Availability::Ready => "ready",
+            Availability::Pending => "pending",
+            Availability::Expired => "expired",
+            Availability::Deleted => "deleted",
+            Availability::Failed => "failed",
+        }
+    }
+}
+
 impl Artifact {
-    fn availability(&self) -> &'static str {
+    fn kind(&self) -> SourceKind {
+        if self.source_kind == SourceKind::Text.as_str() {
+            SourceKind::Text
+        } else {
+            SourceKind::Attachment
+        }
+    }
+
+    fn availability(&self) -> Availability {
         if self.deleted_at.is_some() {
-            "deleted"
+            Availability::Deleted
         } else if self.expires_at.is_some_and(|at| at <= Utc::now()) {
-            "expired"
+            Availability::Expired
         } else {
             match self.source_status.as_str() {
-                "ready" | "uploaded" | "converted" => "ready",
-                "failed" | "error" => "failed",
-                "expired" => "expired",
-                _ => "pending",
+                "ready" | "uploaded" | "converted" => Availability::Ready,
+                "failed" | "error" => Availability::Failed,
+                "expired" => Availability::Expired,
+                _ => Availability::Pending,
             }
         }
     }
@@ -71,7 +123,7 @@ async fn get(
     authorize_channel_read(db, principal, channel_id).await?;
     sqlx::query_as!(
         Artifact,
-        "SELECT artifact_id, channel_id, source_kind, source_id, title, path, content_type, size_bytes, version, source_version, source_status, internal, created_by, created_at, updated_at, expires_at, deleted_at FROM artifacts WHERE channel_id = $1 AND artifact_id = $2",
+        "SELECT * FROM artifacts WHERE channel_id = $1 AND artifact_id = $2",
         channel_id.to_string(),
         artifact_id.to_string()
     )
@@ -123,7 +175,7 @@ pub async fn handle_resolve(db: &PgPool, principal: &Principal, params: &Value) 
     match locator {
         Locator::Desk { path, .. } => for_path(&mut conn, channel_id, &path).await,
         Locator::Inbox { file_id } => {
-            for_source(&mut conn, channel_id, "attachment", &file_id).await
+            for_source(&mut conn, channel_id, SourceKind::Attachment, &file_id).await
         }
         _ => Err(super::resource_error(
             "INVALID_LOCATOR",
@@ -180,7 +232,7 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
         }
     };
     let mut rows = sqlx::query_as!(Artifact,
-        "SELECT a.artifact_id, a.channel_id, a.source_kind, a.source_id, a.title, a.path, a.content_type, a.size_bytes, a.version, a.source_version, a.source_status, a.internal, a.created_by, a.created_at, a.updated_at, a.expires_at, a.deleted_at FROM artifacts a WHERE a.channel_id = $1 AND a.deleted_at IS NULL
+        "SELECT a.* FROM artifacts a WHERE a.channel_id = $1 AND a.deleted_at IS NULL
          AND ($2 OR NOT a.internal)
          AND ($3::text IS NULL OR (a.created_at, a.artifact_id) <
               (SELECT c.created_at, c.artifact_id FROM artifacts c WHERE c.channel_id = $1 AND c.artifact_id = $3))
@@ -202,13 +254,13 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
 
 pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let artifact = get(db, principal, params).await?;
-    if artifact.availability() != "ready" {
+    if artifact.availability() != Availability::Ready {
         return Err(super::resource_error(
             "ARTIFACT_UNAVAILABLE",
-            format!("artifact is {}", artifact.availability()),
+            format!("artifact is {}", artifact.availability().as_str()),
         ));
     }
-    let mut content = if artifact.source_kind == "text" {
+    let mut content = if artifact.kind() == SourceKind::Text {
         // Read the captured revision, not the mutable path: rename/delete/recreate
         // cannot swap a different file into this stable identity between queries.
         let row = sqlx::query!(
@@ -227,6 +279,8 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         let service = crate::api::resources::service_id(db)
             .await
             .map_err(|e| super::resource_error("INTERNAL", e.to_string()))?;
+        // `uri` is the provider's resource URI, the same one fs.read returns for this file:
+        // editor sessions and interaction events match on it. `artifact.uri` is the link.
         json!({"content":text, "data":fs::parse_structured(artifact.path.as_deref().unwrap_or(""), text),
                "uri":cheers_interactive_core::global_uri::format(&service,"desk",&artifact.source_id,None),
                "kind":"text", "truncated":false})
@@ -256,6 +310,12 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     fs::write_with_idempotency(db, principal, &input, key).await
 }
 
+/// Binary content has no text provider: delivery stores an attachment, and the
+/// response carries the artifact the catalog trigger created in the same transaction.
+pub async fn handle_deliver(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    files::handle_create(db, principal, params).await
+}
+
 pub async fn handle_update(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     mutate(db, principal, params, false).await
 }
@@ -264,13 +324,19 @@ pub async fn handle_patch(db: &PgPool, principal: &Principal, params: &Value) ->
     mutate(db, principal, params, true).await
 }
 
-async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool) -> ResourceResult {
+/// An available text artifact at the caller's `if_version`. The provider rechecks
+/// both source identity and version under its row lock.
+async fn editable(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+) -> Result<Artifact, (String, String)> {
     let artifact = get(db, principal, params).await?;
     let expected = params
         .get("if_version")
         .and_then(Value::as_i64)
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "if_version is required"))?;
-    if artifact.availability() != "ready" || artifact.source_kind != "text" {
+    if artifact.availability() != Availability::Ready || artifact.kind() != SourceKind::Text {
         return Err(super::resource_error(
             "ARTIFACT_NOT_EDITABLE",
             "only available text artifacts can be edited",
@@ -282,7 +348,11 @@ async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool)
             format!("current artifact version is {}", artifact.version),
         ));
     }
-    // The provider rechecks both source identity and version under its row lock.
+    Ok(artifact)
+}
+
+async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool) -> ResourceResult {
+    let artifact = editable(db, principal, params).await?;
     // A concurrent rename or delete/recreate must not redirect this ID-based edit.
     let mut input = json!({"channel_id":artifact.channel_id, "path":artifact.path,
         "if_version":artifact.source_version, "expected_file_id":artifact.source_id});
@@ -298,13 +368,49 @@ async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool)
     }
 }
 
+/// Delete a text artifact. Attachments have no delete path yet; they expire.
+pub async fn handle_delete(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let artifact = editable(db, principal, params).await?;
+    fs::rm_file(
+        db,
+        principal,
+        &json!({"channel_id":artifact.channel_id, "path":artifact.path,
+            "expected_file_id":artifact.source_id, "if_version":artifact.source_version}),
+    )
+    .await?;
+    committed_artifact(db, principal, params).await
+}
+
+/// Move a text artifact to `new_path`. Its ID survives the move.
+pub async fn handle_rename(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let new_path = params
+        .get("new_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "new_path is required"))?;
+    let artifact = editable(db, principal, params).await?;
+    fs::mv_file(
+        db,
+        principal,
+        &json!({"channel_id":artifact.channel_id, "from":artifact.path, "to":new_path,
+            "expected_file_id":artifact.source_id, "if_version":artifact.source_version}),
+    )
+    .await?;
+    committed_artifact(db, principal, params).await
+}
+
+/// The provider committed; report the catalog row it produced, as create/update do.
+async fn committed_artifact(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let artifact = get(db, principal, params).await?;
+    Ok(json!({"channel_id": artifact.channel_id, "artifact": artifact.summary()}))
+}
+
 pub(super) async fn for_path(
     db: &mut sqlx::PgConnection,
     channel_id: Uuid,
     path: &str,
 ) -> ResourceResult {
     let artifact = sqlx::query_as!(Artifact,
-        "SELECT artifact_id, channel_id, source_kind, source_id, title, path, content_type, size_bytes, version, source_version, source_status, internal, created_by, created_at, updated_at, expires_at, deleted_at FROM artifacts WHERE channel_id = $1 AND source_kind = 'text' AND path = $2 AND deleted_at IS NULL",
+        "SELECT * FROM artifacts WHERE channel_id = $1 AND source_kind = 'text' AND path = $2 AND deleted_at IS NULL",
         channel_id.to_string(), path
     ).fetch_optional(db).await.map_err(super::db_err("artifacts.path"))?
         .ok_or_else(|| super::not_found("artifact"))?;
@@ -316,14 +422,14 @@ pub(super) async fn for_path(
 pub(super) async fn for_source(
     db: &mut sqlx::PgConnection,
     channel_id: Uuid,
-    source_kind: &str,
+    source_kind: SourceKind,
     source_id: &str,
 ) -> ResourceResult {
     let artifact = sqlx::query_as!(
         Artifact,
-        "SELECT artifact_id, channel_id, source_kind, source_id, title, path, content_type, size_bytes, version, source_version, source_status, internal, created_by, created_at, updated_at, expires_at, deleted_at FROM artifacts WHERE channel_id = $1 AND source_kind = $2 AND source_id = $3",
+        "SELECT * FROM artifacts WHERE channel_id = $1 AND source_kind = $2 AND source_id = $3",
         channel_id.to_string(),
-        source_kind,
+        source_kind.as_str(),
         source_id
     )
     .fetch_optional(db)

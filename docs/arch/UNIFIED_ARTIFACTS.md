@@ -76,8 +76,10 @@ extension allowlist. Rendering failures remain visible and source remains availa
 | Android | Resource request lifecycle and scope binding; unified paginated library, availability, inert source preview, message-reference routing and system file export implemented | Native visual/accessibility and end-to-end verification; editing and composer context capabilities remain unavailable |
 
 New MCP tools are `artifact_list`, `artifact_get`, `artifact_read`,
-`artifact_create`, `artifact_update`, `artifact_upload_prepare`, `artifact_upload_finish`
-and `artifact_deliver`. Gateway initialization
+`artifact_create`, `artifact_update`, `artifact_rename`, `artifact_delete`,
+`artifact_upload_prepare`, `artifact_upload_finish` and `artifact_deliver`. Rename and
+delete cover text artifacts only, share the `fs.mv`/`fs.rm` approval gate, and check
+source identity and version under the provider row lock. Gateway initialization
 instructions direct new outputs to these tools and canonical artifact links.
 `inbox_list`, `inbox_open` and `inbox_deliver` are callable compatibility bindings,
 omitted from `tools/list`; discovery is declared in the shared tool registry and

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS count\n         FROM context_files\n         WHERE channel_id = $1\n           AND (path = $2 OR ($3 AND left(path, char_length($2) + 1) = $2 || '/'))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ce3cab3c7264e061903e427e0f93ad8aaa2477fec79ba384839bb4fcedef76b6"
+}

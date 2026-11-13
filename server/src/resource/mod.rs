@@ -243,7 +243,9 @@ pub async fn dispatch(
         "channel.artifacts.create" => artifacts::handle_create(db, &principal, &params).await,
         "channel.artifacts.update" => artifacts::handle_update(db, &principal, &params).await,
         "channel.artifacts.patch" => artifacts::handle_patch(db, &principal, &params).await,
-        "channel.artifacts.deliver" => files::handle_create(db, &principal, &params).await,
+        "channel.artifacts.delete" => artifacts::handle_delete(db, &principal, &params).await,
+        "channel.artifacts.rename" => artifacts::handle_rename(db, &principal, &params).await,
+        "channel.artifacts.deliver" => artifacts::handle_deliver(db, &principal, &params).await,
         "channel.artifacts.upload_prepare" => {
             uploads::handle_prepare(db, &principal, &params).await
         }
@@ -857,8 +859,16 @@ mod registry_contract {
     }
 
     #[test]
-    fn the_destructive_gate_still_covers_the_fs_mutations() {
+    fn the_destructive_gate_covers_every_delete_and_move() {
         let gated: Vec<_> = cheers_mcp_server::registry::destructive_resources().collect();
-        assert_eq!(gated, vec!["fs.rm", "fs.mv"]);
+        assert_eq!(
+            gated,
+            vec![
+                "channel.artifacts.delete",
+                "channel.artifacts.rename",
+                "fs.rm",
+                "fs.mv"
+            ]
+        );
     }
 }

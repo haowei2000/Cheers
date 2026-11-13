@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT artifact_id, channel_id, source_kind, source_id, title, path, content_type, size_bytes, version, source_version, source_status, internal, created_by, created_at, updated_at, expires_at, deleted_at FROM artifacts WHERE channel_id = $1 AND artifact_id = $2",
+  "query": "SELECT * FROM artifacts WHERE channel_id = $1 AND artifact_id = $2",
   "describe": {
     "columns": [
       {
@@ -60,31 +60,36 @@
       },
       {
         "ordinal": 11,
+        "name": "source_fingerprint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
         "name": "internal",
         "type_info": "Bool"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_by",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "expires_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -108,6 +113,7 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false,
@@ -115,5 +121,5 @@
       true
     ]
   },
-  "hash": "fb7524cae3b436e50727eced6ca46d1d0dd38baadc341d8053ebac1cd0faaf53"
+  "hash": "75359aebef7647e584c1c8c9c43394747673e3c2d7d0d5126a0c833dbee99c48"
 }

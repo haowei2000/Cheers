@@ -8,8 +8,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{
-    authorize_channel_read, authorize_channel_write, idempotency::IdempotencyKey, not_found,
-    Principal, ResourceResult,
+    artifacts::SourceKind, authorize_channel_read, authorize_channel_write,
+    idempotency::IdempotencyKey, not_found, Principal, ResourceResult,
 };
 
 /// Largest chat-file content returned inline as decoded text (matches the workspace cap).
@@ -383,7 +383,8 @@ pub(super) async fn record_delivered_file(
     .map_err(super::db_err("files.create: insert file record"))?;
 
     let artifact =
-        super::artifacts::for_source(&mut *tx, channel_id, "attachment", file.file_id).await?;
+        super::artifacts::for_source(&mut *tx, channel_id, SourceKind::Attachment, file.file_id)
+            .await?;
     Ok(json!({
         "artifact": artifact,
         "channel_id": channel_id,
@@ -396,11 +397,12 @@ pub(super) async fn record_delivered_file(
     }))
 }
 
-/// channel.files.create (Inbox `inbox_deliver`): store an agent-delivered file as a channel
-/// attachment. Mirrors `api::files::upload_file`: decode the inline base64, `put_object` to S3
-/// (via the `init_s3` handle), and INSERT a `file_records` row as `status='uploaded'` with a
-/// 7-day TTL — so the delivered file behaves exactly like a human upload (listable via inbox_list,
-/// readable via inbox_open, downloadable over REST).
+/// Attachment provider write behind `channel.artifacts.deliver` (`artifact_deliver`) and its
+/// legacy alias `channel.files.create` (`inbox_deliver`). Mirrors `api::files::upload_file`:
+/// decode the inline base64, `put_object` to S3 (via the `init_s3` handle), and INSERT a
+/// `file_records` row as `status='uploaded'` with a 7-day TTL, so the delivered file behaves
+/// exactly like a human upload. Both verbs share one idempotency scope, so a retry through
+/// either name replays the same delivery.
 pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
     let idempotency = IdempotencyKey::from_params(principal, "channel.files.create", params)?;

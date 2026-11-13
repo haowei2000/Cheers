@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT path, content FROM context_files WHERE channel_id=$1 AND is_dir=FALSE\n         AND (path=$2 OR left(path, char_length($2)+1)=$2 || '/') FOR UPDATE",
+  "query": "SELECT path, content FROM context_files WHERE channel_id=$1 AND is_dir=FALSE\n         AND (path=$2 OR ($3 AND left(path, char_length($2)+1)=$2 || '/')) FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -17,7 +17,8 @@
     "parameters": {
       "Left": [
         "Text",
-        "Text"
+        "Text",
+        "Bool"
       ]
     },
     "nullable": [
@@ -25,5 +26,5 @@
       false
     ]
   },
-  "hash": "bc8b4d14a61a56c1268daac0c4b2aa81887f4389d2d654b1867b964b75ddcddf"
+  "hash": "18e5e32445a70c856c16f835c7383b6d895fc76261dc21ad51cf79bcd52841a4"
 }

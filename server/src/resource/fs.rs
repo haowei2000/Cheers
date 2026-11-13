@@ -1035,6 +1035,20 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
 
 /// `fs.rm` — remove a file or, with `recursive=true`, a subtree.
 pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    rm_scoped(db, principal, params, true).await
+}
+
+/// Artifact operations address exactly one file; path prefixes are not ownership.
+pub(super) async fn rm_file(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    rm_scoped(db, principal, params, false).await
+}
+
+async fn rm_scoped(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+    subtree: bool,
+) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
     check_fs_write(db, principal, channel_id).await?;
     let recursive = params
@@ -1043,14 +1057,16 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
         .unwrap_or(false);
 
     let mut tx = db.begin().await.map_err(super::db_err("fs.rm: begin tx"))?;
+    lock_expected_file(&mut tx, channel_id, &path, params).await?;
     let rows = sqlx::query!(
         "SELECT path
          FROM context_files
          WHERE channel_id = $1
-           AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')
+           AND (path = $2 OR ($3 AND left(path, char_length($2) + 1) = $2 || '/'))
          FOR UPDATE",
         channel_id.to_string(),
         &path,
+        subtree,
     )
     .fetch_all(&mut *tx)
     .await
@@ -1068,9 +1084,10 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
     let deleted = sqlx::query!(
         "DELETE FROM context_files
          WHERE channel_id = $1
-           AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+           AND (path = $2 OR ($3 AND left(path, char_length($2) + 1) = $2 || '/'))",
         channel_id.to_string(),
         &path,
+        subtree,
     )
     .execute(&mut *tx)
     .await
@@ -1099,6 +1116,20 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
 
 /// `fs.mv` — move/rename one node and all descendants.
 pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    mv_scoped(db, principal, params, true).await
+}
+
+/// Artifact operations address exactly one file; path prefixes are not ownership.
+pub(super) async fn mv_file(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    mv_scoped(db, principal, params, false).await
+}
+
+async fn mv_scoped(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+    subtree: bool,
+) -> ResourceResult {
     let channel_id = super::channel_id_or_bad_request(params)?;
     check_fs_write(db, principal, channel_id).await?;
     let from = normalize_path(
@@ -1118,7 +1149,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
             "channel_seq": null,
         }));
     }
-    if to.starts_with(&format!("{from}/")) {
+    if subtree && to.starts_with(&format!("{from}/")) {
         return Err(super::resource_error(
             "INVALID_PARAMS",
             "can not move a path into its own subtree",
@@ -1126,13 +1157,15 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     }
 
     let mut tx = db.begin().await.map_err(super::db_err("fs.mv: begin tx"))?;
+    lock_expected_file(&mut tx, channel_id, &from, params).await?;
     let source_count: i64 = sqlx::query!(
         "SELECT COUNT(*) AS count
          FROM context_files
          WHERE channel_id = $1
-           AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+           AND (path = $2 OR ($3 AND left(path, char_length($2) + 1) = $2 || '/'))",
         channel_id.to_string(),
         &from,
+        subtree,
     )
     .fetch_one(&mut *tx)
     .await
@@ -1148,9 +1181,10 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
         "SELECT COUNT(*) AS count
          FROM context_files
          WHERE channel_id = $1
-           AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+           AND (path = $2 OR ($3 AND left(path, char_length($2) + 1) = $2 || '/'))",
         channel_id.to_string(),
         &to,
+        subtree,
     )
     .fetch_one(&mut *tx)
     .await
@@ -1169,9 +1203,10 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     // untyped file must not bypass the same contract checked by writes/patches.
     let source_files = sqlx::query!(
         "SELECT path, content FROM context_files WHERE channel_id=$1 AND is_dir=FALSE
-         AND (path=$2 OR left(path, char_length($2)+1)=$2 || '/') FOR UPDATE",
+         AND (path=$2 OR ($3 AND left(path, char_length($2)+1)=$2 || '/')) FOR UPDATE",
         channel_id.to_string(),
         &from,
+        subtree,
     )
     .fetch_all(&mut *tx)
     .await
@@ -1190,10 +1225,11 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
              version = version + 1,
              updated_at = NOW()
          WHERE channel_id = $1
-           AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
+           AND (path = $2 OR ($4 AND left(path, char_length($2) + 1) = $2 || '/'))",
         channel_id.to_string(),
         &from,
         &to,
+        subtree,
     )
     .execute(&mut *tx)
     .await
@@ -1222,6 +1258,40 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Artifact verbs address a file by identity, then act through its path. With
+/// `expected_file_id`, lock the row and refuse a path that now holds a different
+/// file (rename, delete/recreate) or, with `if_version`, a newer version.
+async fn lock_expected_file(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    channel_id: Uuid,
+    path: &str,
+    params: &Value,
+) -> Result<(), (String, String)> {
+    let Some(expected_id) = params.get("expected_file_id").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let row = sqlx::query!(
+        "SELECT file_id, version FROM context_files
+         WHERE channel_id = $1 AND path = $2 AND NOT is_dir FOR UPDATE",
+        channel_id.to_string(),
+        path,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(super::db_err("fs: lock expected file"))?
+    .ok_or_else(|| super::not_found("file"))?;
+    if row.file_id != expected_id {
+        return Err(super::resource_error(
+            "VERSION_CONFLICT",
+            "artifact moved or was replaced; reload before editing",
+        ));
+    }
+    match params.get("if_version").and_then(Value::as_i64) {
+        Some(expected) if expected != row.version => Err(version_conflict(row.version)),
+        _ => Ok(()),
+    }
+}
 
 async fn check_fs_write(
     db: &PgPool,

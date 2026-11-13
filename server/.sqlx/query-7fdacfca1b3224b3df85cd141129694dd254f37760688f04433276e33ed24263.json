@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.artifact_id, a.channel_id, a.source_kind, a.source_id, a.title, a.path, a.content_type, a.size_bytes, a.version, a.source_version, a.source_status, a.internal, a.created_by, a.created_at, a.updated_at, a.expires_at, a.deleted_at FROM artifacts a WHERE a.channel_id = $1 AND a.deleted_at IS NULL\n         AND ($2 OR NOT a.internal)\n         AND ($3::text IS NULL OR (a.created_at, a.artifact_id) <\n              (SELECT c.created_at, c.artifact_id FROM artifacts c WHERE c.channel_id = $1 AND c.artifact_id = $3))\n         AND (NOT $5 OR a.path ~* '\\.canvas\\.(ya?ml|json)$')\n         ORDER BY a.created_at DESC, a.artifact_id DESC LIMIT $4",
+  "query": "SELECT a.* FROM artifacts a WHERE a.channel_id = $1 AND a.deleted_at IS NULL\n         AND ($2 OR NOT a.internal)\n         AND ($3::text IS NULL OR (a.created_at, a.artifact_id) <\n              (SELECT c.created_at, c.artifact_id FROM artifacts c WHERE c.channel_id = $1 AND c.artifact_id = $3))\n         AND (NOT $5 OR a.path ~* '\\.canvas\\.(ya?ml|json)$')\n         ORDER BY a.created_at DESC, a.artifact_id DESC LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -60,31 +60,36 @@
       },
       {
         "ordinal": 11,
+        "name": "source_fingerprint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
         "name": "internal",
         "type_info": "Bool"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_by",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "expires_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -111,6 +116,7 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false,
@@ -118,5 +124,5 @@
       true
     ]
   },
-  "hash": "c068a9d80ba29b4dbc064f26114e52fb2f8f18c9262ae3bdd3eac0e73d6b91b9"
+  "hash": "7fdacfca1b3224b3df85cd141129694dd254f37760688f04433276e33ed24263"
 }
