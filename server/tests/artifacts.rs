@@ -437,3 +437,84 @@ async fn artifact_list_filters_canvases_across_pages(db: PgPool) {
         "INVALID_PARAMS"
     );
 }
+
+#[sqlx::test]
+async fn artifact_rename_keeps_identity_and_refuses_stale_or_taken_paths(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    let first = create(&db, ch, &p, "notes.md").await;
+    let id = &first["artifact_id"];
+    create(&db, ch, &p, "taken.md").await;
+    let rename = |to: &str, version: i64| json!({"channel_id":ch,"artifact_id":id,"new_path":to,"if_version":version});
+
+    let taken = artifacts::handle_rename(&db, &p, &rename("taken.md", 1))
+        .await
+        .unwrap_err();
+    assert_eq!(taken.0, "PATH_CONFLICT");
+    let renamed = artifacts::handle_rename(&db, &p, &rename("docs/notes.md", 1))
+        .await
+        .unwrap();
+    assert_eq!(renamed["artifact"]["artifact_id"], *id);
+    assert_eq!(renamed["artifact"]["path"], "docs/notes.md");
+    assert_eq!(renamed["artifact"]["uri"], first["uri"]);
+    assert_eq!(renamed["artifact"]["version"], 2);
+    let stale = artifacts::handle_rename(&db, &p, &rename("again.md", 1))
+        .await
+        .unwrap_err();
+    assert_eq!(stale.0, "VERSION_CONFLICT");
+
+    // The provider lock checks identity and version, not only the catalog read before it.
+    for (file_id, version) in [
+        (json!("different-file"), 2),
+        (first["source_id"].clone(), 1),
+    ] {
+        let wrong = fs::handle_mv(
+            &db,
+            &p,
+            &json!({"channel_id":ch,"from":"docs/notes.md","to":"moved.md",
+                "expected_file_id":file_id,"if_version":version}),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(wrong.0, "VERSION_CONFLICT");
+    }
+}
+
+#[sqlx::test]
+async fn artifact_delete_leaves_a_tombstone_and_refuses_stale_versions(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    let first = create(&db, ch, &p, "draft.md").await;
+    let id = &first["artifact_id"];
+    let delete = |version: i64| json!({"channel_id":ch,"artifact_id":id,"if_version":version});
+
+    let stale = artifacts::handle_delete(&db, &p, &delete(0))
+        .await
+        .unwrap_err();
+    assert_eq!(stale.0, "VERSION_CONFLICT");
+    let deleted = artifacts::handle_delete(&db, &p, &delete(1)).await.unwrap();
+    assert_eq!(deleted["artifact"]["artifact_id"], *id);
+    assert_eq!(deleted["artifact"]["availability"], "deleted");
+    let again = artifacts::handle_delete(&db, &p, &delete(2))
+        .await
+        .unwrap_err();
+    assert_eq!(again.0, "ARTIFACT_NOT_EDITABLE");
+
+    // A recreated file at the same path is a different artifact; an ID-based delete
+    // aimed at the old one must not remove it.
+    let other = create(&db, ch, &p, "draft.md").await;
+    let wrong = fs::handle_rm(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"path":"draft.md","expected_file_id":first["source_id"]}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(wrong.0, "VERSION_CONFLICT");
+    let survivor = artifacts::handle_get(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"artifact_id":other["artifact_id"]}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(survivor["availability"], "ready");
+}

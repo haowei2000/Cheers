@@ -1043,6 +1043,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
         .unwrap_or(false);
 
     let mut tx = db.begin().await.map_err(super::db_err("fs.rm: begin tx"))?;
+    lock_expected_file(&mut tx, channel_id, &path, params).await?;
     let rows = sqlx::query!(
         "SELECT path
          FROM context_files
@@ -1126,6 +1127,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     }
 
     let mut tx = db.begin().await.map_err(super::db_err("fs.mv: begin tx"))?;
+    lock_expected_file(&mut tx, channel_id, &from, params).await?;
     let source_count: i64 = sqlx::query!(
         "SELECT COUNT(*) AS count
          FROM context_files
@@ -1222,6 +1224,40 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Artifact verbs address a file by identity, then act through its path. With
+/// `expected_file_id`, lock the row and refuse a path that now holds a different
+/// file (rename, delete/recreate) or, with `if_version`, a newer version.
+async fn lock_expected_file(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    channel_id: Uuid,
+    path: &str,
+    params: &Value,
+) -> Result<(), (String, String)> {
+    let Some(expected_id) = params.get("expected_file_id").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let row = sqlx::query!(
+        "SELECT file_id, version FROM context_files
+         WHERE channel_id = $1 AND path = $2 AND NOT is_dir FOR UPDATE",
+        channel_id.to_string(),
+        path,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(super::db_err("fs: lock expected file"))?
+    .ok_or_else(|| super::not_found("file"))?;
+    if row.file_id != expected_id {
+        return Err(super::resource_error(
+            "VERSION_CONFLICT",
+            "artifact moved or was replaced; reload before editing",
+        ));
+    }
+    match params.get("if_version").and_then(Value::as_i64) {
+        Some(expected) if expected != row.version => Err(version_conflict(row.version)),
+        _ => Ok(()),
+    }
+}
 
 async fn check_fs_write(
     db: &PgPool,

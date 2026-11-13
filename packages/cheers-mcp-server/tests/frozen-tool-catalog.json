@@ -491,6 +491,84 @@
   {
     "_meta": {
       "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Delete a text artifact by stable ID. if_version is the artifact version returned by artifact_get/read; a stale version fails. artifact_get still returns it, marked deleted. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "if_version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "channel_id",
+        "artifact_id",
+        "if_version"
+      ],
+      "type": "object"
+    },
+    "name": "artifact_delete",
+    "title": "Delete an artifact"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
+        "cheers:workspace:write"
+      ]
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Move a text artifact to new_path. Its ID and links keep working. if_version is the artifact version returned by artifact_get/read; a stale version fails, and an existing new_path is never overwritten. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "if_version": {
+          "type": "integer"
+        },
+        "new_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel_id",
+        "artifact_id",
+        "new_path",
+        "if_version"
+      ],
+      "type": "object"
+    },
+    "name": "artifact_rename",
+    "title": "Rename an artifact"
+  },
+  {
+    "_meta": {
+      "io.cheers/requiredScopes": [
         "cheers:files:write"
       ]
     },
@@ -715,7 +793,7 @@
       "destructiveHint": false,
       "readOnlyHint": false
     },
-    "description": "Ask the person whose task this is to approve one destructive call (desk_rm, desk_mv) with these exact arguments. Waits for their answer (up to 10 minutes) and returns decision approved, denied or expired, plus approval_id to pass to that call.",
+    "description": "Ask the person whose task this is to approve one destructive call (artifact_delete, artifact_rename, desk_rm, desk_mv) with these exact arguments. Waits for their answer (up to 10 minutes) and returns decision approved, denied or expired, plus approval_id to pass to that call.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {

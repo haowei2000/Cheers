@@ -324,7 +324,13 @@ pub async fn handle_patch(db: &PgPool, principal: &Principal, params: &Value) ->
     mutate(db, principal, params, true).await
 }
 
-async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool) -> ResourceResult {
+/// An available text artifact at the caller's `if_version`. The provider rechecks
+/// both source identity and version under its row lock.
+async fn editable(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+) -> Result<Artifact, (String, String)> {
     let artifact = get(db, principal, params).await?;
     let expected = params
         .get("if_version")
@@ -342,7 +348,11 @@ async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool)
             format!("current artifact version is {}", artifact.version),
         ));
     }
-    // The provider rechecks both source identity and version under its row lock.
+    Ok(artifact)
+}
+
+async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool) -> ResourceResult {
+    let artifact = editable(db, principal, params).await?;
     // A concurrent rename or delete/recreate must not redirect this ID-based edit.
     let mut input = json!({"channel_id":artifact.channel_id, "path":artifact.path,
         "if_version":artifact.source_version, "expected_file_id":artifact.source_id});
@@ -356,6 +366,42 @@ async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool)
             .ok_or_else(|| super::resource_error("INVALID_PARAMS", "content is required"))?);
         fs::handle_write(db, principal, &input).await
     }
+}
+
+/// Delete a text artifact. Attachments have no delete path yet; they expire.
+pub async fn handle_delete(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let artifact = editable(db, principal, params).await?;
+    fs::handle_rm(
+        db,
+        principal,
+        &json!({"channel_id":artifact.channel_id, "path":artifact.path,
+            "expected_file_id":artifact.source_id, "if_version":artifact.source_version}),
+    )
+    .await?;
+    committed_artifact(db, principal, params).await
+}
+
+/// Move a text artifact to `new_path`. Its ID survives the move.
+pub async fn handle_rename(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let new_path = params
+        .get("new_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "new_path is required"))?;
+    let artifact = editable(db, principal, params).await?;
+    fs::handle_mv(
+        db,
+        principal,
+        &json!({"channel_id":artifact.channel_id, "from":artifact.path, "to":new_path,
+            "expected_file_id":artifact.source_id, "if_version":artifact.source_version}),
+    )
+    .await?;
+    committed_artifact(db, principal, params).await
+}
+
+/// The provider committed; report the catalog row it produced, as create/update do.
+async fn committed_artifact(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let artifact = get(db, principal, params).await?;
+    Ok(json!({"channel_id": artifact.channel_id, "artifact": artifact.summary()}))
 }
 
 pub(super) async fn for_path(

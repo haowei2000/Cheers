@@ -412,6 +412,33 @@ pub fn catalog() -> &'static [ResourceSpec] {
                 SCOPE_WORKSPACE_WRITE,
                 &[Param::req("channel_id", ParamKind::String), Param::req("artifact_id", ParamKind::String), Param::req("content", ParamKind::String), Param::req("if_version", ParamKind::Integer)]),
         ),
+        destructive(
+            "channel.artifacts.delete",
+            Some(ToolBinding {
+                discoverable: true,
+                name: "artifact_delete",
+                title: "Delete an artifact",
+                description: "Delete a text artifact by stable ID. if_version is the artifact version returned by artifact_get/read; a stale version fails. artifact_get still returns it, marked deleted. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
+                scope: SCOPE_WORKSPACE_WRITE,
+                read_only: false,
+                destructive_hint: true,
+                params: &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::req("artifact_id", ParamKind::String),
+                    Param::req("if_version", ParamKind::Integer),
+                    Param::opt("approval_id", ParamKind::String),
+                ],
+                constants: &[],
+                shaping: Shaping::None,
+            }),
+        ),
+        destructive(
+            "channel.artifacts.rename",
+            write_tool("artifact_rename", "Rename an artifact",
+                "Move a text artifact to new_path. Its ID and links keep working. if_version is the artifact version returned by artifact_get/read; a stale version fails, and an existing new_path is never overwritten. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
+                SCOPE_WORKSPACE_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("artifact_id", ParamKind::String), Param::req("new_path", ParamKind::String), Param::req("if_version", ParamKind::Integer), Param::opt("approval_id", ParamKind::String)]),
+        ),
         db(
             "channel.artifacts.deliver",
             write_tool("artifact_deliver", "Deliver an artifact file",
@@ -489,7 +516,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             tool: write_tool(
                 "request_approval",
                 "Ask for approval",
-                "Ask the person whose task this is to approve one destructive call (desk_rm, desk_mv) with these exact arguments. Waits for their answer (up to 10 minutes) and returns decision approved, denied or expired, plus approval_id to pass to that call.",
+                "Ask the person whose task this is to approve one destructive call (artifact_delete, artifact_rename, desk_rm, desk_mv) with these exact arguments. Waits for their answer (up to 10 minutes) and returns decision approved, denied or expired, plus approval_id to pass to that call.",
                 SCOPE_WORKSPACE_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
@@ -828,9 +855,17 @@ mod tests {
     }
 
     #[test]
-    fn only_fs_mutations_are_destructive() {
+    fn only_delete_and_move_are_destructive() {
         let names: Vec<_> = destructive_resources().collect();
-        assert_eq!(names, vec!["fs.rm", "fs.mv"]);
+        assert_eq!(
+            names,
+            vec![
+                "channel.artifacts.delete",
+                "channel.artifacts.rename",
+                "fs.rm",
+                "fs.mv"
+            ]
+        );
     }
 
     #[test]
