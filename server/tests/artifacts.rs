@@ -518,3 +518,75 @@ async fn artifact_delete_leaves_a_tombstone_and_refuses_stale_versions(db: PgPoo
     .unwrap();
     assert_eq!(survivor["availability"], "ready");
 }
+
+#[sqlx::test]
+async fn artifact_mutations_only_touch_the_named_file(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    let parent = create(&db, ch, &p, "notes.md").await;
+    let child = create(&db, ch, &p, "notes.md/child.txt").await;
+    let destination_child = create(&db, ch, &p, "renamed.md/other.txt").await;
+    let renamed = artifacts::handle_rename(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "artifact_id":parent["artifact_id"],
+            "new_path":"renamed.md", "if_version":1,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(renamed["artifact"]["path"], "renamed.md");
+    assert_eq!(renamed["artifact"]["version"], 2);
+    artifacts::handle_delete(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "artifact_id":parent["artifact_id"], "if_version":2,
+        }),
+    )
+    .await
+    .unwrap();
+    for untouched in [&child, &destination_child] {
+        let current = artifacts::handle_get(
+            &db,
+            &p,
+            &json!({
+                "channel_id":ch, "artifact_id":untouched["artifact_id"],
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(&current, untouched);
+    }
+    // Legacy folder operations must retain subtree behavior.
+    let moved = fs::handle_mv(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "from":"notes.md", "to":"archive",
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(moved["moved"], 1);
+    let moved_child = artifacts::handle_get(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "artifact_id":child["artifact_id"],
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(moved_child["path"], "archive/child.txt");
+    let deleted = fs::handle_rm(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "path":"archive", "recursive":true,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(deleted["deleted"], 1);
+}

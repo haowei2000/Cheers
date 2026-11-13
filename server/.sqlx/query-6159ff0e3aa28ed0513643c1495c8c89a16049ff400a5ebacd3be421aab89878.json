@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE context_files\n         SET path = CASE\n                 WHEN path = $2 THEN $3\n                 ELSE $3 || substring(path from char_length($2) + 1)\n             END,\n             version = version + 1,\n             updated_at = NOW()\n         WHERE channel_id = $1\n           AND (path = $2 OR ($4 AND left(path, char_length($2) + 1) = $2 || '/'))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6159ff0e3aa28ed0513643c1495c8c89a16049ff400a5ebacd3be421aab89878"
+}

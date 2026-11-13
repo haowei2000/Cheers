@@ -371,7 +371,7 @@ async fn mutate(db: &PgPool, principal: &Principal, params: &Value, patch: bool)
 /// Delete a text artifact. Attachments have no delete path yet; they expire.
 pub async fn handle_delete(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let artifact = editable(db, principal, params).await?;
-    fs::handle_rm(
+    fs::rm_file(
         db,
         principal,
         &json!({"channel_id":artifact.channel_id, "path":artifact.path,
@@ -388,7 +388,7 @@ pub async fn handle_rename(db: &PgPool, principal: &Principal, params: &Value) -
         .and_then(Value::as_str)
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "new_path is required"))?;
     let artifact = editable(db, principal, params).await?;
-    fs::handle_mv(
+    fs::mv_file(
         db,
         principal,
         &json!({"channel_id":artifact.channel_id, "from":artifact.path, "to":new_path,
