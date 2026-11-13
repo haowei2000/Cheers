@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sqlx::{FromRow, PgPool};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[async_trait]
@@ -47,7 +47,6 @@ pub fn sha256(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-#[derive(FromRow)]
 struct Job {
     artifact_id: String,
     version: i64,
@@ -81,8 +80,7 @@ async fn copy_revision(
             "artifacts/{}/{}/{}-{}",
             job.channel_id, job.artifact_id, job.version, hash
         );
-        sqlx::query("INSERT INTO artifact_object_uploads(object_bucket,object_key,artifact_id,version) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
-            .bind(bucket).bind(&key).bind(&job.artifact_id).bind(job.version).execute(db).await?;
+        sqlx::query!("INSERT INTO artifact_object_uploads(object_bucket,object_key,artifact_id,version) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING", bucket, &key, &job.artifact_id, job.version).execute(db).await?;
         store
             .put(bucket, &key, "text/plain; charset=utf-8", bytes)
             .await?;
@@ -125,17 +123,16 @@ pub async fn mirror_one(
     bucket: &str,
 ) -> anyhow::Result<bool> {
     let token = Uuid::new_v4().to_string();
-    let job = sqlx::query_as::<_, Job>(
-        "WITH candidate AS (
+    let job = sqlx::query_as!(Job,
+        r#"WITH candidate AS (
            SELECT artifact_id,version FROM artifact_object_jobs
            WHERE next_attempt_at <= NOW() AND (lease_until IS NULL OR lease_until < NOW())
            ORDER BY next_attempt_at,artifact_id,version FOR UPDATE SKIP LOCKED LIMIT 1
          ), claimed AS (
            UPDATE artifact_object_jobs j SET lease_token=$1,lease_until=NOW()+INTERVAL '2 minutes',attempts=attempts+1
            FROM candidate c WHERE (j.artifact_id,j.version)=(c.artifact_id,c.version) RETURNING j.artifact_id,j.version
-         ) SELECT c.artifact_id,c.version,a.channel_id,a.source_kind,r.snapshot FROM claimed c
-           JOIN artifacts a USING(artifact_id) JOIN artifact_revisions r ON r.artifact_id=c.artifact_id AND r.version=c.version")
-        .bind(&token).fetch_optional(db).await?;
+         ) SELECT c.artifact_id AS "artifact_id!",c.version AS "version!",a.channel_id,a.source_kind,r.snapshot FROM claimed c
+           JOIN artifacts a USING(artifact_id) JOIN artifact_revisions r ON r.artifact_id=c.artifact_id AND r.version=c.version"#, &token).fetch_optional(db).await?;
     let Some(job) = job else {
         return Ok(false);
     };
@@ -149,11 +146,9 @@ pub async fn mirror_one(
             .is_some_and(|time| time <= Utc::now());
     if expired {
         let mut tx = db.begin().await?;
-        let owned = sqlx::query("DELETE FROM artifact_object_jobs WHERE artifact_id=$1 AND version=$2 AND lease_token=$3")
-            .bind(&job.artifact_id).bind(job.version).bind(&token).execute(&mut *tx).await?.rows_affected();
+        let owned = sqlx::query!("DELETE FROM artifact_object_jobs WHERE artifact_id=$1 AND version=$2 AND lease_token=$3", &job.artifact_id, job.version, &token).execute(&mut *tx).await?.rows_affected();
         if owned == 1 {
-            sqlx::query("UPDATE artifact_revisions SET verification_error='expired before copy' WHERE artifact_id=$1 AND version=$2")
-                .bind(&job.artifact_id).bind(job.version).execute(&mut *tx).await?;
+            sqlx::query!("UPDATE artifact_revisions SET verification_error='expired before copy' WHERE artifact_id=$1 AND version=$2", &job.artifact_id, job.version).execute(&mut *tx).await?;
         }
         tx.commit().await?;
         return Ok(true);
@@ -173,15 +168,15 @@ pub async fn mirror_one(
             } else {
                 "object mirror failed; retry scheduled"
             };
-            sqlx::query(
+            sqlx::query!(
                 "UPDATE artifact_object_jobs SET lease_token=NULL,lease_until=NULL,last_error=$4,
                 next_attempt_at=NOW()+make_interval(secs => LEAST(attempts,60)*10)
                 WHERE artifact_id=$1 AND version=$2 AND lease_token=$3",
+                &job.artifact_id,
+                job.version,
+                &token,
+                reason
             )
-            .bind(&job.artifact_id)
-            .bind(job.version)
-            .bind(&token)
-            .bind(reason)
             .execute(db)
             .await?;
             tracing::warn!(artifact_id=%job.artifact_id,version=job.version,reason,"artifact object mirror retry");
@@ -190,20 +185,18 @@ pub async fn mirror_one(
     };
     let mut tx = db.begin().await?;
     // Deleting a provider/channel or a newer lease may have invalidated this claim.
-    let owned = sqlx::query(
+    let owned = sqlx::query!(
         "DELETE FROM artifact_object_jobs WHERE artifact_id=$1 AND version=$2 AND lease_token=$3",
+        &job.artifact_id,
+        job.version,
+        &token
     )
-    .bind(&job.artifact_id)
-    .bind(job.version)
-    .bind(&token)
     .execute(&mut *tx)
     .await?
     .rows_affected();
     if owned == 1 {
-        sqlx::query("UPDATE artifact_revisions SET object_key=$3,object_bucket=$4,sha256=$5,verified_at=NOW(),verification_error=NULL WHERE artifact_id=$1 AND version=$2")
-            .bind(&job.artifact_id).bind(job.version).bind(&stored.key).bind(&stored.bucket).bind(&stored.hash).execute(&mut *tx).await?;
-        sqlx::query("UPDATE artifacts SET object_key=$3,object_bucket=$4,sha256=$5,legacy_id=source_id WHERE artifact_id=$1 AND version=$2")
-            .bind(&job.artifact_id).bind(job.version).bind(&stored.key).bind(&stored.bucket).bind(&stored.hash).execute(&mut *tx).await?;
+        sqlx::query!("UPDATE artifact_revisions SET object_key=$3,object_bucket=$4,sha256=$5,verified_at=NOW(),verification_error=NULL WHERE artifact_id=$1 AND version=$2", &job.artifact_id, job.version, &stored.key, &stored.bucket, &stored.hash).execute(&mut *tx).await?;
+        sqlx::query!("UPDATE artifacts SET object_key=$3,object_bucket=$4,sha256=$5,legacy_id=source_id WHERE artifact_id=$1 AND version=$2", &job.artifact_id, job.version, &stored.key, &stored.bucket, &stored.hash).execute(&mut *tx).await?;
     }
     tx.commit().await?;
     Ok(true)
@@ -219,16 +212,17 @@ pub async fn read_version(
     artifact_id: &str,
     version: i64,
 ) -> anyhow::Result<Vec<u8>> {
-    let row: (Option<String>, Option<String>, Option<String>, Option<Value>, String) = sqlx::query_as(
-        "SELECT r.object_key,r.object_bucket,r.sha256,r.snapshot,a.source_kind FROM artifact_revisions r JOIN artifacts a USING(artifact_id) WHERE r.artifact_id=$1 AND r.version=$2")
-        .bind(artifact_id).bind(version).fetch_one(db).await?;
-    if let (Some(key), Some(bucket), Some(hash)) = (&row.0, &row.1, &row.2) {
+    let row = sqlx::query!(
+        "SELECT r.object_key,r.object_bucket,r.sha256,r.snapshot,a.source_kind FROM artifact_revisions r JOIN artifacts a USING(artifact_id) WHERE r.artifact_id=$1 AND r.version=$2", artifact_id, version).fetch_one(db).await?;
+    if let (Some(key), Some(bucket), Some(hash)) =
+        (&row.object_key, &row.object_bucket, &row.sha256)
+    {
         let bytes = store.get(bucket, key).await?;
         anyhow::ensure!(sha256(&bytes) == *hash, "revision object hash mismatch");
         return Ok(bytes);
     }
-    let snapshot = row.3.context("revision provider snapshot missing")?;
-    if row.4 == "text" {
+    let snapshot = row.snapshot.context("revision provider snapshot missing")?;
+    if row.source_kind == "text" {
         return Ok(snapshot
             .get("content")
             .and_then(Value::as_str)
@@ -248,7 +242,6 @@ pub async fn read_version(
     store.get(bucket, key).await
 }
 
-#[derive(FromRow)]
 struct VerifyRow {
     artifact_id: String,
     version: i64,
@@ -264,11 +257,11 @@ struct VerifyRow {
 /// silently blesses the changed bytes. Expired human attachments are unavailable
 /// by contract and may already have been removed by the existing expiry process.
 pub async fn verify_batch(db: &PgPool, store: &dyn ObjectStore) -> anyhow::Result<usize> {
-    let rows = sqlx::query_as::<_, VerifyRow>("SELECT r.artifact_id,r.version,a.source_kind,r.object_key,r.object_bucket,r.sha256,r.snapshot,a.expires_at
+    let rows = sqlx::query_as!(VerifyRow, r#"SELECT r.artifact_id,r.version,a.source_kind,r.object_key AS "object_key!",r.object_bucket AS "object_bucket!",r.sha256 AS "sha256!",r.snapshot,a.expires_at
         FROM artifact_revisions r JOIN artifacts a USING(artifact_id)
         WHERE r.object_key IS NOT NULL AND r.object_bucket IS NOT NULL AND r.sha256 IS NOT NULL
           AND (r.verified_at IS NULL OR r.verified_at < NOW()-INTERVAL '1 hour')
-        ORDER BY r.verified_at NULLS FIRST,r.artifact_id,r.version LIMIT 10")
+        ORDER BY r.verified_at NULLS FIRST,r.artifact_id,r.version LIMIT 10"#)
         .fetch_all(db).await?;
     for row in &rows {
         let expired = row.source_kind == "attachment"
@@ -302,8 +295,7 @@ pub async fn verify_batch(db: &PgPool, store: &dyn ObjectStore) -> anyhow::Resul
                 _ => Some("object unavailable"),
             }
         };
-        sqlx::query("UPDATE artifact_revisions SET verified_at=NOW(),verification_error=$3 WHERE artifact_id=$1 AND version=$2")
-            .bind(&row.artifact_id).bind(row.version).bind(problem).execute(db).await?;
+        sqlx::query!("UPDATE artifact_revisions SET verified_at=NOW(),verification_error=$3 WHERE artifact_id=$1 AND version=$2", &row.artifact_id, row.version, problem).execute(db).await?;
         if let Some(problem) = problem {
             tracing::error!(artifact_id=%row.artifact_id,version=row.version,problem,"artifact object verification failed");
         }
@@ -314,22 +306,23 @@ pub async fn verify_batch(db: &PgPool, store: &dyn ObjectStore) -> anyhow::Resul
 /// Only delete worker-owned keys whose revision AND pending intent have gone away,
 /// after a full day's grace. Never touches retained revisions or attachment keys.
 pub async fn sweep_orphans(db: &PgPool, store: &dyn ObjectStore) -> anyhow::Result<usize> {
-    let rows: Vec<(String,String)> = sqlx::query_as("SELECT u.object_bucket,u.object_key FROM artifact_object_uploads u
+    let rows = sqlx::query!("SELECT u.object_bucket,u.object_key FROM artifact_object_uploads u
         WHERE u.created_at < NOW()-INTERVAL '1 day'
           AND NOT EXISTS(SELECT 1 FROM artifact_revisions r WHERE r.artifact_id=u.artifact_id AND r.version=u.version)
           AND NOT EXISTS(SELECT 1 FROM artifact_object_jobs j WHERE j.artifact_id=u.artifact_id AND j.version=u.version)
         ORDER BY u.created_at LIMIT 10").fetch_all(db).await?;
     let mut count = 0;
-    for (bucket, key) in rows {
+    for row in rows {
+        let (bucket, key) = (row.object_bucket, row.object_key);
         if matches!(
             tokio::time::timeout(Duration::from_secs(30), store.delete(&bucket, &key)).await,
             Ok(Ok(()))
         ) {
-            sqlx::query(
+            sqlx::query!(
                 "DELETE FROM artifact_object_uploads WHERE object_bucket=$1 AND object_key=$2",
+                &bucket,
+                &key
             )
-            .bind(&bucket)
-            .bind(&key)
             .execute(db)
             .await?;
             count += 1;

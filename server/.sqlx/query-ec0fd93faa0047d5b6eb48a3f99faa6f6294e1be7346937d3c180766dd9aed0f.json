@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO artifact_object_uploads(object_bucket,object_key,artifact_id,version) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Varchar",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ec0fd93faa0047d5b6eb48a3f99faa6f6294e1be7346937d3c180766dd9aed0f"
+}
