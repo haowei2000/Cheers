@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.channel_id,\n          COUNT(*) AS \"revisions!\",\n          COUNT(*) FILTER (WHERE r.object_key IS NOT NULL AND r.object_bucket IS NOT NULL AND r.sha256 IS NOT NULL) AS \"copied!\",\n          COUNT(*) FILTER (WHERE r.object_key IS NOT NULL AND r.object_bucket IS NOT NULL AND r.sha256 IS NOT NULL AND r.verified_at IS NOT NULL AND r.verification_error IS NULL) AS \"verified!\",\n          COUNT(*) FILTER (WHERE r.object_key IS NULL OR r.object_bucket IS NULL OR r.sha256 IS NULL) AS \"missing_objects!\",\n          COUNT(*) FILTER (WHERE r.verification_error IS NOT NULL) AS \"verification_errors!\",\n          COUNT(j.artifact_id) AS \"pending!\",\n          COUNT(*) FILTER (WHERE a.source_kind='attachment' AND (\n             r.snapshot IS NULL OR r.snapshot->>'object_key' IS NULL\n             OR COALESCE(r.snapshot->>'status','') NOT IN ('uploaded','converted')\n             OR COALESCE((r.snapshot->>'deleted')::boolean,FALSE)\n             OR (r.snapshot->>'expires_at')::timestamptz <= NOW())) AS \"unavailable_attachments!\",\n          COUNT(*) FILTER (WHERE a.legacy_id IS DISTINCT FROM a.source_id) AS \"missing_legacy_ids!\"\n        FROM artifacts a JOIN artifact_revisions r USING(artifact_id)\n        LEFT JOIN artifact_object_jobs j ON j.artifact_id=r.artifact_id AND j.version=r.version\n        GROUP BY a.channel_id ORDER BY a.channel_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "revisions!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "copied!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "verified!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "missing_objects!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "verification_errors!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "pending!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "unavailable_attachments!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "missing_legacy_ids!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ccaf5b14446fbd4314a71e1872508cc4c1fa76049de98e6af42dd7086968086b"
+}

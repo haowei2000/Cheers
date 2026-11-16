@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT d.channel_id,d.path FROM context_files d\n        WHERE d.is_dir AND NOT EXISTS(SELECT 1 FROM context_files f\n          WHERE f.channel_id=d.channel_id AND NOT f.is_dir\n            AND starts_with(f.path,d.path || '/'))\n        ORDER BY d.channel_id,d.path\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "path",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "e88496498dface9a457c082d6061d36676fcd0df144628ce8f22e6bebae20bc0"
+}
