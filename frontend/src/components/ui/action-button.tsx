@@ -91,6 +91,7 @@ export type CommonActionKey = Extract<
   | "switch"
   | "test"
   | "unlink"
+  | "uninstall"
   | "unpin"
   | "update"
   | "upload"
@@ -154,6 +155,7 @@ const commonActionPresentations = {
     cancel: { content: "text", variant: "secondary" },
   },
   confirmation: {
+    uninstall: { content: "iconText", icon: Trash2, variant: "danger" },
     block: { content: "iconText", icon: Ban, variant: "danger" },
     cancel: { content: "text", variant: "secondary" },
     delete: { content: "iconText", icon: Trash2, variant: "danger" },

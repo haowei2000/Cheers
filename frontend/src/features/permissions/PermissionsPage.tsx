@@ -42,10 +42,16 @@ export default function PermissionsPage() {
     finally { if (id === request.current) setLoading(false); }
   }, []);
   useEffect(() => { const counter = request; void load(); return () => { ++counter.current; }; }, [load]);
+  const [socialBotIds, setSocialBotIds] = useState<string[]>([]);
   const selected = bots.find(bot => bot.bot_id === botId) ?? bots[0];
   useEffect(() => {
     if (selected && selected.bot_id !== botId) setParams(current => { const next = new URLSearchParams(current); next.set("botId", selected.bot_id); return next; }, { replace: true });
   }, [selected, botId, setParams]);
+  const selectedSocialId = tab === "social" ? selected?.bot_id : undefined;
+  useEffect(() => {
+    if (selectedSocialId) setSocialBotIds(ids => ids.includes(selectedSocialId) ? ids : [...ids, selectedSocialId]);
+  }, [selectedSocialId]);
+  const mountedSocialIds = [...new Set([...socialBotIds, ...(selectedSocialId ? [selectedSocialId] : [])])];
   function selectParam(key: string, value: string) { setParams(current => { const next = new URLSearchParams(current); next.set(key, value); return next; }); }
   return <PageLayout title="Permissions" icon={Shield} description="Social discovery and operational approvals for your bots" navigation={
     <SectionNav ariaLabel="Permission sections" items={[...sections]} selected={tab} onSelect={id => selectParam("tab", id)} />
@@ -62,14 +68,17 @@ export default function PermissionsPage() {
           <ItemList presentationLevel="medium" controlSize="regular" className="mt-3">
             <EntityItem title={selected.display_name || selected.username} leading={<Avatar name={selected.display_name || selected.username} src={selected.avatar_url} size="regular" />} actions={<ActionButton action="open" context="settings" accessibleLabel="Open bot in Fleet" onClick={() => navigate(`/fleet/bots/${selected.bot_id}`)} />} />
           </ItemList>
-          <div className="mt-4" key={`${selected.bot_id}:${tab}`}>{tab === "social" ? <SocialPermissionsTab botId={selected.bot_id} /> : <OperationalPermissionsTab botId={selected.bot_id} />}</div>
+          <div className="mt-4">
+            {mountedSocialIds.map(id => <SocialPermissionsTab key={id} botId={id} hidden={tab !== "social" || id !== selected.bot_id} />)}
+            {tab === "operational" && <OperationalPermissionsTab key={selected.bot_id} botId={selected.bot_id} />}
+          </div>
         </SettingsCard>
       </SettingsSection>}
     </AsyncContent>
   </PageLayout>;
 }
 
-function SocialPermissionsTab({ botId }: { botId: string }) {
+function SocialPermissionsTab({ botId, hidden }: { botId: string; hidden: boolean }) {
   const [saved, setSaved] = useState<BotSocialPolicy | null>(null);
   const [draft, setDraft] = useState<BotSocialPolicy | null>(null);
   const [editing, setEditing] = useState(false);
@@ -91,7 +100,7 @@ function SocialPermissionsTab({ botId }: { botId: string }) {
     catch (error) { setSaveError(error instanceof Error ? error.message : "Couldn't save social policy"); }
     finally { setSaving(false); }
   }
-  return <AsyncContent loading={loading} error={error} onRetry={() => void load()}>
+  return <div hidden={hidden}><AsyncContent loading={loading} error={error} onRetry={() => void load()}>
     {draft && <SettingsCardSection title="Social policy" actions={<InlineEditActions label="social policy" editing={editing} saving={saving} onEdit={() => setEditing(true)} onSave={() => void save()} onCancel={() => { setDraft(saved); setEditing(false); setSaveError(null); }} />}>
       {saveError && <Banner severity="error">{saveError}</Banner>}
       {editing ? <div className="space-y-4">
@@ -110,7 +119,7 @@ function SocialPermissionsTab({ botId }: { botId: string }) {
         <OperationsItem title="Channel invitations" status={draft.invite_policy.replaceAll("_", " ")} />
       </ItemList>}
     </SettingsCardSection>}
-  </AsyncContent>;
+  </AsyncContent></div>;
 }
 
 const delegateKey = (item: ApproverInfo) => `${item.user_id}:${item.channel_id}:${item.operation_kind}`;

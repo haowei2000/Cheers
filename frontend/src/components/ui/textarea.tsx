@@ -1,5 +1,6 @@
 import { forwardRef, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
+import { useFieldControl } from "./field-context";
 import { controlMinHeightClasses, useControlSize, type ControlSize } from "./control-size";
 
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
@@ -11,6 +12,7 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ error, controlSize, className, ...props }, ref) => {
     const size = useControlSize(controlSize);
+    const fieldProps = useFieldControl(props);
     return (
     <textarea
       ref={ref}
@@ -22,7 +24,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         "disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
-      {...props}
+      {...fieldProps}
     />
     );
   }

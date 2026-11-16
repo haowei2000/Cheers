@@ -263,7 +263,7 @@ export function CollectionConfirmationItem({
 }: {
   title: ReactNode;
   description: ReactNode;
-  action: "delete" | "remove" | "revoke" | "unlink" | "block";
+  action: "delete" | "remove" | "revoke" | "unlink" | "block" | "uninstall";
   prompt: ReactNode;
   onCancel: () => void;
   onConfirm: () => void;

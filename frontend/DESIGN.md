@@ -93,13 +93,16 @@ levels change information density, never business behavior:
 | Level | Visible information |
 |---|---|
 | `max` | identity, title, full supporting content, preview, state, common actions |
-| `medium` | identity, title, one supporting line, state, primary/overflow action |
+| `medium` | identity, title, inline supporting status, primary/overflow action; browse rows stay single-line |
 | `minimal` | minimum identity/title plus every critical state |
 
 Unread, mention, approval, error, and online state must remain perceivable in
 all three levels. New semantic entity rows must use `ItemRow` instead of
 recreating the leading/title/supporting/status/trailing anatomy in a feature.
 Use `ItemGallery` as the canonical visual fixture for the three levels.
+`ItemRow.subtitle` is visible at `max` only; a plain-string subtitle remains an
+accessible description at `medium`. Current values belong in `status`, and states
+that must survive every level belong in `criticalStatus`.
 
 ---
 
@@ -324,6 +327,12 @@ closing during submission. Nested detail headers call `useDialogClose` so they
 cannot bypass that guard. Explicit form cancellation remains an intentional exit.
 The local `/dev/page-structure.html` preview mounts the real route components for
 responsive, theme, form, and error-state verification with an isolated API fixture.
+Social-policy drafts remain mounted per visited bot while switching sections or
+bots; Cancel restores the saved policy. Failed initial loads replace editable
+settings with a retry boundary, so missing data cannot be saved as blank defaults.
+Task deletion and personal-extension removal use a pending lock and retain their
+confirmation after failure. `/dev/extension-manager.html` exercises the real
+extension manager with mocked native commands and never removes machine files.
 
 ### 2.1 Buttons — always borderless
 
@@ -602,6 +611,12 @@ form-label recipe; the control is any shared field (`Input`/`Textarea`/
   <Input id="dn" value={name} onChange={…} />
 </Field>
 ```
+
+Shared `Input`, `Select`, and `Textarea` inherit the field's accessible label even
+through nested layout wrappers. Explicit `aria-label`/`aria-labelledby` values
+remain authoritative for composite fields. `htmlFor` links a single control's ID;
+give multiple controls distinct names. Visible `status` and `error` text is linked
+through `aria-describedby`, and a field error sets `aria-invalid`.
 
 `hint` and `tip` are supplementary help on the label itself. Use `error` for visible
 validation failures and `status` for visible current values or required confirmation

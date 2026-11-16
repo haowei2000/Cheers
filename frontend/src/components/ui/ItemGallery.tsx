@@ -389,7 +389,10 @@ export function ItemGallery() {
           {controlSizes.map((size) => <div key={size} className="space-y-4">
             <HelpLabel help="Hover or focus this text; tap to keep its explanation open. Escape dismisses it.">{size}</HelpLabel>
             <Field label="Project folder" htmlFor={`help-project-${size}`} hint="This directory scopes the agent's file access." error="Choose an existing folder.">
-              <Input id={`help-project-${size}`} controlSize={size} aria-invalid="true" />
+              <Input controlSize={size} />
+            </Field>
+            <Field label="Provider name" status="Inherited label through a nested layout.">
+              <div className="min-w-0"><Input controlSize={size} /></div>
             </Field>
             <CheckboxField label="Trust this device" hint="Your device credential can be revoked." error="Verification is required." controlSize={size} />
             <CheckboxField label="Include resolved items" controlSize={size} checked readOnly />

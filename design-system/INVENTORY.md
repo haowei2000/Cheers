@@ -13,7 +13,7 @@ primitive but remaining local recipes, **legacy** is still feature-owned, and
 | Web route page shell | shared | unavailable | unavailable | Settings, Fleet, Friends, Permissions, and Activity use PageLayout; specialized chat/workbench layouts remain separate. AsyncContent owns loading/error/retry boundaries. |
 | Button | partial | partial | partial | Web `IconButton` is shared; direct controls are ratcheted and should migrate by semantic action. Native system buttons remain appropriate but feature-owned visual wrappers must move into primitives. |
 | Choice / segmented selection | shared | partial | unavailable | Web `ChoiceGroup` owns radio semantics, roving focus, icon-text anatomy, and selected state. iOS currently uses platform toggles in channel creation but has no registered shared choice anatomy. |
-| Input / search | shared | partial | partial | Web `Input`, `InputWithLeadingIcon`, and `SearchInput` own field anatomy, icon geometry, focus/error state, and mobile sizing. Native clients retain platform fields but still lack shared error/help slots. |
+| Input / search | shared | partial | partial | Web `Input`, `InputWithLeadingIcon`, and `SearchInput` own field anatomy, icon geometry, focus/error state, and mobile sizing. `Field` links shared Input/Select/Textarea labels, status, and errors through context. Native clients retain platform fields but still lack shared error/help slots. |
 | Select / toggle | partial | legacy | legacy | Web primitives exist. Native clients correctly use system controls but do not yet share the registered field anatomy. |
 | Menu / popover / dialog / sheet | partial | partial | partial | Preserve platform-native presentation. Normalize titles, actions, destructive state, and dismissal semantics next. |
 | Chip / badge / presence | partial | partial | shared | Context chips migrated on Web; avatar and unread patterns already exist natively. Consolidate Web's remaining hand-written status chips. |
@@ -29,7 +29,7 @@ primitive but remaining local recipes, **legacy** is still feature-owned, and
 | Context bundle | partial | partial | unavailable | Web read-only Context chips use `ItemChip`; pending/removable chips and iOS context details are the next wave. |
 | Session / task claim / approval | shared | shared | unavailable | Web and iOS pickers, claims, approvals, and Session controllers use shared navigation/operations anatomy. Approval is critical at every level. |
 | Notification / invite | shared | shared | unavailable | Web and iOS use operations anatomy with critical state and primary/overflow actions. |
-| Permission / grant / report | shared | partial | unavailable | Web repeated grants and reports use `OperationsItem` without DTO changes. |
+| Permission / grant / report | shared | partial | unavailable | Web repeated grants and reports use `OperationsItem` without DTO changes. Social-policy drafts survive bot/section switches; admin failures expose retry instead of empty success. |
 | File / folder / diff | specialized | specialized | unavailable | Web and iOS use dedicated file-tree and diff-line items to preserve hierarchy, disclosure, text selection, and diff semantics. |
 | Scene / ViewBoard / plan / audit / activity | shared | shared | unavailable | Web and iOS plan, session, audit, activity, template, and scene rows use workbench anatomy; panel containers remain native. No Android placeholders. |
 | Loading / empty / error | partial | partial | partial | Web primitives exist; native screens still repeat local states. |
