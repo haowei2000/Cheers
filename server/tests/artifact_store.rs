@@ -361,3 +361,192 @@ async fn expired_attachments_do_not_retry_missing_objects_forever(db: PgPool) {
         .unwrap();
     assert_eq!(reason, "expired before copy");
 }
+
+#[sqlx::test]
+async fn historical_backfill_resumes_in_batches_and_reports_verified_copies(db: PgPool) {
+    use server::resource::artifact_backfill;
+    let (ch, p) = channel(&db).await;
+    let id = text(&db, ch, &p, "historical").await;
+    fs::handle_write(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"path":"note.md","content":"updated","if_version":1}),
+    )
+    .await
+    .unwrap();
+    // Simulate revisions that predate the F2 enqueue trigger.
+    sqlx::query("DELETE FROM artifact_object_jobs")
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE artifacts SET legacy_id=NULL")
+        .execute(&db)
+        .await
+        .unwrap();
+    let before = artifact_backfill::report(&db).await.unwrap();
+    assert!(!before.ready_for_read_switch);
+    assert!(before.channels[0].missing_objects > 0);
+    assert!(artifact_backfill::repair_heads(&db).await.unwrap() > 0);
+    assert_eq!(artifact_backfill::repair_heads(&db).await.unwrap(), 0);
+    assert_eq!(artifact_backfill::enqueue_batch(&db, 1).await.unwrap(), 1);
+    let store = MemoryStore::default();
+    assert!(artifact_store::mirror_one(&db, &store, "history")
+        .await
+        .unwrap());
+    // A restarted scan finds remaining revisions without recopying the first.
+    while artifact_backfill::enqueue_batch(&db, 1).await.unwrap() > 0 {}
+    while artifact_store::mirror_one(&db, &store, "history")
+        .await
+        .unwrap()
+    {}
+    assert_eq!(artifact_backfill::enqueue_batch(&db, 500).await.unwrap(), 0);
+    let after = artifact_backfill::report(&db).await.unwrap();
+    assert!(after.ready_for_read_switch);
+    assert_eq!(after.channels[0].verified, after.channels[0].revisions);
+    assert_eq!(head(&db, &id).await.0, 2);
+    // A copied revision alone is insufficient if the catalog's current pointer
+    // is missing. Repair metadata without creating a version or uploading again.
+    sqlx::query("UPDATE artifacts SET object_key=NULL WHERE artifact_id=$1")
+        .bind(&id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let damaged = artifact_backfill::report(&db).await.unwrap();
+    assert_eq!(damaged.channels[0].inconsistent_heads, 1);
+    assert!(!damaged.ready_for_read_switch);
+    assert_eq!(artifact_backfill::repair_heads(&db).await.unwrap(), 1);
+    assert!(
+        artifact_backfill::report(&db)
+            .await
+            .unwrap()
+            .ready_for_read_switch
+    );
+    assert_eq!(artifact_backfill::enqueue_batch(&db, 500).await.unwrap(), 0);
+    assert!(artifact_backfill::enqueue_batch(&db, 0).await.is_err());
+}
+
+#[sqlx::test]
+async fn backfill_report_lists_empty_directories_without_like_wildcards(db: PgPool) {
+    use server::resource::artifact_backfill;
+    let (ch, p) = channel(&db).await;
+    for path in ["empty%", "full", "nested", "nested/empty"] {
+        fs::handle_write(&db, &p, &json!({"channel_id":ch,"path":path,"is_dir":true}))
+            .await
+            .unwrap();
+    }
+    for path in ["empty-other/file.md", "full/child/file.md", "rows.json"] {
+        fs::handle_write(
+            &db,
+            &p,
+            &json!({"channel_id":ch,"path":path,"content":"[{\"a\":1}]"}),
+        )
+        .await
+        .unwrap();
+    }
+    let report = artifact_backfill::report(&db).await.unwrap();
+    let paths: Vec<_> = report
+        .empty_directories
+        .iter()
+        .map(|p| p.path.as_str())
+        .collect();
+    assert!(paths.contains(&"empty%"));
+    assert!(paths.contains(&"nested"));
+    assert!(paths.contains(&"nested/empty"));
+    assert!(!paths.contains(&"full"));
+    assert!(report
+        .view_review_candidates
+        .iter()
+        .any(|p| p.path == "rows.json"));
+}
+
+#[sqlx::test]
+async fn backfill_excludes_expired_attachments_and_does_not_claim_readiness(db: PgPool) {
+    use server::resource::artifact_backfill;
+    let (ch, p) = channel(&db).await;
+    sqlx::query("INSERT INTO file_records(file_id,channel_id,uploader_id,original_path,object_key,storage_bucket,status,expires_at) VALUES($1,$2,$3,'gone.bin','uploads/gone.bin','mirror','uploaded',NOW()-INTERVAL '1 day')")
+        .bind(Uuid::new_v4().to_string()).bind(ch.to_string()).bind(p.principal_id.to_string()).execute(&db).await.unwrap();
+    sqlx::query("DELETE FROM artifact_object_jobs")
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(artifact_backfill::enqueue_batch(&db, 500).await.unwrap(), 0);
+    let report = artifact_backfill::report(&db).await.unwrap();
+    assert_eq!(report.channels[0].unavailable_attachments, 1);
+    assert_eq!(report.channels[0].missing_objects, 1);
+    assert!(!report.ready_for_read_switch);
+}
+
+#[sqlx::test]
+async fn backfill_report_detects_builtin_content_and_legacy_binding_changes(db: PgPool) {
+    use server::resource::artifact_backfill;
+    let (ch, p) = channel(&db).await;
+    for (path, content) in [
+        ("rows.json", "[{\"a\":1}]"),
+        ("board.yaml", "columns: []"),
+        ("unchanged.table.json", "[{\"a\":1}]"),
+        (
+            ".workbench.json",
+            r#"{"bindings":{"board.yaml":"builtin:kanban"}}"#,
+        ),
+    ] {
+        fs::handle_write(
+            &db,
+            &p,
+            &json!({"channel_id":ch,"path":path,"content":content}),
+        )
+        .await
+        .unwrap();
+    }
+    let report = artifact_backfill::report(&db).await.unwrap();
+    assert!(report
+        .builtin_view_changes
+        .iter()
+        .any(|v| v.path == "rows.json" && v.previous == "table" && v.current.is_none()));
+    assert!(report
+        .builtin_view_changes
+        .iter()
+        .any(|v| v.path == "board.yaml" && v.previous == "kanban" && v.current.is_none()));
+    assert!(!report
+        .builtin_view_changes
+        .iter()
+        .any(|v| v.path == "unchanged.table.json"));
+}
+
+#[sqlx::test]
+async fn backfill_operator_command_reports_incomplete_then_enqueues(db: PgPool) {
+    use sqlx::ConnectOptions;
+    let (ch, p) = channel(&db).await;
+    text(&db, ch, &p, "private body must not appear in reports").await;
+    sqlx::query("DELETE FROM artifact_object_jobs")
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE artifacts SET legacy_id=NULL")
+        .execute(&db)
+        .await
+        .unwrap();
+    let url = db.connect_options().to_url_lossy().to_string();
+    let run = |action: &str| {
+        let mut cmd = tokio::process::Command::new(env!("CARGO_BIN_EXE_artifact-backfill"));
+        cmd.arg(action).env("DATABASE_URL", &url);
+        cmd
+    };
+    let before = run("report").output().await.unwrap();
+    assert_eq!(before.status.code(), Some(2));
+    let report: serde_json::Value = serde_json::from_slice(&before.stdout).unwrap();
+    assert_eq!(report["channels"][0]["pending"], 0);
+    assert!(!String::from_utf8_lossy(&before.stdout).contains("private body"));
+    let queued = run("enqueue").output().await.unwrap();
+    assert!(
+        queued.status.success(),
+        "{}",
+        String::from_utf8_lossy(&queued.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&queued.stdout).unwrap();
+    assert_eq!(report["channels"][0]["pending"], 1);
+    assert_eq!(report["channels"][0]["missing_legacy_ids"], 0);
+    assert_eq!(report["ready_for_read_switch"], false);
+    let repeated = run("enqueue").output().await.unwrap();
+    assert!(repeated.status.success());
+    assert!(String::from_utf8_lossy(&repeated.stderr).contains("Queued 0"));
+}

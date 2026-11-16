@@ -79,6 +79,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/server/target/release/server /usr/local/bin/gateway
+COPY --from=builder /app/server/target/release/artifact-backfill /usr/local/bin/artifact-backfill
 EXPOSE 8000
 # 启动即跑 sqlx 迁移（main.rs: sqlx::migrate!），无需独立 migrate 步骤。
 # The binary is installed as `gateway` (renamed on COPY above), so run that.

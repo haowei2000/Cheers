@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO artifact_object_jobs(artifact_id,version)\n        SELECT r.artifact_id,r.version FROM artifact_revisions r\n        JOIN artifacts a USING(artifact_id)\n        WHERE (r.object_key IS NULL OR r.object_bucket IS NULL OR r.sha256 IS NULL)\n          AND r.verification_error IS DISTINCT FROM 'expired before copy'\n          AND NOT EXISTS(SELECT 1 FROM artifact_object_jobs j\n                         WHERE j.artifact_id=r.artifact_id AND j.version=r.version)\n          AND (a.source_kind='text' OR (\n            r.snapshot->>'object_key' IS NOT NULL\n            AND r.snapshot->>'status' IN ('uploaded','converted')\n            AND NOT COALESCE((r.snapshot->>'deleted')::boolean,FALSE)\n            AND (r.snapshot->>'expires_at' IS NULL OR\n                 (r.snapshot->>'expires_at')::timestamptz > NOW())))\n        ORDER BY r.artifact_id,r.version LIMIT $1\n        ON CONFLICT DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d46651fdb786315eb55d468358483167fd90d34531886b0d62bf4be7c604655d"
+}

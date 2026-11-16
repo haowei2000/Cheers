@@ -26,8 +26,9 @@ Implementation progress (2026-11-13):
   (two focused regression tests passed).
 - Still open: release deployment and ordered connector release/daemon upgrade.
   The real-stack test uses an isolated local gateway, not the deployed kind cluster.
-  F2 is implemented on `feat/artifact-dual-write`, with validation in progress.
-  F3–F6 and native-client F5 work have not started.
+  F2 merged in PR #879 (all nine CI checks passed).
+  F3 is implemented on `feat/artifact-backfill`, with validation in progress.
+  F4–F6 and native-client F5 work have not started.
 
 This plan replaces the layered model in [UNIFIED_ARTIFACTS.md](UNIFIED_ARTIFACTS.md),
 where an artifact is a catalog row over two content providers. The catalog identity,
@@ -192,6 +193,38 @@ object forever. Attachment keys never enter the text-object orphan ledger.
 - Rollback: ignore the new columns.
 
 ### F3. Backfill (S, gateway job)
+
+`ARTIFACT_OBJECT_BACKFILL=true` opts into a non-blocking startup scan. It repairs
+legacy IDs/head metadata and enqueues historical revisions in batches of 500.
+The F2 mirror worker performs the actual copy and hash verification. Queue and
+revision metadata are the durable checkpoint: restarting or running on multiple
+instances does not create extra versions or duplicate queue entries. The default
+is disabled so rollout does not start a historical copy unexpectedly.
+
+Operators can run the same scan explicitly, or obtain a read-only JSON report:
+
+```sh
+# Use this worktree/environment's DATABASE_URL. Run after gateway migrations.
+cargo run --manifest-path server/Cargo.toml --bin artifact-backfill -- enqueue
+cargo run --manifest-path server/Cargo.toml --bin artifact-backfill -- report > artifact-backfill-report.json
+```
+
+The gateway image also contains `artifact-backfill`. `enqueue` finishes when work
+has been queued, not copied; keep the F2 worker enabled to drain it. `report` exits
+2 when the storage gate is not met (JSON is still printed), 0 when it is met, and
+1 on an operational error. Counts reflect the last completed remote verification,
+not a fresh S3 scan. Reports list per-channel revision/copy/verification/pending
+counts, unavailable attachments, empty directory paths, and built-in view changes
+inferred from content or persisted `.workbench.json` bindings. JSON/YAML review
+candidates are also listed. Personal extensions and browser-local bindings require
+the F1 library diagnostic; server-side inference cannot see all client state.
+
+Expired/deleted/pending attachment snapshots are explicitly reported as unavailable
+and are not newly enqueued. They still prevent a green read-switch gate: F4 must
+define their unavailable-version behavior rather than silently counting them as
+copied. This job does not rename files, delete directories, remove snapshots, or
+change existing expiry. Turning the startup flag off stops future scans; already
+queued copies remain safe to finish (use the F2 flag to stop workers too).
 
 - Idempotent, resumable startup job: write an object for every `context_files` file
   and record it; record `object_key` for every attachment; set `legacy_id`.

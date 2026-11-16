@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod artifact_backfill;
 pub mod artifact_store;
 mod artifact_views;
 pub mod artifacts;
