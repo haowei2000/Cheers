@@ -27,7 +27,7 @@ Implementation progress (2026-11-13):
 - Still open: release deployment and ordered connector release/daemon upgrade.
   The real-stack test uses an isolated local gateway, not the deployed kind cluster.
   F2 merged in PR #879 (all nine CI checks passed).
-  F3 is implemented on `feat/artifact-backfill`, with validation in progress.
+  F3 merged in PR #880; isolated historical-data rollout verification is in progress.
   F4–F6 and native-client F5 work have not started.
 
 This plan replaces the layered model in [UNIFIED_ARTIFACTS.md](UNIFIED_ARTIFACTS.md),
@@ -206,11 +206,19 @@ Operators can run the same scan explicitly, or obtain a read-only JSON report:
 ```sh
 # Use this worktree/environment's DATABASE_URL. Run after gateway migrations.
 cargo run --manifest-path server/Cargo.toml --bin artifact-backfill -- enqueue
+# Optional standalone copy worker (no gateway process or JWT keys needed).
+# Requires S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY; S3_REGION defaults to us-east-1.
+cargo run --manifest-path server/Cargo.toml --bin artifact-backfill -- copy
 cargo run --manifest-path server/Cargo.toml --bin artifact-backfill -- report > artifact-backfill-report.json
 ```
 
 The gateway image also contains `artifact-backfill`. `enqueue` finishes when work
-has been queued, not copied; keep the F2 worker enabled to drain it. `report` exits
+has been queued, not copied; keep the F2 worker enabled or run `copy` to drain it.
+`copy` attempts up to 500 currently due jobs and prints the same report, returning
+2 if the storage gate remains incomplete. Re-run after retry backoff when needed.
+It does not enqueue historical revisions, change expiry, or start gateway services.
+The standalone worker uses the same leases, retries, hash checks and conditional
+head updates as the gateway, so it can safely share a queue with a running gateway. `report` exits
 2 when the storage gate is not met (JSON is still printed), 0 when it is met, and
 1 on an operational error. Counts reflect the last completed remote verification,
 not a fresh S3 scan. Reports list per-channel revision/copy/verification/pending

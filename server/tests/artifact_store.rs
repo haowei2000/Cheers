@@ -290,6 +290,7 @@ async fn rolled_back_writes_never_leave_copy_intents(db: PgPool) {
 #[ignore = "needs object storage: set INTEGRATION_S3_ENDPOINT"]
 async fn mirror_round_trips_real_s3_bytes(db: PgPool) {
     use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
+    use sqlx::ConnectOptions;
     let endpoint =
         std::env::var("INTEGRATION_S3_ENDPOINT").expect("explicit local test S3 endpoint");
     let url = url::Url::parse(&endpoint).unwrap();
@@ -300,7 +301,7 @@ async fn mirror_round_trips_real_s3_bytes(db: PgPool) {
     let client = aws_sdk_s3::Client::from_conf(
         aws_sdk_s3::config::Builder::new()
             .behavior_version(BehaviorVersion::latest())
-            .endpoint_url(endpoint)
+            .endpoint_url(endpoint.clone())
             .region(Region::new("us-east-1"))
             .credentials_provider(Credentials::new(
                 std::env::var("INTEGRATION_S3_ACCESS_KEY").unwrap(),
@@ -318,9 +319,31 @@ async fn mirror_round_trips_real_s3_bytes(db: PgPool) {
         .unwrap();
     let (ch, p) = channel(&db).await;
     let id = text(&db, ch, &p, "真实 S3\n exact bytes").await;
-    artifact_store::mirror_one(&db, &client, &bucket)
-        .await
-        .unwrap();
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_artifact-backfill"));
+    command
+        .arg("copy")
+        .env("DATABASE_URL", db.connect_options().to_url_lossy().as_str())
+        .env("S3_ENDPOINT", &endpoint)
+        .env("S3_BUCKET", &bucket)
+        .env(
+            "S3_ACCESS_KEY",
+            std::env::var("INTEGRATION_S3_ACCESS_KEY").unwrap(),
+        )
+        .env(
+            "S3_SECRET_KEY",
+            std::env::var("INTEGRATION_S3_SECRET_KEY").unwrap(),
+        );
+    let copied = command.output().await.unwrap();
+    assert!(
+        copied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&copied.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&copied.stdout).unwrap();
+    assert_eq!(report["ready_for_read_switch"], true);
+    let repeated = command.output().await.unwrap();
+    assert!(repeated.status.success());
+    assert!(String::from_utf8_lossy(&repeated.stderr).contains("Attempted 0"));
     let (_, key, hash) = head(&db, &id).await;
     let key = key.unwrap();
     let bytes = client.get(&bucket, &key).await.unwrap();
