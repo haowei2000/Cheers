@@ -69,6 +69,7 @@ pub struct ChannelReport {
     pub pending: i64,
     pub unavailable_attachments: i64,
     pub missing_legacy_ids: i64,
+    pub inconsistent_heads: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -157,7 +158,11 @@ pub async fn report(db: &PgPool) -> anyhow::Result<Report> {
              OR COALESCE(r.snapshot->>'status','') NOT IN ('uploaded','converted')
              OR COALESCE((r.snapshot->>'deleted')::boolean,FALSE)
              OR (r.snapshot->>'expires_at')::timestamptz <= NOW())) AS "unavailable_attachments!",
-          COUNT(*) FILTER (WHERE a.legacy_id IS DISTINCT FROM a.source_id) AS "missing_legacy_ids!"
+          COUNT(DISTINCT a.artifact_id) FILTER (WHERE a.legacy_id IS DISTINCT FROM a.source_id) AS "missing_legacy_ids!",
+          COUNT(*) FILTER (WHERE r.version=a.version AND (
+            a.object_key IS DISTINCT FROM r.object_key OR
+            a.object_bucket IS DISTINCT FROM r.object_bucket OR
+            a.sha256 IS DISTINCT FROM r.sha256)) AS "inconsistent_heads!"
         FROM artifacts a JOIN artifact_revisions r USING(artifact_id)
         LEFT JOIN artifact_object_jobs j ON j.artifact_id=r.artifact_id AND j.version=r.version
         GROUP BY a.channel_id ORDER BY a.channel_id
@@ -244,6 +249,7 @@ pub async fn report(db: &PgPool) -> anyhow::Result<Report> {
             && c.verification_errors == 0
             && c.pending == 0
             && c.missing_legacy_ids == 0
+            && c.inconsistent_heads == 0
             && c.verified == c.revisions
             && c.unavailable_attachments == 0
     });
