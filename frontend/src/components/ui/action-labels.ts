@@ -1,6 +1,7 @@
 // Labels for the fixed 128px `iconText` slot. Budget: at most two words and
 // eight characters, so nothing truncates. Enforced in control-geometry.test.tsx.
 export const slotActionLabels = {
+  block: "Block",
   accept: "Accept",
   activate: "Activate",
   add: "Add",

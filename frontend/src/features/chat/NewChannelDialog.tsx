@@ -218,7 +218,7 @@ export function NewChannelDialog({
   }
 
   return (
-    <Dialog title="New channel" onClose={onClose}>
+    <Dialog title="New channel" onClose={onClose} dirty={Boolean(name.trim())} busy={busy}>
       <div className="space-y-3">
         <InputWithLeadingIcon
           leading={<Hash />}

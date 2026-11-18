@@ -1,3 +1,4 @@
+import { AsyncContent } from "@/components/ui/async-content";
 import { Button as UiButton } from "@/components/ui/button";
 // Audit — a ViewBoard focused on the channel's permission/approval decisions
 // (replaces the old generic Activity feed). Sourced from the REST audit log
@@ -311,7 +312,8 @@ function AuditRow({
 function AuditBody({ ctx }: { ctx: PanelContext }) {
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
   const [members, setMembers] = useState<MemberItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [openEventKey, setOpenEventKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -320,7 +322,8 @@ function AuditBody({ ctx }: { ctx: PanelContext }) {
       listApprovalAudit(ctx.channelId),
       listChannelMembers(ctx.channelId),
     ]);
-    setEvents(auditRes.status === "fulfilled" ? auditRes.value.events ?? [] : []);
+    if (auditRes.status === "fulfilled") { setEvents(auditRes.value.events ?? []); setLoadError(null); }
+    else setLoadError(auditRes.reason instanceof Error ? auditRes.reason.message : "Couldn't load audit events");
     if (membersRes.status === "fulfilled") setMembers(membersRes.value ?? []);
     setLoading(false);
   }, [ctx.channelId]);
@@ -348,9 +351,8 @@ function AuditBody({ ctx }: { ctx: PanelContext }) {
       onRefresh={load}
       active={ctx.visible !== false}
     >
-      {events == null ? (
-        <div className="px-3 py-6 text-compact text-content-muted">Loading…</div>
-      ) : events.length === 0 ? (
+      <AsyncContent loading={loading && events == null} error={loadError} onRetry={() => void load()}>
+      {!events?.length ? (
         <EmptyState icon={ShieldCheck} title="No permission decisions yet" className="py-6" />
       ) : (
         <ul className="px-2 py-2" aria-label="Permission audit log">
@@ -367,6 +369,7 @@ function AuditBody({ ctx }: { ctx: PanelContext }) {
           })}
         </ul>
       )}
+      </AsyncContent>
     </PanelShell>
   );
 }

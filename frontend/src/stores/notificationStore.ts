@@ -8,6 +8,7 @@ import {
 interface NotificationState {
   items: NotificationItem[];
   loaded: boolean;
+  error: string | null;
   /** Add or replace one item (from a live push), de-duped by its invite key. */
   upsert: (item: NotificationItem) => void;
   /** Drop one item after it's been accepted/declined. */
@@ -27,6 +28,7 @@ let refreshSequence = 0;
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   items: [],
   loaded: false,
+  error: null,
   upsert: (item) => {
     liveRevision += 1;
     set((s) => ({
@@ -55,14 +57,14 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         // Keep the just-applied live mutation, then fetch a snapshot that started
         // after it. Otherwise an initial poll racing one WS update would leave
         // unrelated, pre-existing notifications absent until the next interval.
-        void get().refresh();
+        await get().refresh();
         return;
       }
       if (requestSequence !== refreshSequence)
         return;
-      set({ items, loaded: true });
-    } catch {
-      /* keep whatever we have; a transient fetch failure shouldn't clear the inbox */
+      set({ items, loaded: true, error: null });
+    } catch (error) {
+      if (requestSequence === refreshSequence) set({ error: error instanceof Error ? error.message : "Couldn't load invitations" });
     }
   },
 }));

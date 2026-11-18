@@ -33,6 +33,8 @@ import {
 } from "@/lib/desktopQuick";
 import { uploadFile, transcribeFile, getFileStatus } from "@/api/files";
 import type { FileInfo } from "@/types";
+import { ReplyComposerBanner } from "./ReplyComposerBanner";
+import type { ReplyTarget } from "./replyDraft";
 import { isAudioFile } from "./fileUtils";
 import { CommandPalette, type CommandCandidate } from "./CommandPalette";
 import { ExistingFilePicker } from "./ExistingFilePicker";
@@ -112,6 +114,12 @@ function withBindingMentions(picked: MentionCandidate[], bindings: SuggestionBin
 }
 
 interface Props {
+  /** Reply context is displayed above the body, never inserted into the draft. */
+  reply?: {
+    target: ReplyTarget;
+    senderName?: string;
+    onCancel: () => void;
+  };
   channelId?: string;
   channelName?: string;
   /** A fixed Session destination overrides @mention routing for this draft. */
@@ -165,6 +173,7 @@ interface PickerState {
 }
 
 function MessageComposerImpl({
+  reply,
   channelId,
   channelName,
   sessionTargetName,
@@ -206,6 +215,10 @@ function MessageComposerImpl({
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const replyTarget = reply?.target;
+  useEffect(() => {
+    if (replyTarget) textareaRef.current?.focus();
+  }, [replyTarget]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const adjustHeight = useCallback(() => {
     const element = textareaRef.current;
@@ -980,6 +993,17 @@ function MessageComposerImpl({
             : "focus-within:ring-1 focus-within:ring-content-strong/40"
         )}
       >
+        {reply && (
+          <ReplyComposerBanner
+            message={reply.target.message}
+            quote={reply.target.quote}
+            senderName={reply.senderName}
+            onCancel={() => {
+              reply.onCancel();
+              textareaRef.current?.focus();
+            }}
+          />
+        )}
         {unresolvedSlots.length > 0 && (
           <div className="flex min-w-0 flex-wrap items-center gap-1 px-2 pt-2" aria-label="Fill question references">
             {unresolvedSlots.map((slot) => (

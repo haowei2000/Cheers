@@ -15,14 +15,15 @@ describe("ComposerToolbarButton", () => {
     expect(markup).toContain("rounded-sm");
   });
 
-  it("renders unboxed at rest and reveals outline on hover", () => {
+  it("aligns the selector left and uses a flat hover fill", () => {
     const markup = renderToStaticMarkup(
       <ComposerToolbarButton><span aria-hidden>+</span><span>Model</span></ComposerToolbarButton>,
     );
 
     expect(markup).toContain("bg-transparent");
-    expect(markup).toContain("ring-transparent");
-    expect(markup).toContain("hover:ring-zinc-300/80");
+    expect(markup).toContain("justify-start");
+    expect(markup).toContain("hover:bg-control-hover");
+    expect(markup).not.toContain("hover:ring-zinc-300/80");
   });
 
   it("shows active ring and selected styling when selected", () => {

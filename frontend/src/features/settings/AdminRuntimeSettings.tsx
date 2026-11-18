@@ -1,3 +1,4 @@
+import { AsyncContent } from "@/components/ui/async-content";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/ui/action-button";
 import { Banner } from "@/components/ui/banner";
@@ -44,14 +45,19 @@ function RuntimeSettingCard({
   const [draft, setDraft] = useState(String(setting.override_value ?? ""));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [revisionsLoading, setRevisionsLoading] = useState(true);
+  const [revisionsError, setRevisionsError] = useState<string | null>(null);
   const [revisions, setRevisions] = useState<RuntimeSettingRevision[] | null>(null);
 
   const reloadRevisions = useCallback(async () => {
+    setRevisionsLoading(true);
     try {
       setRevisions(await listRuntimeSettingRevisions(setting.key));
+      setRevisionsError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't load change history");
-    }
+      setRevisionsError(e instanceof Error ? e.message : "Couldn't load change history");
+    } finally { setRevisionsLoading(false); }
   }, [setting.key]);
 
   useEffect(() => {
@@ -63,13 +69,14 @@ function RuntimeSettingCard({
 
   async function save() {
     setBusy(true);
+    setSaveError(null);
     try {
       onSaved(await putRuntimeSetting(setting.key, { value: next, reason }));
       setReason("");
       toast.success(`${setting.label} updated`);
       await reloadRevisions();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      setSaveError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setBusy(false);
     }
@@ -81,6 +88,7 @@ function RuntimeSettingCard({
       status={`Live value: ${setting.effective_value} ${setting.unit}`}
     >
       <p className="mb-4 max-w-lg text-caption">{setting.description}</p>
+      {saveError && <Banner severity="error">{saveError}</Banner>}
       <form
         className="max-w-lg space-y-4"
         onSubmit={(event) => {
@@ -134,8 +142,8 @@ function RuntimeSettingCard({
         />
       </form>
 
+      <AsyncContent loading={revisionsLoading} error={revisionsError} onRetry={() => void reloadRevisions()}>
       <ItemList presentationLevel="max" controlSize="regular" className="mt-4">
-        {revisions === null && <OperationsItem title="Loading change history…" disabled />}
         {revisions?.length === 0 && <EmptyState icon={History} title="No changes yet" className="py-4" />}
         {revisions?.map((revision) => (
           <OperationsItem
@@ -160,6 +168,7 @@ function RuntimeSettingCard({
           />
         ))}
       </ItemList>
+      </AsyncContent>
     </SettingsCard>
   );
 }
@@ -171,20 +180,26 @@ export function AdminRuntimeSettings() {
   const isAdmin = useIsAdmin();
   const [settings, setSettings] = useState<RuntimeSetting[] | null>(null);
 
-  useEffect(() => {
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const load = useCallback(async () => {
     if (!isAdmin) return;
-    listRuntimeSettings()
-      .then(setSettings)
-      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load runtime settings"));
+    setLoading(true);
+    try { setSettings(await listRuntimeSettings()); setLoadError(null); }
+    catch (error) { setLoadError(error instanceof Error ? error.message : "Couldn't load runtime settings"); }
+    finally { setLoading(false); }
   }, [isAdmin]);
+  useEffect(() => { void load(); }, [load]);
 
   if (!isAdmin) return null;
 
   return (
     <SettingsSection title="Runtime settings" icon={SlidersHorizontal}>
+      <AsyncContent loading={loading} error={loadError} onRetry={() => void load()}>
       {settings?.map((setting) => (
         <RuntimeSettingCard key={setting.key} setting={setting} onSaved={setSettings} />
       ))}
+      </AsyncContent>
     </SettingsSection>
   );
 }

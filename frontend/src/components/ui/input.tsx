@@ -1,5 +1,6 @@
 import { forwardRef, type InputHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
+import { useFieldControl } from "./field-context";
 import { controlHeightClasses, useControlSize, type ControlSize } from "./control-size";
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -11,6 +12,7 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ error, controlSize, variant = "default", className, ...props }, ref) => {
     const size = useControlSize(controlSize);
+    const fieldProps = useFieldControl(props);
     return (
     <input
       ref={ref}
@@ -26,7 +28,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         "disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
-      {...props}
+      {...fieldProps}
     />
     );
   }

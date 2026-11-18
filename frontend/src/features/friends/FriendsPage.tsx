@@ -1,11 +1,14 @@
+import { SettingsSection } from "@/components/ui/settings-card";
+import { AsyncContent } from "@/components/ui/async-content";
+import { Banner } from "@/components/ui/banner";
+import { CollectionConfirmationItem } from "@/components/ui/collection-manager";
+import { PageLayout } from "@/components/ui/page-layout";
 import { Tip } from "@/components/ui/tip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionNav } from "@/components/ui/section-nav";
-import { HelpLabel } from "@/components/ui/help-text";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft,
   UserPlus,
   UserMinus,
   Check,
@@ -26,7 +29,6 @@ import { InputWithLeadingIcon } from "@/components/ui/input-with-leading-icon";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { UnreadBadge } from "@/components/ui/unread-badge";
 import { Badge } from "@/components/ui/badge";
-import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import {
   listFriends,
   removeFriend,
@@ -76,31 +78,7 @@ export default function FriendsPage() {
     : "friends";
 
   return (
-    <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
-      <RouteChromeHeader>
-        <header className="mx-auto flex w-full max-w-5xl items-center gap-4 px-6 py-5 max-md:px-4">
-          <IconButton
-            label="Back to chat"
-            onClick={() => navigate("/chat")}
-            controlSize="regular"
-            className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
-          >
-            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-          </IconButton>
-          <Users className="h-4 w-4 text-accent-400" aria-hidden="true" />
-          <div>
-            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>
-              Direct connections and member requests
-            </>}>
-              Friends
-            </HelpLabel></h1>
-
-          </div>
-        </header>
-      </RouteChromeHeader>
-
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
-        <SectionNav
+    <PageLayout title="Friends" icon={Users} description="Direct connections and member requests" navigation={<SectionNav
           ariaLabel="Friends sections"
           items={TABS.map((item) => ({
             ...item,
@@ -110,17 +88,14 @@ export default function FriendsPage() {
           }))}
           selected={tab}
           onSelect={(id) => navigate(id === "friends" ? "/friends" : `/friends/${id}`)}
-        />
-
-        {/* Active section */}
-        <main className="min-w-0 flex-1">
-          {tab === "friends" && <FriendsTab />}
+        />}>
+<SettingsSection title={TABS.find(item => item.id === tab)?.label ?? "Friends"} icon={TABS.find(item => item.id === tab)?.icon}>
+{tab === "friends" && <FriendsTab />}
           {tab === "requests" && <RequestsTab onChange={refreshIncoming} />}
           {tab === "add" && <AddTab />}
           {tab === "blocked" && <BlockedTab />}
-        </main>
-      </div>
-    </div>
+      </SettingsSection>
+    </PageLayout>
   );
 }
 
@@ -129,13 +104,17 @@ function FriendsTab() {
   const selectChannel = useChatStore((s) => s.selectChannel);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [target, setTarget] = useState<{ id: string; action: "remove" | "block" } | null>(null);
+  const [busy, setBusy] = useState(false);
   const [inspectUser, setInspectUser] = useState<Friend | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     listFriends()
-      .then(setFriends)
-      .catch(() => toast.error("Failed to load friends"))
+      .then(items => { setFriends(items); setError(null); })
+      .catch(error => setError(error instanceof Error ? error.message : "Couldn't load friends"))
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => {
@@ -152,44 +131,27 @@ function FriendsTab() {
     }
   }
 
-  async function remove(f: Friend) {
+  async function confirm(f: Friend) {
+    if (!target || busy) return;
+    setBusy(true); setActionError(null);
     try {
-      await removeFriend(f.friend_id);
-      setFriends((prev) => prev.filter((x) => x.friend_id !== f.friend_id));
-      toast.success("Friend removed");
-    } catch {
-      toast.error("Failed to remove");
-    }
+      if (target.action === "block") await blockUser(f.friend_id);
+      else await removeFriend(f.friend_id);
+      setFriends(items => items.filter(item => item.friend_id !== f.friend_id));
+      setTarget(null);
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Couldn't update this friendship"); }
+    finally { setBusy(false); }
   }
-
-  async function block(f: Friend) {
-    if (
-      !window.confirm(
-        `Block ${f.display_name || f.username}? This also removes the friendship.`
-      )
-    )
-      return;
-    try {
-      await blockUser(f.friend_id);
-      setFriends((prev) => prev.filter((x) => x.friend_id !== f.friend_id));
-      toast.success("User blocked");
-    } catch {
-      toast.error("Failed to block");
-    }
-  }
-
-  if (loading) return <SurfaceSpinner />;
-  if (!friends.length)
-    return (
-      <Empty action={<Button action="add" content="iconText" variant="secondary" onClick={() => navigate("/friends/add")}><UserPlus /></Button>}>
-        No friends yet
-      </Empty>
-    );
 
   return (
     <>
+      {actionError && <Banner severity="error">{actionError}</Banner>}
+      <AsyncContent loading={loading} error={error} onRetry={load}>
+      {!friends.length && <Empty action={<Button action="add" content="iconText" variant="secondary" onClick={() => navigate("/friends/add")}><UserPlus /></Button>}>No friends yet</Empty>}
       <ItemList presentationLevel="medium" controlSize="regular" className="space-y-1">
-        {friends.map((f) => (
+        {friends.map((f) => target?.id === f.friend_id ? (
+          <CollectionConfirmationItem key={f.friendship_id} title={f.display_name || f.username} description={target.action === "block" ? "This also removes the friendship and blocks future contact." : "This person will be removed from your friends."} action={target.action} prompt={target.action === "block" ? "Block?" : "Remove?"} busy={busy} onCancel={() => { setTarget(null); setActionError(null); }} onConfirm={() => void confirm(f)} />
+        ) : (
           <Row
             key={f.friendship_id}
             name={f.display_name || f.username}
@@ -203,15 +165,16 @@ function FriendsTab() {
             <IconBtn title="Send message" onClick={() => startChat(f)} primary>
               <MessageSquare className="w-4 h-4" />
             </IconBtn>
-            <IconBtn title="Remove friend" onClick={() => remove(f)} danger>
+            <IconBtn disabled={target !== null} title="Remove friend" onClick={() => { setTarget({ id: f.friend_id, action: "remove" }); setActionError(null); }} danger>
               <UserMinus className="w-4 h-4" />
             </IconBtn>
-            <IconBtn title="Block" onClick={() => block(f)} danger>
+            <IconBtn disabled={target !== null} title="Block" onClick={() => { setTarget({ id: f.friend_id, action: "block" }); setActionError(null); }} danger>
               <Ban className="w-4 h-4" />
             </IconBtn>
           </Row>
         ))}
       </ItemList>
+      </AsyncContent>
 
       {inspectUser && (
         <UserProfileDialog
@@ -238,6 +201,7 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
   const [incoming, setIncoming] = useState<FriendRequestItem[]>([]);
   const [outgoing, setOutgoing] = useState<FriendRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [inspectUser, setInspectUser] = useState<FriendRequestItem | null>(null);
 
   const load = useCallback(() => {
@@ -249,8 +213,9 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
       .then(([i, o]) => {
         setIncoming(i);
         setOutgoing(o);
+        setLoadError(null);
       })
-      .catch(() => toast.error("Failed to load requests"))
+      .catch(error => setLoadError(error instanceof Error ? error.message : "Failed to load requests"))
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => {
@@ -286,7 +251,7 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
     }
   }
 
-  if (loading) return <SurfaceSpinner />;
+  if (loading || loadError) return <AsyncContent loading={loading} error={loadError} onRetry={load}>{null}</AsyncContent>;
   if (!incoming.length && !outgoing.length)
     return <Empty>No pending requests.</Empty>;
 
@@ -546,12 +511,13 @@ function AddTab() {
 function BlockedTab() {
   const [blocked, setBlocked] = useState<BlockedUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     listBlocks()
-      .then(setBlocked)
-      .catch(() => toast.error("Failed to load blocked users"))
+      .then(items => { setBlocked(items); setLoadError(null); })
+      .catch(error => setLoadError(error instanceof Error ? error.message : "Failed to load blocked users"))
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => {
@@ -568,7 +534,7 @@ function BlockedTab() {
     }
   }
 
-  if (loading) return <SurfaceSpinner />;
+  if (loading || loadError) return <AsyncContent loading={loading} error={loadError} onRetry={load}>{null}</AsyncContent>;
   if (!blocked.length) return <Empty>No blocked users.</Empty>;
 
   return (
@@ -666,16 +632,19 @@ function IconBtn({
   children,
   primary,
   danger,
+  disabled,
 }: {
   title: string;
   onClick: () => void;
   children: ReactNode;
   primary?: boolean;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <IconButton
       label={title}
+      disabled={disabled}
       onClick={onClick}
       tone={primary ? "success" : danger ? "danger" : "neutral"}
       controlSize="compact"

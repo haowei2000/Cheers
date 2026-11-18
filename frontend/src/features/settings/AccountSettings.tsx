@@ -124,7 +124,7 @@ export function EmailAction() {
       <OperationsItem
         leading={<Mail className="h-4 w-4 text-content-muted" />}
         title="Email"
-        subtitle={email || "No email address linked"}
+        status={<span className="min-w-0 truncate text-compact text-content-muted">{email || "No email address linked"}</span>}
         trailing={<ChevronRight className="h-4 w-4 text-content-muted" aria-hidden="true" />}
         aria-label="Manage email address"
         onClick={() => {

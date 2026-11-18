@@ -37,7 +37,7 @@ function deferred<T>() {
 describe("notificationStore polling reconciliation", () => {
   beforeEach(() => {
     listNotifications.mockReset();
-    useNotificationStore.setState({ items: [], loaded: false });
+    useNotificationStore.setState({ items: [], loaded: false, error: null });
   });
 
   it("refreshes after a live invite races a poll, restoring existing notifications", async () => {
@@ -83,6 +83,16 @@ describe("notificationStore polling reconciliation", () => {
       items: [invite],
       loaded: true,
     });
+  });
+
+  it("retains invitations on failure, exposes the error, and clears it after retry", async () => {
+    useNotificationStore.setState({ items: [invite], loaded: true });
+    listNotifications.mockRejectedValueOnce(new Error("Offline"));
+    await useNotificationStore.getState().refresh();
+    expect(useNotificationStore.getState()).toMatchObject({ items: [invite], error: "Offline" });
+    listNotifications.mockResolvedValueOnce([existingInvite]);
+    await useNotificationStore.getState().refresh();
+    expect(useNotificationStore.getState()).toMatchObject({ items: [existingInvite], error: null });
   });
 
   it("ignores an older poll that finishes after a newer snapshot", async () => {
