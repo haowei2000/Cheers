@@ -515,6 +515,12 @@ async fn handle_control_frame(
                     );
                 }
             }
+            // Wake a waiting caller only after the session row reflects the ack.
+            if let Some(request_id) = frame.get("request_id").and_then(Value::as_str) {
+                state
+                    .session_control_acks
+                    .resolve(request_id, frame.clone());
+            }
         }
         proto::ControlOutbound::ConfigOptions { options, v } => {
             // Advertised-options snapshot (configOptions / modes / models /
