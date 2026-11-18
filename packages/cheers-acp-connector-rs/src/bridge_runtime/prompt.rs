@@ -63,6 +63,11 @@ pub(super) fn bridge_ready_from_initialize(
         "suggested_questions": true,
         "agent_capabilities": agent_caps,
         "mcp_delivery": mcp_delivery,
+        // Which app's sessions this Agent can attach (`codex`, `claude_code`),
+        // so the gateway can route a pasted reference to a capable Bot.
+        "session_attach": {
+            "sources": session_attach_source(initialize, policy).into_iter().collect::<Vec<_>>(),
+        },
     }));
     ready
 }

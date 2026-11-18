@@ -25,6 +25,8 @@
 //! `[bridge_protocol_version]`; both ends select max(intersection) and stamp
 //! it as `v`; empty intersection ⇒ close 4400.
 
+pub mod session_ref;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -447,6 +449,10 @@ pub struct RuntimeSessionControlSession {
     /// Persisted session overrides, replayed when the runtime session is created/loaded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_config: Option<SessionConfigOverrides>,
+    /// `action == "attach"`: the Agent's own id of an existing session (e.g. a
+    /// Codex thread id) to bind to `provider_session_key` and `session/load`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_session_id: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }
@@ -1111,6 +1117,10 @@ pub enum DataInbound {
         /// identifying the fs watcher to stop.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         watch_id: Option<String>,
+        /// `op == "session_resolve"`: the parsed reference to look up in the
+        /// Agent's own `session/list`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_ref: Option<session_ref::SessionRef>,
     },
     #[serde(other)]
     Unknown,
