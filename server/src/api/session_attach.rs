@@ -224,6 +224,18 @@ pub async fn attach_session(
         ));
     }
     let found = resolve_on_bot(&state, bot_id, &reference).await?;
+    if let Some((_, attached_in)) =
+        sessions::find_live_session_by_provider_id(&state.db, bot_id, &reference.native_id).await?
+    {
+        let place = if attached_in.as_deref() == Some(channel_id.to_string().as_str()) {
+            "in this channel"
+        } else {
+            "in another channel"
+        };
+        return Err(AppError::Conflict(format!(
+            "this session is already attached {place}; close that session first"
+        )));
+    }
     if found.get("cwd_allowed").and_then(Value::as_bool) != Some(true) {
         let reason = found
             .get("cwd_error")
