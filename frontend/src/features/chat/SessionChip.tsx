@@ -204,11 +204,20 @@ export function SessionChip({
 
   // If the targeted session vanished (closed elsewhere), fall back to Auto so we
   // never send a stale session_id the backend would reject. Gated on `loaded` so
-  // a failed fetch can't cause the reset.
+  // a failed fetch can't cause the reset. A session created outside this chip
+  // (attached from a pasted link) is missing from the last load, so reload once
+  // before treating it as gone.
+  const reloadedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!value || !loaded) return;
-    if (!entries.some((s) => s.session_id === value)) onChange("");
-  }, [entries, loaded, value, onChange]);
+    if (entries.some((s) => s.session_id === value)) return;
+    if (reloadedFor.current !== value) {
+      reloadedFor.current = value;
+      void load();
+      return;
+    }
+    onChange("");
+  }, [entries, loaded, value, onChange, load]);
 
   const selected = value ? entries.find((s) => s.session_id === value) : undefined;
   const selectedDirectory = selected?.cwd ? cwdBasename(selected.cwd) : null;

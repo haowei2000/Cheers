@@ -38,6 +38,8 @@ import { MessageList } from "./MessageList";
 import { DiscussionView } from "./DiscussionView";
 import { ConversationViewport } from "./ConversationViewport";
 import { contentWithReplyQuote, type ReplyTarget } from "./replyDraft";
+import { SessionAttachBanner, useSessionAttach } from "./SessionAttachBanner";
+import { findSessionReference, type SessionReference } from "./sessionReference";
 import { SuggestedQuestionsComposerBanner } from "./SuggestedQuestionsComposerBanner";
 import { findActiveBotSuggestions, type SuggestedQuestion } from "./suggestedQuestions";
 import { ForwardDialog } from "./ForwardDialog";
@@ -823,6 +825,33 @@ export function ChannelView({
     [setVbMinimal],
   );
   const closeWorkbench = useCallback(() => setWbOpen(false), [setWbOpen]);
+
+  // A pasted session link from another app (codex://threads/…) offers to
+  // attach that Agent session here; a dismissed or attached link stays quiet.
+  const draftSessionReference = useMemo(() => findSessionReference(draftText), [draftText]);
+  const [quietSessionReference, setQuietSessionReference] = useState<string | null>(null);
+  const handleSessionAttached = useCallback(
+    (sessionId: string, botId: string, reference: SessionReference) => {
+      setQuietSessionReference(reference.raw);
+      setSelectedSessionId(sessionId);
+      setSelectedSessionBotId(botId);
+      // A draft that is only the link has served its purpose; anything the
+      // user wrote around it stays.
+      if (draftText.trim() === reference.raw) {
+        setComposePrefill((previous) => ({
+          kind: "clear",
+          text: "",
+          seq: (previous?.seq ?? 0) + 1,
+        }));
+      }
+    },
+    [draftText, setComposePrefill],
+  );
+  const sessionAttach = useSessionAttach({
+    channelId: channel?.channel_id ?? "",
+    reference: draftSessionReference,
+    onAttached: handleSessionAttached,
+  });
 
   const composerPinnedTargetName = selectedSessionId && selectedSessionBotId
     ? switcherBots.find((bot) => bot.botId === selectedSessionBotId)?.name ?? selectedSessionBotId
@@ -1623,6 +1652,18 @@ export function ChannelView({
           selectedIndex={selectedSuggestionIndex}
           onSelect={handleSelectSuggestion}
           onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
+        />
+      )}
+      {draftSessionReference && draftSessionReference.raw !== quietSessionReference && (
+        <SessionAttachBanner
+          reference={draftSessionReference}
+          phase={sessionAttach.phase}
+          matches={sessionAttach.matches}
+          attachingBotId={sessionAttach.attachingBotId}
+          error={sessionAttach.error}
+          onLookUp={() => void sessionAttach.lookUp()}
+          onAttach={(match) => void sessionAttach.attach(match)}
+          onDismiss={() => setQuietSessionReference(draftSessionReference.raw)}
         />
       )}
       <MessageComposer

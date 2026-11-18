@@ -6,6 +6,7 @@ export const slotActionLabels = {
   activate: "Activate",
   add: "Add",
   approve: "Approve",
+  attach: "Attach",
   cancel: "Cancel",
   back: "Back",
   check: "Check",
