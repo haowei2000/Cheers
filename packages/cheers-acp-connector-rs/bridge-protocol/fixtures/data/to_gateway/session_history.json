@@ -1,0 +1,10 @@
+{
+  "type": "session_history",
+  "v": 1,
+  "session_id": "eeeeeeee-ffff-4000-8111-222222222222",
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "provider_session_key": "cheers:session:eeeeeeee-ffff-4000-8111-222222222222",
+  "provider_session_id": "01a1422e-d5e6-7e10-be3b-040fa49834a4",
+  "filename": "session-history-01a1422e.md",
+  "markdown": "# Imported session history\n\n## User\n\nhello\n"
+}

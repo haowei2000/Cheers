@@ -171,6 +171,7 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         | DataOutbound::AuthCancel { .. }
         | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. }
+        | DataOutbound::SessionHistory { .. }
         | DataOutbound::Unknown => None,
     }
 }
@@ -201,6 +202,7 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::AuthCancel { .. }
         | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. }
+        | DataOutbound::SessionHistory { .. }
         | DataOutbound::Unknown => {}
     }
 }

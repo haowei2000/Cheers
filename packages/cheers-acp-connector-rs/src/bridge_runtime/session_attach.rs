@@ -9,6 +9,10 @@
 use super::*;
 use cheers_bridge_protocol::session_ref::{AttachMode, SessionRef, SessionSource};
 
+/// Transcript size cap. Past it the oldest turns are dropped, keeping the
+/// recent context that matters most when picking a session back up.
+const MAX_HISTORY_BYTES: usize = 4 * 1024 * 1024;
+
 /// Upper bound on `session/list` pages walked per resolve. codex-acp pages ~25
 /// sessions, so this covers ~1250 recent sessions without an unbounded scan.
 const MAX_SESSION_LIST_PAGES: usize = 50;
@@ -58,7 +62,123 @@ pub(super) fn session_control_task(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Speaker {
+    User,
+    Agent,
+}
+
+/// The conversation an attach's `session/load` replays, collected until the
+/// load fence. Only user and agent message text is kept: thoughts and tool
+/// calls are the Agent's working notes, not the conversation.
+pub(super) struct HistoryCapture {
+    session_id: String,
+    channel_id: String,
+    provider_session_key: String,
+    native_id: String,
+    cwd: String,
+    turns: Vec<(Speaker, String)>,
+}
+
+impl HistoryCapture {
+    fn push(&mut self, speaker: Speaker, text: &str) {
+        match self.turns.last_mut() {
+            // Replay streams each message as chunks; one speaker run is one turn.
+            Some((last, buffer)) if *last == speaker => buffer.push_str(text),
+            _ => self.turns.push((speaker, text.to_string())),
+        }
+    }
+
+    fn to_markdown(&self) -> Option<String> {
+        let turns: Vec<String> = self
+            .turns
+            .iter()
+            .filter(|(_, text)| !text.trim().is_empty())
+            .map(|(speaker, text)| {
+                let heading = match speaker {
+                    Speaker::User => "User",
+                    Speaker::Agent => "Agent",
+                };
+                format!("## {heading}\n\n{}\n", text.trim())
+            })
+            .collect();
+        if turns.is_empty() {
+            return None;
+        }
+        let header = format!(
+            "# Imported session history\n\nAgent session `{}` · `{}`\n",
+            self.native_id, self.cwd
+        );
+        let mut start = 0;
+        let mut size = header.len() + turns.iter().map(|turn| turn.len() + 1).sum::<usize>();
+        while size > MAX_HISTORY_BYTES && start + 1 < turns.len() {
+            size -= turns[start].len() + 1;
+            start += 1;
+        }
+        let mut markdown = header;
+        if start > 0 {
+            markdown.push_str(&format!("\n_{start} earlier turns omitted._\n"));
+        }
+        for turn in &turns[start..] {
+            markdown.push('\n');
+            markdown.push_str(turn);
+        }
+        Some(markdown)
+    }
+}
+
 impl RuntimeContext {
+    /// Keep a replayed message for an attach in progress. Returns whether
+    /// `acp_session_id` is being captured (its update needs no other handling).
+    pub(super) async fn capture_history(
+        &self,
+        acp_session_id: &str,
+        kind: &str,
+        update: &Value,
+    ) -> bool {
+        let mut captures = self.shared.history_captures.lock().await;
+        let Some(capture) = captures.get_mut(acp_session_id) else {
+            return false;
+        };
+        let speaker = match kind {
+            "user_message_chunk" => Speaker::User,
+            "agent_message_chunk" => Speaker::Agent,
+            _ => return true,
+        };
+        if let Some(text) = text_from_content(update.get("content").unwrap_or(&Value::Null)) {
+            capture.push(speaker, &text);
+        }
+        true
+    }
+
+    /// The load fence for `acp_session_id` arrived: send its transcript, if any.
+    pub(super) async fn finish_history_capture(&self, acp_session_id: &str) -> anyhow::Result<()> {
+        let Some(capture) = self
+            .shared
+            .history_captures
+            .lock()
+            .await
+            .remove(acp_session_id)
+        else {
+            return Ok(());
+        };
+        let Some(markdown) = capture.to_markdown() else {
+            return Ok(());
+        };
+        let short_id: String = capture.native_id.chars().take(8).collect();
+        self.io
+            .send_data(DataOutbound::SessionHistory {
+                v: BRIDGE_PROTOCOL_VERSION,
+                session_id: capture.session_id,
+                channel_id: capture.channel_id,
+                provider_session_key: capture.provider_session_key,
+                provider_session_id: capture.native_id,
+                filename: format!("session-history-{short_id}.md"),
+                markdown,
+            })
+            .await
+    }
+
     async fn attach_source(&self) -> Option<SessionSource> {
         let initialize = self.adapter.lock().await.initialize_response()?;
         session_attach_source(&initialize, &self.config.policy)
@@ -185,10 +305,35 @@ impl RuntimeContext {
                 .remember(key, desired.clone());
         }
         let options = self.session_start_options(&task).await?;
+        // Capture the replay `session/load` streams before it answers; the run
+        // loop drains it after this returns, up to the fence injected below.
+        self.shared.history_captures.lock().await.insert(
+            native_id.to_string(),
+            HistoryCapture {
+                session_id: session.id.clone(),
+                channel_id: task.channel_id.clone(),
+                provider_session_key: key.clone(),
+                native_id: native_id.to_string(),
+                cwd: cwd.to_string(),
+                turns: Vec::new(),
+            },
+        );
         let loaded = {
             let mut adapter = self.adapter.lock().await;
-            adapter.load_session(native_id, options).await?
+            adapter.load_session(native_id, options).await
         };
+        let loaded = match loaded {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                self.shared.history_captures.lock().await.remove(native_id);
+                return Err(error);
+            }
+        };
+        self.adapter
+            .lock()
+            .await
+            .inject_fence(native_id.to_string())
+            .await;
         // Bind only after a successful load, so a failed attach leaves no
         // pointer for the next turn to resume.
         self.report_session_snapshot(&loaded.metadata).await;
@@ -200,5 +345,42 @@ impl RuntimeContext {
         self.reconcile_session_config(key, native_id).await?;
         self.report_provider_session(key, native_id).await?;
         Ok(native_id.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn capture() -> HistoryCapture {
+        HistoryCapture {
+            session_id: "session-1".into(),
+            channel_id: "channel-1".into(),
+            provider_session_key: "cheers:session:session-1".into(),
+            native_id: "01a1422e".into(),
+            cwd: "/work".into(),
+            turns: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn empty_replay_has_no_transcript() {
+        let mut history = capture();
+        history.push(Speaker::Agent, "   ");
+        assert!(history.to_markdown().is_none());
+    }
+
+    #[test]
+    fn oversized_history_keeps_the_most_recent_turns() {
+        let mut history = capture();
+        let big = "x".repeat(MAX_HISTORY_BYTES / 2);
+        history.push(Speaker::User, &format!("first {big}"));
+        history.push(Speaker::Agent, &format!("second {big}"));
+        history.push(Speaker::User, "latest question");
+        let markdown = history.to_markdown().unwrap();
+        assert!(markdown.len() <= MAX_HISTORY_BYTES, "{}", markdown.len());
+        assert!(markdown.contains("_1 earlier turns omitted._"));
+        assert!(!markdown.contains("first x"));
+        assert!(markdown.contains("latest question"));
     }
 }

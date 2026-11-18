@@ -1257,6 +1257,20 @@ pub enum DataOutbound {
         content_type: Option<String>,
         data_b64: String,
     },
+    /// Connector → gateway: the conversation an `attach` loaded, captured from
+    /// the Agent's `session/load` replay and rendered as Markdown. The gateway
+    /// stores it as a channel file for the attached Cheers session.
+    #[serde(rename = "session_history")]
+    SessionHistory {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        session_id: String,
+        channel_id: String,
+        provider_session_key: String,
+        provider_session_id: String,
+        filename: String,
+        markdown: String,
+    },
     /// Connector → gateway: reply to a `workspace_req`, correlated by `req_id`.
     #[serde(rename = "workspace_res")]
     WorkspaceRes {

@@ -2279,6 +2279,8 @@ impl RuntimeContext {
                 tracing::warn!(account = %self.account_id, "ACP adapter error: {message}");
             }
             RuntimeEvent::LoadSessionFence { acp_session_id } => {
+                // Every replayed update precedes the fence, so a capture is complete.
+                self.finish_history_capture(&acp_session_id).await?;
                 if let Some(run) = self
                     .shared
                     .runs
@@ -3039,6 +3041,11 @@ impl RuntimeContext {
                 .await?;
         }
 
+        // An attach's load replay has no run; keep it for the transcript.
+        if self.capture_history(&acp_session_id, &kind, &update).await {
+            return Ok(());
+        }
+
         let run = self
             .shared
             .runs
@@ -3505,6 +3512,9 @@ struct SharedRuntimeState {
     watches: Mutex<HashMap<String, WatchHandle>>,
     /// Daemon-wide turn cap; no lock, the semaphore is its own synchronization.
     turn_slots: TurnSlots,
+    /// Attached sessions whose `session/load` replay is being captured, keyed
+    /// by the Agent's session id until its load fence arrives.
+    history_captures: Mutex<HashMap<String, HistoryCapture>>,
 }
 
 #[derive(Default)]
@@ -3566,6 +3576,7 @@ impl SharedRuntimeState {
             channel_names: RwLock::new(channel_names),
             watches: Mutex::new(HashMap::new()),
             turn_slots: TurnSlots::new(max_concurrent),
+            history_captures: Mutex::new(HashMap::new()),
         }
     }
 }

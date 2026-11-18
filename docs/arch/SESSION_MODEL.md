@@ -67,7 +67,7 @@ decorative rows for unimplemented actions.
 | **close / terminate** (≈ soft delete) | INITIATE `session_close` — owner-default, grantable; owner/admin bypass | `DELETE …/sessions/:id` | ✅ |
 | **list** | **channel membership** (not a per-subject grant) | `GET …/sessions` | ⚠️ membership-gated, **not** in matrix |
 | **resume** | — | — | ❌ not exposed (auto-resumes by `provider_session_key` on next message) |
-| **attach** (an Agent session started outside Cheers, e.g. `codex://threads/<id>`) | bot owner / platform admin + channel member (+2FA policy) | `POST …/sessions/resolve` · `POST …/bots/:bot/sessions/attach` | ✅ connector `session/list` → `session/load`; never falls back to `session/new` — a failed attach closes the new session |
+| **attach** (an Agent session started outside Cheers, e.g. `codex://threads/<id>`) | bot owner / platform admin + channel member (+2FA policy) | `POST …/sessions/resolve` · `POST …/bots/:bot/sessions/attach` | ✅ connector `session/list` → `session/load`; never falls back to `session/new` — a failed attach closes the new session; the replayed conversation is captured up to the load fence and stored as a `session-history-<id>.md` channel file (`session_history` data frame; refused for bots that require signed frames) |
 | **fork** | — | — | ❌ not exposed (ACP advanced; no connector support / UX yet) |
 | **hard delete** (purge row + history) | — | — | ❌ not separate (`close` covers stop-using; no destructive purge) |
 | `request_permission` | RESPOND (matrix) + owner/approvers | approval card | ✅ |

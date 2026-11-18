@@ -329,9 +329,82 @@ pub async fn attach_session(
     })))
 }
 
+/// Upper bound accepted for an imported transcript; the connector already
+/// trims to 4 MiB, this guards against a misbehaving one.
+const MAX_HISTORY_BYTES: usize = 4 * 1024 * 1024;
+
+/// Store the transcript a connector captured while attaching (`session_history`
+/// data frame) as a channel file delivered by the bot. Only for a live session
+/// of this bot bound to the named channel; the write itself goes through the
+/// same channel-write authorization as the agent's own file delivery.
+pub(crate) async fn store_session_history(
+    state: &AppState,
+    bot_id: Uuid,
+    frame: &Value,
+) -> Result<Value, AppError> {
+    let proto::DataOutbound::SessionHistory {
+        session_id,
+        channel_id,
+        provider_session_key,
+        filename,
+        markdown,
+        ..
+    } = serde_json::from_value(frame.clone())
+        .map_err(|error| AppError::BadRequest(format!("invalid session_history: {error}")))?
+    else {
+        return Err(AppError::BadRequest("not a session_history frame".into()));
+    };
+    if markdown.len() > MAX_HISTORY_BYTES {
+        return Err(AppError::PayloadTooLarge(
+            "session history too large".into(),
+        ));
+    }
+    let session_id: Uuid = session_id
+        .parse()
+        .map_err(|_| AppError::BadRequest("invalid session_id".into()))?;
+    let (owner, key) =
+        sessions::resolve_channel_session(&state.db, &channel_id, session_id).await?;
+    if owner != bot_id || key != provider_session_key {
+        return Err(AppError::Forbidden(
+            "session history does not belong to this bot's session".into(),
+        ));
+    }
+    let principal = crate::resource::Principal {
+        principal_type: crate::resource::PrincipalType::Bot,
+        principal_id: bot_id,
+        on_behalf_of: None,
+        task: None,
+    };
+    use base64::Engine as _;
+    let params = json!({
+        "channel_id": channel_id,
+        "filename": filename,
+        "content_type": "text/markdown",
+        "data_b64": base64::engine::general_purpose::STANDARD.encode(markdown.as_bytes()),
+    });
+    crate::resource::artifacts::handle_deliver(&state.db, &principal, &params)
+        .await
+        .map_err(|(code, message)| AppError::BadRequest(format!("{code}: {message}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_history_fixture_parses_as_the_stored_frame() {
+        let path = crate::gateway::bridge_frames::fixture::fixtures_root()
+            .join("data/to_gateway/session_history.json");
+        let frame: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let proto::DataOutbound::SessionHistory {
+            filename, markdown, ..
+        } = serde_json::from_value(frame).unwrap()
+        else {
+            panic!("expected session_history");
+        };
+        assert_eq!(filename, "session-history-01a1422e.md");
+        assert!(markdown.starts_with("# Imported session history"));
+    }
 
     #[test]
     fn advertised_sources_reads_the_ready_capability() {

@@ -1026,6 +1026,18 @@ mod fixture_tests {
             "data/to_gateway/file_upload.json",
         );
         assert_round_trips(
+            &DataOutbound::SessionHistory {
+                v: BRIDGE_PROTOCOL_VERSION,
+                session_id: "eeeeeeee-ffff-4000-8111-222222222222".into(),
+                channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+                provider_session_key: "cheers:session:eeeeeeee-ffff-4000-8111-222222222222".into(),
+                provider_session_id: "01a1422e-d5e6-7e10-be3b-040fa49834a4".into(),
+                filename: "session-history-01a1422e.md".into(),
+                markdown: "# Imported session history\n\n## User\n\nhello\n".into(),
+            },
+            "data/to_gateway/session_history.json",
+        );
+        assert_round_trips(
             &DataOutbound::WorkspaceRes {
                 v: BRIDGE_PROTOCOL_VERSION,
                 req_id: "req-2".into(),

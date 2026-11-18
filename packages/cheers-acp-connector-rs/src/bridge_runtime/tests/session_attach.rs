@@ -159,3 +159,98 @@ async fn attach_source_requires_list_load_and_policy() {
     policy.sessions.load = false;
     assert_eq!(session_attach_source(&initialize, &policy), None);
 }
+
+fn chunk(kind: &str, text: &str) -> RuntimeEvent {
+    RuntimeEvent::SessionUpdate {
+        acp_session_id: THREAD.to_string(),
+        update: json!({"sessionUpdate": kind, "content": {"type": "text", "text": text}}),
+    }
+}
+
+#[tokio::test]
+async fn attach_sends_the_replayed_conversation_after_the_load_fence() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, _calls, cwd, mut taps) = attach_runtime(dir.path()).await;
+    runtime
+        .attach_session("req-1", &attach_control(&cwd, THREAD))
+        .await
+        .unwrap();
+    // `provider session` report from the attach itself.
+    while taps.priority.try_recv().is_ok() {}
+
+    for event in [
+        chunk("user_message_chunk", "Why does login "),
+        chunk("user_message_chunk", "loop?"),
+        chunk("agent_thought_chunk", "private reasoning"),
+        chunk("agent_message_chunk", "The redirect "),
+        chunk("agent_message_chunk", "drops the cookie."),
+    ] {
+        runtime.clone().handle_adapter_event(event).await.unwrap();
+    }
+    assert!(
+        taps.priority.try_recv().is_err(),
+        "nothing is sent before the fence"
+    );
+
+    runtime
+        .clone()
+        .handle_adapter_event(RuntimeEvent::LoadSessionFence {
+            acp_session_id: THREAD.to_string(),
+        })
+        .await
+        .unwrap();
+
+    let DataOutbound::SessionHistory {
+        session_id,
+        channel_id,
+        provider_session_id,
+        filename,
+        markdown,
+        ..
+    } = taps.priority.try_recv().unwrap()
+    else {
+        panic!("expected session_history");
+    };
+    assert_eq!(session_id, "session-1");
+    assert_eq!(channel_id, "channel-1");
+    assert_eq!(provider_session_id, THREAD);
+    assert_eq!(filename, "session-history-01a1422e.md");
+    assert!(
+        markdown.contains("## User\n\nWhy does login loop?\n"),
+        "{markdown}"
+    );
+    assert!(
+        markdown.contains("## Agent\n\nThe redirect drops the cookie.\n"),
+        "{markdown}"
+    );
+    assert!(!markdown.contains("private reasoning"));
+
+    // The capture is gone: a second fence sends nothing more.
+    runtime
+        .clone()
+        .handle_adapter_event(RuntimeEvent::LoadSessionFence {
+            acp_session_id: THREAD.to_string(),
+        })
+        .await
+        .unwrap();
+    assert!(taps.priority.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn updates_for_sessions_not_being_attached_are_not_captured() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, _calls, _cwd, mut taps) = attach_runtime(dir.path()).await;
+    runtime
+        .clone()
+        .handle_adapter_event(chunk("agent_message_chunk", "hello"))
+        .await
+        .unwrap();
+    runtime
+        .clone()
+        .handle_adapter_event(RuntimeEvent::LoadSessionFence {
+            acp_session_id: THREAD.to_string(),
+        })
+        .await
+        .unwrap();
+    assert!(taps.priority.try_recv().is_err());
+}
