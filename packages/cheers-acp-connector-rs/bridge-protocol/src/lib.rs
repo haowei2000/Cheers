@@ -1270,6 +1270,9 @@ pub enum DataOutbound {
         provider_session_id: String,
         filename: String,
         markdown: String,
+        /// Signed like `send`: it writes content into the channel.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_capability: Option<AcpCapabilityEnvelope>,
     },
     /// Connector → gateway: reply to a `workspace_req`, correlated by `req_id`.
     #[serde(rename = "workspace_res")]

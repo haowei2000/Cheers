@@ -262,6 +262,7 @@ fn frame_needs_capability(frame_type: &str) -> bool {
             | "permission_request"
             | "elicitation_request"
             | "trace"
+            | "session_history"
     )
 }
 
@@ -276,6 +277,8 @@ fn frame_action(frame_type: &str) -> Option<&str> {
         // existing permission_request capability grant during this migration.
         "elicitation_request" => Some("permission_request"),
         "trace" => Some("trace"),
+        // An attach transcript writes content into the channel, like a send.
+        "session_history" => Some("send"),
         _ => None,
     }
 }
@@ -1113,6 +1116,12 @@ pub fn map_app_error(err: CapabilityError) -> AppError {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn session_history_requires_the_send_capability() {
+        assert!(frame_needs_capability("session_history"));
+        assert_eq!(frame_action("session_history"), Some("send"));
+    }
 
     fn make_delegation(
         scope_type: &str,

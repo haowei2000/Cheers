@@ -1334,13 +1334,10 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         }
 
         // ── attach 载入的历史（connector → gateway）────────────────────────
-        // Unsigned: a bot that requires capability signatures must not gain an
-        // unsigned way to write channel files, so it is refused until the frame
-        // joins the signed set.
+        // Signed like `send` (acp_capability) for bots that require capabilities;
+        // that check ran in the read loop before this dispatch.
         "session_history" => {
-            if bot.require_capability {
-                tracing::warn!(bot_id = %bot.bot_id, "session_history refused: bot requires signed frames");
-            } else if let Err(error) =
+            if let Err(error) =
                 crate::api::session_attach::store_session_history(state, bot.bot_id, frame).await
             {
                 tracing::warn!(bot_id = %bot.bot_id, %error, "session_history not stored");

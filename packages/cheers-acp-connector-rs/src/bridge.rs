@@ -1034,6 +1034,7 @@ mod fixture_tests {
                 provider_session_id: "01a1422e-d5e6-7e10-be3b-040fa49834a4".into(),
                 filename: "session-history-01a1422e.md".into(),
                 markdown: "# Imported session history\n\n## User\n\nhello\n".into(),
+                acp_capability: None,
             },
             "data/to_gateway/session_history.json",
         );

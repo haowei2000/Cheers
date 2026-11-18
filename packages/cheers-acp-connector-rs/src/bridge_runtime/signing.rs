@@ -158,6 +158,7 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         DataOutbound::AuthRequired { .. } => Some("auth_required"),
         DataOutbound::SessionUpdate { .. } => Some("session_update"),
         DataOutbound::Trace { .. } => Some("trace"),
+        DataOutbound::SessionHistory { .. } => Some("session_history"),
         DataOutbound::Auth { .. }
         | DataOutbound::Ping
         | DataOutbound::Resume { .. }
@@ -171,7 +172,6 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         | DataOutbound::AuthCancel { .. }
         | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. }
-        | DataOutbound::SessionHistory { .. }
         | DataOutbound::Unknown => None,
     }
 }
@@ -186,6 +186,7 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::ElicitationRequest { acp_capability, .. }
         | DataOutbound::AuthRequired { acp_capability, .. }
         | DataOutbound::SessionUpdate { acp_capability, .. }
+        | DataOutbound::SessionHistory { acp_capability, .. }
         | DataOutbound::Trace { acp_capability, .. } => {
             *acp_capability = Some(envelope);
         }
@@ -202,7 +203,6 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::AuthCancel { .. }
         | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. }
-        | DataOutbound::SessionHistory { .. }
         | DataOutbound::Unknown => {}
     }
 }
@@ -273,6 +273,21 @@ mod tests {
             .unwrap()
             .get("acp_capability")
             .is_some()
+    }
+
+    #[test]
+    fn session_history_is_signed_like_a_send() {
+        let mut signer = signer();
+        let history = frame(json!({
+            "type": "session_history",
+            "session_id": "s",
+            "channel_id": "c",
+            "provider_session_key": "cheers:session:s",
+            "provider_session_id": "native",
+            "filename": "session-history-native.md",
+            "markdown": "# Imported session history",
+        }));
+        assert!(signed(&mut signer, history));
     }
 
     #[test]

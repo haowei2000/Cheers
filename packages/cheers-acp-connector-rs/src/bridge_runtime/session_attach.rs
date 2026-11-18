@@ -175,6 +175,7 @@ impl RuntimeContext {
                 provider_session_id: capture.native_id,
                 filename: format!("session-history-{short_id}.md"),
                 markdown,
+                acp_capability: None,
             })
             .await
     }
