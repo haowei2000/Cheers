@@ -43,7 +43,7 @@
     "fflate": "^0.8.3",
     "highlight.js": "^11.11.2",
     "livekit-client": "^2.22.3",
-    "lucide-react": "^1.33.0",
+    "lucide-react": "^1.62.0",
     "pdfjs-dist": "^6.2.108",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
