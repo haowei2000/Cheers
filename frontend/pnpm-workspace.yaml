@@ -7,6 +7,15 @@ allowBuilds:
 # - minimatch (via eslint, typescript-eslint, workbox-build > ejs > jake >
 #   filelist): GHSA-g3hv-75wg-m249; only 11.x is patched
 # - glob (via workbox-build): GHSA-3g3m-2fjr-6pw4
+# Advisories with no patched release yet. Each entry names its only path and
+# must be removed once a fix ships (re-run `pnpm audit` without it).
+# - picomatch (via typescript-eslint > tinyglobby, and vite-plugin-pwa >
+#   workbox-build > @rollup/pluginutils): GHSA-fc5q-39xc-vjpf, ReDoS in extglob
+#   patterns. Reached only from devDependencies (lint/build tooling, never in
+#   the bundle); every release through 4.0.7 is affected.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
 overrides:
   zod: ^4.6.6
   fast-uri: ^3.1.9
