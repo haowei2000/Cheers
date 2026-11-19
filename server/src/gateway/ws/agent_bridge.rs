@@ -515,6 +515,12 @@ async fn handle_control_frame(
                     );
                 }
             }
+            // Wake a waiting caller only after the session row reflects the ack.
+            if let Some(request_id) = frame.get("request_id").and_then(Value::as_str) {
+                state
+                    .session_control_acks
+                    .resolve(request_id, frame.clone());
+            }
         }
         proto::ControlOutbound::ConfigOptions { options, v } => {
             // Advertised-options snapshot (configOptions / modes / models /
@@ -1324,6 +1330,17 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                     frame.get("content").and_then(Value::as_str),
                     frame.get("error").and_then(Value::as_str),
                 );
+            }
+        }
+
+        // ── attach 载入的历史（connector → gateway）────────────────────────
+        // Signed like `send` (acp_capability) for bots that require capabilities;
+        // that check ran in the read loop before this dispatch.
+        "session_history" => {
+            if let Err(error) =
+                crate::api::session_attach::store_session_history(state, bot.bot_id, frame).await
+            {
+                tracing::warn!(bot_id = %bot.bot_id, %error, "session_history not stored");
             }
         }
 

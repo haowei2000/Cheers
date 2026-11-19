@@ -66,6 +66,42 @@ pub struct SessionLoadResult {
 }
 
 #[derive(Debug, Clone)]
+/// One page of ACP `session/list`.
+pub struct SessionListPage {
+    /// The Agent's `SessionInfo` objects, verbatim.
+    pub sessions: Vec<Value>,
+    /// Cursor for the next page; absent on the last page.
+    pub next_cursor: Option<String>,
+}
+
+impl SessionListPage {
+    /// Reads a `session/list` response, skipping malformed entries the way the
+    /// official schema does (`sessions` without a string `sessionId`).
+    pub fn from_response(response: &Value) -> Self {
+        let sessions = response
+            .get("sessions")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter(|item| item.get("sessionId").is_some_and(Value::is_string))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        let next_cursor = response
+            .get("nextCursor")
+            .and_then(Value::as_str)
+            .filter(|cursor| !cursor.is_empty())
+            .map(str::to_string);
+        Self {
+            sessions,
+            next_cursor,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 /// Terminal result of one ACP prompt turn.
 pub struct PromptResult {
     /// Agent-provided ACP stop reason, when one was returned.
@@ -77,6 +113,8 @@ pub struct PromptResult {
 pub struct AgentCapabilities {
     /// Whether the agent supports `session/load`.
     pub load_session: bool,
+    /// Whether the agent supports `session/list` (`sessionCapabilities.list`).
+    pub list_sessions: bool,
     /// Whether image content blocks may be included in prompts.
     pub prompt_image: bool,
     /// Whether audio content blocks may be included in prompts.
@@ -98,6 +136,12 @@ impl AgentCapabilities {
         };
         Self {
             load_session: enabled(&["loadSession"]),
+            // Session capabilities are advertised as objects (`"list": {}`),
+            // not booleans: presence means supported.
+            list_sessions: caps
+                .and_then(|root| root.get("sessionCapabilities"))
+                .and_then(|value| value.get("list"))
+                .is_some_and(Value::is_object),
             prompt_image: enabled(&["promptCapabilities", "image"]),
             prompt_audio: enabled(&["promptCapabilities", "audio"]),
             mcp_http: enabled(&["mcpCapabilities", "http"]),
@@ -250,6 +294,8 @@ pub trait RuntimeAdapter: Send {
         session_id: &str,
         options: SessionStartOptions,
     ) -> anyhow::Result<SessionLoadResult>;
+    /// Lists the Agent's existing sessions, one page per call.
+    async fn list_sessions(&mut self, cursor: Option<&str>) -> anyhow::Result<SessionListPage>;
     /// Cancels the active operation for a session.
     async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()>;
     /// Applies one agent-advertised session configuration option.
@@ -294,13 +340,15 @@ mod tests {
             "agentCapabilities": {
                 "loadSession": true,
                 "promptCapabilities": {"image": true, "audio": false},
-                "mcpCapabilities": {"http": true, "sse": false}
+                "mcpCapabilities": {"http": true, "sse": false},
+                "sessionCapabilities": {"list": {}}
             }
         });
         assert_eq!(
             AgentCapabilities::from_initialize(Some(&initialize)),
             AgentCapabilities {
                 load_session: true,
+                list_sessions: true,
                 prompt_image: true,
                 prompt_audio: false,
                 mcp_http: true,

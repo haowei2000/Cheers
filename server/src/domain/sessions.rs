@@ -662,6 +662,36 @@ pub async fn list_channel_sessions(
 /// Resolve a session targeted by a message, verifying it is bound to the given
 /// channel (so a message can't target a session from another channel). Returns
 /// `(bot_id, provider_session_key)` to dispatch with.
+/// The live Cheers session (with its channel, when bound to one) that already
+/// holds this bot's Agent session `provider_session_id`. Attach refuses a second
+/// one: two Cheers sessions driving one Agent session would interleave turns.
+pub async fn find_live_session_by_provider_id(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_session_id: &str,
+) -> Result<Option<(Uuid, Option<String>)>, AppError> {
+    let row = sqlx::query!(
+        r#"SELECT s.session_id, b.scope_id AS "channel_id?"
+         FROM cheers_sessions s
+         LEFT JOIN cheers_session_bindings b
+                ON b.session_id = s.session_id AND b.scope_type = $3
+         WHERE s.bot_id = $1 AND s.provider_session_id = $2
+           AND s.status NOT IN ('terminated', 'revoked', 'expired')
+         LIMIT 1"#,
+        bot_id.to_string(),
+        provider_session_id,
+        SESSION_SCOPE_CHANNEL,
+    )
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?;
+    Ok(row.and_then(|row| {
+        Uuid::parse_str(&row.session_id)
+            .ok()
+            .map(|id| (id, row.channel_id))
+    }))
+}
+
 pub async fn resolve_channel_session(
     db: &PgPool,
     channel_id: &str,

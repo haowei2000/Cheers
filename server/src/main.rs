@@ -242,6 +242,7 @@ async fn main() -> anyhow::Result<()> {
         bot_registry,
         stream_registry,
         workspace_rpc,
+        session_control_acks: Arc::new(gateway::workspace_rpc::WorkspaceRpc::new()),
         web_push,
         push,
         mcp_delivery: Arc::default(),

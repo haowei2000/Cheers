@@ -4,6 +4,8 @@
 //! reply (file tree / file contents), so the gateway registers a one-shot keyed
 //! by `req_id`, sends a `workspace_req` data frame, and the data-WS handler
 //! resolves the one-shot when the matching `workspace_res` frame arrives.
+//! The same registry type correlates `runtime_session_control` acks by
+//! `request_id` (`AppState::session_control_acks`).
 
 use dashmap::DashMap;
 use serde_json::Value;

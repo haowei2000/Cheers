@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.session_id, b.scope_id AS \"channel_id?\"\n         FROM cheers_sessions s\n         LEFT JOIN cheers_session_bindings b\n                ON b.session_id = s.session_id AND b.scope_type = $3\n         WHERE s.bot_id = $1 AND s.provider_session_id = $2\n           AND s.status NOT IN ('terminated', 'revoked', 'expired')\n         LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "456db683115ad70fc38bc390f953eb1ab242f267ec6d425717567742b38ebadb"
+}

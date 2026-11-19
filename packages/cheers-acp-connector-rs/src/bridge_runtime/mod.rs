@@ -57,7 +57,8 @@ use crate::mcp_delivery;
 use crate::mcp_over_acp::{self, AcpMcpServer};
 use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
-    PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
+    AgentCapabilities, PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent,
+    SessionStartOptions,
 };
 use crate::self_update::SelfUpdater;
 use crate::state::SessionStateStore;
@@ -576,6 +577,7 @@ struct WorkspaceRequest {
     commit: Option<String>,
     commit_path: Option<String>,
     watch_id: Option<String>,
+    session_ref: Option<cheers_bridge_protocol::session_ref::SessionRef>,
 }
 
 /// Parsed subset of `git status --porcelain=v2 --branch` headers + entries.
@@ -1332,6 +1334,7 @@ impl RuntimeContext {
                 commit,
                 commit_path,
                 watch_id,
+                session_ref,
             } => {
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -1349,6 +1352,7 @@ impl RuntimeContext {
                             commit,
                             commit_path,
                             watch_id,
+                            session_ref,
                         })
                         .await
                     {
@@ -1435,6 +1439,7 @@ impl RuntimeContext {
             commit,
             commit_path,
             watch_id,
+            session_ref,
         } = request;
         let op = op.as_str();
         let rel = rel.as_str();
@@ -1460,6 +1465,17 @@ impl RuntimeContext {
             // validate_cwd_op returns a 2-tuple error; widen it to the triple.
             return self
                 .validate_cwd_op(rel)
+                .await
+                .map_err(|(c, m)| (c, m, None));
+        }
+
+        // `session_resolve` looks a pasted session reference up in the Agent's
+        // own `session/list`; like validate_cwd it resolves no browse path.
+        if op == "session_resolve" {
+            let reference =
+                session_ref.ok_or_else(|| err("E_INVALID", "session_ref required".into()))?;
+            return self
+                .resolve_session(&reference)
                 .await
                 .map_err(|(c, m)| (c, m, None));
         }
@@ -2263,6 +2279,8 @@ impl RuntimeContext {
                 tracing::warn!(account = %self.account_id, "ACP adapter error: {message}");
             }
             RuntimeEvent::LoadSessionFence { acp_session_id } => {
+                // Every replayed update precedes the fence, so a capture is complete.
+                self.finish_history_capture(&acp_session_id).await?;
                 if let Some(run) = self
                     .shared
                     .runs
@@ -2896,29 +2914,15 @@ impl RuntimeContext {
         session: RuntimeSessionControlSession,
     ) -> anyhow::Result<()> {
         let result = match action.as_str() {
-            "create" | "resume" => {
-                let task = TaskCommand {
-                    task_id: session
-                        .task_scope_id
-                        .clone()
-                        .unwrap_or_else(|| request_id.clone()),
-                    execution: None,
-                    channel_id: session.primary_scope_id.clone().unwrap_or_default(),
-                    msg_id: session.id.clone(),
-                    provider_session_key: session.provider_session_key.clone(),
-                    session_id: Some(session.id.clone()),
-                    trigger: None,
-                    trigger_message: None,
-                    attachments: Vec::new(),
-                    pinned: Vec::new(),
-                    cwd: session.cwd.clone(),
-                    additional_dirs: session.additional_dirs.clone(),
-                    context_bundle: None,
-                    session_config: session.session_config.clone(),
-                };
-                let started = match self.session_start_options(&task).await {
-                    Ok(options) => self.ensure_acp_session(&task, options).await,
-                    Err(error) => Err(error),
+            "create" | "resume" | "attach" => {
+                let started = if action == "attach" {
+                    self.attach_session(&request_id, &session).await
+                } else {
+                    let task = session_control_task(&request_id, &session);
+                    match self.session_start_options(&task).await {
+                        Ok(options) => self.ensure_acp_session(&task, options).await,
+                        Err(error) => Err(error),
+                    }
                 };
                 started.map(|id| {
                     (
@@ -3035,6 +3039,11 @@ impl RuntimeContext {
                     options: normalize_config_options_report(&update),
                 })
                 .await?;
+        }
+
+        // An attach's load replay has no run; keep it for the transcript.
+        if self.capture_history(&acp_session_id, &kind, &update).await {
+            return Ok(());
         }
 
         let run = self
@@ -3503,6 +3512,9 @@ struct SharedRuntimeState {
     watches: Mutex<HashMap<String, WatchHandle>>,
     /// Daemon-wide turn cap; no lock, the semaphore is its own synchronization.
     turn_slots: TurnSlots,
+    /// Attached sessions whose `session/load` replay is being captured, keyed
+    /// by the Agent's session id until its load fence arrives.
+    history_captures: Mutex<HashMap<String, HistoryCapture>>,
 }
 
 #[derive(Default)]
@@ -3564,6 +3576,7 @@ impl SharedRuntimeState {
             channel_names: RwLock::new(channel_names),
             watches: Mutex::new(HashMap::new()),
             turn_slots: TurnSlots::new(max_concurrent),
+            history_captures: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -4007,12 +4020,14 @@ mod frames;
 mod io;
 mod permission;
 mod prompt;
+mod session_attach;
 mod signing;
 mod tasks;
 
 use frames::*;
 use io::*;
 use prompt::*;
+use session_attach::*;
 use signing::*;
 
 #[cfg(test)]
@@ -4023,6 +4038,7 @@ mod tests {
 
     mod config_discovery;
     mod prompt_drain;
+    mod session_attach;
 
     use crate::bridge::PermissionOption;
     use crate::runtime_adapter::{
@@ -4118,6 +4134,8 @@ mod tests {
         native_model_only: bool,
         auth_enabled: bool,
         config_calls: Arc<Mutex<Vec<String>>>,
+        /// `session/list` results, served one per page; empty ⇒ no list capability.
+        listed_sessions: Vec<Value>,
     }
 
     #[async_trait::async_trait]
@@ -4174,6 +4192,22 @@ mod tests {
                 metadata: json!({}),
             })
         }
+        async fn list_sessions(
+            &mut self,
+            cursor: Option<&str>,
+        ) -> anyhow::Result<crate::runtime_adapter::SessionListPage> {
+            let index: usize = cursor.map_or(Ok(0), str::parse)?;
+            Ok(crate::runtime_adapter::SessionListPage {
+                sessions: self
+                    .listed_sessions
+                    .get(index)
+                    .cloned()
+                    .into_iter()
+                    .collect(),
+                next_cursor: (index + 1 < self.listed_sessions.len())
+                    .then(|| (index + 1).to_string()),
+            })
+        }
         async fn cancel(&mut self, _session_id: &str) -> anyhow::Result<()> {
             Ok(())
         }
@@ -4220,6 +4254,7 @@ mod tests {
             // fixture needs no session persistence.
             AgentCapabilities {
                 load_session: self.load_sessions,
+                list_sessions: !self.listed_sessions.is_empty(),
                 prompt_image: false,
                 prompt_audio: false,
                 mcp_http: true,
@@ -4227,6 +4262,15 @@ mod tests {
             }
         }
         fn initialize_response(&self) -> Option<Value> {
+            if !self.listed_sessions.is_empty() {
+                return Some(json!({
+                    "agentInfo": {"name": "@agentclientprotocol/codex-acp", "version": "2.2.2"},
+                    "agentCapabilities": {
+                        "loadSession": self.load_sessions,
+                        "sessionCapabilities": {"list": {}}
+                    }
+                }));
+            }
             self.auth_enabled.then(|| {
                 json!({
                     "authMethods":[{"id":"fixture-auth", "name":"Fixture login"}]
@@ -4370,6 +4414,7 @@ max_concurrent = {max_concurrent}
             native_model_only: false,
             auth_enabled: false,
             config_calls: Arc::new(Mutex::new(Vec::new())),
+            listed_sessions: Vec::new(),
         });
         let config = fixture_config(dir, max_concurrent).await;
         let TestIo {
@@ -4836,6 +4881,7 @@ max_concurrent = {max_concurrent}
             native_model_only: true,
             auth_enabled: false,
             config_calls: calls.clone(),
+            listed_sessions: Vec::new(),
         });
         (runtime, calls, release, taps)
     }
@@ -4863,6 +4909,7 @@ max_concurrent = {max_concurrent}
                 native_model_only: false,
                 auth_enabled: true,
                 config_calls: calls.clone(),
+                listed_sessions: Vec::new(),
             });
             let standard = evaluation.is_none();
             let turn = tokio::spawn(runtime.clone().run_task(fixture_task("auth"), evaluation));

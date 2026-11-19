@@ -550,6 +550,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         // ── Per-channel sessions: primary + other (docs/arch/SESSION_MODEL.md) ─
         .route(
+            "/api/v1/channels/:channel_id/sessions/resolve",
+            post(api::session_attach::resolve_session),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/bots/:bot_id/sessions/attach",
+            post(api::session_attach::attach_session),
+        )
+        .route(
             "/api/v1/channels/:channel_id/bots/:bot_id/sessions",
             get(api::session_control::list_sessions).post(api::session_control::create_session),
         )
