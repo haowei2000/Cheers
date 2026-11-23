@@ -52,6 +52,7 @@ COPY packages/cheers-interactive-core /app/packages/cheers-interactive-core
 COPY packages/cheers-acp-registry /app/packages/cheers-acp-registry
 COPY shared/ /app/shared/
 COPY design-system/a2ui-catalog.json /app/design-system/a2ui-catalog.json
+COPY design-system/a2ui-catalog-v2.json /app/design-system/a2ui-catalog-v2.json
 COPY frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json /app/frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json
 COPY server/src ./src
 COPY server/build.rs ./build.rs
