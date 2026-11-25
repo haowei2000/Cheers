@@ -21,8 +21,7 @@ import {
   joinVoiceChannel,
   setVoiceTranscription,
 } from "@/api/channels";
-import { VoiceRoomToolbar } from "./VoiceRoomToolbar";
-import { VoiceToolbarPortal } from "./VoiceRoomToolbar";
+import { VoiceRoomToolbar, VoiceToolbarPortal } from "./VoiceRoomToolbar";
 import type { VoiceInterimSegment, VoiceTranscriptSegment } from "@/types";
 
 interface Props {
@@ -268,7 +267,7 @@ export function VoiceRoomPanel({
       if (grant.can_publish) {
         await room.localParticipant.setMicrophoneEnabled(true);
         setMicEnabled(true);
-      } else if (!grant.can_publish) {
+      } else {
         // Listen-only join: either a readonly member OR explicit-consent mode
         // that hasn't been accepted yet. If we can't publish, surface the
         // disclosure card so the user can consent and upgrade in place.

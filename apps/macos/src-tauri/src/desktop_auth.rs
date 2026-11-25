@@ -103,33 +103,15 @@ async fn post_auth(
     path: &str,
     body: Value,
 ) -> Result<AuthOutcome, (Option<reqwest::StatusCode>, String)> {
-    let response = reqwest::Client::new()
-        .post(format!("{server}/api/v1{path}"))
-        .header(ORIGIN, "tauri://localhost")
-        .json(&body)
-        .send()
+    let response = send(auth_request(server, path), body)
         .await
-        .map_err(|error| {
-            // The OAuth handoff runs in native reqwest rather than WKWebView.
-            // Keep its transport diagnosis (TLS, DNS, timeout, connection)
-            // visible to the UI; the request body and its secrets are not part
-            // of reqwest's Display output.
-            (None, format!("Could not reach the Cheers server: {error}"))
-        })?;
+        .map_err(|error| (None, error))?;
     if !response.status().is_success() {
         let status = response.status();
-        let detail = response
-            .json::<Value>()
-            .await
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("detail")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .unwrap_or_else(|| format!("Authentication failed (HTTP {status})"));
-        return Err((Some(status), detail));
+        return Err((
+            Some(status),
+            error_detail(response, "Authentication failed").await,
+        ));
     }
     response.json::<AuthOutcome>().await.map_err(|_| {
         (
@@ -139,33 +121,62 @@ async fn post_auth(
     })
 }
 
-async fn post_value(server: &str, path: &str, body: Value) -> Result<Value, String> {
-    let response = reqwest::Client::new()
+fn auth_request(server: &str, path: &str) -> reqwest::RequestBuilder {
+    reqwest::Client::new()
         .post(format!("{server}/api/v1{path}"))
         .header(ORIGIN, "tauri://localhost")
-        .json(&body)
-        .send()
+}
+
+async fn send(request: reqwest::RequestBuilder, body: Value) -> Result<reqwest::Response, String> {
+    request.json(&body).send().await.map_err(|error| {
+        // The OAuth handoff runs in native reqwest rather than WKWebView.
+        // Keep its transport diagnosis (TLS, DNS, timeout, connection)
+        // visible to the UI; the request body and its secrets are not part
+        // of reqwest's Display output.
+        format!("Could not reach the Cheers server: {error}")
+    })
+}
+
+/// The server's `detail` message, or `<failure> (HTTP <status>)` without one.
+async fn error_detail(response: reqwest::Response, failure: &str) -> String {
+    let status = response.status();
+    response
+        .json::<Value>()
         .await
-        .map_err(|error| format!("Could not reach the Cheers server: {error}"))?;
+        .ok()
+        .and_then(|value| {
+            value
+                .get("detail")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| format!("{failure} (HTTP {status})"))
+}
+
+async fn post_json(
+    request: reqwest::RequestBuilder,
+    body: Value,
+    failure: &str,
+    invalid: &str,
+) -> Result<Value, String> {
+    let response = send(request, body).await?;
     if !response.status().is_success() {
-        let status = response.status();
-        let detail = response
-            .json::<Value>()
-            .await
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("detail")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .unwrap_or_else(|| format!("Authentication failed (HTTP {status})"));
-        return Err(detail);
+        return Err(error_detail(response, failure).await);
     }
     response
         .json::<Value>()
         .await
-        .map_err(|_| "The server returned an invalid authentication response".into())
+        .map_err(|_| invalid.to_string())
+}
+
+async fn post_value(server: &str, path: &str, body: Value) -> Result<Value, String> {
+    post_json(
+        auth_request(server, path),
+        body,
+        "Authentication failed",
+        "The server returned an invalid authentication response",
+    )
+    .await
 }
 
 async fn post_step_up(
@@ -174,33 +185,13 @@ async fn post_step_up(
     access_token: &str,
     body: Value,
 ) -> Result<Value, String> {
-    let response = reqwest::Client::new()
-        .post(format!("{server}/api/v1{path}"))
-        .header(ORIGIN, "tauri://localhost")
-        .header(AUTHORIZATION, format!("Bearer {access_token}"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| format!("Could not reach the Cheers server: {error}"))?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let detail = response
-            .json::<Value>()
-            .await
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("detail")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .unwrap_or_else(|| format!("Identity confirmation failed (HTTP {status})"));
-        return Err(detail);
-    }
-    response
-        .json::<Value>()
-        .await
-        .map_err(|_| "The server returned an invalid identity confirmation response".into())
+    post_json(
+        auth_request(server, path).header(AUTHORIZATION, format!("Bearer {access_token}")),
+        body,
+        "Identity confirmation failed",
+        "The server returned an invalid identity confirmation response",
+    )
+    .await
 }
 
 /// Step-up commands deliberately never call persist_session: they prove the

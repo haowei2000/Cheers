@@ -1,0 +1,67 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_id, object_key, filename, content_type, size_bytes, status, result,\n                  expires_at <= NOW() AS \"expired!\"\n           FROM agent_file_uploads\n           WHERE upload_id = $1 AND channel_id = $2 AND bot_id = $3\n             AND on_behalf_of IS NOT DISTINCT FROM $4\n           FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "object_key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "filename",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "content_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "size_bytes",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "result",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "expired!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "7a7e7bfc4a92795185143103c3a846608a9a48bc58b28215689b97122444e60e"
+}

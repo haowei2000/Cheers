@@ -11,7 +11,8 @@
 - [架构索引](arch/ARCHITECTURE_OVERVIEW.md)
 - [安全与治理](governance/SECURITY.md)
 - [社区与贡献](community/CONTRIBUTING.md)
-- [发布说明](release_note/README.md)
+- [发布说明](release/notes/README.zh-CN.md)
+- [开发者追溯体系（草案）](developer/TRACEABILITY.md)：功能、缺陷、E2E 用例与计划如何关联
 
 ## 正式参考（当前状态）
 
@@ -24,7 +25,9 @@
 - 开发与集成：[`developer`](developer/)
 - 治理与合规：[`governance`](governance/)
 - 运维与问题复盘：[`ops`](ops/)
-- 发布说明：[`release_note`](release_note/)
+- 发布说明与发布手册：[`release`](release/)
+- 缺陷记录：[`bugs`](bugs/)
+- 历史存档：[`archive`](archive/)
 
 ## 草稿与规划文档
 
@@ -32,6 +35,6 @@
 
 - 🛠 规划中 —— [工程执行路线图](arch/ROADMAP.md)、[数据流全景与改造计划](arch/DATA_FLOW_AND_REFACTOR_PLAN.md)、[网关重构计划](arch/REFACTOR_PLAN.md)
 - 📝 草稿 / 提案 —— [科研场景](arch/RESEARCH_SCENARIO.md)、[frontend-next Figma 设计稿说明](design/frontend-next/main-chat-full-base.figma-notes.md)
-- 🗄 历史存档 —— [M1 演示手册](DEMO_M1.md)、[M1 安全评审](SECURITY_REVIEW_M1.md)
+- 🗄 历史存档 —— [M1 演示手册](archive/DEMO_M1.md)、[M1 安全评审](archive/SECURITY_REVIEW_M1.md)、[历史笔记](archive/README.md)
 
 完整清单见[文档索引](INDEX.zh-CN.md)。

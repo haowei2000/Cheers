@@ -34,6 +34,20 @@ import {
 
 type Geometry = Rect;
 
+/** Floating panels' viewport geometry, re-expressed against the lane (empty without one). */
+function laneRelativeFloats(
+  floats: Partial<Record<SpawnKind, Geometry>>,
+  lane: DOMRect | undefined,
+): Partial<Record<SpawnKind, Rect>> {
+  const relative: Partial<Record<SpawnKind, Rect>> = {};
+  if (lane) {
+    for (const [id, rect] of Object.entries(floats)) {
+      if (rect) relative[id as SpawnKind] = toLaneRelativeRect(rect, lane);
+    }
+  }
+  return relative;
+}
+
 export function PanelWorkspace({
   channelId,
   openPanels,
@@ -301,13 +315,7 @@ export function PanelWorkspace({
   ]);
   useEffect(() => {
     if (width <= 0) return;
-    const lane = rootRef.current?.getBoundingClientRect();
-    const floatingPanels: Partial<Record<SpawnKind, Rect>> = {};
-    if (lane) {
-      for (const [id, rect] of Object.entries(floats)) {
-        if (rect) floatingPanels[id as SpawnKind] = toLaneRelativeRect(rect, lane);
-      }
-    }
+    const floatingPanels = laneRelativeFloats(floats, rootRef.current?.getBoundingClientRect());
     onLayoutChange?.({
       layout: {
         width: Math.min(
@@ -341,13 +349,7 @@ export function PanelWorkspace({
     nextFloats = floatsRef.current,
   ) => {
     setOverridden(true);
-    const lane = rootRef.current?.getBoundingClientRect();
-    const storedFloats: Partial<Record<SpawnKind, Rect>> = {};
-    if (lane) {
-      for (const [id, rect] of Object.entries(nextFloats)) {
-        if (rect) storedFloats[id as SpawnKind] = toLaneRelativeRect(rect, lane);
-      }
-    }
+    const storedFloats = laneRelativeFloats(nextFloats, rootRef.current?.getBoundingClientRect());
     try {
       let existingOpen: Partial<Record<SpawnKind, boolean>> | undefined;
       const raw = localStorage.getItem(workspacePreferenceKey(channelId));

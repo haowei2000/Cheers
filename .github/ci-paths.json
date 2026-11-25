@@ -19,17 +19,21 @@
           "server/**",
           "scripts/sqlx-offline.sh",
           "design-system/a2ui-catalog.json",
+          "design-system/a2ui-catalog-v2.json",
+          "shared/view-suffixes.json",
           "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
           "fixtures/locator/**",
           "fixtures/desktop-onboarding/**",
           "fixtures/workbench/**",
           "packages/cheers-acp-connector-rs/bridge-protocol/**",
+          "packages/cheers-acp-registry/**",
           "packages/cheers-interactive-core/**",
           "packages/cheers-mcp-server/**"
         ],
         "frontend": [
           "frontend/**",
           "design-system/**",
+          "shared/view-suffixes.json",
           "extensions/**",
           "fixtures/workbench/**",
           "server/src/resource/mod.rs",
@@ -46,17 +50,21 @@
           "packages/cheers-mcp-server/**",
           "packages/cheers-interactive-core/**",
           "design-system/a2ui-catalog.json",
+          "design-system/a2ui-catalog-v2.json",
+          "shared/view-suffixes.json",
           "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
           "fixtures/locator/**",
           "fixtures/desktop-onboarding/**"
         ],
         "desktop": [
           "apps/macos/**",
+          "packages/cheers-acp-registry/**",
           "fixtures/desktop-onboarding/**"
         ],
         "ios": [
           "apps/ios/**",
           "design-system/**",
+          "shared/view-suffixes.json",
           "scripts/check-design-system.mjs",
           "scripts/check-pbxproj.py"
         ]
@@ -79,9 +87,12 @@
           "server/**",
           ".cargo/config.toml",
           "packages/cheers-acp-connector-rs/bridge-protocol/**",
+          "packages/cheers-acp-registry/**",
           "packages/cheers-interactive-core/**",
           "packages/cheers-mcp-server/**",
           "design-system/a2ui-catalog.json",
+          "design-system/a2ui-catalog-v2.json",
+          "shared/view-suffixes.json",
           "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
           "fixtures/locator/**",
           "fixtures/workbench/**"
@@ -89,6 +100,7 @@
         "frontend": [
           "frontend/**",
           "design-system/**",
+          "shared/view-suffixes.json",
           "extensions/**",
           "packages/cheers-canvas-runtime/**",
           "packages/cheers-workbench-sdk/**",

@@ -5,9 +5,6 @@ import { Link } from "react-router-dom";
 export const publicPanelClass =
   "bg-transparent p-0 space-y-4 [&_button]:rounded-sm! [&_button]:border-0! [&_button]:shadow-none! [&_input]:rounded-sm!";
 
-export const publicLabelClass =
-  "font-utility text-compact font-semibold text-content-muted uppercase tracking-overline";
-
 export const publicLinkClass =
   "font-utility text-content-secondary underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-200";
 

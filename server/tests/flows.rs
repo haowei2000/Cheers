@@ -604,6 +604,16 @@ async fn issue_330_concurrent_distinct_messages_all_persist_and_dispatch_once_ea
         "N 条用户消息必须全部落库，一条不少"
     );
 
+    // 发送路径对每条 intent 只即时投递一次；负载下某次投递失败或超时会留给
+    // 恢复循环（5 秒退避）重试。产品承诺的是“最终恰好一次”，所以计数前先跑恢复。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while counter.dispatched.load(Ordering::SeqCst) < N && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        dispatch_intents::recover_once(&db, &fanout, &registry, &bot_locator)
+            .await
+            .unwrap();
+    }
+
     // 每条用户消息各自的 trigger 都应触发该 default bot 一次 —— 恰好 N 次，
     // 一次不多（幂等）也一次不少（#330：并发下不应互相顶掉丢派发）。
     assert_eq!(
@@ -1947,6 +1957,32 @@ async fn m3_inbox_deliver_validates_and_requires_storage(db: PgPool) {
     )
     .await;
     assert_eq!(nostore.unwrap_err().0, "E_STORAGE_UNAVAILABLE");
+
+    // 合法 base64 但内容与源文件 sha256 不符 → 存储之前就拒,不会落下损坏文件
+    let damaged = files::handle_create(
+        &db,
+        &p,
+        &serde_json::json!({
+            "channel_id": ch, "filename": "r.txt", "data_b64": "aGVsbA==", // "hell"
+            "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            "idempotency_key": "damaged-copy"
+        }),
+    )
+    .await;
+    assert_eq!(damaged.unwrap_err().0, "E_CONTENT_MISMATCH");
+
+    // 同一 idempotency_key 重发正确内容 → 不被上次的拒绝占用,继续走到存储
+    let resent = files::handle_create(
+        &db,
+        &p,
+        &serde_json::json!({
+            "channel_id": ch, "filename": "r.txt", "data_b64": "aGVsbG8=",
+            "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            "idempotency_key": "damaged-copy"
+        }),
+    )
+    .await;
+    assert_eq!(resent.unwrap_err().0, "E_STORAGE_UNAVAILABLE");
 }
 
 // ── Phase A：promoted session/update artifacts（plan / usage / commands）─────────
@@ -4277,7 +4313,7 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
     .await;
     assert_eq!(contract["ok"], true, "{contract}");
     assert_eq!(
-        contract["data"]["request_example"]["messages"][1]["updateComponents"]["components"][6]
+        contract["data"]["request_example"]["messages"][0]["createSurface"]["components"][6]
             ["action"]["event"]["context"]["botId"],
         bot.to_string()
     );
@@ -4297,8 +4333,7 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
     .await;
     assert_eq!(good["ok"], true, "{good}");
     let mut bad = example.clone();
-    bad["messages"][1]["updateComponents"]["components"][0]["children"] =
-        serde_json::json!(["root"]);
+    bad["messages"][0]["createSurface"]["components"][0]["children"] = serde_json::json!(["root"]);
     let rejected = dispatch(
         &db,
         Principal::bot(bot),

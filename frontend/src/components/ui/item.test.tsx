@@ -21,6 +21,16 @@ function render(level: "max" | "medium" | "minimal") {
 }
 
 describe("ItemRow presentation levels", () => {
+  it("keeps medium rows single-line while retaining supporting descriptions and critical status", () => {
+    const markup = render("medium");
+    expect(markup).toMatch(/aria-describedby="[^"]+"/);
+    expect(markup).toContain('class="sr-only" aria-hidden="true">supporting</span>');
+    expect(markup).not.toContain("mt-1 block truncate text-caption");
+    expect(markup).toContain(">critical<");
+    expect(markup).toContain(">status<");
+    expect(markup).not.toContain("metadata");
+    expect(markup).not.toContain("preview");
+  });
   it("renders all supporting slots at max", () => {
     const markup = render("max");
     expect(markup).toContain("font-utility");

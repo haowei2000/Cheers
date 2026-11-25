@@ -29,6 +29,7 @@ use crate::{
     api::bots::{ensure_bot_owner_or_admin, ensure_recent_bot_owner_or_admin, version_triple},
     api::middleware::Claims,
     app_state::AppState,
+    domain::agent_catalog,
     domain::connector_config::{
         self, control_url, data_url, RenderParams, TokenRef, DEFAULT_PUBLIC_BASE,
     },
@@ -67,44 +68,41 @@ fn resolve_public_base(state: &AppState) -> (String, bool) {
     }
 }
 
-/// Normalize an agent_type input: legacy short names, registry ids, or generic.
+/// Normalize an agent_type input: any well-formed agent id, else generic.
 fn normalize_agent_type(raw: Option<&str>) -> String {
-    let Some(s) = raw
-        .map(|s| s.trim().to_ascii_lowercase())
-        .filter(|s| !s.is_empty())
-    else {
-        return "generic".into();
-    };
-    match s.as_str() {
-        "claude" | "codex" | "opencode" | "generic" => s,
-        // ACP registry ids: lowercase letter, then [a-z0-9-]
-        id if is_registry_agent_id(id) => id.to_string(),
-        _ => "generic".into(),
-    }
+    raw.map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| is_agent_id(s))
+        .unwrap_or_else(|| agent_catalog::GENERIC_ID.into())
 }
 
 fn validate_agent_type(raw: &str) -> Result<String, AppError> {
     let value = raw.trim().to_ascii_lowercase();
-    if value.is_empty()
-        || !(matches!(value.as_str(), "claude" | "codex" | "opencode" | "generic")
-            || is_registry_agent_id(&value))
-    {
+    if !is_agent_id(&value) {
         return Err(AppError::BadRequest(
-            "agent_type must be a supported ACP agent id".into(),
+            "agent_type must be an ACP agent id (a lowercase letter, then a-z, 0-9, or -)".into(),
         ));
     }
     Ok(value)
 }
 
-fn is_registry_agent_id(s: &str) -> bool {
+/// ACP registry id syntax, which Cheers short names and `generic` also follow.
+fn is_agent_id(s: &str) -> bool {
     let mut chars = s.chars();
     matches!(chars.next(), Some('a'..='z'))
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// Renders the connector TOML off the async runtime: registry-derived presets
+/// may make blocking ACP/npm registry fetches.
+async fn render_config_toml(params: RenderParams) -> Result<String, AppError> {
+    tokio::task::spawn_blocking(move || connector_config::render_toml(&params))
+        .await
+        .map_err(|e| AppError::Internal(format!("render connector config: {e}")))
+}
+
 #[derive(Deserialize)]
 pub struct CreateHostRequest {
-    /// claude | codex | opencode | generic | ACP registry id (drives adapter.command).
+    /// Catalog id, ACP registry id, or generic (drives adapter.command).
     pub agent_type: String,
     /// Optional label known before the terminal redeems the code. The terminal
     /// may replace the placeholder with its local hostname during redemption.
@@ -341,6 +339,18 @@ pub async fn redeem_host_pairing(
     let username: String = bot_row.username.clone();
     let account_id = connector_config::sanitize_account_id(&username);
 
+    // Render before committing: if it fails, the transaction rolls back and the
+    // pairing code stays usable instead of being spent without a credential.
+    let (public_base, configured) = resolve_public_base(&state);
+    let token_file = token_file_path(&account_id);
+    let config_toml = render_config_toml(RenderParams {
+        account_id: username,
+        agent_type: agent_type.clone(),
+        public_base: public_base.clone(),
+        token_ref: TokenRef::HostFile(token_file.clone()),
+    })
+    .await?;
+
     // Active/passive v1: pairing is an owner-authorized takeover. Preserve
     // old hosts for audit/reactivation, but only the new one may connect.
     sqlx::query!(
@@ -384,15 +394,6 @@ pub async fn redeem_host_pairing(
     if let Ok(id) = Uuid::parse_str(&bot_id) {
         state.bot_registry.kick(id);
     }
-
-    let (public_base, configured) = resolve_public_base(&state);
-    let token_file = token_file_path(&account_id);
-    let config_toml = connector_config::render_toml(&RenderParams {
-        account_id: &username,
-        agent_type: &agent_type,
-        public_base: &public_base,
-        token_ref: TokenRef::HostFile(token_file.clone()),
-    });
 
     limiter.reset(&rl_key);
     tracing::info!(%bot_id, %host_id, %account_id, %agent_type, credential_prefix = %credential_prefix, "host pairing code redeemed");
@@ -448,12 +449,13 @@ pub async fn get_connector_config(
 
     let (public_base, configured) = resolve_public_base(&state);
     let token_file = token_file_path(&account_id);
-    let config_toml = connector_config::render_toml(&RenderParams {
-        account_id: &username,
-        agent_type: &agent_type,
-        public_base: &public_base,
+    let config_toml = render_config_toml(RenderParams {
+        account_id: username,
+        agent_type: agent_type.clone(),
+        public_base: public_base.clone(),
         token_ref: TokenRef::HostFile(token_file.clone()),
-    });
+    })
+    .await?;
 
     Ok(Json(json!({
         "bot_id": bot_id,
@@ -905,7 +907,7 @@ pub async fn connector_discovery(
 
 /// GET /api/v1/acp/agents — authed catalog of ACP agents Cheers can quick-setup.
 /// Prefer npx-distributed entries from the live registry; always includes the
-/// fine-tuned builtins (claude / codex / opencode) even if the registry is down.
+/// builtins from `agent_catalog` even if the registry is down.
 pub async fn list_acp_agents(
     Extension(_claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
@@ -920,29 +922,26 @@ fn build_agent_catalog() -> Vec<Value> {
     use crate::domain::acp_registry;
     let mut out = Vec::new();
     // Builtins first (stable short ids used by existing bots).
-    for (id, name, kind) in [
-        ("claude", "Claude", "builtin"),
-        ("codex", "Codex", "builtin"),
-        ("opencode", "OpenCode", "builtin"),
-    ] {
+    for agent in agent_catalog::builtins() {
+        let launch = agent.launch.as_ref();
         out.push(json!({
-            "id": id,
-            "name": name,
-            "source": kind,
+            "id": agent.profile.id,
+            "name": agent.profile.display_name,
+            "command": launch.map(|l| l.command),
+            "args": launch.map(|l| l.args),
+            "api_key_env": agent.api_key_env,
+            "source": "builtin",
             "installable": true,
         }));
     }
-    let mut seen: std::collections::HashSet<String> =
-        ["claude", "codex", "opencode", "claude-acp", "codex-acp"]
-            .into_iter()
-            .map(str::to_string)
-            .collect();
+    // Registry entries a builtin already covers (e.g. claude-acp) are skipped.
+    let covered = |id: &str| agent_catalog::lookup(id).is_some_and(|a| a.launch.is_some());
+    let mut seen = std::collections::HashSet::new();
 
     for launch in acp_registry::list_package_agents() {
-        if seen.contains(&launch.id) {
+        if covered(&launch.id) || !seen.insert(launch.id.clone()) {
             continue;
         }
-        seen.insert(launch.id.clone());
         out.push(json!({
             "id": launch.id,
             "name": launch.name,
@@ -954,10 +953,9 @@ fn build_agent_catalog() -> Vec<Value> {
         }));
     }
     for launch in acp_registry::list_binary_agents() {
-        if seen.contains(&launch.id) {
+        if covered(&launch.id) || !seen.insert(launch.id.clone()) {
             continue;
         }
-        seen.insert(launch.id.clone());
         let (cmd, args) = acp_registry::representative_binary_target(&launch)
             .map(|t| (acp_registry::bin_name_from_cmd(&t.cmd), t.args.clone()))
             .unwrap_or_default();
@@ -972,7 +970,7 @@ fn build_agent_catalog() -> Vec<Value> {
         }));
     }
     out.push(json!({
-        "id": "generic",
+        "id": agent_catalog::GENERIC_ID,
         "name": "Something else",
         "source": "builtin",
         "installable": false,

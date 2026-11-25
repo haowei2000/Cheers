@@ -1,4 +1,4 @@
-import { HelpLabel } from "@/components/ui/help-text";
+import { PageLayout } from "@/components/ui/page-layout";
 import { SectionNav } from "@/components/ui/section-nav";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { useEffect } from "react";
@@ -13,21 +13,20 @@ import {
   Info,
   CalendarClock,
   Palette,
-  ArrowLeft,
   Sliders,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { logout as logoutApi } from "@/api/auth";
 import { disablePush } from "@/lib/push";
 import { isTauri } from "@/lib/serverConfig";
-import { IconButton } from "@/components/ui/icon-button";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { ScheduledMessagesManager } from "@/features/scheduled/ScheduledMessagesManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
+import { AdminRuntimeSettings } from "./AdminRuntimeSettings";
 import { AdminReports } from "./AdminReports";
 import { PasskeyCard, TrustedDevicesCard, TwoFactorCard } from "./SecurityCards";
-import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { ProfileEditCard } from "./ProfileSettings";
 import {
   AppearanceCard,
@@ -60,6 +59,7 @@ type SectionId =
   | "scheduled"
   | "members"
   | "speech"
+  | "runtime"
   | "reports"
   | "account";
 
@@ -79,6 +79,7 @@ const NAV: {
   { id: "scheduled", label: "Scheduled tasks", icon: CalendarClock },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
   { id: "speech", label: "Speech-to-text", icon: AudioLines, adminOnly: true },
+  { id: "runtime", label: "Runtime settings", icon: SlidersHorizontal, adminOnly: true },
   { id: "reports", label: "Safety reports", icon: ShieldAlert, adminOnly: true },
   { id: "account", label: "Account", icon: LogOut },
 ];
@@ -114,34 +115,13 @@ export default function SettingsPage() {
     // h-full + internal scroll: the app root is overflow-hidden, so the page must own
     // its scrolling (min-h-screen alone would clip anything taller than the viewport,
     // and h-screen=100vh overflows the 100dvh root on mobile browsers).
-    <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
-      <RouteChromeHeader>
-        <header className="mx-auto flex w-full max-w-5xl items-center gap-4 px-6 py-5 max-md:px-4">
-          <IconButton
-            label="Back to chat"
-            onClick={() => navigate("/chat")}
-            controlSize="regular"
-            className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
-          >
-            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-          </IconButton>
-          <Sliders className="h-4 w-4 text-accent-400" aria-hidden="true" />
-          <div>
-            <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>Preferences and workspace configuration</>}>Settings</HelpLabel></h1>
-
-          </div>
-        </header>
-      </RouteChromeHeader>
-
-      <div className="max-w-5xl mx-auto p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col sm:flex-row gap-6">
-        <SectionNav
+    <PageLayout title="Settings" icon={Sliders} description="Preferences and workspace configuration" navigation={<SectionNav
           ariaLabel="Settings sections"
           items={items}
           selected={section}
           onSelect={(id) => navigate(`/settings/${id}`)}
-        />
-
-        {/* Active section */}
+        />}>
+{/* Active section */}
         <div className="flex-1 min-w-0">
           <ContentActionScope>
           {/* Keep the editor mounted while navigating settings sections so an
@@ -180,6 +160,7 @@ export default function SettingsPage() {
           {section === "members" && <AdminUsers />}
           {section === "reports" && <AdminReports />}
           {section === "speech" && <AdminSttSettings />}
+          {section === "runtime" && <AdminRuntimeSettings />}
 
           {section === "account" && (
             <SettingsSection title="Account" icon={LogOut}>
@@ -233,7 +214,6 @@ export default function SettingsPage() {
           )}
           </ContentActionScope>
         </div>
-      </div>
-    </div>
+    </PageLayout>
   );
 }

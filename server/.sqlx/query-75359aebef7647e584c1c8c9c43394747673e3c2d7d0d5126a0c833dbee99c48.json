@@ -1,0 +1,149 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM artifacts WHERE channel_id = $1 AND artifact_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "artifact_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "source_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "content_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "size_bytes",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "source_version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "source_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "source_fingerprint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "internal",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_by",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "object_bucket",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "sha256",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 21,
+        "name": "legacy_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "75359aebef7647e584c1c8c9c43394747673e3c2d7d0d5126a0c833dbee99c48"
+}

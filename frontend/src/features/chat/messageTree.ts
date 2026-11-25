@@ -8,6 +8,15 @@ import type { Message, PermissionContentData } from "@/types";
 export const CONSECUTIVE_MESSAGE_WINDOW_MS = 5 * 60 * 1000;
 export const DISCUSSION_CONSECUTIVE_WINDOW_MS = 30 * 60 * 1000;
 
+/** Whether both timestamps parse and `current` follows `previous` within `maxGapMs`. */
+function withinGap(previous: Message, current: Message, maxGapMs: number): boolean {
+  const previousAt = Date.parse(previous.created_at ?? "");
+  const currentAt = Date.parse(current.created_at ?? "");
+  if (!Number.isFinite(previousAt) || !Number.isFinite(currentAt)) return false;
+  const gap = currentAt - previousAt;
+  return gap >= 0 && gap <= maxGapMs;
+}
+
 /** Return whether adjacent chat messages can visually share one author header. */
 export function isVisuallyConsecutive(
   previous: Message,
@@ -29,12 +38,7 @@ export function isVisuallyConsecutive(
     return false;
   }
 
-  const previousAt = Date.parse(previous.created_at ?? "");
-  const currentAt = Date.parse(current.created_at ?? "");
-  if (!Number.isFinite(previousAt) || !Number.isFinite(currentAt)) return false;
-
-  const gap = currentAt - previousAt;
-  return gap >= 0 && gap <= maxGapMs;
+  return withinGap(previous, current, maxGapMs);
 }
 
 /** Discuss threads may span a slower editorial exchange. Collapse repeated
@@ -56,19 +60,17 @@ export function isDiscussionConsecutive(
     current.is_deleted
   ) return false;
 
-  const previousAt = Date.parse(previous.created_at ?? "");
-  const currentAt = Date.parse(current.created_at ?? "");
-  if (!Number.isFinite(previousAt) || !Number.isFinite(currentAt)) return false;
-  const gap = currentAt - previousAt;
-  return gap >= 0 && gap <= maxGapMs;
+  return withinGap(previous, current, maxGapMs);
 }
 
 /** Approvals anchored to a bot turn render inside Agent steps, not as channel rows. */
 export function isFoldedPermission(m: Message): boolean {
-  if (m.msg_type !== "permission") return false;
-  const source = (m.content_data as PermissionContentData | null | undefined)
-    ?.source_msg_id;
-  return typeof source === "string" && source.length > 0;
+  return m.msg_type === "permission" && permissionSourceId(m) !== null;
+}
+
+/** Whether a permission message still awaits a decision. */
+export function isUnresolvedApproval(m: Message): boolean {
+  return !(m.content_data as PermissionContentData | null | undefined)?.resolved;
 }
 
 /** Return the message ID whose agent steps own a folded permission card. */

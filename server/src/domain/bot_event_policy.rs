@@ -431,7 +431,25 @@ pub fn resolve_dispatch_opt(
     channel_id: &str,
     initiator_bot_id: &str,
 ) -> Option<bool> {
-    let cap = Capability::Dispatch.as_str();
+    resolve_bot_subject_opt(
+        rules,
+        channel_id,
+        initiator_bot_id,
+        EV_PROMPT,
+        Capability::Dispatch,
+    )
+}
+
+/// Bot-subject precedence shared by the bot@bot gates:
+/// `(chan, bot:B) ▸ (chan, bot:*) ▸ (bot-wide, bot:B) ▸ (bot-wide, bot:*)`.
+fn resolve_bot_subject_opt(
+    rules: &[Rule],
+    channel_id: &str,
+    subject_bot_id: &str,
+    event_class: &str,
+    capability: Capability,
+) -> Option<bool> {
+    let cap = capability.as_str();
     let one = |ch: &str, sid: &str| {
         rules
             .iter()
@@ -439,14 +457,14 @@ pub fn resolve_dispatch_opt(
                 r.channel_id == ch
                     && r.subject_kind == SUBJECT_BOT
                     && r.subject_id == sid
-                    && r.event_class == EV_PROMPT
+                    && r.event_class == event_class
                     && r.capability == cap
             })
             .map(|r| r.allow)
     };
-    one(channel_id, initiator_bot_id)
+    one(channel_id, subject_bot_id)
         .or_else(|| one(channel_id, ANY_SUBJECT))
-        .or_else(|| one(BOT_WIDE, initiator_bot_id))
+        .or_else(|| one(BOT_WIDE, subject_bot_id))
         .or_else(|| one(BOT_WIDE, ANY_SUBJECT))
 }
 
@@ -466,23 +484,13 @@ pub fn resolve_bot_workspace_read_opt(
     channel_id: &str,
     reader_bot_id: &str,
 ) -> Option<bool> {
-    let cap = Capability::Initiate.as_str();
-    let one = |ch: &str, sid: &str| {
-        rules
-            .iter()
-            .find(|r| {
-                r.channel_id == ch
-                    && r.subject_kind == SUBJECT_BOT
-                    && r.subject_id == sid
-                    && r.event_class == EV_WORKSPACE_READ
-                    && r.capability == cap
-            })
-            .map(|r| r.allow)
-    };
-    one(channel_id, reader_bot_id)
-        .or_else(|| one(channel_id, ANY_SUBJECT))
-        .or_else(|| one(BOT_WIDE, reader_bot_id))
-        .or_else(|| one(BOT_WIDE, ANY_SUBJECT))
+    resolve_bot_subject_opt(
+        rules,
+        channel_id,
+        reader_bot_id,
+        EV_WORKSPACE_READ,
+        Capability::Initiate,
+    )
 }
 
 /// [`resolve_bot_workspace_read_opt`] with the member-allow default applied
@@ -691,14 +699,12 @@ where
     Ok(rows
         .into_iter()
         .map(|r| Rule {
-            channel_id: r.channel_id.clone(),
-            subject_kind: r.subject_kind.clone(),
-            subject_id: r.subject_id.clone(),
-            event_class: r.event_class.clone(),
-            capability: r.capability.clone(),
-            allow: Some(r.decision.clone())
-                .map(|d| d == "allow")
-                .unwrap_or(false),
+            allow: r.decision == "allow",
+            channel_id: r.channel_id,
+            subject_kind: r.subject_kind,
+            subject_id: r.subject_id,
+            event_class: r.event_class,
+            capability: r.capability,
         })
         .collect())
 }
@@ -797,20 +803,18 @@ pub async fn list_rules_json(db: &PgPool, bot_id: &str) -> Result<Vec<Value>, Ap
         .into_iter()
         .map(|r| {
             json!({
-                "channel_id": r.channel_id.clone(),
-                "subject_kind": r.subject_kind.clone(),
-                "subject_id": r.subject_id.clone(),
-                "event_class": r.event_class.clone(),
-                "capability": r.capability.clone(),
-                "decision": r.decision.clone(),
-                "updated_by": r.updated_by.clone(),
-                "updated_at": Some(r.updated_at.clone())
-                    .map(|t| t.to_rfc3339()).unwrap_or_default(),
+                "channel_id": r.channel_id,
+                "subject_kind": r.subject_kind,
+                "subject_id": r.subject_id,
+                "event_class": r.event_class,
+                "capability": r.capability,
+                "decision": r.decision,
+                "updated_by": r.updated_by,
+                "updated_at": r.updated_at.to_rfc3339(),
                 // Time-box: null = permanent. `expired` rules no longer match at
                 // resolution (load_rules filters them) but stay listed until deleted.
-                "expires_at": r.expires_at.clone()
-                    .map(|t| t.to_rfc3339()),
-                "expired": r.expired.clone().unwrap_or(false),
+                "expires_at": r.expires_at.map(|t| t.to_rfc3339()),
+                "expired": r.expired.unwrap_or(false),
             })
         })
         .collect())

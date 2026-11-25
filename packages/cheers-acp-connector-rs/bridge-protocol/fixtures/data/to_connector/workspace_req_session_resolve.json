@@ -1,0 +1,12 @@
+{
+  "op": "session_resolve",
+  "path": "",
+  "req_id": "req-5",
+  "roots": [],
+  "session_ref": {
+    "mode": "live",
+    "native_id": "01a1422e-d5e6-7e10-be3b-040fa49834a4",
+    "source": "codex"
+  },
+  "type": "workspace_req"
+}

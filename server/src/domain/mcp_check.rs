@@ -11,7 +11,7 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
 
-use super::agent_profile::AgentProfile;
+use super::agent_catalog::AgentProfile;
 
 /// What the gateway tells agents, and which MCP revisions it accepts.
 pub struct GatewayEvidence<'a> {
@@ -349,7 +349,7 @@ fn client_label(host: &HostEvidence) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::agent_profile::profile;
+    use crate::domain::agent_catalog::profile;
 
     const LEGACY: [&str; 2] = ["2025-11-25", "2025-06-18"];
 

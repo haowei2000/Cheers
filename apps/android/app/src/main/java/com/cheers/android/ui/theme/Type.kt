@@ -54,15 +54,17 @@ private val cheersDisplayBaseStyle = TextStyle(
 )
 
 /** Resolve one semantic text run to one family, avoiding mixed CJK metrics. */
-fun cheersReadingStyle(text: String, emphasized: Boolean = false): TextStyle =
-    cheersReadingBaseStyle.copy(
-        fontFamily = if (text.containsChinese()) SourceHanSerifCNFontFamily else SourceSerif4ReadingFontFamily,
+fun cheersReadingStyle(text: String, emphasized: Boolean = false): TextStyle {
+    val chinese = text.containsChinese()
+    return cheersReadingBaseStyle.copy(
+        fontFamily = if (chinese) SourceHanSerifCNFontFamily else SourceSerif4ReadingFontFamily,
         fontWeight = when {
             emphasized -> FontWeight.SemiBold
-            text.containsChinese() -> FontWeight.Medium
+            chinese -> FontWeight.Medium
             else -> FontWeight.Normal
         },
     )
+}
 
 fun cheersDisplayStyle(text: String): TextStyle =
     cheersDisplayBaseStyle.copy(

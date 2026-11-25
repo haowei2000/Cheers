@@ -271,14 +271,7 @@ pub fn available_update(state_dir: &Path) -> Option<AvailableUpdate> {
 }
 
 fn write_available(state_dir: &Path, notice: &AvailableUpdate) -> anyhow::Result<()> {
-    let path = available_path(state_dir);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(notice)?)?;
-    std::fs::rename(&tmp, &path)?;
-    Ok(())
+    write_json_atomically(&available_path(state_dir), notice)
 }
 
 fn read_marker(state_dir: &Path) -> Option<Marker> {
@@ -287,13 +280,17 @@ fn read_marker(state_dir: &Path) -> Option<Marker> {
 }
 
 fn write_marker(state_dir: &Path, marker: &Marker) -> anyhow::Result<()> {
-    let path = marker_path(state_dir);
+    write_json_atomically(&marker_path(state_dir), marker)
+}
+
+/// Pretty JSON via a sibling `.json.tmp` and rename, creating the directory.
+fn write_json_atomically(path: &Path, value: &impl Serialize) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(marker)?)?;
-    std::fs::rename(&tmp, &path)?;
+    std::fs::write(&tmp, serde_json::to_vec_pretty(value)?)?;
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 

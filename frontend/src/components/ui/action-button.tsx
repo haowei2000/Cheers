@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import {
   ArrowLeft,
+  Ban,
   ArrowUpRight,
   Check,
   ChevronDown,
@@ -52,6 +53,7 @@ export type CommonActionContext =
 export type CommonActionKey = Extract<
   ActionKey,
   | "back"
+  | "block"
   | "add"
   | "cancel"
   | "check"
@@ -89,6 +91,7 @@ export type CommonActionKey = Extract<
   | "switch"
   | "test"
   | "unlink"
+  | "uninstall"
   | "unpin"
   | "update"
   | "upload"
@@ -152,6 +155,8 @@ const commonActionPresentations = {
     cancel: { content: "text", variant: "secondary" },
   },
   confirmation: {
+    uninstall: { content: "iconText", icon: Trash2, variant: "danger" },
+    block: { content: "iconText", icon: Ban, variant: "danger" },
     cancel: { content: "text", variant: "secondary" },
     delete: { content: "iconText", icon: Trash2, variant: "danger" },
     remove: { content: "iconText", icon: Trash2, variant: "danger" },

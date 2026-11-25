@@ -91,26 +91,6 @@ export async function listApprovers(
   return apiJson(`/bots/${botId}/approvers${query}`);
 }
 
-export async function grantApprover(
-  botId: string,
-  channelId: string,
-  userId: string,
-  operationKind = "*"
-): Promise<{ ok: boolean }> {
-  return apiJson(
-    `/bots/${botId}/approvers`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        channel_id: channelId,
-        user_id: userId,
-        operation_kind: operationKind,
-      }),
-    },
-    { recentAuth: "auto", actionClass: "approver_grant" }
-  );
-}
-
 export async function revokeApprover(
   botId: string,
   channelId: string,

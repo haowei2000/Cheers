@@ -183,10 +183,9 @@ pub async fn detach_member(
     .fetch_optional(&mut *tx)
     .await
     .map_err(AppError::Db)?;
-    let removing_active_owner = membership.as_ref().is_some_and(|row| {
-        Some(row.role.clone()).as_deref() == Some("owner")
-            && Some(row.status.clone()).as_deref() == Some("active")
-    });
+    let removing_active_owner = membership
+        .as_ref()
+        .is_some_and(|row| row.role == "owner" && row.status == "active");
     if removing_active_owner {
         let owner_count: i64 = sqlx::query_scalar!(
             r#"SELECT COUNT(*) AS "value!" FROM workspace_memberships

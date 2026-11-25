@@ -782,11 +782,6 @@ private extension TraceEventDto {
         return !object.isEmpty
     }
 
-    var detailTitle: String {
-        if let targetLabel { return "\(displayLabel) · \(targetLabel)" }
-        return displayLabel
-    }
-
     var statusLabel: String {
         switch status {
         case "pending": return String(localized: "Pending")

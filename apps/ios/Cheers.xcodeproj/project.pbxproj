@@ -57,6 +57,11 @@
 		CE0000000000000000000432 /* BotDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000424 /* BotDetailView.swift */; };
 		CE0000000000000000000433 /* PasskeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000425 /* PasskeyController.swift */; };
 		CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000426 /* PasskeySettingsView.swift */; };
+		CE0000000000000000000601 /* StepUpSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000600 /* StepUpSheet.swift */; };
+		CE0000000000000000000611 /* ElicitationCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000610 /* ElicitationCardView.swift */; };
+		CE0000000000000000000631 /* ScheduledMessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000630 /* ScheduledMessagesView.swift */; };
+		CE0000000000000000000641 /* BotAccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000640 /* BotAccessView.swift */; };
+		CE0000000000000000000621 /* AgentSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000620 /* AgentSuggestions.swift */; };
 		CE0000000000000000000435 /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000427 /* ForgotPasswordView.swift */; };
 		CE0000000000000000000436 /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000428 /* FriendsView.swift */; };
 		CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000429 /* GoogleOAuthSession.swift */; };
@@ -145,6 +150,11 @@
 		CE0000000000000000000424 /* BotDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotDetailView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000425 /* PasskeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000426 /* PasskeySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeySettingsView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000600 /* StepUpSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepUpSheet.swift; sourceTree = "<group>"; };
+		CE0000000000000000000610 /* ElicitationCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElicitationCardView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000630 /* ScheduledMessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledMessagesView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000640 /* BotAccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotAccessView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000620 /* AgentSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSuggestions.swift; sourceTree = "<group>"; };
 		CE0000000000000000000427 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000428 /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000429 /* GoogleOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuthSession.swift; sourceTree = "<group>"; };
@@ -253,6 +263,7 @@
 				CE0000000000000000000454 /* ToolPresentation.swift */,
 				CE0000000000000000000456 /* MessageTree.swift */,
 				CE0000000000000000000115 /* Approval.swift */,
+				CE0000000000000000000620 /* AgentSuggestions.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -311,6 +322,10 @@
 				CE0000000000000000000424 /* BotDetailView.swift */,
 				CE0000000000000000000422 /* TwoFactorSettingsView.swift */,
 				CE0000000000000000000426 /* PasskeySettingsView.swift */,
+				CE0000000000000000000600 /* StepUpSheet.swift */,
+				CE0000000000000000000610 /* ElicitationCardView.swift */,
+				CE0000000000000000000630 /* ScheduledMessagesView.swift */,
+				CE0000000000000000000640 /* BotAccessView.swift */,
 				CE0000000000000000000423 /* NewWorkspaceSheet.swift */,
 				CE000000000000000000011D /* ApprovalCardView.swift */,
 				CE0000000000000000000453 /* BotTracePanelView.swift */,
@@ -525,6 +540,11 @@
 				CE0000000000000000000432 /* BotDetailView.swift in Sources */,
 				CE0000000000000000000430 /* TwoFactorSettingsView.swift in Sources */,
 				CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */,
+				CE0000000000000000000601 /* StepUpSheet.swift in Sources */,
+				CE0000000000000000000611 /* ElicitationCardView.swift in Sources */,
+				CE0000000000000000000631 /* ScheduledMessagesView.swift in Sources */,
+				CE0000000000000000000641 /* BotAccessView.swift in Sources */,
+				CE0000000000000000000621 /* AgentSuggestions.swift in Sources */,
 				CE0000000000000000000431 /* NewWorkspaceSheet.swift in Sources */,
 				CE0000000000000000000433 /* PasskeyController.swift in Sources */,
 				CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */,
@@ -640,7 +660,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = app.cheers.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -666,7 +686,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = app.cheers.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "$(IOS_PROVISIONING_PROFILE_NAME)";

@@ -44,15 +44,18 @@ This is the consolidated documentation entrypoint for the repository.
 - 🛠 **Planning** — [Gateway refactor plan](arch/REFACTOR_PLAN.md)
 - 📝 **Draft / Proposal** — [Research scenario ("research-lab")](arch/RESEARCH_SCENARIO.md)
 - 📝 **Draft / Proposal** — [Frontend-next Figma notes](design/frontend-next/main-chat-full-base.figma-notes.md)
-- 🗄 **Historical** — [M1 demo runbook](DEMO_M1.md)
-- 🗄 **Historical** — [M1 security review](SECURITY_REVIEW_M1.md)
+- 🗄 **Historical** — [M1 demo runbook](archive/DEMO_M1.md)
+- 🗄 **Historical** — [M1 security review](archive/SECURITY_REVIEW_M1.md)
 
 ## Product Roadmap and Releases
 
 - [Product Roadmap](ROADMAP.md) / [中文](ROADMAP.zh-CN.md)
 - [Project Overview](PROJECT_OVERVIEW.md) / [中文](PROJECT_OVERVIEW.zh-CN.md)
 - [Competitive Comparison](COMPARISON.md) — Cheers vs. other AI-collaboration projects
-- [Release notes](release_note/README.md)
+- [Release notes](release/notes/README.md)
+- [iOS App Store submission](release/IOS_APP_STORE_SUBMISSION.md)
+- [Bug records](bugs/README.md)
+- [Developer traceability (draft)](developer/TRACEABILITY.md)
 
 ## Historical Documentation
 

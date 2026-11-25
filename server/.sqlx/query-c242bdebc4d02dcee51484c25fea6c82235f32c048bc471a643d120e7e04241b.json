@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n            SELECT 1 AS present FROM bot_runs\n            WHERE execution_id = $1 AND bot_id = $2 AND channel_id = $3\n              AND status = 'accepted' AND terminal_committed_at IS NULL\n         ) AS \"value!\" ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c242bdebc4d02dcee51484c25fea6c82235f32c048bc471a643d120e7e04241b"
+}

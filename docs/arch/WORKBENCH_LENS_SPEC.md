@@ -140,7 +140,7 @@ so an agent writing "the bug is here" becomes one tap for the human. No new mech
 ## 4. Coverage check: the four official plugins
 
 Re-expressed in this model, from their actual source in
-[`server/assets/workbench-plugins/`](../../server/assets/workbench-plugins/):
+`server/assets/workbench-plugins/` (these four plugins were deleted in `13e9bad2`):
 
 | plugin | today | as a declarative lens | covered? |
 |---|---|---|---|

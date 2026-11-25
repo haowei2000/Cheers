@@ -526,8 +526,8 @@ pub async fn resolve_provider_account_id_for_bot(
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?
-    .and_then(|row| Some(row.binding_config.clone()))
-    .ok_or(AppError::NotFound)?;
+    .ok_or(AppError::NotFound)?
+    .binding_config;
 
     let value = binding_config.ok_or(AppError::NotFound)?;
     resolve_provider_account_id_from_binding_config(&value).ok_or(AppError::NotFound)
@@ -564,38 +564,22 @@ fn resolve_provider_account_id_from_binding_config(
         Some(value.to_string())
     }
 
-    if let Some(acp) = binding_config
-        .get("acp")
-        .and_then(serde_json::Value::as_object)
-    {
-        for key in [
-            "provider_account_id",
-            "provider_account",
-            "account_id",
-            "account",
-            "agent_id",
-            "id",
-        ] {
-            if let Some(v) = acp.get(key).and_then(trim_or_none) {
-                return Some(v);
-            }
-        }
-    }
-
-    for key in [
+    const KEYS: [&str; 6] = [
         "provider_account_id",
         "provider_account",
         "account_id",
         "account",
         "agent_id",
         "id",
-    ] {
-        if let Some(v) = binding_config.get(key).and_then(trim_or_none) {
-            return Some(v);
-        }
-    }
-
-    None
+    ];
+    // The nested `acp` object wins over the top-level keys.
+    let acp = binding_config.get("acp").filter(|acp| acp.is_object());
+    acp.into_iter()
+        .chain(std::iter::once(binding_config))
+        .find_map(|config| {
+            KEYS.iter()
+                .find_map(|key| config.get(*key).and_then(trim_or_none))
+        })
 }
 
 fn normalize_file_ids(file_ids: &[String]) -> Vec<String> {
@@ -841,6 +825,56 @@ async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(
     } else {
         Err(AppError::Forbidden("not a channel member".into()))
     }
+}
+
+/// Newest visible message of each channel the user is a member of, for
+/// conversation-list previews. Same visibility as `list_messages`: channels the
+/// user doesn't belong to, and empty channels, are simply absent from the result.
+pub async fn list_latest_messages(
+    db: &PgPool,
+    user_id: Uuid,
+    channel_ids: &[String],
+) -> Result<Vec<MessageDto>, AppError> {
+    let rows = sqlx::query_as!(
+        crate::infra::db::query_rows::MessageRow,
+        r###"SELECT m.msg_id AS id, m.depth, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
+ FROM channel_memberships cm
+ CROSS JOIN LATERAL (
+    SELECT lm.msg_id
+      FROM messages lm
+     WHERE lm.channel_id = cm.channel_id
+       AND lm.is_partial = FALSE
+       AND lm.is_secret = FALSE
+     ORDER BY lm.created_at DESC, lm.msg_id DESC
+     LIMIT 1
+ ) latest
+ JOIN messages m ON m.msg_id = latest.msg_id
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE
+ WHERE cm.member_id = $1
+   AND cm.channel_id = ANY($2)"###,
+        user_id.to_string(),
+        channel_ids,
+    )
+    .fetch_all(db)
+    .await
+    .map_err(AppError::Db)?;
+    hydrate_message_rows(db, &rows).await
 }
 
 /// 无权限透传的消息列表读取（供 resource 层复用统一消息模型）。

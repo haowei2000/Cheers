@@ -15,7 +15,7 @@ import {
 } from "@/api/bots";
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
-import { grantLabel, CAPABILITY_LABEL } from "./grantLabels";
+import { grantLabel, CAPABILITY_LABEL, EXPIRY_OPTIONS, expiresAtFor } from "./grantLabels";
 import { OperationsItem } from "@/components/ui/item";
 import {
   CollectionDeleteItem,
@@ -32,6 +32,9 @@ import { TabOption } from "@/components/ui/tab-option";
 const ROLES = ["*", "owner", "admin", "member"] as const;
 // Real channel roles shown as columns in the effective-defaults matrix (no `*`).
 const CAP_ORDER: Capability[] = ["initiate", "see", "respond"];
+
+const ruleId = (rule: EventRule) =>
+  `${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_kind}:${rule.subject_id}`;
 
 /**
  * Bot permission grants (docs/arch/ACP_EVENT_TAXONOMY.md) — a LIST + NEW model:
@@ -193,7 +196,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
     setSubject(`${rule.subject_kind}:${rule.subject_id}`);
     setDecision(rule.decision);
     setExpiry(rule.expires_at ? "preserve" : "");
-    setMode({ kind: "edit", id: `${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_kind}:${rule.subject_id}` });
+    setMode({ kind: "edit", id: ruleId(rule) });
   };
 
   const saveGrant = () => run(mode.kind === "edit" ? "edit" : "add", async () => {
@@ -206,11 +209,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       event_class: eventClass,
       capability: cap as Capability,
       decision,
-      expires_at: expiry === "preserve"
-        ? editing?.expires_at || undefined
-        : expiry
-          ? new Date(Date.now() + Number(expiry) * 1000).toISOString()
-          : undefined,
+      expires_at: expiresAtFor(expiry, editing?.expires_at),
     });
     resetDraft();
   });
@@ -277,7 +276,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       <Field label="Expiry" className="sm:col-span-2">
         <UiSelect value={expiry} onChange={(event) => setExpiry(event.target.value)} controlSize="regular">
           {editorMode === "edit" && editing?.expires_at && <option value="preserve">Keep current expiry</option>}
-          <option value="">Permanent</option><option value="3600">1 hour</option><option value="28800">8 hours</option><option value="86400">1 day</option><option value="604800">7 days</option><option value="2592000">30 days</option>
+          {EXPIRY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </UiSelect>
       </Field>
     </CollectionEditorItem>
@@ -322,7 +321,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       {mode.kind === "add" && editor("add")}
       {/* Custom assignable grants */}
       {filter !== "defaults" && visibleGrants.map((rule) => {
-        const id = `${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_kind}:${rule.subject_id}`;
+        const id = ruleId(rule);
         if (mode.kind === "edit" && mode.id === id) return editor("edit", id);
         if (mode.kind === "delete" && mode.id === id) return (
           <CollectionDeleteItem

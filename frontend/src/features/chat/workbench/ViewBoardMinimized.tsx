@@ -249,38 +249,36 @@ function ViewBoardMinimizedImpl({
   // surface that mounts it without one simply loads nothing rather than throwing.
   const send = ctx.sendResourceReq;
 
-  const loadPlan = useCallback(() => {
-    const cid = ctx.channelId;
-    if (!send) return;
-    send("channel.plan.read", { channel_id: cid })
-      .then((r) => {
-        if (cidRef.current !== cid) return;
-        setS((p) => ({ ...p, plans: (r as { plans?: PlanLite[] }).plans ?? [] }));
-      })
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, plans: null })));
-  }, [ctx.channelId, send]);
+  // Read one resource verb into one summary field; a failure clears that field.
+  const readInto = useCallback(
+    <K extends keyof Summary>(key: K, verb: string, params: Record<string, unknown>, pick: (r: unknown) => Summary[K]) => {
+      const cid = ctx.channelId;
+      if (!send) return;
+      send(verb, { channel_id: cid, ...params })
+        .then((r) => {
+          if (cidRef.current !== cid) return;
+          const value = pick(r);
+          setS((p) => ({ ...p, [key]: value }));
+        })
+        .catch(() => cidRef.current === cid && setS((p) => ({ ...p, [key]: null })));
+    },
+    [ctx.channelId, send]
+  );
 
-  const loadCost = useCallback(() => {
-    const cid = ctx.channelId;
-    if (!send) return;
-    send("channel.usage.read", { channel_id: cid })
-      .then((r) => {
-        if (cidRef.current !== cid) return;
-        setS((p) => ({ ...p, usage: (r as { bots?: UsageLite[] }).bots ?? [] }));
-      })
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, usage: null })));
-  }, [ctx.channelId, send]);
+  const loadPlan = useCallback(
+    () => readInto("plans", "channel.plan.read", {}, (r) => (r as { plans?: PlanLite[] }).plans ?? []),
+    [readInto]
+  );
 
-  const loadSessions = useCallback(() => {
-    const cid = ctx.channelId;
-    if (!send) return;
-    send("channel.sessions.read", { channel_id: cid })
-      .then((r) => {
-        if (cidRef.current !== cid) return;
-        setS((p) => ({ ...p, sessions: (r as { sessions?: SessionLite[] }).sessions ?? [] }));
-      })
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, sessions: null })));
-  }, [ctx.channelId, send]);
+  const loadCost = useCallback(
+    () => readInto("usage", "channel.usage.read", {}, (r) => (r as { bots?: UsageLite[] }).bots ?? []),
+    [readInto]
+  );
+
+  const loadSessions = useCallback(
+    () => readInto("sessions", "channel.sessions.read", {}, (r) => (r as { sessions?: SessionLite[] }).sessions ?? []),
+    [readInto]
+  );
 
   const loadAudit = useCallback(() => {
     const cid = ctx.channelId;
@@ -289,55 +287,40 @@ function ViewBoardMinimizedImpl({
       .catch(() => cidRef.current === cid && setS((p) => ({ ...p, audit: null })));
   }, [ctx.channelId]);
 
-  const loadActivity = useCallback(() => {
-    const cid = ctx.channelId;
-    if (!send) return;
-    send("channel.activity.read", {
-        channel_id: cid,
-        limit: ACTIVITY_WINDOW,
-        desc: true,
-      })
-      .then((r) => {
-        if (cidRef.current !== cid) return;
-        const ev = (
-          (r as {
-            events?: {
-              created_at?: string | null;
-              data?: { sender_id?: string; content?: string; created_at?: string };
-            }[];
-          }).events ?? []
-        )[0];
-        setS((p) => ({
-          ...p,
-          latest: ev
-            ? {
-                sender_id: ev.data?.sender_id,
-                created_at: ev.created_at ?? ev.data?.created_at ?? null,
-                // Agent-authored content: rendered as inert, truncated text only.
-                preview: (ev.data?.content ?? "").slice(0, 80),
-              }
-            : null,
-        }));
-      })
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, latest: null })));
-  }, [ctx.channelId, send]);
+  const loadActivity = useCallback(
+    () => readInto("latest", "channel.activity.read", { limit: ACTIVITY_WINDOW, desc: true }, (r) => {
+      const ev = (
+        (r as {
+          events?: {
+            created_at?: string | null;
+            data?: { sender_id?: string; content?: string; created_at?: string };
+          }[];
+        }).events ?? []
+      )[0];
+      return ev
+        ? {
+            sender_id: ev.data?.sender_id,
+            created_at: ev.created_at ?? ev.data?.created_at ?? null,
+            // Agent-authored content: rendered as inert, truncated text only.
+            preview: (ev.data?.content ?? "").slice(0, 80),
+          }
+        : null;
+    }),
+    [readInto]
+  );
 
-  const loadNames = useCallback(() => {
-    const cid = ctx.channelId;
-    if (!send) return;
-    send("channel.members", { channel_id: cid })
-      .then((r) => {
-        if (cidRef.current !== cid) return;
-        const names: Record<string, string> = {};
-        for (const m of (
-          r as { members?: { member_id: string; display_name?: string | null; username?: string | null }[] }
-        ).members ?? []) {
-          names[m.member_id] = m.display_name || m.username || m.member_id.slice(0, 8);
-        }
-        setS((p) => ({ ...p, names }));
-      })
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, names: null })));
-  }, [ctx.channelId, send]);
+  const loadNames = useCallback(
+    () => readInto("names", "channel.members", {}, (r) => {
+      const names: Record<string, string> = {};
+      for (const m of (
+        r as { members?: { member_id: string; display_name?: string | null; username?: string | null }[] }
+      ).members ?? []) {
+        names[m.member_id] = m.display_name || m.username || m.member_id.slice(0, 8);
+      }
+      return names;
+    }),
+    [readInto]
+  );
 
   // Targeted live-push: each summary re-reads only on ITS signal (plus mount /
   // channel change, when the loader identity changes) — not on every board tick.

@@ -4,10 +4,12 @@ import { A2UILens } from "./A2UILens";
 import example from "./example.a2ui.json";
 
 describe("native A2UI lens", () => {
-  it("renders labelled shared controls and disables actions without a host", () => {
+  it("renders labelled shared controls, placeholder, accessibility and disables actions without a host", () => {
     const html = renderToStaticMarkup(<A2UILens data={example} config={undefined} onChange={() => {}} />);
     expect(html).toContain("Prepare a report");
     expect(html).toContain("Report topic");
+    expect(html).toContain('placeholder="Enter a report topic"');
+    expect(html).toContain("Prepares a structured report draft in the chat composer.");
     expect(html).toContain('type="checkbox"');
     expect(html).toContain("Resource-oriented UI");
     expect(html.match(/disabled=""/g)).toHaveLength(2);
@@ -18,7 +20,7 @@ describe("native A2UI lens", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain("Open Raw");
     const doc = JSON.parse(JSON.stringify(example));
-    doc.messages[1].updateComponents.components[1].text = "<script>alert(1)</script>";
+    doc.messages[0].createSurface.components[1].text = "<script>alert(1)</script>";
     const safe = renderToStaticMarkup(<A2UILens data={doc} config={undefined} onChange={() => {}} />);
     expect(safe).toContain("&lt;script&gt;");
     expect(safe).not.toContain("<script>");

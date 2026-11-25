@@ -65,7 +65,6 @@ impl MediaCache {
 /// R3：确定性派生占位 id。
 /// UUID v5（SHA-1 namespace + "trigger_id:bot_id"）保证幂等。
 pub(crate) fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
-    use uuid::Uuid;
     // 用 UUID v5 的 DNS namespace 作为固定 namespace
     let namespace = Uuid::NAMESPACE_DNS;
     let name = format!("{trigger_msg_id}:{bot_id}");

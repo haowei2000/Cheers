@@ -37,7 +37,9 @@ import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
 import { DiscussionView } from "./DiscussionView";
 import { ConversationViewport } from "./ConversationViewport";
-import { ReplyComposerBanner } from "./ReplyComposerBanner";
+import { contentWithReplyQuote, type ReplyTarget } from "./replyDraft";
+import { SessionAttachBanner, useSessionAttach } from "./SessionAttachBanner";
+import { findSessionReference, type SessionReference } from "./sessionReference";
 import { SuggestedQuestionsComposerBanner } from "./SuggestedQuestionsComposerBanner";
 import { findActiveBotSuggestions, type SuggestedQuestion } from "./suggestedQuestions";
 import { ForwardDialog } from "./ForwardDialog";
@@ -77,7 +79,6 @@ import { useWindowChromePlacement } from "@/features/desktop/WindowChromeContext
 import { usesMacKeyboardShortcuts } from "@/features/desktop/desktopPlatform";
 import { CHANNEL_FEATURE_VOICE, hasChannelFeature } from "./channelFeatures";
 import { VoiceToolbarHostProvider } from "./VoiceRoomToolbar";
-import { quoteSelectedText } from "@/components/ui/context-actions";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
 
@@ -105,9 +106,8 @@ import { useAuthStore } from "@/stores/authStore";
 import type {
   Message,
   Channel,
-  PermissionContentData,
 } from "@/types";
-import { messageSessionId } from "./messageTree";
+import { isUnresolvedApproval, messageSessionId } from "./messageTree";
 import { mergeMessages, sortMessages, upsertMessage } from "./messageCollection";
 import { ChannelSelectionState } from "./ChannelSelectionState";
 import { ChannelPreview } from "./ChannelPreview";
@@ -224,7 +224,8 @@ export function ChannelView({
   const [mentionedBots, setMentionedBots] = useState<MentionCandidate[]>([]);
   // Header members dropdown (read-only list; management stays in settings).
   // Message actions: reply target, multi-select set, pending forward payload.
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const replyTo = replyTarget?.message ?? null;
   const [discussionComposerRoot, setDiscussionComposerRoot] =
     useState<Message | null>(null);
   const [creatingDiscussion, setCreatingDiscussion] = useState(false);
@@ -235,10 +236,10 @@ export function ChannelView({
   const discussionComposerRootRef = useRef<Message | null>(null);
   const handleDiscussionComposerContextChange = useCallback(
     (root: Message | null, creating: boolean) => {
-      // React invokes updaters twice in StrictMode, so setReplyTo cannot live
+      // React invokes updaters twice in StrictMode, so setReplyTarget cannot live
       // inside one. Compare against a ref that mirrors the committed root.
       if (discussionComposerRootRef.current?.msg_id !== root?.msg_id || creating) {
-        setReplyTo(null);
+        setReplyTarget(null);
       }
       discussionComposerRootRef.current = root;
       setDiscussionComposerRoot(root);
@@ -302,7 +303,7 @@ export function ChannelView({
     setSelectedSessionBotId(null);
     setMentionedBots([]);
     setCommands([]);
-    setReplyTo(null);
+    setReplyTarget(null);
     setDiscussionComposerRoot(null);
     setCreatingDiscussion(false);
     setOpenDiscussionRequest(null);
@@ -318,7 +319,7 @@ export function ChannelView({
     if (!replyTo && !selectMode) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      setReplyTo(null);
+      setReplyTarget(null);
       setSelectMode(false);
       setSelectedIds(new Set());
     };
@@ -825,6 +826,33 @@ export function ChannelView({
   );
   const closeWorkbench = useCallback(() => setWbOpen(false), [setWbOpen]);
 
+  // A pasted session link from another app (codex://threads/…) offers to
+  // attach that Agent session here; a dismissed or attached link stays quiet.
+  const draftSessionReference = useMemo(() => findSessionReference(draftText), [draftText]);
+  const [quietSessionReference, setQuietSessionReference] = useState<string | null>(null);
+  const handleSessionAttached = useCallback(
+    (sessionId: string, botId: string, reference: SessionReference) => {
+      setQuietSessionReference(reference.raw);
+      setSelectedSessionId(sessionId);
+      setSelectedSessionBotId(botId);
+      // A draft that is only the link has served its purpose; anything the
+      // user wrote around it stays.
+      if (draftText.trim() === reference.raw) {
+        setComposePrefill((previous) => ({
+          kind: "clear",
+          text: "",
+          seq: (previous?.seq ?? 0) + 1,
+        }));
+      }
+    },
+    [draftText, setComposePrefill],
+  );
+  const sessionAttach = useSessionAttach({
+    channelId: channel?.channel_id ?? "",
+    reference: draftSessionReference,
+    onAttached: handleSessionAttached,
+  });
+
   const composerPinnedTargetName = selectedSessionId && selectedSessionBotId
     ? switcherBots.find((bot) => bot.botId === selectedSessionBotId)?.name ?? selectedSessionBotId
     : undefined;
@@ -1210,7 +1238,7 @@ export function ChannelView({
         useContextPickStore.getState().byChannel[channel.channel_id] ?? [];
       const bundle = toBundle(pending, channel.channel_id);
       const sendParams: NonNullable<Message["_sendParams"]> = {
-        content,
+        content: contentWithReplyQuote(content, replyTarget?.quote),
         ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
         ...(mentionNames.length ? { mention_names: mentionNames } : {}),
         ...(fileIds.length ? { file_ids: fileIds } : {}),
@@ -1238,7 +1266,7 @@ export function ChannelView({
           setCreatingDiscussion(false);
           setDiscussionComposerRoot(sent);
         }
-        setReplyTo(null);
+        setReplyTarget((current) => current === replyTarget ? null : current);
         useContextPickStore.getState().clear(channel.channel_id);
       } catch (error) {
         // Rejections such as an offline @bot are intentionally not persisted.
@@ -1251,6 +1279,7 @@ export function ChannelView({
       channel,
       selectedSessionId,
       replyTo,
+      replyTarget,
       creatingDiscussion,
       discussionComposerRoot,
     ],
@@ -1342,11 +1371,7 @@ export function ChannelView({
   // Live pending ACP permission cards — feeds the ViewBoard minimal Approvals dropdown.
   const pendingPermissionMessages = useMemo(
     () =>
-      messages.filter((m) => {
-        if (m.msg_type !== "permission") return false;
-        return !(m.content_data as PermissionContentData | null | undefined)
-          ?.resolved;
-      }),
+      messages.filter((m) => m.msg_type === "permission" && isUnresolvedApproval(m)),
     [messages],
   );
 
@@ -1466,17 +1491,12 @@ export function ChannelView({
   const messageActions: MessageActionHandlers = useMemo(
     () => ({
       onReply: (m) => {
-        setReplyTo(m);
+        setReplyTarget({ message: m });
         applyReplyDefaults(m);
       },
       onReplyWithQuote: (m, selectedText) => {
-        setReplyTo(m);
+        setReplyTarget({ message: m, quote: selectedText.trim() });
         applyReplyDefaults(m);
-        setComposePrefill((previous) => ({
-          kind: "text",
-          text: `${quoteSelectedText(selectedText)}\n\n`,
-          seq: (previous?.seq ?? 0) + 1,
-        }));
       },
       onForward: (m) =>
         setForward({ content: buildForwardContent([m]), count: 1 }),
@@ -1505,7 +1525,7 @@ export function ChannelView({
         setSelectMode(true);
         // Entering select mode — disarm reply so the next send can't silently
         // nest under an invisible target.
-        setReplyTo(null);
+        setReplyTarget(null);
         setSelectedIds((prev) => {
           const next = new Set(prev);
           if (next.has(m.msg_id)) next.delete(m.msg_id);
@@ -1622,10 +1642,72 @@ export function ChannelView({
     : channel.name;
   const isVoiceChannel = hasChannelFeature(channel, CHANNEL_FEATURE_VOICE);
 
+  // Same composer for root sends, replies and discussion threads — reply only
+  // pre-fills session / @ / context (and sets reply_to on send). Esc clears nesting.
+  const composerFooter = (
+    <>
+      {activeSuggestion && dismissedSuggestionMsgId !== activeSuggestion.msgId && (
+        <SuggestedQuestionsComposerBanner
+          questions={activeSuggestion.questions}
+          selectedIndex={selectedSuggestionIndex}
+          onSelect={handleSelectSuggestion}
+          onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
+        />
+      )}
+      {draftSessionReference && draftSessionReference.raw !== quietSessionReference && (
+        <SessionAttachBanner
+          reference={draftSessionReference}
+          phase={sessionAttach.phase}
+          matches={sessionAttach.matches}
+          attachingBotId={sessionAttach.attachingBotId}
+          error={sessionAttach.error}
+          onLookUp={() => void sessionAttach.lookUp()}
+          onAttach={(match) => void sessionAttach.attach(match)}
+          onDismiss={() => setQuietSessionReference(draftSessionReference.raw)}
+        />
+      )}
+      <MessageComposer
+        reply={replyTarget ? {
+          target: replyTarget,
+          senderName: memberNames.get(replyTarget.message.sender_id),
+          onCancel: () => setReplyTarget(null),
+        } : undefined}
+        channelId={channel.channel_id}
+        channelName={channel.name}
+        sessionTargetName={composerPinnedTargetName}
+        mentionables={mentionables}
+        commands={commands}
+        toolbar={composerToolbar}
+        contextBar={
+          <ContextPickBar
+            channelId={channel.channel_id}
+            replyTo={replyTo}
+            draftText={draftText}
+            files={channelFiles}
+            onJumpToSource={jumpToContextSource}
+          />
+        }
+        contextAction={
+          <ContextPickerButton
+            channelId={channel.channel_id}
+            onBrowseWorkbench={browseWorkbench}
+            onBrowseWorkspace={browseWorkspace}
+          />
+        }
+        onMentionsChange={setMentionedBots}
+        onTextChange={setDraftText}
+        prefill={composePrefill}
+        streamingCount={streamingIds.length}
+        onStopStreaming={stopStreaming}
+        onSend={handleSend}
+      />
+    </>
+  );
+
   const channelToolbar = (
     <ChannelToolbar
       channelId={channel.channel_id}
-      isDm={channel.type === "dm"}
+      isDm={isDm}
       memberCount={mentionables.length}
       onlineCount={onlineCount}
       filesOpen={filesOpen}
@@ -1673,6 +1755,7 @@ export function ChannelView({
         }
       }}>
     <ResourceCardProvider key={cardResources.principalId} fs={cardFileClient} channelId={channel.channel_id} filesTick={boardTick.files ?? 0}
+      sendResourceReq={sendResourceReq}
       openLocator={openLocator} composeMessage={composeMessage}
       requestInteraction={channel.my_role === "readonly" ? undefined : requestInteraction}>
     <ProfileCardProvider
@@ -1830,57 +1913,7 @@ export function ChannelView({
                     liveMessages={messages}
                     discussionThreadRef={discussionThreadRef}
                     messageUpdatedRef={discussionMessageUpdatedRef}
-                    footer={
-                      !selectMode ? (
-                        <>
-                          {activeSuggestion && dismissedSuggestionMsgId !== activeSuggestion.msgId && (
-                            <SuggestedQuestionsComposerBanner
-                              questions={activeSuggestion.questions}
-                              selectedIndex={selectedSuggestionIndex}
-                              onSelect={handleSelectSuggestion}
-                              onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
-                            />
-                          )}
-                          {replyTo && (
-                            <ReplyComposerBanner
-                              message={replyTo}
-                              senderName={memberNames.get(replyTo.sender_id)}
-                              onCancel={() => setReplyTo(null)}
-                            />
-                          )}
-                          <MessageComposer
-                            channelId={channel.channel_id}
-                            channelName={channel.name}
-                            sessionTargetName={composerPinnedTargetName}
-                            mentionables={mentionables}
-                            commands={commands}
-                            toolbar={composerToolbar}
-                            contextBar={
-                              <ContextPickBar
-                                channelId={channel.channel_id}
-                                replyTo={replyTo}
-                                draftText={draftText}
-                                files={channelFiles}
-                                onJumpToSource={jumpToContextSource}
-                              />
-                            }
-                            contextAction={
-                              <ContextPickerButton
-                                channelId={channel.channel_id}
-                                onBrowseWorkbench={browseWorkbench}
-                                onBrowseWorkspace={browseWorkspace}
-                              />
-                            }
-                            onMentionsChange={setMentionedBots}
-                            onTextChange={setDraftText}
-                            prefill={composePrefill}
-                            streamingCount={streamingIds.length}
-                            onStopStreaming={stopStreaming}
-                            onSend={handleSend}
-                          />
-                        </>
-                      ) : null
-                    }
+                    footer={!selectMode ? composerFooter : null}
                     onComposerContextChange={handleDiscussionComposerContextChange}
                   />
                 </ResolveRefContext.Provider>
@@ -1959,57 +1992,8 @@ export function ChannelView({
                 </div>
               )}
 
-              {/* Same composer for root sends and replies — reply only pre-fills
-                  session / @ / context (and sets reply_to on send). Esc clears nesting. */}
-              {!selectMode && channel.conversation_mode !== "discuss" && (
-                <>
-                  {activeSuggestion && dismissedSuggestionMsgId !== activeSuggestion.msgId && (
-                    <SuggestedQuestionsComposerBanner
-                      questions={activeSuggestion.questions}
-                      selectedIndex={selectedSuggestionIndex}
-                      onSelect={handleSelectSuggestion}
-                      onDismiss={() => handleDismissSuggestion(activeSuggestion.msgId, activeSuggestion.questions)}
-                    />
-                  )}
-                  {replyTo && (
-                    <ReplyComposerBanner
-                      message={replyTo}
-                      senderName={memberNames.get(replyTo.sender_id)}
-                      onCancel={() => setReplyTo(null)}
-                    />
-                  )}
-                  <MessageComposer
-                    channelId={channel.channel_id}
-                    channelName={channel.name}
-                    sessionTargetName={composerPinnedTargetName}
-                    mentionables={mentionables}
-                    commands={commands}
-                    toolbar={composerToolbar}
-                    contextBar={
-                      <ContextPickBar
-                        channelId={channel.channel_id}
-                        replyTo={replyTo}
-                        draftText={draftText}
-                        files={channelFiles}
-                        onJumpToSource={jumpToContextSource}
-                      />
-                    }
-                    contextAction={
-                      <ContextPickerButton
-                        channelId={channel.channel_id}
-                        onBrowseWorkbench={browseWorkbench}
-                        onBrowseWorkspace={browseWorkspace}
-                      />
-                    }
-                    onMentionsChange={setMentionedBots}
-                    onTextChange={setDraftText}
-                    prefill={composePrefill}
-                    streamingCount={streamingIds.length}
-                    onStopStreaming={stopStreaming}
-                    onSend={handleSend}
-                  />
-                </>
-              )}
+              {/* Chat channels render the shared composer footer here; Discuss passes it as `footer`. */}
+              {!selectMode && channel.conversation_mode !== "discuss" && composerFooter}
           </ConversationViewport>
 
         </PanelWorkspace>

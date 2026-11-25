@@ -1,25 +1,31 @@
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { HelpLabel } from "./help-text";
-import { SectionHead } from "./field";
+import { ButtonGroup } from "./button-group";
+import { controlMinHeightClasses } from "./control-size";
 
 export function SettingsSection({
   title,
   icon: Icon,
   children,
   className,
+  actions,
 }: {
   title: ReactNode;
   icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
   children: ReactNode;
   className?: string;
+  actions?: ReactNode;
 }) {
   return (
     <section className={className}>
-      <SectionHead className="mb-4">
-        {Icon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
-        {title}
-      </SectionHead>
+      <header className={cn("mb-4 flex min-w-0 items-center gap-2", controlMinHeightClasses.regular)}>
+        <h2 className="flex min-w-0 items-center gap-2 text-section-label">
+          {Icon && <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
+          {title}
+        </h2>
+        {actions && <ButtonGroup label={`${typeof title === "string" ? title : "Section"} actions`}>{actions}</ButtonGroup>}
+      </header>
       {children}
     </section>
   );

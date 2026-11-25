@@ -223,9 +223,10 @@ export function ArtifactLens({
         if (!formData) return;
 
         const declared = extractTsxActions(content).find((a) => a.actionId === actionId);
+        const wantsRequest = method === "cheers.request" || declared?.name === "cheers.request" || method==="cheers.execute" || declared?.name==="cheers.execute";
 
         if (
-          (method === "cheers.request" || declared?.name === "cheers.request" || method==="cheers.execute" || declared?.name==="cheers.execute") &&
+          wantsRequest &&
           onInteraction &&
           onInteraction.capabilities.includes(declared?.name==="cheers.execute"?"execute":"request") &&
           path &&
@@ -247,7 +248,7 @@ export function ArtifactLens({
           return;
         }
 
-        if (method === "cheers.request" || declared?.name === "cheers.request" || method==="cheers.execute" || declared?.name==="cheers.execute") {
+        if (wantsRequest) {
           setFeedback({ ok: false, text: "This request is unavailable. Reload the resource or open it in a supported view." });
           return;
         }

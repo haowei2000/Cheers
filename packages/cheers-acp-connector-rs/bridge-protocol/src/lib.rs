@@ -25,6 +25,8 @@
 //! `[bridge_protocol_version]`; both ends select max(intersection) and stamp
 //! it as `v`; empty intersection ⇒ close 4400.
 
+pub mod session_ref;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -326,6 +328,10 @@ pub struct ServerCapabilities {
     /// gateways that pin no release version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_connector_version: Option<String>,
+    /// MCP delivery modes this Gateway permits (deployment policy). Absent:
+    /// every mode. The connector never picks a mode outside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_allowed_modes: Option<Vec<McpDeliveryMode>>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }
@@ -383,6 +389,31 @@ pub struct SessionPolicy {
     pub after_task: String,
 }
 
+/// How an Agent reaches the Cheers MCP endpoint
+/// (docs/arch/MCP_AUTH_ISOLATION.md §3.4.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpDeliveryMode {
+    /// MCP-over-ACP: calls come back to the connector as `mcp/message`.
+    Acp,
+    /// The Agent calls `/mcp` itself with the bearer in `mcpServers` headers.
+    Direct,
+    /// The Agent calls the connector's loopback credential gateway.
+    Gateway,
+}
+
+/// The connector's MCP delivery choice for the current Agent process, sent as
+/// `connector_capabilities.mcp_delivery` in `ready`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpDeliveryReport {
+    /// Modes this connector build can serve.
+    pub modes: Vec<McpDeliveryMode>,
+    /// The mode the current Agent process uses.
+    pub mode: McpDeliveryMode,
+    /// Why this mode, in words an operator can act on.
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeDescriptor {
     pub protocol: String,
@@ -418,6 +449,10 @@ pub struct RuntimeSessionControlSession {
     /// Persisted session overrides, replayed when the runtime session is created/loaded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_config: Option<SessionConfigOverrides>,
+    /// `action == "attach"`: the Agent's own id of an existing session (e.g. a
+    /// Codex thread id) to bind to `provider_session_key` and `session/load`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_session_id: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }
@@ -800,6 +835,20 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_at: Option<String>,
     },
+    /// The Gateway's verdict on `direct` delivery for this Agent process,
+    /// judged from the token generation the Agent presented on `channel_id`
+    /// after a renewal: `header_refresh` is true when it sent the newer token
+    /// and false when it kept the older one (so `direct` will fail once that
+    /// expires). Sent at most once per Agent process.
+    #[serde(rename = "mcp_delivery_observed")]
+    McpDeliveryObserved {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        channel_id: String,
+        /// `name@version` of the Agent the verdict applies to.
+        agent: String,
+        header_refresh: bool,
+    },
     #[serde(rename = "pong")]
     Pong,
     #[serde(rename = "error")]
@@ -1077,6 +1126,10 @@ pub enum DataInbound {
         /// identifying the fs watcher to stop.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         watch_id: Option<String>,
+        /// `op == "session_resolve"`: the parsed reference to look up in the
+        /// Agent's own `session/list`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_ref: Option<session_ref::SessionRef>,
     },
     #[serde(other)]
     Unknown,
@@ -1215,6 +1268,23 @@ pub enum DataOutbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         content_type: Option<String>,
         data_b64: String,
+    },
+    /// Connector → gateway: the conversation an `attach` loaded, captured from
+    /// the Agent's `session/load` replay and rendered as Markdown. The gateway
+    /// stores it as a channel file for the attached Cheers session.
+    #[serde(rename = "session_history")]
+    SessionHistory {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        session_id: String,
+        channel_id: String,
+        provider_session_key: String,
+        provider_session_id: String,
+        filename: String,
+        markdown: String,
+        /// Signed like `send`: it writes content into the channel.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_capability: Option<AcpCapabilityEnvelope>,
     },
     /// Connector → gateway: reply to a `workspace_req`, correlated by `req_id`.
     #[serde(rename = "workspace_res")]

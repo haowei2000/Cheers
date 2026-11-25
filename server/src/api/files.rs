@@ -10,7 +10,12 @@ use serde_json::{json, Value};
 
 use uuid::Uuid;
 
-use crate::{api::middleware::Claims, app_state::AppState, errors::AppError};
+use crate::{
+    api::{bots::is_admin, middleware::Claims},
+    app_state::AppState,
+    errors::AppError,
+    infra::http::file_response,
+};
 
 #[derive(Deserialize)]
 pub struct PresignRequest {
@@ -152,21 +157,21 @@ async fn load_file_record(state: &AppState, file_id: &str) -> Result<FileRecord,
     .ok_or(AppError::NotFound)?;
 
     Ok(FileRecord {
-        file_id: row.file_id.clone(),
-        channel_id: row.channel_id.clone(),
-        workspace_id: row.workspace_id.clone(),
-        uploader_id: Some(row.uploader_id.clone()),
-        object_key: row.object_key.clone(),
-        original_filename: row.original_filename.clone(),
-        content_type: row.content_type.clone(),
-        status: row.status.clone(),
-        size_bytes: row.size_bytes.clone(),
-        summary_3lines: row.summary_3lines.clone(),
-        last_error: row.last_error.clone(),
-        expires_at: row.expires_at.clone(),
-        preview_object_key: row.preview_object_key.clone(),
-        md_path: row.md_path.clone(),
-        transcribe_requested_at: row.transcribe_requested_at.clone(),
+        file_id: row.file_id,
+        channel_id: row.channel_id,
+        workspace_id: row.workspace_id,
+        uploader_id: Some(row.uploader_id),
+        object_key: row.object_key,
+        original_filename: row.original_filename,
+        content_type: row.content_type,
+        status: row.status,
+        size_bytes: row.size_bytes,
+        summary_3lines: row.summary_3lines,
+        last_error: row.last_error,
+        expires_at: row.expires_at,
+        preview_object_key: row.preview_object_key,
+        md_path: row.md_path,
+        transcribe_requested_at: row.transcribe_requested_at,
     })
 }
 
@@ -187,7 +192,7 @@ async fn ensure_channel_member(
     claims: &Claims,
     channel_id: &str,
 ) -> Result<(), AppError> {
-    if matches!(claims.role.as_str(), "system_admin" | "admin") {
+    if is_admin(claims) {
         return Ok(());
     }
 
@@ -218,7 +223,7 @@ async fn ensure_workspace_member(
     claims: &Claims,
     workspace_id: &str,
 ) -> Result<(), AppError> {
-    if matches!(claims.role.as_str(), "system_admin" | "admin") {
+    if is_admin(claims) {
         return Ok(());
     }
 
@@ -249,7 +254,7 @@ async fn ensure_file_scope(
     claims: &Claims,
     file: &FileRecord,
 ) -> Result<(), AppError> {
-    if matches!(claims.role.as_str(), "system_admin" | "admin") {
+    if is_admin(claims) {
         return Ok(());
     }
 
@@ -310,7 +315,7 @@ pub async fn list_channel_files(
     )
     .fetch_one(&state.db)
     .await?;
-    if !member && !matches!(claims.role.as_str(), "system_admin" | "admin") {
+    if !member && !is_admin(&claims) {
         return Err(AppError::Forbidden("channel member required".into()));
     }
     let rows = sqlx::query!(
@@ -416,18 +421,6 @@ pub async fn upload_file(
         "preview_url": format!("/api/v1/files/{}/preview", file_id),
         "download_url": format!("/api/v1/files/{}/download", file_id),
     })))
-}
-
-fn attachment_response(
-    bytes: Vec<u8>,
-    filename: &str,
-    content_type: Option<&str>,
-    inline: bool,
-    ttl_seconds: Option<i64>,
-) -> Response {
-    // Delegate to the shared hardened builder (nosniff + active-type download +
-    // CSP sandbox) so every file-serving path applies the same anti-XSS policy.
-    crate::infra::http::file_response(bytes, filename, content_type, inline, ttl_seconds)
 }
 
 fn ttl_left_seconds(expires_at: Option<DateTime<Utc>>) -> Option<i64> {
@@ -657,7 +650,9 @@ pub async fn preview_file(
     let ttl_seconds = ttl_left_seconds(file.expires_at);
     let filename = file.original_filename.unwrap_or_else(|| file_id.clone());
 
-    Ok(attachment_response(
+    // The shared hardened builder (nosniff + active-type download + CSP sandbox)
+    // applies the same anti-XSS policy on every file-serving path.
+    Ok(file_response(
         bytes,
         &filename,
         content_type.as_deref(),
@@ -680,7 +675,7 @@ pub async fn download_file(
     let ttl_seconds = ttl_left_seconds(file.expires_at);
     let filename = file.original_filename.unwrap_or(file_id);
 
-    Ok(attachment_response(
+    Ok(file_response(
         bytes,
         &filename,
         file.content_type.as_deref(),

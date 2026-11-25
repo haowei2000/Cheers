@@ -392,6 +392,33 @@ pub async fn list_messages(
     })))
 }
 
+// ── POST /api/v1/channels/latest-messages ───────────────────────────────────
+
+const MAX_LATEST_MESSAGE_CHANNELS: usize = 500;
+
+#[derive(Deserialize)]
+pub struct LatestMessagesRequest {
+    pub channel_ids: Vec<String>,
+}
+
+/// One round trip for conversation-list previews, instead of a `limit=1` history
+/// read per channel. A POST because the id list can outgrow a query string.
+pub async fn latest_messages(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<LatestMessagesRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if body.channel_ids.len() > MAX_LATEST_MESSAGE_CHANNELS {
+        return Err(AppError::BadRequest(format!(
+            "at most {MAX_LATEST_MESSAGE_CHANNELS} channels per request"
+        )));
+    }
+    let user_id =
+        Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("bad user id".into()))?;
+    let messages = messages::list_latest_messages(&state.db, user_id, &body.channel_ids).await?;
+    Ok(Json(serde_json::json!({ "messages": messages })))
+}
+
 // ── POST /api/v1/channels/{channel_id}/messages/{msg_id}/cancel ─────────────
 
 pub async fn cancel_message(
@@ -406,11 +433,8 @@ pub async fn cancel_message(
         "handling cancel_message"
     );
 
-    let user_id: Uuid = claims
-        .sub
-        .parse()
-        .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
-    ensure_channel_member(&state, channel_id, user_id, &claims.role).await?;
+    let user_id =
+        crate::api::session_control::ensure_channel_member(&state, channel_id, &claims).await?;
 
     // 找到还在运行的占位消息，取出 bot_id + chain_id（后者用于整链取消）。
     let clicked = sqlx::query!(
@@ -493,35 +517,4 @@ pub async fn cancel_message(
         msg_id: msg_id.to_string(),
         delivered,
     }))
-}
-
-async fn ensure_channel_member(
-    state: &AppState,
-    channel_id: Uuid,
-    user_id: Uuid,
-    role: &str,
-) -> Result<(), AppError> {
-    if matches!(role, "system_admin" | "admin") {
-        return Ok(());
-    }
-
-    let ok = sqlx::query!(
-        "SELECT EXISTS(
-            SELECT 1 AS present FROM channel_memberships
-            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
-        ) AS ok",
-        channel_id.to_string(),
-        user_id.to_string(),
-    )
-    .fetch_one(&state.db)
-    .await?
-    .ok
-    .clone()
-    .unwrap_or(false);
-
-    if ok {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("not a channel member".into()))
-    }
 }

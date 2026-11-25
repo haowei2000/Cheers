@@ -579,17 +579,7 @@ async fn insert_session(
     let csrf_token = random_secret()?;
     let absolute_expires_at = now + Duration::days(SESSION_ABSOLUTE_TTL_DAYS);
     let refresh_expires_at = now + Duration::days(REFRESH_IDLE_TTL_DAYS);
-    let user_uuid = user
-        .id
-        .parse()
-        .map_err(|_| AppError::Internal("invalid user id".into()))?;
-    let access_token = auth::create_access_token(
-        config,
-        user_uuid,
-        &user.role,
-        user.token_version as i64,
-        &session_id,
-    )?;
+    let access_token = access_token_for(config, user, &session_id)?;
     sqlx::query!(
         "INSERT INTO auth_sessions
          (session_id, user_id, client_type, device_name, token_family_id,
@@ -620,6 +610,24 @@ async fn insert_session(
         csrf_token,
         expires_in: ACCESS_TOKEN_TTL_SECONDS,
     })
+}
+
+fn access_token_for(
+    config: &Config,
+    user: &AuthUser,
+    session_id: &str,
+) -> Result<String, AppError> {
+    let user_uuid = user
+        .id
+        .parse()
+        .map_err(|_| AppError::Internal("invalid user id".into()))?;
+    auth::create_access_token(
+        config,
+        user_uuid,
+        &user.role,
+        user.token_version as i64,
+        session_id,
+    )
 }
 
 async fn insert_refresh_token(
@@ -748,18 +756,8 @@ pub async fn rotate_refresh_token(
     tx.commit().await?;
 
     let user = auth::load_auth_user(db, &user_id).await?;
-    let user_uuid = user
-        .id
-        .parse()
-        .map_err(|_| AppError::Internal("invalid user id".into()))?;
     Ok(RefreshOutcome::Rotated(RotatedSession {
-        access_token: auth::create_access_token(
-            config,
-            user_uuid,
-            &user.role,
-            user.token_version as i64,
-            &session_id,
-        )?,
+        access_token: access_token_for(config, &user, &session_id)?,
         session_id,
         user,
         refresh_token: new_token,
@@ -1053,20 +1051,17 @@ pub async fn list_trusted_devices(
     )
     .fetch_all(db)
     .await?;
-    rows.into_iter()
-        .map(|row| {
-            let session_id: Option<String> = row.session_id.clone();
-            Ok(TrustedDeviceSummary {
-                trusted_device_id: row.trusted_device_id.clone(),
-                device_name: row.device_name.clone(),
-                created_at: row.created_at.clone(),
-                last_used_at: row.last_used_at.clone(),
-                expires_at: row.expires_at.clone(),
-                current: session_id.as_deref() == Some(current_session_id),
-            })
+    Ok(rows
+        .into_iter()
+        .map(|row| TrustedDeviceSummary {
+            current: row.session_id.as_deref() == Some(current_session_id),
+            trusted_device_id: row.trusted_device_id,
+            device_name: row.device_name,
+            created_at: row.created_at,
+            last_used_at: row.last_used_at,
+            expires_at: row.expires_at,
         })
-        .collect::<Result<Vec<_>, sqlx::Error>>()
-        .map_err(AppError::Db)
+        .collect())
 }
 
 pub async fn revoke_trusted_device(
@@ -1117,21 +1112,18 @@ pub async fn list_sessions(
     )
     .fetch_all(db)
     .await?;
-    rows.into_iter()
-        .map(|row| {
-            let session_id: String = row.session_id.clone();
-            Ok(SessionSummary {
-                current: session_id == current_session_id,
-                session_id,
-                client: row.client_type.clone(),
-                device_name: row.device_name.clone(),
-                authenticated_at: row.authenticated_at.clone(),
-                last_seen_at: row.last_seen_at.clone(),
-                expires_at: row.absolute_expires_at.clone(),
-            })
+    Ok(rows
+        .into_iter()
+        .map(|row| SessionSummary {
+            current: row.session_id == current_session_id,
+            session_id: row.session_id,
+            client: row.client_type,
+            device_name: row.device_name,
+            authenticated_at: row.authenticated_at,
+            last_seen_at: row.last_seen_at,
+            expires_at: row.absolute_expires_at,
         })
-        .collect::<Result<Vec<_>, sqlx::Error>>()
-        .map_err(AppError::Db)
+        .collect())
 }
 
 #[cfg(test)]

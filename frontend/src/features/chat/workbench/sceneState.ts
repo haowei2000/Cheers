@@ -15,7 +15,7 @@ import type { ContextAction } from "@/components/ui/context-actions";
 import type { TemplateManifest } from "./manifest";
 import type { WorkbenchSceneState } from "./WorkbenchDrawer";
 import type { WorkbenchContext } from "./context";
-import { canDiscover, getRenderer, previewOptions, type RendererDesc } from "./renderers/registry";
+import { builtinView, canDiscover, viewFor, type RendererDesc } from "./renderers/registry";
 import type { FsEntry } from "./fsClient";
 
 export const OTHER_SCENE = "__other__";
@@ -23,7 +23,7 @@ export const CANVAS_SCENE = "canvas:";
 
 export const canvasSceneId = (path: string) => `${CANVAS_SCENE}${path}`;
 export const canvasScenePath = (id: string) => (id.startsWith(CANVAS_SCENE) ? id.slice(CANVAS_SCENE.length) : null);
-export const isCanvasPath = (path: string) => /\.canvas\.(ya?ml|json)$/i.test(path);
+export const isCanvasPath = (path: string) => builtinView(path) === "canvas";
 
 export function canAddTabToCollection(state: WorkbenchSceneState, collectionId: string): boolean {
   return collectionId !== OTHER_SCENE && !canvasScenePath(collectionId) && state.order.includes(collectionId);
@@ -160,15 +160,9 @@ export function itemTitle(sceneId: string, path: string, templates: TemplateMani
 
 export function rendererFor(
   path: string,
-  content: string | undefined,
-  ctx: WorkbenchContext,
-  failed: string[] = []
+  ctx: WorkbenchContext
 ): RendererDesc | undefined {
-  if (content === undefined) {
-    const bound = ctx.bindings[path] ? getRenderer(ctx.bindings[path], ctx.rendererExtensions) : undefined;
-    return bound && !failed.includes(bound.id) ? bound : undefined;
-  }
-  return previewOptions(path, content, ctx.rendererExtensions, ctx.bindings[path], failed)[0];
+  return viewFor(path, ctx.rendererExtensions);
 }
 
 export async function readDiscoverableFiles(
@@ -178,7 +172,6 @@ export async function readDiscoverableFiles(
 ) {
   const candidates = entries.filter((entry) => {
     if (entry.is_dir || entry.path === ".workbench.json") return false;
-    if (ctx.bindings[entry.path] && getRenderer(ctx.bindings[entry.path], ctx.rendererExtensions)) return false;
     return canDiscover(entry.path, ctx.rendererExtensions);
   });
   for (let start = 0; start < candidates.length; start += 4) {

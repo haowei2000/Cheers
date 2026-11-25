@@ -121,3 +121,19 @@ export function grantLabel(capability: Capability, eventClass: string): GrantLab
     EVENT_LABEL[eventClass] ?? { label: eventClass, desc: "" }
   );
 }
+
+/** Time-box choices for a grant rule, as seconds until expiry ("" = permanent). */
+export const EXPIRY_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "Permanent" },
+  { value: "3600", label: "1 hour" },
+  { value: "28800", label: "8 hours" },
+  { value: "86400", label: "1 day" },
+  { value: "604800", label: "7 days" },
+  { value: "2592000", label: "30 days" },
+];
+
+/** Resolve an expiry choice to the rule's `expires_at`; "preserve" keeps `current`. */
+export function expiresAtFor(expiry: string, current: string | null | undefined): string | undefined {
+  if (expiry === "preserve") return current || undefined;
+  return expiry ? new Date(Date.now() + Number(expiry) * 1000).toISOString() : undefined;
+}

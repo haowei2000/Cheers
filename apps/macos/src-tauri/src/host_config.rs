@@ -8,6 +8,13 @@ use std::{
 };
 use toml_edit::{value, DocumentMut, Item, Table};
 
+/// Parse a connector config for structure-preserving edits.
+pub(crate) fn parse_document(config: &str) -> Result<DocumentMut, String> {
+    config
+        .parse()
+        .map_err(|error: toml_edit::TomlError| error.to_string())
+}
+
 fn is_normalized_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('-')
@@ -28,9 +35,7 @@ pub(crate) fn scope_host_instance(
     if !is_normalized_name(normalized_name) {
         return Err("Desktop host instance name must already be normalized".into());
     }
-    let mut doc: DocumentMut = config
-        .parse()
-        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    let mut doc = parse_document(config)?;
     let credential_file = format!("secrets/{normalized_name}.token");
     let bridge = doc
         .get_mut("accounts")
@@ -84,9 +89,7 @@ pub(crate) fn scope_workspace(
     let selected = selected
         .canonicalize()
         .map_err(|error| format!("Cannot access project folder: {error}"))?;
-    let mut doc: DocumentMut = config
-        .parse()
-        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    let mut doc = parse_document(config)?;
     let account = doc
         .get_mut("accounts")
         .and_then(Item::as_table_like_mut)
@@ -148,9 +151,7 @@ pub(crate) fn write_onboarded_host_config(
     {
         return Err("invalid token_file path".into());
     }
-    let doc: DocumentMut = config
-        .parse()
-        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    let doc = parse_document(&config)?;
     let bridge = doc
         .get("accounts")
         .and_then(Item::as_table_like)
@@ -197,9 +198,7 @@ pub(crate) fn write_onboarded_host_config(
 /// account file. Custom/ambiguous authentication and all other configs are left
 /// byte-for-byte unchanged. No credential or filesystem access is performed.
 pub(crate) fn repair_desktop_host_credential(config: &str) -> Result<String, String> {
-    let mut doc: DocumentMut = config
-        .parse()
-        .map_err(|error: toml_edit::TomlError| error.to_string())?;
+    let mut doc = parse_document(config)?;
     let repair = (|| {
         let daemon = doc.get("daemon")?.as_table_like()?;
         let name = daemon.get("name")?.as_str()?;

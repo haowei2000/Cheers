@@ -29,6 +29,17 @@ const permission: Message = {
 };
 
 describe("PermissionCard options", () => {
+  it("does not repeat a command used as the approval title", () => {
+    const command = "echo trace-e2e-check";
+    const markup = renderToStaticMarkup(
+      <PermissionCard message={{ ...permission, content_data: { ...permission.content_data, title: command, tool: { command } } }}
+        channelId="channel-1" currentUserId="user-1" embedded compact />,
+    );
+    expect(markup.match(/>echo trace-e2e-check</g)).toHaveLength(1);
+    expect(markup).toContain("Approval needed");
+    expect(markup).toContain("Allow once");
+  });
+
   it("renders every ACP option as one direct action without an extra approval footer", () => {
     const markup = renderToStaticMarkup(
       <PermissionCard

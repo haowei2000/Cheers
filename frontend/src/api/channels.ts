@@ -236,13 +236,6 @@ export async function grantVoiceConsent(channelId: string): Promise<VoiceConsent
   });
 }
 
-/** Withdraw transcription consent (the client must mute its mic immediately). */
-export async function withdrawVoiceConsent(channelId: string): Promise<VoiceConsentResponse> {
-  return apiJson<VoiceConsentResponse>(`/channels/${channelId}/voice/consent`, {
-    method: "DELETE",
-  });
-}
-
 export async function getVoiceState(channelId: string): Promise<VoiceStateResponse> {
   return apiJson<VoiceStateResponse>(`/channels/${channelId}/voice/state`);
 }

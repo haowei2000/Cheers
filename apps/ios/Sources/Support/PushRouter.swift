@@ -25,10 +25,10 @@ final class PushRouter: NSObject {
 
     static let approvalCategoryId = "ACP_APPROVAL"
     private static let tokenKey = "push_token"
-    /// Must match `AppModel` Keychain / UserDefaults keys.
-    private static let accessTokenKey = "access_token"
-    private static let serverURLKey = "server_url"
 
+    /// Attached at launch by PushAppDelegate (which owns the AppModel), so a
+    /// lock-screen action that cold-launches the app in the background still
+    /// sends through the token-renewing client.
     weak var app: AppModel?
     /// Set by the shell once navigation is ready. Flushes any pending destination.
     var onNavigate: ((PushDestination) -> Void)? {
@@ -102,7 +102,7 @@ final class PushRouter: NSObject {
     /// Upload a previously cached token once `app.api` is available. Safe to call
     /// repeatedly — register is idempotent server-side.
     private func flushCachedTokenIfNeeded() {
-        guard let api = app?.api ?? Self.backgroundAPIClient(),
+        guard let api = app?.api,
               let token = UserDefaults.standard.string(forKey: Self.tokenKey)
         else { return }
         Task {
@@ -139,16 +139,6 @@ final class PushRouter: NSObject {
         guard let onNavigate, let pending = pendingDestination else { return }
         pendingDestination = nil
         onNavigate(pending)
-    }
-
-    /// Build an API client from Keychain without waiting for AppShell — needed
-    /// for lock-screen Approve/Deny when the UI is not yet wired.
-    static func backgroundAPIClient() -> APIClient? {
-        guard let token = KeychainStore.get(accessTokenKey), !token.isEmpty else { return nil }
-        let server = UserDefaults.standard.string(forKey: serverURLKey)
-            ?? AppModel.defaultServerURL
-        guard let base = APIClient.normalizeBaseURL(server) else { return nil }
-        return APIClient(baseURL: base, token: token)
     }
 
     // MARK: Payload parsing
@@ -246,13 +236,21 @@ extension PushRouter: UNUserNotificationCenterDelegate {
             return
         }
 
-        let api = app?.api ?? Self.backgroundAPIClient()
-        guard let api else {
+        guard let api = app?.api else {
             navigate(.approval(channelId: channelId, requestId: requestId))
             return
         }
 
+        // Approve/Deny run without opening the app, and the system callback has
+        // already completed (see didReceive) — hold a background assertion so
+        // iOS doesn't suspend the process before the decision reaches the server.
+        let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ResolvePermission")
         Task {
+            defer {
+                if backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTask)
+                }
+            }
             do {
                 _ = try await api.resolvePermission(
                     channelId: channelId,
@@ -275,11 +273,17 @@ extension PushRouter: UNUserNotificationCenterDelegate {
 /// "tap notification → crash" failure mode.
 @MainActor
 final class PushAppDelegate: NSObject, UIApplicationDelegate {
+    /// The app's single AppModel. Owned here, not by the SwiftUI scene, because
+    /// a notification action can launch the app in the background with no scene;
+    /// one owner also keeps refresh-token rotation in one place.
+    let appModel = AppModel()
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         PushRouter.shared.bootstrap()
+        PushRouter.shared.app = appModel
         return true
     }
 

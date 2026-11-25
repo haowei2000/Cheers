@@ -1,5 +1,6 @@
+import { InlineEditActions } from "@/components/ui/inline-edit-actions";
+import { Banner } from "@/components/ui/banner";
 import { HelpLabel } from "@/components/ui/help-text";
-import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -34,17 +35,18 @@ import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/ui/action-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog } from "@/components/ui/dialog";
+import { Dialog, useDialogClose } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, MetaRow, SectionHead } from "@/components/ui/field";
 import { Tip } from "@/components/ui/tip";
 import { CheckboxField } from "@/components/ui/checkbox-field";
 import { IconButton } from "@/components/ui/icon-button";
-import { ItemList } from "@/components/ui/item";
+import { ItemList, OperationsItem } from "@/components/ui/item";
 import { cn } from "@/lib/cn";
 import { messageOf } from "@/lib/notify";
 import { HostItem } from "./HostItem";
 import { BotPostureSection } from "./BotPostureSection";
+import { BotMcpPolicySection } from "./BotMcpPolicySection";
 import { BotSocialAccessSection } from "./BotSocialAccessSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
 import { BotToBotGrantsSection } from "./BotToBotGrantsSection";
@@ -56,7 +58,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
   const [done, setDone] = useState(false);
   const accessibleLabel = done ? "Copied" : label === "" ? "Copy Bot ID" : label ?? "Copy";
   return (
-    <UiButton action="copy" variant="plain" content={label === "" ? "icon" : "iconText"}
+    <Button action="copy" variant="plain" content={label === "" ? "icon" : "iconText"}
       aria-label={accessibleLabel} title={accessibleLabel}
       type="button"
       onClick={async () => {
@@ -74,7 +76,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
     >
       {done ? <Check className="w-3.5 h-3.5 text-success-400" /> : <Copy className="w-3.5 h-3.5" />}
       {label ?? (done ? "Copied" : "Copy")}
-    </UiButton>
+    </Button>
   );
 }
 
@@ -109,6 +111,7 @@ export function BotDetailPanel({
   onAddHost,
   initialTab,
   onClose,
+  onEditorStateChange,
 }: {
   bot: BotItem;
   onError: (msg: string) => void;
@@ -119,7 +122,9 @@ export function BotDetailPanel({
   onAddHost: () => void;
   initialTab?: string;
   onClose?: () => void;
+  onEditorStateChange?: (state: { dirty: boolean; busy: boolean }) => void;
 }) {
+  const closeDialog = useDialogClose();
   const [tab, setTab] = useState<Tab>(() => routeTab(initialTab));
 
   useEffect(() => setTab(routeTab(initialTab)), [initialTab, bot.bot_id]);
@@ -214,7 +219,7 @@ export function BotDetailPanel({
             <CircleDot className="w-3.5 h-3.5" />
             {bot.is_online ? "online" : "offline"}
           </span>
-          {onClose && <ActionButton action="close" context="windowChrome" accessibleLabel="Close bot details" onClick={onClose} />}
+          {onClose && <ActionButton action="close" context="windowChrome" accessibleLabel="Close bot details" onClick={closeDialog ?? onClose} />}
         </div>
       </div>
 
@@ -223,7 +228,7 @@ export function BotDetailPanel({
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
-            <UiButton content="iconText" variant="plain" role="tab" aria-selected={active} selected={active}
+            <Button content="iconText" variant="plain" role="tab" aria-selected={active} selected={active}
               key={id}
               type="button"
               onClick={() => setTab(id)}
@@ -234,26 +239,28 @@ export function BotDetailPanel({
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
-            </UiButton>
+            </Button>
           );
         })}
       </div>
 
       <div className="pt-4">
-        {tab === "overview" && (
+        <div hidden={tab !== "overview"}>
           <BotOverview
             bot={bot}
             onError={onError}
             onChanged={onChanged}
             lifecycleActiveRef={refreshLifecycleActive}
+            onEditorStateChange={onEditorStateChange}
           />
-        )}
+        </div>
         {tab === "social" && (
           <BotSocialAccessSection botId={bot.bot_id} />
         )}
         {tab === "agent" && (
           <div className="space-y-6">
             <BotPostureSection botId={bot.bot_id} />
+            {bot.can_manage && <BotMcpPolicySection botId={bot.bot_id} />}
             <BotPermissionGrantsSection botId={bot.bot_id} />
             <BotToBotGrantsSection botId={bot.bot_id} />
           </div>
@@ -338,11 +345,13 @@ function BotOverview({
   onError,
   onChanged,
   lifecycleActiveRef,
+  onEditorStateChange,
 }: {
   bot: BotItem;
   onError: (msg: string) => void;
   onChanged: () => void;
   lifecycleActiveRef: React.MutableRefObject<boolean>;
+  onEditorStateChange?: (state: { dirty: boolean; busy: boolean }) => void;
 }) {
   const [toggling, setToggling] = useState(false);
   const [pendingDanger, setPendingDanger] = useState<"disable" | "delete" | null>(null);
@@ -390,7 +399,7 @@ function BotOverview({
           bot={bot}
           onError={onError}
           onChanged={onChanged}
-          lifecycleActiveRef={lifecycleActiveRef}
+          lifecycleActiveRef={lifecycleActiveRef} onEditorStateChange={onEditorStateChange}
         />
       )}
 
@@ -479,11 +488,13 @@ function BotStatusEditor({
   onError,
   onChanged,
   lifecycleActiveRef,
+  onEditorStateChange,
 }: {
   bot: BotItem;
   onError: (msg: string) => void;
   onChanged: () => void;
   lifecycleActiveRef: React.MutableRefObject<boolean>;
+  onEditorStateChange?: (state: { dirty: boolean; busy: boolean }) => void;
 }) {
   const [statusEmoji, setStatusEmoji] = useState(bot.status_emoji ?? "");
   const [statusText, setStatusText] = useState(bot.status_text ?? "");
@@ -493,20 +504,6 @@ function BotStatusEditor({
   const [processorPrivacyUrl, setProcessorPrivacyUrl] = useState(bot.processor_privacy_url ?? "");
   const [processorDataUse, setProcessorDataUse] = useState(bot.processor_data_use ?? "");
   const [processorPolicyVersion, setProcessorPolicyVersion] = useState(bot.processor_policy_version ?? "1");
-  // Re-seed the drafts when a refetch brings new values — e.g. the agent just
-  // wrote its status via set_status after "Update status now". Without this the
-  // inputs keep showing the stale pre-refresh text (useState seeds only once),
-  // and a later Save would silently overwrite the agent's fresh status.
-  useEffect(() => {
-    setStatusEmoji(bot.status_emoji ?? "");
-    setStatusText(bot.status_text ?? "");
-    setDescription(bot.description ?? "");
-    setExternalProcessor(bot.external_processor ?? false);
-    setProcessorName(bot.processor_name ?? "");
-    setProcessorPrivacyUrl(bot.processor_privacy_url ?? "");
-    setProcessorDataUse(bot.processor_data_use ?? "");
-    setProcessorPolicyVersion(bot.processor_policy_version ?? "1");
-  }, [bot.status_emoji, bot.status_text, bot.description, bot.external_processor, bot.processor_name, bot.processor_privacy_url, bot.processor_data_use, bot.processor_policy_version]);
   const [auto, setAuto] = useState(bot.status_auto_update ?? false);
   const [prompt, setPrompt] = useState(bot.status_update_prompt ?? "");
   const [interval, setIntervalMin] = useState(
@@ -520,6 +517,28 @@ function BotStatusEditor({
   // the profile itself is still persisted by the card's Save button.
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
+
+  const [editing, setEditing] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const resetDraft = useCallback(() => {
+    setStatusEmoji(bot.status_emoji ?? ""); setStatusText(bot.status_text ?? "");
+    setDescription(bot.description ?? ""); setExternalProcessor(bot.external_processor ?? false);
+    setProcessorName(bot.processor_name ?? ""); setProcessorPrivacyUrl(bot.processor_privacy_url ?? "");
+    setProcessorDataUse(bot.processor_data_use ?? ""); setProcessorPolicyVersion(bot.processor_policy_version ?? "1");
+    setAuto(bot.status_auto_update ?? false); setPrompt(bot.status_update_prompt ?? "");
+    setIntervalMin(String(bot.status_update_interval_minutes ?? 60));
+    setPromptError(null); setSaveError(null);
+  }, [bot.status_emoji, bot.status_text, bot.description, bot.external_processor, bot.processor_name,
+    bot.processor_privacy_url, bot.processor_data_use, bot.processor_policy_version,
+    bot.status_auto_update, bot.status_update_prompt, bot.status_update_interval_minutes]);
+  useEffect(() => { if (!editing) resetDraft(); }, [editing, resetDraft]);
+  const dirty = editing && JSON.stringify([statusEmoji, statusText, description, externalProcessor, processorName, processorPrivacyUrl, processorDataUse, processorPolicyVersion, auto, prompt, interval]) !== JSON.stringify([
+    bot.status_emoji ?? "", bot.status_text ?? "", bot.description ?? "", bot.external_processor ?? false,
+    bot.processor_name ?? "", bot.processor_privacy_url ?? "", bot.processor_data_use ?? "", bot.processor_policy_version ?? "1",
+    bot.status_auto_update ?? false, bot.status_update_prompt ?? "", String(bot.status_update_interval_minutes ?? 60),
+  ]);
+  useEffect(() => { onEditorStateChange?.({ dirty, busy }); }, [dirty, busy, onEditorStateChange]);
+  useEffect(() => () => onEditorStateChange?.({ dirty: false, busy: false }), [onEditorStateChange]);
 
   // Manual "Update status now" completion lifecycle (item 4). Instead of blind
   // 5/15/30s reloads, we ask the agent then POLL the bot's status every ~4s for
@@ -596,6 +615,7 @@ function BotStatusEditor({
   }
 
   async function save() {
+    if (!editing || busy) return;
     if (auto && !prompt.trim()) {
       // Validation stays inline next to the form; onError is the API-failure path.
       setPromptError("A prompt is required to enable scheduled self-update");
@@ -607,6 +627,7 @@ function BotStatusEditor({
       return;
     }
     setBusy(true);
+    setSaveError(null);
     try {
       await updateBotProfile(bot.bot_id, {
         status_emoji: statusEmoji.trim(),
@@ -621,10 +642,10 @@ function BotStatusEditor({
         processor_data_use: processorDataUse.trim(),
         processor_policy_version: processorPolicyVersion.trim() || "1",
       });
-      toast.success("Bot profile saved");
+      setEditing(false);
       onChanged();
     } catch (e) {
-      onError(String(e));
+      setSaveError(e instanceof Error ? e.message : "Couldn't save bot profile");
     } finally {
       setBusy(false);
     }
@@ -635,7 +656,7 @@ function BotStatusEditor({
       <div className="flex items-center justify-between gap-3">
         <SectionHead className="mb-0">Profile</SectionHead>
         <div className="flex items-center gap-2">
-          <ActionButton action="save" context="form" controlSize="compact" type="submit" disabled={busy} />
+          <InlineEditActions label="bot profile" editing={editing} saving={busy} onEdit={() => { resetDraft(); setEditing(true); }} onSave={() => void save()} onCancel={() => { resetDraft(); setEditing(false); }} />
           <Tip align="end" content={refreshPhase === "waiting" ? "Waiting for the agent to update its status…" : refreshPhase === "done" ? "Status updated" : "Update status now — ask the bot to refresh its status using the saved prompt."}>
             <IconButton label="Update bot status" controlSize="compact" type="button" onClick={() => void refreshNow()} disabled={refreshPhase === "waiting"} aria-busy={refreshPhase === "waiting"}>
               {refreshPhase === "done" ? <Check className="h-4 w-4 text-success-400" /> : <RefreshCw className={cn("h-4 w-4", refreshPhase === "waiting" && "animate-spin motion-reduce:animate-none")} />}
@@ -643,6 +664,8 @@ function BotStatusEditor({
           </Tip>
         </div>
       </div>
+      {saveError && <Banner severity="error">{saveError}</Banner>}
+      {editing ? <fieldset disabled={busy} className="min-w-0 space-y-4">
       <div className="grid gap-4">
         <Field label="Status">
           <div className="flex gap-2">
@@ -777,9 +800,17 @@ function BotStatusEditor({
         </p>
       )}
 
+      </fieldset> : <div className="space-y-3">
+        <ItemList presentationLevel="medium" controlSize="regular">
+          <OperationsItem title="Status" status={[bot.status_emoji, bot.status_text].filter(Boolean).join(" ") || "Not set"} />
+          <OperationsItem title="External AI" status={bot.external_processor ? bot.processor_name || "Enabled" : "Off"} />
+          <OperationsItem title="Auto-refresh" status={bot.status_auto_update ? `Every ${bot.status_update_interval_minutes ?? 60} min` : "Off"} />
+        </ItemList>
+        <p className="font-reading text-regular text-content-secondary">{bot.description || "No description added."}</p>
+      </div>}
       {promptOpen && (
         <Dialog title={<HelpLabel help={<>The bot answers this prompt on the schedule and the reply becomes its status.
-            Save the profile to apply your changes.</>}>{"Status prompt"}</HelpLabel>} onClose={() => setPromptOpen(false)} maxWidth="max-w-md">
+            Save the profile to apply your changes.</>}>{"Status prompt"}</HelpLabel>} onClose={() => setPromptOpen(false)} dirty={promptDraft !== prompt} maxWidth="max-w-md">
           <Textarea
             value={promptDraft}
             onChange={(e) => setPromptDraft(e.target.value)}

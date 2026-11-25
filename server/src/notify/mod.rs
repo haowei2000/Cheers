@@ -311,24 +311,8 @@ pub fn push_bot_mentions_apns(
     }
     let state = state.clone();
     tokio::spawn(async move {
-        let channel_name: String = sqlx::query_scalar!(
-            r#"SELECT COALESCE(name, '') AS "value!" FROM channels WHERE channel_id = $1"#,
-            channel_id.to_string(),
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-        let sender_name: String = sqlx::query_scalar!(
-            r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
-            bot_id.to_string(),
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "Bot".into());
+        let channel_name = channel_name(&state.db, channel_id).await;
+        let sender_name = bot_name(&state.db, bot_id).await;
         for uid in mentioned_user_ids {
             push_to_user(
                 &state,
@@ -400,24 +384,8 @@ pub fn push_bot_reply_apns(
             return;
         }
 
-        let channel_name: String = sqlx::query_scalar!(
-            r#"SELECT COALESCE(name, '') AS "value!" FROM channels WHERE channel_id = $1"#,
-            channel_id.to_string(),
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-        let bot_name: String = sqlx::query_scalar!(
-            r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
-            bot_id.to_string(),
-        )
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "Bot".into());
+        let channel_name = channel_name(&state.db, channel_id).await;
+        let bot_name = bot_name(&state.db, bot_id).await;
 
         push_to_user(
             &state,
@@ -429,6 +397,32 @@ pub fn push_bot_reply_apns(
             },
         );
     });
+}
+
+/// The channel's name for push copy; empty when unnamed or unreadable.
+async fn channel_name(db: &PgPool, channel_id: Uuid) -> String {
+    sqlx::query_scalar!(
+        r#"SELECT COALESCE(name, '') AS "value!" FROM channels WHERE channel_id = $1"#,
+        channel_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_default()
+}
+
+/// The bot's display name for push copy; "Bot" when unreadable.
+async fn bot_name(db: &PgPool, bot_id: Uuid) -> String {
+    sqlx::query_scalar!(
+        r#"SELECT COALESCE(display_name, username) AS "value!" FROM bot_accounts WHERE bot_id = $1"#,
+        bot_id.to_string(),
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| "Bot".into())
 }
 
 async fn is_channel_muted(db: &PgPool, user_id: Uuid, channel_id: Uuid) -> bool {
@@ -514,9 +508,7 @@ pub fn push_message_fanout(
             .await
             {
                 for row in rows {
-                    if let Some(uid) =
-                        Some(row.member_id.clone()).and_then(|s| s.parse::<Uuid>().ok())
-                    {
+                    if let Ok(uid) = row.member_id.parse::<Uuid>() {
                         push_to_user(
                             &state,
                             uid,
@@ -564,7 +556,7 @@ pub fn push_message_fanout(
 /// iOS notification's Approve once / Deny actions can resolve directly.
 /// Prefers `allow_once` (matches the fixed iOS action title) over other allow*.
 pub fn approval_option_ids(options: &Value) -> (Option<String>, Option<String>) {
-    let list = options.as_array().cloned().unwrap_or_default();
+    let list = options.as_array().map_or(&[][..], Vec::as_slice);
     let option_id = |o: &Value| {
         o.get("option_id")
             .or_else(|| o.get("optionId"))
@@ -618,11 +610,7 @@ pub async fn active_device_tokens(db: &PgPool, user_id: Uuid) -> Vec<String> {
     )
     .fetch_all(db)
     .await
-    .map(|rows| {
-        rows.into_iter()
-            .filter_map(|r| Some(r.push_token.clone()))
-            .collect()
-    })
+    .map(|rows| rows.into_iter().map(|r| r.push_token).collect())
     .unwrap_or_default()
 }
 

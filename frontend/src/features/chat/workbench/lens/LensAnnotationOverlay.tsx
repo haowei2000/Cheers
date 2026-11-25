@@ -97,10 +97,7 @@ export function LensAnnotationOverlay({
       });
 
       // Clear previous annotation attributes
-      allAnchors.forEach((el) => {
-        el.removeAttribute("data-has-annotation");
-        el.removeAttribute("data-annotation-active");
-      });
+      clearAnnotationMarks(allAnchors);
 
       const nextMarkers: PositionedMarker[] = [];
       const seenAnchorCounts = new Map<string, number>();
@@ -168,7 +165,7 @@ export function LensAnnotationOverlay({
       ro?.disconnect();
       mo?.disconnect();
       // Clean up attributes on unmount
-      allAnchorsCleanup(container);
+      clearAnnotationMarks(container.querySelectorAll<HTMLElement>("[data-workbench-anchor]"));
     };
   }, [containerRef, notes, activeAnnotationId]);
 
@@ -223,9 +220,8 @@ export function LensAnnotationOverlay({
   );
 }
 
-function allAnchorsCleanup(container: HTMLElement) {
-  const allAnchors = container.querySelectorAll<HTMLElement>("[data-workbench-anchor]");
-  allAnchors.forEach((el) => {
+function clearAnnotationMarks(anchors: NodeListOf<HTMLElement>) {
+  anchors.forEach((el) => {
     el.removeAttribute("data-has-annotation");
     el.removeAttribute("data-annotation-active");
   });

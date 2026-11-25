@@ -13,7 +13,7 @@
 
 use serde_json::{json, Value};
 
-use super::apns::ApnsError;
+use super::apns::{env_value, ApnsError};
 
 pub struct RelayClient {
     http: reqwest::Client,
@@ -25,15 +25,11 @@ impl RelayClient {
     /// Enabled when PUSH_RELAY_URL is set; PUSH_RELAY_KEY optionally
     /// authenticates this gateway to the relay.
     pub fn from_env() -> Option<Self> {
-        let url = std::env::var("PUSH_RELAY_URL")
-            .ok()
-            .filter(|v| !v.trim().is_empty())?;
+        let url = env_value("PUSH_RELAY_URL")?;
         Some(Self {
             http: reqwest::Client::new(),
             url: url.trim_end_matches('/').to_string(),
-            key: std::env::var("PUSH_RELAY_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            key: env_value("PUSH_RELAY_KEY"),
         })
     }
 

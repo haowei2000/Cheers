@@ -40,7 +40,8 @@ pub async fn list_hosts(
                 connector_version, capabilities, last_seen_at, connected_at,
                 credential_rotated_at, created_at, updated_at, revoked_at,
                 mcp_connection_state, mcp_state_updated_at, mcp_connected_at,
-                mcp_last_seen_at
+                mcp_last_seen_at, mcp_header_refresh, mcp_header_refresh_agent,
+                mcp_header_refresh_at
          FROM connector_hosts
          WHERE bot_id = $1
            AND NOT (status = 'pending' AND revoked_at IS NOT NULL)
@@ -58,7 +59,7 @@ pub async fn list_hosts(
             "host_id": row.host_id.clone(),
             "device_name": row.device_name.clone(),
             "agent_type": agent_type,
-            "agent_profile": crate::domain::agent_profile::profile(&agent_type),
+            "agent_profile": crate::domain::agent_catalog::profile(&agent_type),
             "credential_prefix": row.credential_prefix.clone().unwrap_or_default(),
             "status": status,
             "online": bot_online && status == "active" && revoked_at.is_none(),
@@ -74,6 +75,13 @@ pub async fn list_hosts(
             "mcp_state_updated_at": Some(row.mcp_state_updated_at.clone()),
             "mcp_connected_at": row.mcp_connected_at.clone(),
             "mcp_last_seen_at": row.mcp_last_seen_at.clone(),
+            // How the Agent reaches Cheers MCP, as the connector last reported it
+            // in `ready` (docs/arch/MCP_AUTH_ISOLATION.md §3.5), and the Gateway's
+            // verdict on whether this Agent build picks up renewed tokens.
+            "mcp_delivery": row.capabilities.as_ref().and_then(|caps| caps.get("mcp_delivery")).cloned(),
+            "mcp_header_refresh": row.mcp_header_refresh,
+            "mcp_header_refresh_agent": row.mcp_header_refresh_agent,
+            "mcp_header_refresh_at": row.mcp_header_refresh_at,
         })
     }).collect::<Vec<_>>();
     Ok(Json(json!({ "bot_id": bot_id, "hosts": hosts })))
@@ -110,7 +118,7 @@ pub async fn check_host_mcp(
         online,
         connector_version: row.connector_version.clone(),
         last_seen_at: row.last_seen_at.clone(),
-        agent: crate::domain::agent_profile::profile(&agent_type),
+        agent: crate::domain::agent_catalog::profile(&agent_type),
         mcp_state: if revoked {
             "revoked".into()
         } else {
@@ -252,7 +260,7 @@ pub async fn rotate_host_credential(
     let Some(row) = row else {
         return Err(AppError::NotFound);
     };
-    if Some(row.status.clone()).as_deref() == Some("active") {
+    if row.status == "active" {
         kick_bot(&state, &bot_id);
     }
     crate::domain::bot_management_audit::record(

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/api/client";
 import type { FileInfo } from "@/types";
 
@@ -35,6 +36,31 @@ export async function downloadFile(file: FileInfo) {
   } catch {
     /* ignore download failures */
   }
+}
+
+/** Object URL for a file's authorized download, revoked when the view unmounts.
+ *  Media elements can't carry the Bearer, so fetch the blob with auth instead. */
+export function useDownloadObjectUrl(fileId: string): { src: string | null; failed: boolean } {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let url: string | null = null;
+    let alive = true;
+    apiFetch(`/files/${fileId}/download`)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("dl"))))
+      .then((b) => {
+        if (alive) {
+          url = URL.createObjectURL(b);
+          setSrc(url);
+        }
+      })
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [fileId]);
+  return { src, failed };
 }
 
 // How a file renders in the in-app preview modal.

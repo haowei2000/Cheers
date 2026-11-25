@@ -1,9 +1,7 @@
 //! Durable user-owned execution receipts over the existing workspace RPC.
 use crate::{
-    api::middleware::Claims,
-    app_state::AppState,
-    errors::AppError,
-    resource::{authorize_channel_read, Principal},
+    api::middleware::Claims, api::resources::user_principal, app_state::AppState, errors::AppError,
+    resource::authorize_channel_read,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -46,11 +44,7 @@ async fn authorize(
     host: Uuid,
     recent: bool,
 ) -> Result<(), AppError> {
-    let user = claims
-        .sub
-        .parse()
-        .map_err(|_| AppError::Unauthorized("Invalid user".into()))?;
-    authorize_channel_read(&state.db, &Principal::user(user), channel)
+    authorize_channel_read(&state.db, &user_principal(claims)?, channel)
         .await
         .map_err(|(_, message)| AppError::Forbidden(message))?;
     if recent {
@@ -82,12 +76,7 @@ async fn validate_source(
     }
     let source = crate::api::resources::desk_resource(
         &state.db,
-        &Principal::user(
-            claims
-                .sub
-                .parse()
-                .map_err(|_| AppError::Unauthorized("Invalid user".into()))?,
-        ),
+        &user_principal(claims)?,
         event["sourceUri"].as_str().unwrap_or(""),
         Some(channel),
     )
@@ -327,12 +316,7 @@ pub async fn control(
     if body.action == "terminal.status" {
         authorize_channel_read(
             &state.db,
-            &Principal::user(
-                claims
-                    .sub
-                    .parse()
-                    .map_err(|_| AppError::Unauthorized("Invalid user".into()))?,
-            ),
+            &user_principal(&claims)?,
             row.channel_id.parse().map_err(|_| AppError::NotFound)?,
         )
         .await
@@ -346,36 +330,31 @@ pub async fn control(
             row.channel_id.parse().map_err(|_| AppError::NotFound)?,
             request.bot_id,
             request.host_id,
-            body.action != "terminal.status",
+            true,
         )
         .await?;
     }
     if body.action == "terminal.cancel" {
         sqlx::query!("UPDATE resource_executions SET cancel_requested=TRUE WHERE execution_id=$1 AND status IN ('accepted','running')",id.to_string()).execute(&state.db).await?;
     }
-    if row.status == "accepted" || (row.status == "running" && body.action == "terminal.status") {
-        // A crashed gateway cannot promise that an operation never started.
-        if chrono::Utc::now()
+    let awaiting_host =
+        row.status == "accepted" || (row.status == "running" && body.action == "terminal.status");
+    // A crashed gateway cannot promise that an operation never started.
+    if awaiting_host
+        && chrono::Utc::now()
             .signed_duration_since(row.updated_at)
             .num_seconds()
             > 60
-        {
-            sqlx::query!("UPDATE resource_executions SET status='unknown',updated_at=NOW() WHERE execution_id=$1 AND status IN ('accepted','running') AND updated_at < NOW()-INTERVAL '60 seconds'",id.to_string()).execute(&state.db).await?;
-            return Ok(Json(receipt(
-                &id.to_string(),
-                "unknown",
-                row.result
-                    .map(|v| slice_output(v, body.offset.unwrap_or(0))),
-            )));
-        }
+    {
+        sqlx::query!("UPDATE resource_executions SET status='unknown',updated_at=NOW() WHERE execution_id=$1 AND status IN ('accepted','running') AND updated_at < NOW()-INTERVAL '60 seconds'",id.to_string()).execute(&state.db).await?;
         return Ok(Json(receipt(
             &id.to_string(),
-            &row.status,
+            "unknown",
             row.result
                 .map(|v| slice_output(v, body.offset.unwrap_or(0))),
         )));
     }
-    if request.action != "terminal.start" || !["running"].contains(&row.status.as_str()) {
+    if awaiting_host || request.action != "terminal.start" || row.status != "running" {
         return Ok(Json(receipt(
             &id.to_string(),
             &row.status,
@@ -455,18 +434,9 @@ pub async fn history(
     Extension(claims): Extension<Claims>,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    authorize_channel_read(
-        &state.db,
-        &Principal::user(
-            claims
-                .sub
-                .parse()
-                .map_err(|_| AppError::Unauthorized("Invalid user".into()))?,
-        ),
-        query.channel_id,
-    )
-    .await
-    .map_err(|(_, m)| AppError::Forbidden(m))?;
+    authorize_channel_read(&state.db, &user_principal(&claims)?, query.channel_id)
+        .await
+        .map_err(|(_, m)| AppError::Forbidden(m))?;
     let rows=sqlx::query!("SELECT execution_id,status,request,created_at FROM resource_executions WHERE user_id=$1 AND channel_id=$2 AND bot_id=$3 ORDER BY created_at DESC LIMIT 30",claims.sub,query.channel_id.to_string(),query.bot_id.to_string()).fetch_all(&state.db).await?;
     Ok(Json(
         json!({"executions":rows.into_iter().map(|r|json!({"execution_id":r.execution_id,"status":r.status,"command":r.request["command"],"created_at":r.created_at})).collect::<Vec<_>>()}),

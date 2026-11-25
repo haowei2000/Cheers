@@ -99,6 +99,12 @@ pub(super) struct TaskReservationGuard {
     identity: TaskIdentity,
 }
 
+impl TaskReservations {
+    pub(super) fn is_empty(&self) -> bool {
+        self.by_task.is_empty()
+    }
+}
+
 impl TaskReservationGuard {
     pub(super) fn new(shared: Arc<SharedRuntimeState>, identity: TaskIdentity) -> Self {
         Self { shared, identity }

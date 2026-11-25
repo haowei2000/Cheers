@@ -445,7 +445,7 @@ async fn handle_client_frame(
                     Err("cannot change authenticated user")
                 }
             });
-            match verified {
+            let reason = match verified {
                 Ok(mut session) => {
                     if state
                         .conn_manager
@@ -461,28 +461,13 @@ async fn handle_client_frame(
                             Ok(None) | Err(_) => {}
                         }
                     }
-                    send_control(
-                        socket,
-                        &ServerControl::AuthErr {
-                            reason: "session revoked or connection closing".into(),
-                        },
-                    )
-                    .await;
-                    close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
-                    return ClientOutcome::Close;
+                    "session revoked or connection closing".to_string()
                 }
-                Err(e) => {
-                    send_control(
-                        socket,
-                        &ServerControl::AuthErr {
-                            reason: e.to_string(),
-                        },
-                    )
-                    .await;
-                    close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
-                    return ClientOutcome::Close;
-                }
-            }
+                Err(e) => e.to_string(),
+            };
+            send_control(socket, &ServerControl::AuthErr { reason }).await;
+            close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
+            return ClientOutcome::Close;
         }
 
         ClientFrame::Subscribe { channel_id } => {

@@ -149,7 +149,7 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [x] 后端 CRUD 补洞（admin seed 引导 · messages `?since_seq=` 追平 · botToken 签发 `POST /bots/:id/token` · S3 网关代理上传/下载 + 桶引导）
   - [x] 前端实时 / 流式 / mention / 文件 / presence（全部 ✅）
   - [x] bot 管理 UI（Settings → Bots：注册 / 签发 token / 加入频道）
-  - [x] connector happy-path 文档化验证（Rust connector + claude-code-acp 真机流式回复；见 [../DEMO_M1.md](../DEMO_M1.md)）
+  - [x] connector happy-path 文档化验证（Rust connector + claude-code-acp 真机流式回复；见 [../archive/DEMO_M1.md](../archive/DEMO_M1.md)）
 - [x] **M2** 功能裁剪 ✅ **收口（2026-06-24，已并入 develop `439c679a`）**——会话模型单级化（一切皆 channel），无独立 memory 概念
   - [x] **Slice 0 — 回归锁**：`resource::dispatch` + `fs.*` 的 verb 级回归测试 —— `server/tests/flows.rs` 绿
   - [x] ~~`ResourceRegistry` 重构~~ **YAGNI 延后**：v1 插件不新增后端 verb，保留 `match` 穷尽检查

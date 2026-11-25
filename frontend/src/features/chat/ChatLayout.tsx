@@ -135,6 +135,23 @@ export default function ChatLayout() {
         // user-scoped frames will still reconcile occupancy when it is enabled.
       });
   }, [setVoicePresence]);
+  // A DM appeared: refresh the DM rows only while the personal workspace (their home) is open.
+  const refreshDms = () => {
+    void listDms()
+      .then((dms) => {
+        const current = useChatStore.getState();
+        if (
+          current.personalWorkspace &&
+          current.selectedWorkspaceId === current.personalWorkspace.workspace_id
+        ) {
+          current.setChannels([
+            ...current.channels.filter((channel) => channel.type !== "dm"),
+            ...dms,
+          ]);
+        }
+      })
+      .catch(() => {});
+  };
   useUserSocket((frameType, raw) => {
     if (frameType === "connected") {
       void refreshNotifications();
@@ -153,20 +170,7 @@ export default function ChatLayout() {
       return;
     }
     if (frameType === "dm_created") {
-      void listDms()
-        .then((dms) => {
-          const current = useChatStore.getState();
-          if (
-            current.personalWorkspace &&
-            current.selectedWorkspaceId === current.personalWorkspace.workspace_id
-          ) {
-            current.setChannels([
-              ...current.channels.filter((channel) => channel.type !== "dm"),
-              ...dms,
-            ]);
-          }
-        })
-        .catch(() => {});
+      refreshDms();
       return;
     }
     // Desktop shell: permission_request / mention nudges arrive on this
@@ -187,20 +191,7 @@ export default function ChatLayout() {
       options?: PermissionOption[];
     } | null;
     if (nudge?.kind === "dm") {
-      void listDms()
-        .then((dms) => {
-          const current = useChatStore.getState();
-          if (
-            current.personalWorkspace &&
-            current.selectedWorkspaceId === current.personalWorkspace.workspace_id
-          ) {
-            current.setChannels([
-              ...current.channels.filter((channel) => channel.type !== "dm"),
-              ...dms,
-            ]);
-          }
-        })
-        .catch(() => {});
+      refreshDms();
       return;
     }
     if (nudge?.kind === "permission_request" || nudge?.kind === "mention") {

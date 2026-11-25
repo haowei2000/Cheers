@@ -294,7 +294,6 @@ struct TwoFactorSettingsView: View {
             }
             phase = .idle
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
             phase = .idle
         } catch {
@@ -309,7 +308,6 @@ struct TwoFactorSettingsView: View {
             trustedDevices = try await api.listTrustedDevices()
             trustedDevicesLoadFailed = false
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             trustedDevicesLoadFailed = true
             errorText = error.errorDescription
         } catch {
@@ -329,7 +327,6 @@ struct TwoFactorSettingsView: View {
             code = ""
             phase = .setupConfirm
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
@@ -402,7 +399,6 @@ struct TwoFactorSettingsView: View {
             let response = try await api.setEmailTwoFactor(enabled: enabled)
             await afterArming(response.backupCodes)
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
@@ -419,7 +415,6 @@ struct TwoFactorSettingsView: View {
             let response = try await api.setPasswordTwoFactor(enabled: enabled)
             await afterArming(response.backupCodes)
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
@@ -432,7 +427,6 @@ struct TwoFactorSettingsView: View {
             try await api.revokeTrustedDevice(trustedDeviceId: device.trustedDeviceId)
             await reload()
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
@@ -449,7 +443,6 @@ struct TwoFactorSettingsView: View {
             let response = try await api.regenerateRecoveryCodes()
             await afterArming(response.backupCodes)
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription

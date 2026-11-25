@@ -188,8 +188,6 @@ final class ShellModel {
                     || personalWorkspace?.workspaceId == selectedWorkspaceId
                 if !stillAvailable { self.selectedWorkspaceId = nil }
             }
-        } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession() }
         } catch {
             // Non-fatal: the drawer strip just shows fewer entries.
         }

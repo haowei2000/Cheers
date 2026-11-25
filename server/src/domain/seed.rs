@@ -40,7 +40,7 @@ pub async fn ensure_admin_user(db: &PgPool) -> anyhow::Result<()> {
         env::var("ADMIN_DISPLAY_NAME").unwrap_or_else(|_| "Administrator".to_string());
     // Startup-only (runs once against an empty users table), but route through the
     // spawn_blocking helper anyway so no bcrypt call runs on an async worker thread.
-    let password_hash = crate::infra::crypto::hash_password(password.clone()).await?;
+    let password_hash = crate::infra::crypto::hash_password(password).await?;
     let user_id = Uuid::new_v4().to_string();
 
     sqlx::query!(

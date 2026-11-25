@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM artifact_object_uploads WHERE object_bucket=$1 AND object_key=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c9cc860e891256649eb719d2d511a18902ccae60863ea2894c39674c898c29d1"
+}

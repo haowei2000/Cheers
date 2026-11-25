@@ -76,21 +76,29 @@ struct NewConversationSheet: View {
     }
 
     private func createChannel() {
-        guard let api = app.api, let wsId = targetWorkspaceId, !busy else {
-            if targetWorkspaceId == nil { errorText = "No workspace selected." }
+        guard let wsId = targetWorkspaceId else {
+            errorText = "No workspace selected."
             return
         }
+        openConversation { api in
+            try await api.createChannel(
+                workspaceId: wsId,
+                name: name.trimmingCharacters(in: .whitespaces),
+                isPrivate: isPrivate,
+                voiceEnabled: voiceEnabled,
+                purpose: nil
+            )
+        }
+    }
+
+    /// Shared create-then-open flow for channels and DMs.
+    private func openConversation(_ create: @escaping (APIClient) async throws -> ChannelDto) {
+        guard let api = app.api, !busy else { return }
         busy = true
         errorText = nil
         Task {
             do {
-                let channel = try await api.createChannel(
-                    workspaceId: wsId,
-                    name: name.trimmingCharacters(in: .whitespaces),
-                    isPrivate: isPrivate,
-                    voiceEnabled: voiceEnabled,
-                    purpose: nil
-                )
+                let channel = try await create(api)
                 dismiss()
                 shell.openChat(channel)
             } catch {
@@ -158,35 +166,11 @@ struct NewConversationSheet: View {
     }
 
     private func startDM(with bot: BotDto) {
-        guard let api = app.api, !busy else { return }
-        busy = true
-        errorText = nil
-        Task {
-            do {
-                let channel = try await api.createDM(botId: bot.botId)
-                dismiss()
-                shell.openChat(channel)
-            } catch {
-                errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
-                busy = false
-            }
-        }
+        openConversation { try await $0.createDM(botId: bot.botId) }
     }
 
     private func startDM(with friend: FriendDto) {
-        guard let api = app.api, !busy else { return }
-        busy = true
-        errorText = nil
-        Task {
-            do {
-                let channel = try await api.createDM(userId: friend.friendId)
-                dismiss()
-                shell.openChat(channel)
-            } catch {
-                errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
-                busy = false
-            }
-        }
+        openConversation { try await $0.createDM(userId: friend.friendId) }
     }
 }
 

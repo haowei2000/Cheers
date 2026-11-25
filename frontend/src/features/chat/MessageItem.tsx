@@ -40,11 +40,13 @@ import { IconButton } from "@/components/ui/icon-button";
 import { controlIconClasses, controlSquareClasses, controlTextClasses } from "@/components/ui/control-size";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
 import { messageDetailsMeta } from "./messageDetails";
+import { isUnresolvedApproval } from "./messageTree";
 import {
   usePresentationLevel,
   type PresentationLevel,
 } from "@/components/ui/presentation";
 import { MessageRecordInspector } from "./MessageRecordInspector";
+import { AgentRunOverview } from "./AgentRunOverview";
 import { identityRailWidthClasses } from "@/components/ui/content-size";
 import { ControlTrigger } from "@/components/ui/control-trigger";
 import {
@@ -439,10 +441,7 @@ function RegularMessageItem({
     (message.sender_type === "bot" ? "Bot" : "Unknown");
   const hasName = Boolean(message.sender_name || senderName);
   const isBot = message.sender_type === "bot";
-  const actionableApprovalCount = (pendingApprovals ?? []).filter(
-    (approval) =>
-      !(approval.content_data as { resolved?: boolean } | null | undefined)?.resolved,
-  ).length;
+  const actionableApprovalCount = (pendingApprovals ?? []).filter(isUnresolvedApproval).length;
   const detailsMeta = messageDetailsMeta(message, actionableApprovalCount);
   const annotationSurface = useAnnotationSurface();
   const annotationSource = annotationSurface?.revealed?.target;
@@ -460,6 +459,9 @@ function RegularMessageItem({
   }, [focusRequestId]);
 
   const active = message._streaming || message.is_partial;
+  // Structured events own progress and status. Do not also render a second
+  // progress cursor or Stop control in the message body.
+  const showRunOverview = isBot && detailsMeta.hasTrace;
   // Agent steps only exist when the list DTO or live frame proves that content
   // exists. This prevents empty completed bot turns from showing disclosure
   // chrome such as "Agent steps · 0".
@@ -767,11 +769,7 @@ function RegularMessageItem({
       ? `${detailsMeta.contextCount} context${detailsMeta.contextCount === 1 ? "" : "s"}`
       : null,
   ].filter(Boolean).join(" · ");
-  // One operational status owns the inline surface. A pending approval is more
-  // urgent than an earlier failed trace step, so failure history stays in the
-  // Message Record until the approval is resolved.
-  const showFailureInline = detailsMeta.hasFailure && actionableApprovalCount === 0;
-  const hasOperationalDetails = showFailureInline || keepTraceInline;
+  const hasOperationalDetails = showRunOverview || keepTraceInline;
   const folio = detailsMeta.hasDetails && !hasOperationalDetails ? (
     <UiButton variant="plain"
       type="button"
@@ -788,19 +786,16 @@ function RegularMessageItem({
   ) : null;
   const detailsSection = detailsMeta.hasDetails && hasOperationalDetails ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
-      {showFailureInline && (
-        <div role="alert" className={cn("flex min-h-7 items-center gap-2 text-danger-400", controlTextClasses.compact)}>
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          <span>Agent step failed</span>
-          <IconButton
-            label="Open message record"
-            controlSize="compact"
-            type="button"
-            onClick={(event) => openInspector(event.currentTarget)}
-            className="text-danger-300 hover:bg-red-950/30 hover:text-danger-200"
-          >
-            <ListTree className={controlIconClasses.compact} aria-hidden />
-          </IconButton>
+      {showRunOverview && (
+        <div className="flex min-w-0 max-w-full items-center gap-1">
+          <AgentRunOverview
+            message={message}
+            channelId={channelId}
+            approvalCount={actionableApprovalCount}
+            expanded={inspectorOpen}
+            onOpen={openInspector}
+          />
+          {active && channelId && <StopButton channelId={channelId} msgId={message.msg_id} />}
         </div>
       )}
       {tracePanel && <div className="mt-1 w-full min-w-0 text-left md:min-w-[18rem]">{tracePanel}</div>}
@@ -830,7 +825,7 @@ function RegularMessageItem({
       ];
     }
     const next: ContextAction[] = [
-      { id: "reply", label: "Reply", icon: <MessageCircleMore className="h-4 w-4" />, run: () => actions.onReply(message) },
+      { id: "reply", label: "Reply", icon: <MessageCircleMore className="h-4 w-4" />, restoreFocus: false, run: () => actions.onReply(message) },
       { id: "copy", label: "Copy message", icon: <Copy className="h-4 w-4" />, run: () => copyMessage(message) },
       { id: "forward", label: "Forward", icon: <Forward className="h-4 w-4" />, run: () => actions.onForward(message) },
       { id: "select", label: "Select message", icon: <CheckSquare className="h-4 w-4" />, run: () => actions.onToggleSelect(message) },
@@ -892,6 +887,7 @@ function RegularMessageItem({
             ? [{
                 id: "reply-with-quote",
                 label: "Reply with quote",
+                restoreFocus: false,
                 icon: <TextQuote className="h-4 w-4" />,
                 run: () => actions.onReplyWithQuote?.(message, selection.text),
               } satisfies ContextAction]
@@ -923,6 +919,40 @@ function RegularMessageItem({
     }
     contextSurface.onKeyDown(e);
   };
+  // Tight gap: body ↔ status ↔ Agent steps within one message (both row layouts).
+  const messageContent = (
+    <>
+      {quote}
+      <MessageBody message={message} channelId={channelId} isBot={isBot} progressInOverview={showRunOverview} />
+      {presentationLevel !== "minimal" && folio}
+      {message.msg_type === "task_claim_confirmation" && (
+        <TaskClaimConfirmationCard
+          message={message}
+          channelId={channelId}
+          currentUserId={currentUserId}
+          onContentDataUpdated={actions?.onContentDataUpdated}
+        />
+      )}
+      {message._status && (
+        <SendStatus message={message} onRetry={actions?.onRetry} />
+      )}
+      {(presentationLevel !== "minimal" || showRunOverview || actionableApprovalCount > 0) && detailsSection}
+    </>
+  );
+  const actionBar = showActions && (
+    <ActionBar
+      message={message}
+      actions={actions}
+      anchorRef={contentRef}
+      visible={actionsVisible}
+      onEnter={showActionBarNow}
+      onLeave={hideActionBar}
+      hasDetails={detailsMeta.hasDetails}
+      onOpenDetails={openInspector}
+      canMention={canMention}
+      mentionLabel={name}
+    />
+  );
 
   if (isConsecutive || nested) {
     return (
@@ -964,7 +994,6 @@ function RegularMessageItem({
         )}
         {isConsecutive ? identityPlaceholder : identityColumn}
         {avatarMenu}
-        {/* Tight gap: body ↔ status ↔ Agent steps within one message. */}
         <div
           ref={contentRef}
           className={cn(
@@ -973,36 +1002,9 @@ function RegularMessageItem({
             isOwnAlignedRight && "items-end",
           )}
         >
-          {quote}
-          <MessageBody message={message} channelId={channelId} isBot={isBot} />
-          {presentationLevel !== "minimal" && folio}
-          {message.msg_type === "task_claim_confirmation" && (
-            <TaskClaimConfirmationCard
-              message={message}
-              channelId={channelId}
-              currentUserId={currentUserId}
-              onContentDataUpdated={actions?.onContentDataUpdated}
-            />
-          )}
-          {message._status && (
-            <SendStatus message={message} onRetry={actions?.onRetry} />
-          )}
-          {(presentationLevel !== "minimal" || actionableApprovalCount > 0) && detailsSection}
+          {messageContent}
         </div>
-        {showActions && (
-          <ActionBar
-            message={message}
-            actions={actions}
-            anchorRef={contentRef}
-            visible={actionsVisible}
-            onEnter={showActionBarNow}
-            onLeave={hideActionBar}
-            hasDetails={detailsMeta.hasDetails}
-            onOpenDetails={openInspector}
-            canMention={canMention}
-            mentionLabel={name}
-          />
-        )}
+        {actionBar}
         {inspector}
       </div>
     );
@@ -1041,7 +1043,6 @@ function RegularMessageItem({
       {identityColumn}
       {avatarMenu}
 
-      {/* Tight gap: header/body ↔ status ↔ Agent steps within one message. */}
       <div
         ref={contentRef}
         className={cn(
@@ -1049,36 +1050,9 @@ function RegularMessageItem({
           isOwnAlignedRight && "items-end",
         )}
       >
-        {quote}
-        <MessageBody message={message} channelId={channelId} isBot={isBot} />
-        {presentationLevel !== "minimal" && folio}
-        {message.msg_type === "task_claim_confirmation" && (
-          <TaskClaimConfirmationCard
-            message={message}
-            channelId={channelId}
-            currentUserId={currentUserId}
-            onContentDataUpdated={actions?.onContentDataUpdated}
-          />
-        )}
-        {message._status && (
-          <SendStatus message={message} onRetry={actions?.onRetry} />
-        )}
-        {(presentationLevel !== "minimal" || actionableApprovalCount > 0) && detailsSection}
+        {messageContent}
       </div>
-      {showActions && (
-        <ActionBar
-          message={message}
-          actions={actions}
-          anchorRef={contentRef}
-          visible={actionsVisible}
-          onEnter={showActionBarNow}
-          onLeave={hideActionBar}
-          hasDetails={detailsMeta.hasDetails}
-          onOpenDetails={openInspector}
-          canMention={canMention}
-          mentionLabel={name}
-        />
-      )}
+      {actionBar}
       {inspector}
     </div>
   );
@@ -1126,10 +1100,12 @@ function MessageBody({
   message,
   channelId,
   isBot,
+  progressInOverview = false,
 }: {
   message: Message;
   channelId?: string;
   isBot?: boolean;
+  progressInOverview?: boolean;
 }) {
   const resolveRefClick = useContext(ResolveRefContext);
   // Bind a clicked reference to THIS message's bot + its own attachments, so the
@@ -1148,14 +1124,10 @@ function MessageBody({
   const active = message._streaming || message.is_partial;
 
   if (active && !content && files.length === 0) {
+    if (progressInOverview) return null;
     return (
       <div className="flex items-center gap-2 py-1">
         <TypewriterCursor label="Agent thinking" />
-        {message._trace && (
-          <span className="text-caption-italic truncate">
-            {message._trace}
-          </span>
-        )}
         {isBot && channelId && (
           <StopButton channelId={channelId} msgId={message.msg_id} />
         )}
@@ -1196,13 +1168,10 @@ function MessageBody({
           </p>
         ))}
       <ResourceRefCards cards={cards} />
-      {message._streaming && (
+      {message._streaming && !progressInOverview && (
         <TypewriterCursor className="ml-1" />
       )}
-      {active && message._trace && (
-        <p className="text-caption-italic mt-1">{message._trace}</p>
-      )}
-      {active && isBot && channelId && (
+      {active && isBot && channelId && !progressInOverview && (
         <div className="mt-1">
           <StopButton channelId={channelId} msgId={message.msg_id} />
         </div>

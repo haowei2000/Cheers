@@ -133,8 +133,7 @@ pub async fn list_approvers(
                 "user_id": r.user_id.clone(),
                 "operation_kind": r.operation_kind.clone(),
                 "granted_by": r.granted_by.clone(),
-                "granted_at": Some(r.granted_at.clone())
-                    .map(|t| t.to_rfc3339()).unwrap_or_default(),
+                "granted_at": r.granted_at.to_rfc3339(),
             })
         })
         .collect())
@@ -231,11 +230,7 @@ pub async fn list_audit(
                     // detail always wins once seen. Either way, drop the duplicate.
                     if event_type == "requested" {
                         if let Some(existing) = merged[idx].as_object_mut() {
-                            let mut d = detail.unwrap_or(Value::Null);
-                            if d.is_object() {
-                                crate::domain::tool_request::normalize_audit_detail(&mut d);
-                            }
-                            existing.insert("detail".into(), d);
+                            existing.insert("detail".into(), normalized_detail(detail));
                             if existing.get("bot_id").is_none_or(Value::is_null) {
                                 existing.insert("bot_id".into(), json!(bot_id));
                             }
@@ -247,11 +242,6 @@ pub async fn list_audit(
             }
         }
 
-        let mut detail_out = detail.unwrap_or(Value::Null);
-        if detail_out.is_object() {
-            crate::domain::tool_request::normalize_audit_detail(&mut detail_out);
-        }
-
         merged.push(json!({
             "event_type": event_type,
             "bot_id": bot_id,
@@ -261,13 +251,20 @@ pub async fn list_audit(
             "target_user_id": r.target_user_id.clone(),
             "decision": r.decision.clone(),
             "option_id": r.option_id.clone(),
-            "detail": detail_out,
-            "created_at": Some(r.created_at.clone())
-                .map(|t| t.to_rfc3339()).unwrap_or_default(),
+            "detail": normalized_detail(detail),
+            "created_at": r.created_at.to_rfc3339(),
         }));
     }
     merged.truncate(limit.max(0) as usize);
     Ok(merged)
+}
+
+fn normalized_detail(detail: Option<Value>) -> Value {
+    let mut detail = detail.unwrap_or(Value::Null);
+    if detail.is_object() {
+        crate::domain::tool_request::normalize_audit_detail(&mut detail);
+    }
+    detail
 }
 
 /// A pending ACP permission message, looked up by its ACP `request_id`.
@@ -281,16 +278,13 @@ pub struct PendingPermission {
 }
 
 fn row_to_pending(r: crate::infra::db::query_rows::PermissionRow) -> Option<PendingPermission> {
-    let msg_id = Some(r.msg_id.clone()).and_then(|s| s.parse::<Uuid>().ok())?;
-    let channel_id = Some(r.channel_id.clone()).and_then(|s| s.parse::<Uuid>().ok())?;
-    let bot_id = Some(r.sender_id.clone()).and_then(|s| s.parse::<Uuid>().ok())?;
     Some(PendingPermission {
-        msg_id,
-        channel_id,
-        bot_id,
-        channel_seq: r.channel_seq.clone(),
-        content: r.content.clone(),
-        content_data: r.content_data.clone().unwrap_or(Value::Null),
+        msg_id: r.msg_id.parse().ok()?,
+        channel_id: r.channel_id.parse().ok()?,
+        bot_id: r.sender_id.parse().ok()?,
+        channel_seq: r.channel_seq,
+        content: r.content,
+        content_data: r.content_data.unwrap_or(Value::Null),
     })
 }
 
@@ -300,19 +294,7 @@ pub async fn find_pending(
     channel_id: Uuid,
     request_id: &str,
 ) -> Result<Option<PendingPermission>, sqlx::Error> {
-    let row = sqlx::query_as!(
-        crate::infra::db::query_rows::PermissionRow,
-        r###"SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
-         FROM messages
-         WHERE channel_id = $1 AND msg_type = 'permission'
-           AND content_data->>'request_id' = $2
-         LIMIT 1"###,
-        channel_id.to_string(),
-        request_id,
-    )
-    .fetch_optional(db)
-    .await?;
-    Ok(row.and_then(row_to_pending))
+    find_pending_of_type(db, channel_id, request_id, "permission").await
 }
 
 /// Still-pending permission cards older than `ttl_secs` that no one ever

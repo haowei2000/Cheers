@@ -127,9 +127,6 @@ function WorkbenchDrawerImpl({
       pinned: drawerState.pinned,
       togglePin: drawerState.togglePin,
       rendererExtensions: drawerState.rendererExtensions,
-      bindings: drawerState.bindings,
-      setBinding: drawerState.setBinding,
-      configs: drawerState.configs,
       openTarget: drawerState.focus,
       openInspectableId: (() => {
         const locator = openFilePath?.startsWith("cheers:") ? parseLocator(openFilePath) : null;
@@ -153,9 +150,6 @@ function WorkbenchDrawerImpl({
       drawerState.pinned,
       drawerState.togglePin,
       drawerState.rendererExtensions,
-      drawerState.bindings,
-      drawerState.setBinding,
-      drawerState.configs,
       drawerState.focus,
       openFilePath,
       filesTick,
@@ -168,6 +162,12 @@ function WorkbenchDrawerImpl({
       memberNames,
     ]
   );
+
+  // Navigation never discards an unsaved artifact edit.
+  const switchView = (apply: () => void) => {
+    if (artifactDirty) { drawerState.setNotice("Save or discard your changes first."); return; }
+    apply();
+  };
 
   const profilePanels = panelsFor("inline", profile?.profile);
   const panelCtx: PanelContext = useMemo(
@@ -204,9 +204,9 @@ function WorkbenchDrawerImpl({
         presentationOrder: ["collapsed"],
         collapsedContent: "icon",
         items: [
-          { id: "artifacts", label: "All artifacts", icon: Package, selected: !drawerState.rawMode && !collectionsMode, onSelect: () => { if (artifactDirty) { drawerState.setNotice("Save or discard your changes first."); return; } drawerState.setRawMode(false); setCollectionsMode(false); } },
-          { id: "collections", label: "Collections", icon: CollectionIcon, selected: !drawerState.rawMode && collectionsMode, onSelect: () => { if (artifactDirty) { drawerState.setNotice("Save or discard your changes first."); return; } drawerState.setRawMode(false); setCollectionsMode(true); } },
-          { id: "raw-workspace-files", label: "Source files", icon: Folder, selected: drawerState.rawMode, onSelect: () => { if (artifactDirty) { drawerState.setNotice("Save or discard your changes first."); return; } drawerState.setRawMode(true); } },
+          { id: "artifacts", label: "All artifacts", icon: Package, selected: !drawerState.rawMode && !collectionsMode, onSelect: () => switchView(() => { drawerState.setRawMode(false); setCollectionsMode(false); }) },
+          { id: "collections", label: "Collections", icon: CollectionIcon, selected: !drawerState.rawMode && collectionsMode, onSelect: () => switchView(() => { drawerState.setRawMode(false); setCollectionsMode(true); }) },
+          { id: "raw-workspace-files", label: "Source files", icon: Folder, selected: drawerState.rawMode, onSelect: () => switchView(() => drawerState.setRawMode(true)) },
         ],
       }}
       collapsedSummary={() => (

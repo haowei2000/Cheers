@@ -337,22 +337,19 @@ pub async fn list_installations(
 
     let installations = rows
         .into_iter()
-        .map(|row| {
-            let config: serde_json::Value = row.config.clone();
-            Ok(InstallationDto {
-                installation_id: row.installation_id.clone(),
-                integration_id: integration_id.clone(),
-                workspace_id: row.workspace_id.clone(),
-                display_name: descriptor.display_name.to_string(),
-                external_account: config
-                    .get("account_login")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string)
-                    .unwrap_or(row.external_account.clone()),
-            })
+        .map(|row| InstallationDto {
+            installation_id: row.installation_id,
+            integration_id: integration_id.clone(),
+            workspace_id: row.workspace_id,
+            display_name: descriptor.display_name.to_string(),
+            external_account: row
+                .config
+                .get("account_login")
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+                .unwrap_or(row.external_account),
         })
-        .collect::<Result<Vec<_>, sqlx::Error>>()
-        .map_err(AppError::Db)?;
+        .collect();
     Ok(Json(installations))
 }
 

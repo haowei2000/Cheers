@@ -6,7 +6,18 @@
   "description": "Demonstrates the explicit unrestricted-network warning",
   "contributes": {
     "scenes": [],
-    "renderers": [{ "id": "status", "title": "Remote status", "entry": "renderers/status.js", "match": ["status.json"] }]
+    "renderers": [
+      {
+        "id": "status",
+        "title": "Remote status",
+        "entry": "renderers/status.js",
+        "match": {
+          "suffix": ".status.json"
+        }
+      }
+    ]
   },
-  "permissions": { "network": "unrestricted" }
+  "permissions": {
+    "network": "unrestricted"
+  }
 }

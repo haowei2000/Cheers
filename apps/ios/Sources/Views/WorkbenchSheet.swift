@@ -227,7 +227,6 @@ private struct WorkbenchSceneStyle {
 private struct ArtifactCollectionsSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let channelId: String
     var onAddContext: (ResourceContextItem) -> Void = { _ in }
     var onBack: () -> Void = {}
@@ -305,10 +304,8 @@ private struct ArtifactCollectionsSheet: View {
                         Button("Browse collections") { showSceneManager = true }
 
                     }
-                } else if horizontalSizeClass == .regular {
-                    regularLayout
                 } else {
-                    compactLayout
+                    itemLayout
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -364,14 +361,7 @@ private struct ArtifactCollectionsSheet: View {
         }
     }
 
-    private var compactLayout: some View {
-        VStack(spacing: 0) {
-            itemStrip
-            documentContent
-        }
-    }
-
-    private var regularLayout: some View {
+    private var itemLayout: some View {
         VStack(spacing: 0) {
             itemStrip
             documentContent
@@ -410,27 +400,6 @@ private struct ArtifactCollectionsSheet: View {
         }
         .accessibilityLabel("Select workbench scene")
         .accessibilityValue(sceneTitle(activeScene))
-    }
-
-    private var sceneHeader: some View {
-        let style = WorkbenchSceneStyle.resolve(activeScene)
-        return HStack(spacing: 12) {
-            Image(systemName: style.icon)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(style.tint)
-                .frame(width: 44, height: 44)
-                .background(style.tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(sceneTitle(activeScene)).font(.headline)
-                Text(style.subtitle).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text("\(activePaths.count)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("\(activePaths.count) items")
-        }
-        .padding(12)
     }
 
     private var itemStrip: some View {
@@ -626,20 +595,24 @@ private struct ArtifactCollectionsSheet: View {
         var found: [String: String] = [:]
         let files = entries.filter { !$0.isDir && $0.path != ".workbench.json" }
         var needsInspection: [FsEntry] = []
+        let boundLenses = bindings
         for entry in files {
-            if let bound = bindings[entry.path], ["markdown", "table", "kanban", "chart", "codemap"].contains(bound) {
+            let ext = entry.path.split(separator: ".").last.map(String.init)?.lowercased() ?? ""
+            if let bound = boundLenses[entry.path], ["markdown", "table", "kanban", "chart", "codemap"].contains(bound) {
                 found[entry.path] = bound
-            } else if ["md", "markdown"].contains(entry.path.split(separator: ".").last.map(String.init)?.lowercased() ?? "") {
+            } else if ["md", "markdown"].contains(ext) {
                 found[entry.path] = "markdown"
-            } else if ["json", "yaml", "yml"].contains(entry.path.split(separator: ".").last.map(String.init)?.lowercased() ?? "") {
+            } else if ["json", "yaml", "yml"].contains(ext) {
                 needsInspection.append(entry)
             }
         }
         discoveredLenses = found
 
-        let priority = needsInspection.filter { claimedPaths.contains($0.path) }
+        let claimed = claimedPaths
+        let priority = needsInspection.filter { claimed.contains($0.path) }
         await inspectRenderers(priority)
-        let background = needsInspection.filter { !claimedPaths.contains($0.path) }
+        let claimedAfterInspection = claimedPaths
+        let background = needsInspection.filter { !claimedAfterInspection.contains($0.path) }
         if !background.isEmpty {
             Task { await inspectRenderers(background) }
         }
@@ -806,284 +779,6 @@ func workbenchConfiguration(
     next["pinned"] = .array(pins.sorted().map(JSONValue.string))
     next["scene_state"] = state.jsonValue
     return next
-}
-
-/// Workbench — the channel's file workspace with native, inert renderers.
-///
-/// The web workbench is file-centric: browse the tree, open a file, and it renders
-/// through a bound *renderer* (a built-in lens or a sandboxed HTML plugin), falling
-/// back to "Raw" when nothing is bound. iOS never executes HTML plugin bundles;
-/// Markdown, table, kanban, chart and codemap are rendered with native SwiftUI views.
-///
-/// **`fs.ls` returns a FLAT, recursive list of full paths** — `draft/paper.md`, not a
-/// `draft` directory containing `paper.md` — and in practice emits no `is_dir` rows at
-/// all. So, exactly like the web `buildTree` (workbench/panels/FilePanel.tsx), the
-/// folder hierarchy is *derived client-side*: a folder is any path prefix that has
-/// children (or an explicit `is_dir` row, which materializes a possibly-empty folder).
-/// One `fs.ls` at the root feeds the whole browser; drilling down costs no round trip.
-///
-/// Everything here is agent-authored and untrusted — like ViewBoards, it renders as
-/// inert `Text`, never as markup and never as tappable links.
-private struct LegacyWorkbenchSheet: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
-    let channelId: String
-
-    private enum Route: Hashable {
-        case folder(String)
-        case file(String)
-    }
-
-    @State private var path: [Route] = []
-    @State private var root: [TreeNode] = []
-    @State private var errorText: String?
-    @State private var isLoading = true
-    @State private var isRefreshing = false
-    @State private var templates: [WorkbenchTemplateRow] = []
-    @State private var isApplyingTemplate = false
-    @State private var lensBindings: [String: String] = [:]
-
-    var body: some View {
-        NavigationStack(path: $path) {
-            browser(nodes: root, title: "Workbench", folderPath: "")
-                .navigationDestination(for: Route.self) { route in
-                    switch route {
-                    case .folder(let folderPath):
-                        if let folder = find(folderPath, in: root) {
-                            browser(nodes: folder.children, title: folder.name, folderPath: folderPath)
-                        } else {
-                            ContentUnavailableView(
-                                "Folder unavailable",
-                                systemImage: "folder.badge.questionmark",
-                                description: Text("The folder may have been moved or deleted.")
-                            )
-                        }
-                    case .file(let filePath):
-                        if let file = find(filePath, in: root) {
-                            FileContentView(
-                                channelId: channelId,
-                                node: file,
-                                preferredLens: lensBindings[file.path]
-                            )
-                        } else {
-                            ContentUnavailableView(
-                                "File unavailable",
-                                systemImage: "doc.badge.ellipsis",
-                                description: Text("The file may have been moved or deleted.")
-                            )
-                        }
-                    }
-                }
-        }
-        .task {
-            async let files: Void = load()
-            async let templateList: Void = loadTemplates()
-            _ = await (files, templateList)
-        }
-    }
-
-    @ViewBuilder
-    private func browser(nodes: [TreeNode], title: String, folderPath: String) -> some View {
-        Group {
-            if isLoading && root.isEmpty {
-                ProgressView("Loading files…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let errorText, root.isEmpty {
-                ContentUnavailableView {
-                    Label("Couldn’t load files", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(errorText)
-                } actions: {
-                    Button("Retry") { Task { await load() } }
-                }
-            } else if nodes.isEmpty {
-                ContentUnavailableView {
-                    Label("No files", systemImage: "folder")
-                        .helpExplanation("Files created in this channel will appear here.")
-                }
-            } else {
-                List(nodes) { node in
-                    NavigationLink(value: node.isDir ? Route.folder(node.path) : Route.file(node.path)) {
-                        row(node)
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .refreshable { await load(showSpinner: false) }
-            }
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if folderPath.isEmpty {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Menu {
-                        if templates.isEmpty {
-                            Text("No templates installed")
-                        } else {
-                            ForEach(templates) { template in
-                                Button(template.title) { Task { await apply(template.manifest) } }
-                            }
-                        }
-                    } label: {
-                        if isApplyingTemplate { ProgressView() }
-                        else { Label("Templates", systemImage: "square.grid.2x2") }
-                    }
-                    .disabled(isApplyingTemplate)
-
-                    Button { Task { await load(showSpinner: false) } } label: {
-                        if isRefreshing { ProgressView() }
-                        else { Label("Refresh", systemImage: "arrow.clockwise") }
-                    }
-                    .disabled(isRefreshing || isLoading)
-                }
-            }
-        }
-    }
-
-    private func row(_ node: TreeNode) -> some View {
-        CheersFileTreeItem(row: CheersItemRow(
-            title: node.name,
-            subtitle: node.isDir ? "\(node.children.count) items" : nil,
-            explicitLevel: .minimal,
-            leading: AnyView(Image(systemName: node.isDir ? "folder.fill" : icon(for: node.name))
-                .font(.subheadline)
-                .foregroundStyle(node.isDir ? Color.accentColor : Color.secondary)
-                .frame(width: 22)),
-            trailing: AnyView(Group {
-                if node.isDir {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                } else {
-                    Text(size(node.sizeBytes)).font(.caption.monospaced()).foregroundStyle(.secondary)
-                }
-            })
-        ))
-    }
-
-    private func icon(for name: String) -> String {
-        switch name.split(separator: ".").last.map(String.init)?.lowercased() {
-        case "md", "markdown", "txt": return "doc.text"
-        case "json", "yaml", "yml", "toml", "xml": return "curlybraces"
-        default: return "doc"
-        }
-    }
-
-    private func size(_ bytes: Int) -> String {
-        bytes < 1024 ? "\(bytes) B" : String(format: "%.1f KB", Double(bytes) / 1024)
-    }
-
-    /// `showSpinner: false` on a manual refresh — replacing the list with a full-frame
-    /// ProgressView would make the tree flicker away under the user's finger; the header
-    /// button shows the progress instead.
-    private func load(showSpinner: Bool = true) async {
-        if showSpinner { isLoading = true } else { isRefreshing = true }
-        defer { isRefreshing = false }
-        do {
-            // One recursive listing for the whole workspace — see the type doc.
-            let raw = try await app.socket.request(
-                resource: "fs.ls", params: ["channel_id": channelId, "path": ""])
-            root = TreeNode.build(from: try raw.decode(as: FsListing.self).entries)
-            normalizeNavigationPath()
-            errorText = nil
-        } catch {
-            errorText = (error as? ResourceError)?.errorDescription ?? error.localizedDescription
-        }
-        isLoading = false
-    }
-
-    /// Keep the deepest still-valid destination after a refresh. If an agent moved
-    /// or deleted the open item, SwiftUI pops back to its nearest valid parent.
-    private func normalizeNavigationPath() {
-        guard let invalidIndex = path.firstIndex(where: { route in
-            switch route {
-            case .folder(let routePath):
-                guard let node = find(routePath, in: root) else { return true }
-                return !node.isDir
-            case .file(let routePath):
-                guard let node = find(routePath, in: root) else { return true }
-                return node.isDir
-            }
-        }) else { return }
-        path.removeSubrange(invalidIndex...)
-    }
-
-    private func loadTemplates() async {
-        guard let api = app.api else { return }
-        templates = (try? await api.listWorkbenchTemplates()) ?? []
-    }
-
-    private func apply(_ manifest: WorkbenchTemplateManifest) async {
-        isApplyingTemplate = true
-        defer { isApplyingTemplate = false }
-        do {
-            for (path, value) in manifest.seed ?? [:] {
-                let content: String
-                if case .string(let text) = value { content = text }
-                else { content = String(decoding: try JSONEncoder.workbench.encode(value), as: UTF8.self) }
-                do {
-                    _ = try await app.socket.request(resource: "fs.write", params: [
-                        "channel_id": channelId, "path": path, "content": content, "if_version": 0,
-                    ])
-                } catch ResourceError.server(let code, _) where code == "VERSION_CONFLICT" {
-                    // Reapplying a template fills gaps without replacing user or bot data.
-                }
-            }
-
-            var config: [String: JSONValue] = [:]
-            var version = 0
-            if let raw = try? await app.socket.request(
-                resource: "fs.read", params: ["channel_id": channelId, "path": ".workbench.json"]
-            ), let file = try? raw.decode(as: FsFile.self),
-               let data = file.content.data(using: .utf8),
-               let decoded = try? JSONDecoder().decode([String: JSONValue].self, from: data) {
-                config = decoded
-                version = file.version
-            }
-            var bindings = config["bindings"]?.objectValue ?? [:]
-            var configs = config["configs"]?.objectValue ?? [:]
-            for item in manifest.items {
-                if bindings[item.path] == nil, item.resolvedView.hasPrefix("builtin:") {
-                    bindings[item.path] = .string(item.resolvedView)
-                }
-                if configs[item.path] == nil, let itemConfig = item.config { configs[item.path] = itemConfig }
-                lensBindings[item.path] = item.lensId
-            }
-            let existingPins = config["pinned"]?.arrayValue?.compactMap(\.stringValue) ?? []
-            config["environment"] = .string(manifest.id)
-            config["bindings"] = .object(bindings)
-            config["configs"] = .object(configs)
-            config["pinned"] = .array(Array(Set(existingPins + (manifest.pin ?? []))).sorted().map(JSONValue.string))
-            let configText = String(decoding: try JSONEncoder.workbench.encode(config), as: UTF8.self)
-            _ = try await app.socket.request(resource: "fs.write", params: [
-                "channel_id": channelId, "path": ".workbench.json",
-                "content": configText, "if_version": version,
-            ])
-            await load(showSpinner: false)
-            if let first = manifest.items.first, let node = find(first.path, in: root) {
-                var accumulated = ""
-                path = first.path.split(separator: "/").dropLast().map { segment in
-                    accumulated = accumulated.isEmpty ? String(segment) : "\(accumulated)/\(segment)"
-                    return Route.folder(accumulated)
-                }
-                path.append(.file(node.path))
-            }
-            errorText = nil
-        } catch {
-            errorText = (error as? ResourceError)?.errorDescription ?? error.localizedDescription
-        }
-    }
-
-    private func find(_ path: String, in nodes: [TreeNode]) -> TreeNode? {
-        for node in nodes {
-            if node.path == path { return node }
-            if let result = find(path, in: node.children) { return result }
-        }
-        return nil
-    }
 }
 
 private extension JSONEncoder {
@@ -1415,31 +1110,23 @@ private struct FileContentView: View {
     }
 
     private func patch(_ ops: [[String: Any]]) async -> Bool {
-        guard let version = file?.version else { return false }
-        isSaving = true
-        defer { isSaving = false }
-        do {
-            var params: [String: Any] = ["channel_id": channelId, "if_version": version, "ops": ops]
-            if let artifactId { params["artifact_id"] = artifactId } else { params["path"] = node.path }
-            _ = try await app.socket.request(resource: artifactId == nil ? "fs.patch" : "channel.artifacts.patch", params: params)
-            statusText = "Saved"
-            await load()
-            return true
-        } catch ResourceError.server(let code, _) where code == "VERSION_CONFLICT" {
-            statusText = "Conflict — reload and reapply your change"
-            showConflict = true
-        } catch { statusText = (error as? ResourceError)?.errorDescription ?? error.localizedDescription }
-        return false
+        await save(["ops": ops], fsResource: "fs.patch", artifactResource: "channel.artifacts.patch")
     }
 
     private func writeText(_ next: String) async -> Bool {
+        await save(["content": next], fsResource: "fs.write", artifactResource: "channel.artifacts.update")
+    }
+
+    private func save(_ payload: [String: Any], fsResource: String, artifactResource: String) async -> Bool {
         guard let version = file?.version else { return false }
         isSaving = true
         defer { isSaving = false }
         do {
-            var params: [String: Any] = ["channel_id": channelId, "content": next, "if_version": version]
+            var params = payload
+            params["channel_id"] = channelId
+            params["if_version"] = version
             if let artifactId { params["artifact_id"] = artifactId } else { params["path"] = node.path }
-            _ = try await app.socket.request(resource: artifactId == nil ? "fs.write" : "channel.artifacts.update", params: params)
+            _ = try await app.socket.request(resource: artifactId == nil ? fsResource : artifactResource, params: params)
             statusText = "Saved"
             await load()
             return true
@@ -1468,7 +1155,6 @@ private func editedValue(_ text: String, matching original: JSONValue?) -> Any {
     switch original {
     case .bool: return ["true", "yes", "1"].contains(text.lowercased())
     case .number: return Double(text) ?? 0
-    case .null: return text
     default: return text
     }
 }
@@ -2161,65 +1847,6 @@ private struct MarkdownRenderer: View {
             Text(String(line.dropFirst(2))).italic().foregroundStyle(Theme.textSecondary).padding(.leading, 10)
         } else {
             Text(line.isEmpty ? " " : line).font(.body).textSelection(.enabled)
-        }
-    }
-}
-
-private struct TableRenderer: View {
-    let content: String
-    private var rows: [[String: JSONValue]] {
-        guard let data = content.data(using: .utf8),
-              let value = try? JSONDecoder().decode(JSONValue.self, from: data) else { return [] }
-        return value.arrayValue?.compactMap(\.objectValue) ?? []
-    }
-    private var columns: [String] { Array(Set(rows.flatMap(\.keys))).sorted() }
-    var body: some View {
-        if rows.isEmpty { ComingSoon(icon: "tablecells", text: "No table rows to display.") }
-        else {
-            ScrollView([.horizontal, .vertical]) {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 9) {
-                    GridRow { ForEach(columns, id: \.self) { Text($0).font(.caption.bold()) } }
-                    Divider().gridCellUnsizedAxes(.horizontal)
-                    ForEach(Array(rows.prefix(200).enumerated()), id: \.offset) { _, row in
-                        GridRow {
-                            ForEach(columns, id: \.self) { Text(display(row[$0])).font(.caption).textSelection(.enabled) }
-                        }
-                        Divider().gridCellUnsizedAxes(.horizontal)
-                    }
-                }
-                .padding(16)
-            }
-        }
-    }
-}
-
-private struct KanbanRenderer: View {
-    let content: String
-    private var columns: [JSONValue] {
-        guard let data = content.data(using: .utf8),
-              let root = try? JSONDecoder().decode(JSONValue.self, from: data) else { return [] }
-        return root["columns"]?.arrayValue ?? []
-    }
-    var body: some View {
-        if columns.isEmpty { ComingSoon(icon: "rectangle.3.group", text: "No kanban columns to display.") }
-        else {
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(column.firstString("name", "title") ?? "Column").font(.headline)
-                            ForEach(Array((column["items"]?.arrayValue ?? []).enumerated()), id: \.offset) { _, item in
-                                Text(item.firstString("title", "name", "text") ?? display(item))
-                                    .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(10).background(Theme.bgRaised, in: RoundedRectangle(cornerRadius: 10))
-                            }
-                        }
-                        .padding(12).frame(width: 220, alignment: .topLeading)
-                        .background(Theme.bgApp, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                }
-                .padding(16)
-            }
         }
     }
 }
@@ -2933,18 +2560,18 @@ struct RemoteWorkspaceSheet: View {
 
 private struct GitPatchView: View {
     private struct Line: Identifiable {
-        enum Kind { case addition, deletion, hunk, header, context }
         let id: Int
         let text: String
-        let kind: Kind
+        let kind: CheersDiffTone
     }
 
-    let diff: String
+    /// Parsed once per diff instead of on every `body` evaluation.
+    private let lines: [Line]
 
-    private var lines: [Line] {
-        diff.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, raw in
+    init(diff: String) {
+        lines = diff.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, raw in
             let text = String(raw)
-            let kind: Line.Kind
+            let kind: CheersDiffTone
             if text.hasPrefix("+++") || text.hasPrefix("---") || text.hasPrefix("diff ") || text.hasPrefix("index ") {
                 kind = .header
             } else if text.hasPrefix("@@") {
@@ -2978,39 +2605,10 @@ private struct GitPatchView: View {
             }
             Section("Patch") {
                 ForEach(lines) { line in
-                    CheersDiffLineItem(text: line.text, tone: tone(line.kind))
+                    CheersDiffLineItem(text: line.text, tone: line.kind)
                 }
             }
         }
         .listStyle(.plain)
-    }
-
-    private func tone(_ kind: Line.Kind) -> CheersDiffTone {
-        switch kind {
-        case .addition: .addition
-        case .deletion: .deletion
-        case .hunk: .hunk
-        case .header: .header
-        case .context: .context
-        }
-    }
-
-    private func foreground(_ kind: Line.Kind) -> Color {
-        switch kind {
-        case .addition: .green
-        case .deletion: .red
-        case .hunk: .blue
-        case .header: .secondary
-        case .context: .primary
-        }
-    }
-
-    private func background(_ kind: Line.Kind) -> Color {
-        switch kind {
-        case .addition: Color.green.opacity(0.08)
-        case .deletion: Color.red.opacity(0.08)
-        case .hunk: Color.blue.opacity(0.08)
-        default: Color.clear
-        }
     }
 }

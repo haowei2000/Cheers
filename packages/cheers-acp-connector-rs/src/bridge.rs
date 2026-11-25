@@ -633,6 +633,10 @@ mod fixture_tests {
                 "control/to_connector/auth_acknowledged.json",
                 "AuthAcknowledged",
             ),
+            (
+                "control/to_connector/mcp_delivery_observed.json",
+                "McpDeliveryObserved",
+            ),
         ] {
             let frame: ControlInbound = serde_json::from_value(load(rel))
                 .unwrap_or_else(|e| panic!("{rel} failed to parse: {e}"));
@@ -654,6 +658,15 @@ mod fixture_tests {
                     assert_eq!(request_id, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "{rel}");
                     assert_eq!(action, "retry", "{rel}");
                     "AuthAcknowledged"
+                }
+                ControlInbound::McpDeliveryObserved {
+                    channel_id,
+                    header_refresh,
+                    ..
+                } => {
+                    assert_eq!(channel_id, "11111111-2222-4333-8444-555555555555", "{rel}");
+                    assert!(!header_refresh, "{rel}");
+                    "McpDeliveryObserved"
                 }
                 other => panic!("{rel}: unexpected variant {other:?}"),
             };
@@ -680,6 +693,10 @@ mod fixture_tests {
                 "WorkspaceReq",
             ),
             ("data/to_connector/workspace_req_watch.json", "WorkspaceReq"),
+            (
+                "data/to_connector/workspace_req_session_resolve.json",
+                "WorkspaceReq",
+            ),
         ] {
             let frame: D = serde_json::from_value(load(rel))
                 .unwrap_or_else(|e| panic!("{rel} failed to parse: {e}"));
@@ -705,6 +722,7 @@ mod fixture_tests {
                     limit,
                     skip,
                     content_b64,
+                    session_ref,
                     ..
                 } => {
                     match op.as_str() {
@@ -716,6 +734,10 @@ mod fixture_tests {
                             assert_eq!(*limit, Some(20), "{rel}");
                             assert_eq!(*skip, Some(40), "{rel}");
                         }
+                        "session_resolve" => {
+                            let reference = session_ref.as_ref().expect("session_ref");
+                            assert_eq!(reference.native_id, "01a1422e-d5e6-7e10-be3b-040fa49834a4");
+                        }
                         _ => {}
                     }
                     "WorkspaceReq"
@@ -724,6 +746,25 @@ mod fixture_tests {
             };
             assert_eq!(got, want, "{rel}");
         }
+    }
+
+    #[test]
+    fn runtime_session_control_attach_fixture_parses() {
+        let frame: ControlInbound = serde_json::from_value(load(
+            "control/to_connector/runtime_session_control_attach.json",
+        ))
+        .unwrap();
+        let ControlInbound::RuntimeSessionControl {
+            action, session, ..
+        } = frame
+        else {
+            panic!("expected runtime_session_control");
+        };
+        assert_eq!(action, "attach");
+        assert_eq!(
+            session.provider_session_id.as_deref(),
+            Some("01a1422e-d5e6-7e10-be3b-040fa49834a4")
+        );
     }
 
     // ── dormant to_connector frames (no gateway emitter today) ──────────────
@@ -746,6 +787,7 @@ mod fixture_tests {
                     cwd: Some("/workspace".into()),
                     additional_dirs: vec![],
                     session_config: None,
+                    provider_session_id: None,
                     extra: Default::default(),
                 },
                 runtime: RuntimeDescriptor {
@@ -984,6 +1026,19 @@ mod fixture_tests {
                 data_b64: "aGVsbG8=".into(),
             },
             "data/to_gateway/file_upload.json",
+        );
+        assert_round_trips(
+            &DataOutbound::SessionHistory {
+                v: BRIDGE_PROTOCOL_VERSION,
+                session_id: "eeeeeeee-ffff-4000-8111-222222222222".into(),
+                channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+                provider_session_key: "cheers:session:eeeeeeee-ffff-4000-8111-222222222222".into(),
+                provider_session_id: "01a1422e-d5e6-7e10-be3b-040fa49834a4".into(),
+                filename: "session-history-01a1422e.md".into(),
+                markdown: "# Imported session history\n\n## User\n\nhello\n".into(),
+                acp_capability: None,
+            },
+            "data/to_gateway/session_history.json",
         );
         assert_round_trips(
             &DataOutbound::WorkspaceRes {

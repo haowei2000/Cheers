@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE artifact_object_jobs SET lease_token=NULL,lease_until=NULL,last_error=$4,\n                next_attempt_at=NOW()+make_interval(secs => LEAST(attempts,60)*10)\n                WHERE artifact_id=$1 AND version=$2 AND lease_token=$3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e093d53cef7a77215dfe86b30525c3424532c8158d46561bda5be35407f182ea"
+}

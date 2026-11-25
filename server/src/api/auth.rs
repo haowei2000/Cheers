@@ -117,6 +117,46 @@ pub(crate) fn session_response(
     })
 }
 
+/// Body for a login that still needs a second factor on `transaction_id`.
+pub(crate) fn factor_required_response(
+    transaction_id: String,
+    allowed_factors: Vec<String>,
+) -> LoginResponse {
+    LoginResponse {
+        status: "factor_required".into(),
+        transaction_id: Some(transaction_id),
+        allowed_factors,
+        expires_in: Some(600),
+        requires_2fa: true,
+        two_factor_session_id: None,
+        access_token: None,
+        token_type: None,
+        user_id: None,
+        username: None,
+        display_name: None,
+        role: None,
+        refresh_token: None,
+        csrf_token: None,
+        trusted_device: None,
+    }
+}
+
+/// A freshly issued session: cookies for browsers, body tokens for native clients.
+pub(crate) fn issued_session_response(
+    user: &auth::AuthUser,
+    session: auth_sessions::IssuedSession,
+    client: auth_sessions::ClientType,
+) -> Result<Response, AppError> {
+    let refresh = session.refresh_token.clone();
+    let csrf = session.csrf_token.clone();
+    let body = session_response(user, session, client)?;
+    Ok(if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(body).into_response()
+    })
+}
+
 /// Every completed login uses the same browser/native response contract.
 pub(crate) fn completed_login_response(
     completed: auth_sessions::CompletedLogin,
@@ -151,6 +191,34 @@ pub(crate) fn completed_login_response(
     Ok(response)
 }
 
+/// Rate-limit key for the caller; rejects while `limiter` is cooling down.
+fn throttled_client_key(
+    state: &AppState,
+    limiter: &crate::infra::ratelimit::FixedWindowLimiter,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
+    headers: &HeaderMap,
+) -> Result<String, AppError> {
+    let key = crate::infra::ratelimit::client_key(
+        headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
+    if let Some(retry_after_secs) = limiter.retry_after(&key) {
+        return Err(AppError::TooManyRequests { retry_after_secs });
+    }
+    Ok(key)
+}
+
+/// Drop the user's live sockets and device push registrations once every
+/// session has been (or is about to be) revoked.
+async fn disconnect_all_devices(state: &AppState, user_id: &str) {
+    if let Ok(uid) = user_id.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
+    }
+    crate::infra::web_push::revoke_user_subscriptions(&state.db, user_id).await;
+    crate::notify::revoke_user_devices(&state.db, user_id).await;
+}
+
 /// POST /api/v1/auth/login
 pub async fn login(
     State(state): State<AppState>,
@@ -161,14 +229,7 @@ pub async fn login(
     // Throttle brute-force / bcrypt-DoS (audit H3): cap failed attempts per
     // client source; a successful login clears the counter.
     let limiter = crate::infra::ratelimit::login_limiter();
-    let key = crate::infra::ratelimit::client_key(
-        &headers,
-        connect_info.map(|ConnectInfo(a)| a),
-        state.config.trust_proxy_headers,
-    );
-    if let Some(retry_after_secs) = limiter.retry_after(&key) {
-        return Err(AppError::TooManyRequests { retry_after_secs });
-    }
+    let key = throttled_client_key(&state, limiter, connect_info, &headers)?;
 
     let user = match auth::authenticate(&state.db, &body.login, &body.password).await {
         Ok(u) => u,
@@ -202,23 +263,10 @@ pub async fn login(
             Some("password"),
         )
         .await?;
-        return Ok(Json(LoginResponse {
-            status: "factor_required".into(),
-            transaction_id: Some(transaction.transaction_id),
+        return Ok(Json(factor_required_response(
+            transaction.transaction_id,
             allowed_factors,
-            expires_in: Some(600),
-            requires_2fa: true,
-            two_factor_session_id: None,
-            access_token: None,
-            token_type: None,
-            user_id: None,
-            username: None,
-            display_name: None,
-            role: None,
-            refresh_token: None,
-            csrf_token: None,
-            trusted_device: None,
-        })
+        ))
         .into_response());
     }
     let completed = auth_sessions::complete_direct_login(
@@ -337,14 +385,7 @@ pub async fn register_request_code(
 ) -> Result<Json<Value>, AppError> {
     ensure_may_register(&state, body.invite_token.as_deref()).await?;
     let limiter = crate::infra::ratelimit::register_limiter();
-    let key = crate::infra::ratelimit::client_key(
-        &headers,
-        connect_info.map(|ConnectInfo(a)| a),
-        state.config.trust_proxy_headers,
-    );
-    if let Some(retry_after_secs) = limiter.retry_after(&key) {
-        return Err(AppError::TooManyRequests { retry_after_secs });
-    }
+    let key = throttled_client_key(&state, limiter, connect_info, &headers)?;
     limiter.record_failure(&key); // every code request counts toward the anti-spam cap
 
     let email = body.email.trim().to_lowercase();
@@ -424,14 +465,7 @@ pub async fn register(
     ensure_may_register(&state, body.invite_token.as_deref()).await?;
     let client = client_type(body.client.as_deref())?;
     let limiter = crate::infra::ratelimit::register_limiter();
-    let key = crate::infra::ratelimit::client_key(
-        &headers,
-        connect_info.map(|ConnectInfo(a)| a),
-        state.config.trust_proxy_headers,
-    );
-    if let Some(retry_after_secs) = limiter.retry_after(&key) {
-        return Err(AppError::TooManyRequests { retry_after_secs });
-    }
+    let key = throttled_client_key(&state, limiter, connect_info, &headers)?;
     limiter.record_failure(&key);
 
     let username = body.username.trim().to_string();
@@ -527,14 +561,7 @@ pub async fn register(
         body.device_name.as_deref(),
     )
     .await?;
-    let refresh = session.refresh_token.clone();
-    let csrf = session.csrf_token.clone();
-    let body = session_response(&user, session, client)?;
-    Ok(if client == auth_sessions::ClientType::Web {
-        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(body).into_response()
-    })
+    issued_session_response(&user, session, client)
 }
 
 #[derive(Deserialize)]
@@ -547,13 +574,13 @@ pub struct ChangePasswordRequest {
 
 /// POST /api/v1/auth/change-password — the authenticated user rotates their own
 /// password. Verifies the current password, stores the new hash, and bumps
-/// `token_version` so every OTHER session is force-logged-out; a fresh token is
-/// returned so THIS session keeps working.
+/// `token_version` so every OTHER session is force-logged-out; THIS session is
+/// reissued (see `reissue_caller_session`) so it keeps working.
 pub async fn change_password(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Json(body): Json<ChangePasswordRequest>,
-) -> Result<Json<Value>, AppError> {
+) -> Result<Response, AppError> {
     if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "new password must be at least {MIN_PASSWORD_CHARS} characters"
@@ -609,14 +636,27 @@ pub async fn change_password(
     .await?;
     // Tear down live WS sessions authenticated with the now-stale version; the
     // caller's own client reconnects with the fresh token returned below.
-    if let Ok(uid) = claims.sub.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
-    }
     // Push subscriptions belong to devices, not sessions — a password change
     // (typically "device lost/compromised") must silence them all; the user's
     // own device re-enables via the Settings toggle.
-    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
-    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
+    disconnect_all_devices(&state, &claims.sub).await;
+
+    reissue_caller_session(&state, &claims).await
+}
+
+/// Credential rotations revoke every session, the caller's included. Reissue the
+/// caller's session for the same client and device: native clients need the new
+/// refresh token in the body and browsers need fresh session cookies, or the
+/// caller is signed out at its next refresh.
+async fn reissue_caller_session(state: &AppState, claims: &Claims) -> Result<Response, AppError> {
+    let caller = sqlx::query!(
+        "SELECT client_type, device_name FROM auth_sessions WHERE session_id = $1",
+        &claims.sid,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("session not found".into()))?;
+    let client = client_type(Some(&caller.client_type))?;
 
     auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
     let user = auth::load_auth_user(&state.db, &claims.sub).await?;
@@ -624,14 +664,18 @@ pub async fn change_password(
         &state.db,
         &state.config,
         &user,
-        auth_sessions::ClientType::Web,
-        None,
+        client,
+        caller.device_name.as_deref(),
     )
     .await?;
-
-    Ok(Json(
-        json!({ "ok": true, "access_token": session.access_token, "expires_in": session.expires_in }),
-    ))
+    let refresh = session.refresh_token.clone();
+    let csrf = session.csrf_token.clone();
+    let body = session_response(&user, session, client)?;
+    Ok(if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(body).into_response()
+    })
 }
 
 #[derive(Deserialize)]
@@ -645,8 +689,19 @@ pub async fn set_password(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Json(body): Json<SetInitialPasswordRequest>,
-) -> Result<Json<Value>, AppError> {
-    if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
+) -> Result<Response, AppError> {
+    install_initial_password(&state, &claims, body.new_password).await
+}
+
+/// Adds the first password to an account that has none. Credentials changed, so
+/// like a password change this revokes every session and reissues the caller's.
+/// Callers authorize the request first (`/users/me/password` needs a fresh Apple proof).
+pub(crate) async fn install_initial_password(
+    state: &AppState,
+    claims: &Claims,
+    new_password: String,
+) -> Result<Response, AppError> {
+    if new_password.chars().count() < MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "password must be at least {MIN_PASSWORD_CHARS} characters"
         )));
@@ -665,11 +720,11 @@ pub async fn set_password(
             "account already has a password; use change-password instead".into(),
         ));
     }
-    let new_hash = crate::infra::crypto::hash_password(body.new_password.clone())
+    let new_hash = crate::infra::crypto::hash_password(new_password)
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
 
-    sqlx::query!(
+    let updated = sqlx::query!(
         "UPDATE users SET password_hash = $2, token_version = token_version + 1
          WHERE user_id = $1 AND password_hash IS NULL",
         &claims.sub,
@@ -677,29 +732,14 @@ pub async fn set_password(
     )
     .execute(&state.db)
     .await?;
-
-    if let Ok(uid) = claims.sub.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
+    if updated.rows_affected() == 0 {
+        return Err(AppError::BadRequest(
+            "account already has a password; use change-password instead".into(),
+        ));
     }
-    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
-    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
-    auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
 
-    let user = auth::load_auth_user(&state.db, &claims.sub).await?;
-    let session = auth_sessions::finalize_login(
-        &state.db,
-        &state.config,
-        &user,
-        auth_sessions::ClientType::Web,
-        None,
-    )
-    .await?;
-
-    Ok(Json(json!({
-        "ok": true,
-        "access_token": session.access_token,
-        "expires_in": session.expires_in,
-    })))
+    disconnect_all_devices(state, &claims.sub).await;
+    reissue_caller_session(state, claims).await
 }
 
 #[derive(Deserialize)]
@@ -853,13 +893,9 @@ pub async fn logout(
 ) -> Result<Response, AppError> {
     auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
     // Revocation must reach live sockets too, not just future HTTP requests.
-    if let Ok(uid) = claims.sub.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
-    }
     // Logout revokes every session, so no device should keep receiving
     // lock-screen pushes either.
-    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
-    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
+    disconnect_all_devices(&state, &claims.sub).await;
     let mut response = Json(json!({ "ok": true })).into_response();
     response.headers_mut().append(
         axum::http::header::SET_COOKIE,
@@ -1001,11 +1037,7 @@ pub async fn logout_all(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Value>, AppError> {
     auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
-    if let Ok(uid) = claims.sub.parse::<Uuid>() {
-        state.fanout.kick_user(uid);
-    }
-    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
-    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
+    disconnect_all_devices(&state, &claims.sub).await;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -1091,14 +1123,7 @@ pub async fn forgot_password(
     Json(body): Json<ForgotPasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
     let limiter = crate::infra::ratelimit::password_reset_limiter();
-    let key = crate::infra::ratelimit::client_key(
-        &headers,
-        connect_info.map(|ConnectInfo(a)| a),
-        state.config.trust_proxy_headers,
-    );
-    if let Some(retry_after_secs) = limiter.retry_after(&key) {
-        return Err(AppError::TooManyRequests { retry_after_secs });
-    }
+    let key = throttled_client_key(&state, limiter, connect_info, &headers)?;
     limiter.record_failure(&key); // every request counts toward the anti-spam cap
 
     let email = body.email.trim().to_lowercase();
@@ -1151,14 +1176,7 @@ pub async fn reset_password(
     Json(body): Json<ResetPasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
     let limiter = crate::infra::ratelimit::password_reset_limiter();
-    let key = crate::infra::ratelimit::client_key(
-        &headers,
-        connect_info.map(|ConnectInfo(a)| a),
-        state.config.trust_proxy_headers,
-    );
-    if let Some(retry_after_secs) = limiter.retry_after(&key) {
-        return Err(AppError::TooManyRequests { retry_after_secs });
-    }
+    let key = throttled_client_key(&state, limiter, connect_info, &headers)?;
     if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
         return Err(AppError::BadRequest(format!(
             "new password must be at least {MIN_PASSWORD_CHARS} characters"
@@ -1460,14 +1478,7 @@ pub async fn send_two_factor_email(
     Json(body): Json<TwoFactorEmailSendRequest>,
 ) -> Result<Json<Value>, AppError> {
     let limiter = crate::infra::ratelimit::login_2fa_email_limiter();
-    let key = crate::infra::ratelimit::client_key(
-        &headers,
-        connect_info.map(|ConnectInfo(a)| a),
-        state.config.trust_proxy_headers,
-    );
-    if let Some(retry_after_secs) = limiter.retry_after(&key) {
-        return Err(AppError::TooManyRequests { retry_after_secs });
-    }
+    let key = throttled_client_key(&state, limiter, connect_info, &headers)?;
     limiter.record_failure(&key);
 
     let (user_id, _) =

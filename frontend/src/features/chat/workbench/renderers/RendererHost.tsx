@@ -22,6 +22,8 @@ import type { RendererDesc } from "./registry";
 import { EXTENSION_CHANNEL_RESOURCES } from "../extensions/package";
 import toast from "react-hot-toast";
 import { createResourceInteractionDispatcher } from "../nativeResource";
+import { artifactReferenceStore } from "../../artifacts/referenceStore";
+import { useArtifactInvalidation } from "../../artifacts/useArtifactReference";
 
 const CodeEditor = lazy(() => import("../CodeEditor").then((module) => ({ default: module.CodeEditor })));
 
@@ -189,7 +191,6 @@ export function RendererHost({
   ctx,
   path,
   renderer,
-  config,
   session,
   annotations,
   activeAnnotationId,
@@ -202,7 +203,6 @@ export function RendererHost({
   ctx: WorkbenchContext;
   path: string;
   renderer: RendererDesc;
-  config?: unknown; // built-in lens config (e.g. table columns), from .workbench.json configs
   /** The host's file session, when the host ALSO shows this file another way (Raw).
    *  Both views must share one buffer/version/dirty flag. Absent => this is the file's
    *  only view and the lens host opens its own session. */
@@ -231,6 +231,8 @@ export function RendererHost({
     onFormSubmit,
     requestInteraction: ctx.requestInteraction,
   }), [ctx.openLocator, ctx.composeMessage, ctx.requestInteraction, ctx.channelId, ctx.fs, onFormSubmit]);
+  const artifactRefs = artifactReferenceStore(ctx.sendResourceReq, ctx.channelId);
+  useArtifactInvalidation(artifactRefs, ctx.filesTick);
   const openResource = async (uri: string) => {
     const result = await dispatchInteraction({ kind: "open", uri });
     if (!result.ok) toast.error(result.error);
@@ -266,11 +268,13 @@ export function RendererHost({
     }
   }, [missingExtension, renderer.id, renderer.extensionId, handleFailure]);
 
-  if (runtimeError) {
+  const fallbackReason = session?.parseError || runtimeError
+    || (missingExtension ? `Renderer extension not installed: ${renderer.extensionId}` : null);
+  if (fallbackReason) {
     return (
       <RendererFallbackView
         rendererTitle={renderer.title}
-        reason={runtimeError}
+        reason={fallbackReason}
         path={path}
         session={session}
         annotations={annotations}
@@ -281,21 +285,7 @@ export function RendererHost({
     );
   }
 
-  if (renderer.source === "extension") {
-    if (!extension) {
-      return (
-        <RendererFallbackView
-          rendererTitle={renderer.title}
-          reason={`Renderer extension not installed: ${renderer.extensionId}`}
-          path={path}
-          session={session}
-          annotations={annotations}
-          activeAnnotationId={activeAnnotationId}
-          onSelectAnnotation={onSelectAnnotation}
-          onRetry={handleRetry}
-        />
-      );
-    }
+  if (extension) {
     // whitelisted, channel-scoped reader handed to the extension (host API)
     const readChannel = (resource: string, params: Record<string, unknown>) => {
       if (!CHANNEL_READ_WHITELIST.has(resource)) {
@@ -359,13 +349,13 @@ export function RendererHost({
           session={session}
           artifactId={path === ctx.openTarget ? ctx.artifactId : undefined}
           lensId={lensId}
-          config={config}
           channelId={ctx.channelId}
           annotations={annotations}
           activeAnnotationId={activeAnnotationId}
           onSelectAnnotation={onSelectAnnotation}
           onRevealSource={onRevealSource}
           openLocator={openResource}
+          artifactRefs={artifactRefs}
           inspectorActive={inspectorActive}
           onFormSubmit={submitForm}
           onInteraction={dispatchInteraction}
@@ -377,10 +367,10 @@ export function RendererHost({
           path={path}
           artifactId={path === ctx.openTarget ? ctx.artifactId : undefined}
           lensId={lensId}
-          config={config}
           channelId={ctx.channelId}
           reloadTick={ctx.filesTick}
           openLocator={openResource}
+          artifactRefs={artifactRefs}
           inspectorActive={inspectorActive}
           onFormSubmit={submitForm}
           onInteraction={dispatchInteraction}

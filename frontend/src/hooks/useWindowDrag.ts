@@ -59,6 +59,19 @@ interface Size {
 /** Persisted geometry: position from dragging, size from resizing (both optional). */
 interface Geom extends Partial<Pos>, Partial<Size> {}
 
+/** A lane rect snapped to whole pixels. */
+function roundRect(r: Rect): Geom {
+  return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) };
+}
+
+function saveGeom(storageKey: string, geom: Geom): void {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(geom));
+  } catch {
+    /* private mode etc. — geometry just won't persist */
+  }
+}
+
 // Keep at least a grabbable sliver of the window inside the viewport.
 const MIN_VISIBLE_X = 80;
 const MIN_TOP = 8;
@@ -99,6 +112,20 @@ export interface StickySnapResult {
 
 export const STICKY_SNAP_THRESHOLD = 20;
 export const STICKY_SNAP_MARGIN = 8;
+
+/** The closest target within the snap threshold (first wins a tie), or null. */
+function nearestSnapTarget<T extends { target: number }>(value: number, targets: T[]): T | null {
+  let bestDist = STICKY_SNAP_THRESHOLD + 1;
+  let best: T | null = null;
+  for (const t of targets) {
+    const dist = Math.abs(value - t.target);
+    if (dist <= STICKY_SNAP_THRESHOLD && dist < bestDist) {
+      bestDist = dist;
+      best = t;
+    }
+  }
+  return best;
+}
 
 export function calculateStickySnap(
   rawPos: Pos,
@@ -145,31 +172,13 @@ export function calculateStickySnap(
     }
   }
 
-  let bestDistX = STICKY_SNAP_THRESHOLD + 1;
-  let bestTargetX: { target: number; edge: "left" | "right" } | null = null;
-  for (const t of snapTargetsX) {
-    const dist = Math.abs(x - t.target);
-    if (dist <= STICKY_SNAP_THRESHOLD && dist < bestDistX) {
-      bestDistX = dist;
-      bestTargetX = t;
-    }
-  }
-
+  const bestTargetX = nearestSnapTarget(x, snapTargetsX);
   if (bestTargetX) {
     x = bestTargetX.target;
     snapped[bestTargetX.edge] = true;
   }
 
-  let bestDistY = STICKY_SNAP_THRESHOLD + 1;
-  let bestTargetY: { target: number; edge: "top" | "bottom" } | null = null;
-  for (const t of snapTargetsY) {
-    const dist = Math.abs(y - t.target);
-    if (dist <= STICKY_SNAP_THRESHOLD && dist < bestDistY) {
-      bestDistY = dist;
-      bestTargetY = t;
-    }
-  }
-
+  const bestTargetY = nearestSnapTarget(y, snapTargetsY);
   if (bestTargetY) {
     y = bestTargetY.target;
     snapped[bestTargetY.edge] = true;
@@ -378,11 +387,7 @@ export function useWindowDrag(
     const first = !hasLocalGeomRef.current;
     hasLocalGeomRef.current = true;
     if (first) notifyLayoutOverride();
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(geomRef.current));
-    } catch {
-      /* private mode etc. — geometry just won't persist */
-    }
+    saveGeom(storageKey, geomRef.current);
   }, [storageKey]);
 
   // ── dragging (title bar) ──
@@ -488,19 +493,9 @@ export function useWindowDrag(
         if (snap) {
           const zone = endSnap();
           if (zone) {
-            const snapped: Geom = {
-              ...geomRef.current,
-              x: Math.round(zone.x),
-              y: Math.round(zone.y),
-              w: Math.round(zone.w),
-              h: Math.round(zone.h),
-            };
+            const snapped: Geom = { ...geomRef.current, ...roundRect(zone) };
             setGeom(snapped);
-            try {
-              localStorage.setItem(storageKey, JSON.stringify(snapped));
-            } catch {
-              /* private mode etc. — geometry just won't persist */
-            }
+            saveGeom(storageKey, snapped);
             return;
           }
         }
@@ -677,20 +672,10 @@ export function useWindowDrag(
     if (sharedGeom) return;
     const b = getBounds();
     if (!b || b.width <= 0 || b.height <= 0) return;
-    const placed = suggestSpawn(spawnKind, b, getOccupants(storageKey));
-    const next: Geom = {
-      x: Math.round(placed.x),
-      y: Math.round(placed.y),
-      w: Math.round(placed.w),
-      h: Math.round(placed.h),
-    };
+    const next = roundRect(suggestSpawn(spawnKind, b, getOccupants(storageKey)));
     setGeom(next);
     hasLocalGeomRef.current = true;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-    } catch {
-      /* private mode — geometry just won't persist */
-    }
+    saveGeom(storageKey, next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, panelOpen, spawnKind, getBounds, storageKey, sharedKey]);
 
@@ -706,19 +691,9 @@ export function useWindowDrag(
       const g = geomRef.current;
       if (g.x == null || g.y == null || g.w == null || g.h == null) return;
       if (!isNearlyFill({ x: g.x, y: g.y, w: g.w, h: g.h }, b)) return;
-      const placed = suggestSpawn(spawnKind, b, others);
-      const next: Geom = {
-        x: Math.round(placed.x),
-        y: Math.round(placed.y),
-        w: Math.round(placed.w),
-        h: Math.round(placed.h),
-      };
+      const next = roundRect(suggestSpawn(spawnKind, b, others));
       setGeom(next);
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
+      saveGeom(storageKey, next);
     };
     reflow();
     return subscribeOccupants(reflow);
@@ -778,13 +753,7 @@ export function useWindowDrag(
         setOccupant(storageKey, null);
         return;
       }
-      const placed = suggestSpawn(spawnKind, b, getOccupants(storageKey));
-      setGeom({
-        x: Math.round(placed.x),
-        y: Math.round(placed.y),
-        w: Math.round(placed.w),
-        h: Math.round(placed.h),
-      });
+      setGeom(roundRect(suggestSpawn(spawnKind, b, getOccupants(storageKey))));
     });
   }, [enabled, spawnKind, getBounds, storageKey]);
 

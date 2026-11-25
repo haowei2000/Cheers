@@ -129,15 +129,6 @@ const context: WorkbenchContext = {
   pinned: [],
   togglePin: () => undefined,
   rendererExtensions: [],
-  bindings: {
-    "dev/plan.yaml": "builtin:kanban",
-    "dev/issues.yaml": "builtin:table",
-    "dev/progress.yaml": "builtin:chart",
-    "dev/todo.md": "builtin:markdown",
-    "codemap/map.yaml": "builtin:codemap",
-  },
-  setBinding: () => undefined,
-  configs: {},
 };
 
 function Preview() {

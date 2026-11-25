@@ -86,19 +86,22 @@ export function tableRowContextLabel(row: unknown, columns: TableConfig["columns
   return `Row ${index + 1}`;
 }
 function TableLens({ data, config, onChange, readOnly, requestContextPick }: LensProps) {
-  const rows = Array.isArray(data) ? (data as unknown[]) : [];
-  const rawConfigColumns = (config as TableConfig | undefined)?.columns;
+  const document = isPlainRow(data) && Array.isArray(data.rows) ? data : undefined;
+  const rows = document ? document.rows as unknown[] : Array.isArray(data) ? data : [];
+  const rawConfigColumns = document ? document.columns : (config as TableConfig | undefined)?.columns;
   const configured = Array.isArray(rawConfigColumns)
     ? rawConfigColumns.filter((c): c is TableColumnConfig => Boolean(c && typeof c.key === "string" && c.key.length > 0))
     : undefined;
   const columns = configured?.length ? configured : inferColumns(rows);
+  const setRows = (next: unknown[]) => onChange(document ? { ...document, rows: next } : next);
+  const rowPath = (i: number): (string | number)[] => document ? ["rows", i] : [i];
   const update = (i: number, key: string, v: string) => {
     const next = updateRowCell(rows, i, key, v);
-    if (next) onChange(next);
+    if (next) setRows(next);
   };
   const add = () =>
-    onChange([...rows, Object.fromEntries(columns.map((c) => [c.key, c.options?.[0] ?? ""]))]);
-  const del = (i: number) => onChange(rows.filter((_, j) => j !== i));
+    setRows([...rows, Object.fromEntries(columns.map((c) => [c.key, c.options?.[0] ?? ""]))]);
+  const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
 
   return (
     <div className="p-2 text-compact overflow-auto h-full">
@@ -119,11 +122,11 @@ function TableLens({ data, config, onChange, readOnly, requestContextPick }: Len
               key={i}
               aria-label={`Row ${i + 1}`}
               data-workbench-context-target="row"
-              data-workbench-anchor={sourcePathKey([i])}
+              data-workbench-anchor={sourcePathKey(rowPath(i))}
               className="border-b border-control/30 transition-colors hover:bg-control/20"
               onContextMenu={(event) => requestContextPick?.(event, {
                 label: tableRowContextLabel(r, columns, i),
-                sourcePath: [i],
+                sourcePath: rowPath(i),
               })}
             >
               {columns.map((c) => (

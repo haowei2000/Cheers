@@ -42,25 +42,30 @@ use crate::acp_runtime::create_runtime;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentError, AttachmentInfo,
     ConfigStatusRejectedField, ConnectorControlSettings, ControlInbound, ControlOutbound,
-    DataInbound, DataOutbound, ElicitationResolution, PermissionOption, PermissionResolution,
-    RuntimeSessionAckSession, RuntimeSessionControlSession, ServerCapabilities,
-    SessionConfigOverrides, TaskAcceptanceStatus, TaskExecution, BRIDGE_PROTOCOL_VERSION,
+    DataInbound, DataOutbound, ElicitationResolution, McpDeliveryMode, McpDeliveryReport,
+    PermissionOption, PermissionResolution, RuntimeSessionAckSession,
+    RuntimeSessionControlSession, ServerCapabilities, SessionConfigOverrides, TaskAcceptanceStatus,
+    TaskExecution, BRIDGE_PROTOCOL_VERSION,
 };
-use crate::bridge_session::{
-    connect_control_stream, connect_data_stream, BridgeReady, BridgeSession, BridgeSessionConfig,
-    BridgeSessionParts,
-};
+use crate::bridge_session::{BridgeReady, BridgeSession, BridgeSessionConfig, BridgeSessionParts};
 use crate::config::{
-    AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
+    AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy, McpDelivery,
     PermissionTimeoutAction, PromptPolicy,
 };
+use crate::credential_gateway::{bypass_proxy_for_loopback, CredentialGateway};
+use crate::mcp_delivery;
+use crate::mcp_over_acp::{self, AcpMcpServer};
 use crate::mcp_token::McpTokenProvider;
 use crate::runtime_adapter::{
-    PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
+    AgentCapabilities, PermissionOutcome, RequestRoute, RuntimeAdapter, RuntimeEvent,
+    SessionStartOptions,
 };
 use crate::self_update::SelfUpdater;
 use crate::state::SessionStateStore;
 use crate::terminal_outbox::{Scope as TerminalScope, TerminalOutbox};
+
+/// How often a pending Agent restart checks whether the runtime is idle.
+const IDLE_RESTART_POLL: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
     // Self-update rollback rail first: if a freshly-swapped binary keeps failing
@@ -79,17 +84,34 @@ pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
     for (account_id, account) in config.accounts {
         let state = state.clone();
         let updater = updater.clone();
-        join_set.spawn(async move {
-            AccountRuntime::new(account_id, account, state, updater)
-                .run()
-                .await
-        });
+        join_set.spawn(run_account(account_id, account, state, updater));
     }
 
     while let Some(result) = join_set.join_next().await {
         result.context("account runtime task panicked")??;
     }
     Ok(())
+}
+
+/// Runs one account, starting a fresh Agent process each time the runtime
+/// asks for a restart (an MCP delivery switch).
+async fn run_account(
+    account_id: String,
+    account: AccountConfig,
+    state: Arc<Mutex<SessionStateStore>>,
+    updater: Arc<SelfUpdater>,
+) -> anyhow::Result<()> {
+    loop {
+        let runtime = AccountRuntime::new(
+            account_id.clone(),
+            account.clone(),
+            state.clone(),
+            updater.clone(),
+        );
+        match runtime.run().await? {
+            RunExit::RestartAgent => continue,
+        }
+    }
 }
 
 struct AccountRuntime {
@@ -114,14 +136,15 @@ impl AccountRuntime {
         }
     }
 
-    async fn run(self) -> anyhow::Result<()> {
+    async fn run(self) -> anyhow::Result<RunExit> {
         let (runtime_tx, mut runtime_rx) = mpsc::channel(512);
         let (adapter_tx, mut adapter_rx) = mpsc::channel(512);
-        let mut adapter = create_runtime(
-            self.account_id.clone(),
-            self.config.agent.clone(),
-            adapter_tx,
-        );
+        let mut agent_config = self.config.agent.clone();
+        // The delivery mode is only settled after the hello, and gateway
+        // delivery puts Cheers MCP on loopback; an inherited proxy must never
+        // see it, and bypassing one for loopback costs nothing otherwise.
+        bypass_proxy_for_loopback(&mut agent_config.env, agent_config.inherit_env);
+        let mut adapter = create_runtime(self.account_id.clone(), agent_config, adapter_tx);
         let initialize_response = adapter.start().await?;
         if !adapter.capabilities().mcp_http {
             let _ = adapter.stop().await;
@@ -131,7 +154,22 @@ impl AccountRuntime {
         }
         let adapter = Arc::new(Mutex::new(adapter));
 
-        let bridge_ready = bridge_ready_from_initialize(&initialize_response, &self.config.policy);
+        let agent = agent_key(&initialize_response);
+        let header_refresh = self
+            .state
+            .lock()
+            .await
+            .agent_mcp_facts(&agent)
+            .map(|facts| facts.header_refresh);
+        // Bound before `ready` so the mode it reports is one the Agent gets;
+        // released below when the decision is not `gateway`.
+        let bound = match CredentialGateway::bind().await {
+            Ok(bound) => Some(bound),
+            Err(error) => {
+                tracing::warn!(account = %self.account_id, %error, "MCP credential gateway could not bind");
+                None
+            }
+        };
         let bridge_config = BridgeSessionConfig::new(
             self.account_id.clone(),
             self.config.bridge_credential.clone(),
@@ -144,7 +182,36 @@ impl AccountRuntime {
             self.config.advanced.heartbeat_interval_ms,
             self.config.advanced.send_ack_timeout_ms,
         );
-        let bridge = BridgeSession::connect(bridge_config.clone(), bridge_ready.clone()).await?;
+        let mut decided = None;
+        let (bridge, bridge_ready) = BridgeSession::connect(bridge_config.clone(), |hello| {
+            let decision = mcp_delivery::decide(mcp_delivery::Inputs {
+                configured: self.config.policy.mcp.delivery,
+                allowed: hello
+                    .server_capabilities
+                    .as_ref()
+                    .and_then(|caps| caps.mcp_allowed_modes.as_deref()),
+                gateway_bound: bound.is_some(),
+                agent_acp: mcp_over_acp::agent_supports_acp(&initialize_response),
+                agent: &agent,
+                header_refresh,
+            })?;
+            tracing::info!(
+                account = %self.account_id,
+                mode = ?decision.mode,
+                reason = %decision.reason,
+                "MCP delivery decided"
+            );
+            let ready = bridge_ready_from_initialize(
+                &initialize_response,
+                &self.config.policy,
+                &decision.report(),
+            );
+            decided = Some(decision);
+            Ok(ready)
+        })
+        .await?;
+        let mcp_delivery = decided.context("Bridge connected without building ready")?;
+        let bound_gateway = bound.filter(|_| mcp_delivery.mode == McpDeliveryMode::Gateway);
         // A healthy bridge connection is the self-update success signal (stops
         // the rollback boot counter), and the gateway-advertised release version
         // in the same hello is the update trigger.
@@ -200,6 +267,31 @@ impl AccountRuntime {
                 );
                 None
             }
+        };
+        // Gateway delivery: the Agent gets a loopback URL and a stable local
+        // secret instead of the bearer, so token rotation never depends on the
+        // Agent re-reading headers. The port was bound before `ready`, so the
+        // reported mode is the one the Agent gets.
+        let credential_gateway = match (&mcp_token, bound_gateway) {
+            (Some(tokens), Some(bound)) => {
+                let gateway = bound.serve(mcp_url.clone(), tokens.clone())?;
+                tracing::info!(
+                    account = %self.account_id,
+                    local_url = gateway.local_url(),
+                    "MCP credential gateway listening"
+                );
+                Some(Arc::new(gateway))
+            }
+            _ => None,
+        };
+        // Acp delivery: the Agent sends MCP back over the ACP connection, and
+        // the connector forwards it with the real bearer.
+        let mcp_over_acp = match (&mcp_token, mcp_delivery.mode) {
+            (Some(tokens), McpDeliveryMode::Acp) => Some(Arc::new(AcpMcpServer::new(
+                mcp_url.clone(),
+                tokens.clone(),
+            )?)),
+            _ => None,
         };
         // Capture the bot's own identity from the hello before `spawn_bridge_io`
         // consumes the session — it's injected into every prompt (see build_prompt).
@@ -265,6 +357,12 @@ impl AccountRuntime {
             identity,
             mcp_url,
             mcp_token,
+            credential_gateway,
+            mcp_over_acp,
+            mcp_delivery,
+            agent,
+            direct_test: Mutex::new(DirectTest::default()),
+            restart_pending: std::sync::atomic::AtomicBool::new(false),
             state: self.state,
             adapter,
             io,
@@ -282,10 +380,29 @@ impl AccountRuntime {
             }
         }
         let _outbox_worker = AbortOnDrop(context.start_terminal_outbox().abort_handle());
+        let _restart_watch = AbortOnDrop(context.clone().watch_for_idle_restart().abort_handle());
         let result = context.run_loop(&mut runtime_rx).await;
         let _ = adapter_for_stop.lock().await.stop().await;
         result
     }
+}
+
+/// Canonicalize `target` and require it to stay inside `root_canon`: the shared
+/// containment gate of every path-resolving workspace op.
+async fn canonicalize_in_root(
+    target: &std::path::Path,
+    root_canon: &std::path::Path,
+) -> Result<PathBuf, (String, String)> {
+    let canon = tokio::fs::canonicalize(target)
+        .await
+        .map_err(|e| ("E_NOT_FOUND".to_string(), e.to_string()))?;
+    if !canon.starts_with(root_canon) {
+        return Err((
+            "E_FORBIDDEN_PATH".to_string(),
+            "path escapes workspace root".to_string(),
+        ));
+    }
+    Ok(canon)
 }
 
 /// Resolve a workspace reference to a git working directory (+ optional pathspec).
@@ -299,15 +416,7 @@ async fn resolve_git_target(
     root_canon: &std::path::Path,
 ) -> Result<(PathBuf, Option<PathBuf>), (String, String)> {
     let err = |c: &str, m: String| (c.to_string(), m);
-    let canon = tokio::fs::canonicalize(target)
-        .await
-        .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
-    if !canon.starts_with(root_canon) {
-        return Err(err(
-            "E_FORBIDDEN_PATH",
-            "path escapes workspace root".into(),
-        ));
-    }
+    let canon = canonicalize_in_root(target, root_canon).await?;
     let md = tokio::fs::metadata(&canon)
         .await
         .map_err(|e| err("E_IO", e.to_string()))?;
@@ -380,6 +489,27 @@ async fn run_git(
         })
 }
 
+/// [`run_git`] for an output-producing op: rejects stdout over `max` bytes as
+/// `E_TOO_LARGE` ("`<what>` exceeds read cap") and a non-zero exit as `E_GIT`.
+async fn run_git_capped(
+    git_dir: &std::path::Path,
+    args: &[&str],
+    max: u64,
+    what: &str,
+) -> Result<std::process::Output, (String, String)> {
+    let out = run_git(git_dir, args).await?;
+    if out.stdout.len() as u64 > max {
+        return Err((
+            "E_TOO_LARGE".to_string(),
+            format!("{what} exceeds read cap"),
+        ));
+    }
+    if !out.status.success() {
+        return Err(("E_GIT".to_string(), git_stderr(&out)));
+    }
+    Ok(out)
+}
+
 /// Trimmed git stderr for surfacing a failed (non-zero) git invocation.
 fn git_stderr(out: &std::process::Output) -> String {
     let s = String::from_utf8_lossy(&out.stderr);
@@ -447,6 +577,7 @@ struct WorkspaceRequest {
     commit: Option<String>,
     commit_path: Option<String>,
     watch_id: Option<String>,
+    session_ref: Option<cheers_bridge_protocol::session_ref::SessionRef>,
 }
 
 /// Parsed subset of `git status --porcelain=v2 --branch` headers + entries.
@@ -598,6 +729,19 @@ struct RuntimeContext {
     /// `None` when this Gateway cannot provide the host identity required to
     /// mint a scoped token; in that case the endpoint is not exposed to Agents.
     mcp_token: Option<Arc<McpTokenProvider>>,
+    /// Loopback pass-through that holds the bearer on the Agent's behalf. When
+    /// set, the Agent is handed its URL and a local secret, never the token.
+    credential_gateway: Option<Arc<CredentialGateway>>,
+    /// Serves Cheers MCP over the ACP connection (`mcp/message`). When set,
+    /// the Agent is handed an `acp` server entry, never a URL or token.
+    mcp_over_acp: Option<Arc<AcpMcpServer>>,
+    /// How this Agent process reaches Cheers MCP; fixed for its lifetime.
+    mcp_delivery: mcp_delivery::Decision,
+    /// `name@version` of the Agent, the key for cached MCP facts.
+    agent: String,
+    direct_test: Mutex<DirectTest>,
+    /// Restart the Agent once idle, to apply a new MCP delivery decision.
+    restart_pending: std::sync::atomic::AtomicBool,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<Box<dyn RuntimeAdapter>>>,
     io: BridgeIoHandle,
@@ -609,6 +753,87 @@ struct RuntimeContext {
 }
 
 impl RuntimeContext {
+    /// Cache the Gateway's verdict on this Agent build and, when `auto` chose
+    /// `direct` for an Agent that keeps old tokens, restart it on gateway
+    /// delivery once no turn is running (before the old token can expire).
+    async fn handle_mcp_delivery_observed(
+        &self,
+        channel_id: &str,
+        agent: &str,
+        header_refresh: bool,
+    ) {
+        if agent != self.agent {
+            tracing::warn!(account = %self.account_id, %agent, running = %self.agent, "ignoring an MCP delivery verdict for another Agent build");
+            return;
+        }
+        tracing::info!(account = %self.account_id, channel = %channel_id, %agent, header_refresh, "Gateway judged direct MCP delivery");
+        if let Err(error) = self
+            .state
+            .lock()
+            .await
+            .set_agent_header_refresh(agent, header_refresh)
+            .await
+        {
+            tracing::warn!(account = %self.account_id, %error, "could not cache the MCP delivery verdict");
+        }
+        if !header_refresh
+            && self.mcp_delivery.mode == McpDeliveryMode::Direct
+            && self.config.policy.mcp.delivery == McpDelivery::Auto
+        {
+            tracing::warn!(account = %self.account_id, %agent, "Agent keeps old MCP tokens; restarting it on gateway delivery once idle");
+            self.restart_pending
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        } else if !header_refresh && self.mcp_delivery.mode == McpDeliveryMode::Direct {
+            tracing::warn!(
+                account = %self.account_id,
+                %agent,
+                "Agent keeps old MCP tokens; direct delivery will fail on expiry; set policy.mcp.delivery = \"auto\" or \"gateway\""
+            );
+        }
+    }
+
+    /// No turn queued or running: the Agent can be replaced without losing work.
+    async fn is_idle(&self) -> bool {
+        let reserved = self
+            .shared
+            .task_reservations
+            .lock()
+            .map(|reservations| reservations.is_empty())
+            .unwrap_or(false);
+        reserved && self.shared.runs.lock().await.by_msg.is_empty()
+    }
+
+    /// Polls for a pending restart and asks the run loop to restart once idle.
+    /// Keeps asking: the run loop re-checks and ignores a request that a newly
+    /// started task overtook.
+    fn watch_for_idle_restart(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(IDLE_RESTART_POLL);
+            loop {
+                tick.tick().await;
+                if self
+                    .restart_pending
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    && self.is_idle().await
+                    && self
+                        .runtime_tx
+                        .send(RuntimeInput::RestartAgent)
+                        .await
+                        .is_err()
+                {
+                    return;
+                }
+            }
+        })
+    }
+
+    /// Whether this prompt should carry a freshly renewed token for the
+    /// `direct` test: once per Agent process, at the first channel's second
+    /// prompt (the first prompt minted the generation to compare against).
+    async fn take_direct_renewal(&self, channel_id: &str) -> bool {
+        self.mcp_delivery.test_direct && self.direct_test.lock().await.take(channel_id)
+    }
+
     /// The only producer path for ordinary task terminal frames. Publishing the
     /// immutable result precedes its first send; retrying delivery never runs ACP.
     async fn send_terminal(&self, frame: DataOutbound) -> anyhow::Result<DataInbound> {
@@ -717,7 +942,7 @@ impl RuntimeContext {
     async fn run_loop(
         self: Arc<Self>,
         rx: &mut mpsc::Receiver<RuntimeInput>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<RunExit> {
         while let Some(input) = rx.recv().await {
             match input {
                 RuntimeInput::Control(frame) => {
@@ -738,6 +963,14 @@ impl RuntimeContext {
                 RuntimeInput::SocketError { stream, error } => {
                     self.shared.watches.lock().await.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream error: {error}"));
+                }
+                RuntimeInput::RestartAgent => {
+                    // Re-checked here: a task queued ahead of this input may
+                    // have started since the watcher saw the runtime idle.
+                    if self.is_idle().await {
+                        self.shared.watches.lock().await.clear();
+                        return Ok(RunExit::RestartAgent);
+                    }
                 }
             }
         }
@@ -1059,6 +1292,15 @@ impl RuntimeContext {
                     }
                 }
             }
+            ControlInbound::McpDeliveryObserved {
+                channel_id,
+                agent,
+                header_refresh,
+                ..
+            } => {
+                self.handle_mcp_delivery_observed(&channel_id, &agent, header_refresh)
+                    .await;
+            }
             ControlInbound::Pong | ControlInbound::Unknown => {}
             ControlInbound::Error { .. } => {}
         }
@@ -1073,13 +1315,8 @@ impl RuntimeContext {
                 ..
             } => {
                 if !ack_was_pending {
-                    if let Some(value) = permission_resolution {
-                        if let Ok(resolution) =
-                            serde_json::from_value::<PermissionResolution>(value)
-                        {
-                            self.handle_permission_resolution(resolution).await?;
-                        }
-                    }
+                    self.apply_inline_permission_resolution(permission_resolution)
+                        .await?;
                 }
             }
             DataInbound::WorkspaceReq {
@@ -1097,6 +1334,7 @@ impl RuntimeContext {
                 commit,
                 commit_path,
                 watch_id,
+                session_ref,
             } => {
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -1114,6 +1352,7 @@ impl RuntimeContext {
                             commit,
                             commit_path,
                             watch_id,
+                            session_ref,
                         })
                         .await
                     {
@@ -1200,6 +1439,7 @@ impl RuntimeContext {
             commit,
             commit_path,
             watch_id,
+            session_ref,
         } = request;
         let op = op.as_str();
         let rel = rel.as_str();
@@ -1225,6 +1465,17 @@ impl RuntimeContext {
             // validate_cwd_op returns a 2-tuple error; widen it to the triple.
             return self
                 .validate_cwd_op(rel)
+                .await
+                .map_err(|(c, m)| (c, m, None));
+        }
+
+        // `session_resolve` looks a pasted session reference up in the Agent's
+        // own `session/list`; like validate_cwd it resolves no browse path.
+        if op == "session_resolve" {
+            let reference =
+                session_ref.ok_or_else(|| err("E_INVALID", "session_ref required".into()))?;
+            return self
+                .resolve_session(&reference)
                 .await
                 .map_err(|(c, m)| (c, m, None));
         }
@@ -1388,15 +1639,9 @@ impl RuntimeContext {
         }
         match op {
             "ls" => {
-                let dir = tokio::fs::canonicalize(&target)
+                let dir = canonicalize_in_root(&target, &root_canon)
                     .await
-                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
-                if !dir.starts_with(&root_canon) {
-                    return Err(err(
-                        "E_FORBIDDEN_PATH",
-                        "path escapes workspace root".into(),
-                    ));
-                }
+                    .map_err(|(c, m)| (c, m, None))?;
                 let mut rd = tokio::fs::read_dir(&dir)
                     .await
                     .map_err(|e| err("E_IO", e.to_string()))?;
@@ -1447,15 +1692,9 @@ impl RuntimeContext {
             // a watcher can NEVER observe outside effective_roots. Returns the watch
             // handle; fs changes stream back later as unsolicited `workspace_event`s.
             "watch" => {
-                let dir = tokio::fs::canonicalize(&target)
+                let dir = canonicalize_in_root(&target, &root_canon)
                     .await
-                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
-                if !dir.starts_with(&root_canon) {
-                    return Err(err(
-                        "E_FORBIDDEN_PATH",
-                        "path escapes workspace root".into(),
-                    ));
-                }
+                    .map_err(|(c, m)| (c, m, None))?;
                 let md = tokio::fs::metadata(&dir)
                     .await
                     .map_err(|e| err("E_IO", e.to_string()))?;
@@ -1465,15 +1704,9 @@ impl RuntimeContext {
                 self.start_watch(dir, &root_canon).await
             }
             "read" => {
-                let file = tokio::fs::canonicalize(&target)
+                let file = canonicalize_in_root(&target, &root_canon)
                     .await
-                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
-                if !file.starts_with(&root_canon) {
-                    return Err(err(
-                        "E_FORBIDDEN_PATH",
-                        "path escapes workspace root".into(),
-                    ));
-                }
+                    .map_err(|(c, m)| (c, m, None))?;
                 let md = tokio::fs::metadata(&file)
                     .await
                     .map_err(|e| err("E_IO", e.to_string()))?;
@@ -1694,15 +1927,14 @@ impl RuntimeContext {
                 }
                 match op {
                     "git_status" => {
-                        let out = run_git(&git_dir, &["status", "--porcelain=v2", "--branch"])
-                            .await
-                            .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git status exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
+                        let out = run_git_capped(
+                            &git_dir,
+                            &["status", "--porcelain=v2", "--branch"],
+                            MAX_READ,
+                            "git status",
+                        )
+                        .await
+                        .map_err(|(c, m)| (c, m, None))?;
                         let raw = String::from_utf8_lossy(&out.stdout).to_string();
                         let st = parse_status_porcelain_v2(&raw);
                         Ok(serde_json::json!({
@@ -1731,15 +1963,9 @@ impl RuntimeContext {
                             args.push("--");
                             args.push(ps);
                         }
-                        let out = run_git(&git_dir, &args)
+                        let out = run_git_capped(&git_dir, &args, MAX_READ, "git diff")
                             .await
                             .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git diff exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
                         Ok(serde_json::json!({
                             "diff": String::from_utf8_lossy(&out.stdout),
                             "staged": staged,
@@ -1770,15 +1996,9 @@ impl RuntimeContext {
                             args.push("--");
                             args.push(ps);
                         }
-                        let out = run_git(&git_dir, &args)
+                        let out = run_git_capped(&git_dir, &args, MAX_READ, "git show")
                             .await
                             .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git show exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
                         Ok(serde_json::json!({
                             "commit": commit,
                             "path": commit_path,
@@ -1790,7 +2010,7 @@ impl RuntimeContext {
                         // body) so the UI can render a per-commit file tree without
                         // fetching the full patch. `--format=` suppresses the header.
                         let commit = validate_hex_commit(commit).map_err(|(c, m)| (c, m, None))?;
-                        let out = run_git(
+                        let out = run_git_capped(
                             &git_dir,
                             &[
                                 "show",
@@ -1801,15 +2021,11 @@ impl RuntimeContext {
                                 "--format=",
                                 commit,
                             ],
+                            MAX_READ,
+                            "git show",
                         )
                         .await
                         .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git show exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
                         let files = parse_name_status(&String::from_utf8_lossy(&out.stdout));
                         Ok(serde_json::json!({ "commit": commit, "files": files }))
                     }
@@ -1830,15 +2046,9 @@ impl RuntimeContext {
                         if skip > 0 {
                             args.push(&skip_str);
                         }
-                        let out = run_git(&git_dir, &args)
+                        let out = run_git_capped(&git_dir, &args, MAX_READ, "git log")
                             .await
                             .map_err(|(c, m)| (c, m, None))?;
-                        if out.stdout.len() as u64 > MAX_READ {
-                            return Err(err("E_TOO_LARGE", "git log exceeds read cap".into()));
-                        }
-                        if !out.status.success() {
-                            return Err(err("E_GIT", git_stderr(&out)));
-                        }
                         let stdout = String::from_utf8_lossy(&out.stdout);
                         let commits: Vec<Value> = stdout
                             .lines()
@@ -2042,6 +2252,21 @@ impl RuntimeContext {
                     }
                 });
             }
+            RuntimeEvent::McpMessage { params, respond_to } => {
+                let server = self.mcp_over_acp.clone();
+                tokio::spawn(async move {
+                    let outcome = match server {
+                        Some(server) => server.handle(&params).await,
+                        None => Err(mcp_over_acp::EnvelopeError {
+                            code: -32601,
+                            message:
+                                "this connector does not serve Cheers MCP over ACP for this Agent"
+                                    .into(),
+                        }),
+                    };
+                    let _ = respond_to.send(outcome);
+                });
+            }
             RuntimeEvent::ElicitationComplete { elicitation_id } => {
                 self.io
                     .send_data(DataOutbound::ElicitationComplete {
@@ -2054,6 +2279,8 @@ impl RuntimeContext {
                 tracing::warn!(account = %self.account_id, "ACP adapter error: {message}");
             }
             RuntimeEvent::LoadSessionFence { acp_session_id } => {
+                // Every replayed update precedes the fence, so a capture is complete.
+                self.finish_history_capture(&acp_session_id).await?;
                 if let Some(run) = self
                     .shared
                     .runs
@@ -2096,17 +2323,11 @@ impl RuntimeContext {
                     .await;
                 return Ok(());
             }
-            self.send_terminal(DataOutbound::Error {
-                v: BRIDGE_PROTOCOL_VERSION,
-                client_msg_id: Uuid::new_v4().to_string(),
-                execution: task.execution.clone(),
-                msg_id: task.msg_id.clone(),
-                message: "local daemon policy does not allow prompts".to_string(),
-                provider_session_key: Some(task.provider_session_key.clone()),
-                provider_session_id: None,
-                session_id: task.session_id.clone(),
-                acp_capability: None,
-            })
+            self.send_terminal(task_error_frame(
+                &task,
+                "local daemon policy does not allow prompts".to_string(),
+                None,
+            ))
             .await?;
             return Ok(());
         }
@@ -2135,35 +2356,30 @@ impl RuntimeContext {
                 self.shared.turn_slots.acquire().await?
             }
         };
-        let start_options = self.session_start_options(&task).await;
-        let run_cwd = start_options.cwd.clone();
         // Evaluation turns retain Cheers MCP solely to record their decision
         // through the gateway-owned task-claim resource.
-        let acp_session_id = match self.ensure_acp_session(&task, start_options).await {
-            Ok(id) => id,
+        let started = match self.session_start_options(&task).await {
+            Ok(start_options) => {
+                let run_cwd = start_options.cwd.clone();
+                self.ensure_acp_session(&task, start_options)
+                    .await
+                    .map(|id| (id, run_cwd))
+            }
+            Err(error) => Err(error),
+        };
+        let (acp_session_id, run_cwd) = match started {
+            Ok(started) => started,
             Err(err) => {
                 let message = err.to_string();
                 tracing::error!(account = %self.account_id, "ensure_acp_session failed: {message}");
-                if evaluation_id.is_some() {
-                    if let Some(evaluation_id) = evaluation_id {
-                        let _ = self
-                            .io
-                            .send_data(silent_result(&task, evaluation_id, None, Some(message)))
-                            .await;
-                    }
+                if let Some(evaluation_id) = evaluation_id {
+                    let _ = self
+                        .io
+                        .send_data(silent_result(&task, evaluation_id, None, Some(message)))
+                        .await;
                 } else {
-                    self.send_terminal(DataOutbound::Error {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        client_msg_id: Uuid::new_v4().to_string(),
-                        execution: task.execution.clone(),
-                        msg_id: task.msg_id.clone(),
-                        message,
-                        provider_session_key: Some(task.provider_session_key.clone()),
-                        provider_session_id: None,
-                        session_id: task.session_id.clone(),
-                        acp_capability: None,
-                    })
-                    .await?;
+                    self.send_terminal(task_error_frame(&task, message, None))
+                        .await?;
                 }
                 return Ok(());
             }
@@ -2244,18 +2460,8 @@ impl RuntimeContext {
                     ))
                     .await;
             } else {
-                self.send_terminal(DataOutbound::Error {
-                    v: BRIDGE_PROTOCOL_VERSION,
-                    client_msg_id: Uuid::new_v4().to_string(),
-                    execution: task.execution.clone(),
-                    msg_id: task.msg_id.clone(),
-                    message: message.into(),
-                    provider_session_key: Some(task.provider_session_key.clone()),
-                    provider_session_id: None,
-                    session_id: task.session_id.clone(),
-                    acp_capability: None,
-                })
-                .await?;
+                self.send_terminal(task_error_frame(&task, message.into(), None))
+                    .await?;
             }
             return Ok(());
         }
@@ -2345,17 +2551,11 @@ impl RuntimeContext {
                     ))
                     .await?;
             } else {
-                self.send_terminal(DataOutbound::Error {
-                    v: BRIDGE_PROTOCOL_VERSION,
-                    client_msg_id: Uuid::new_v4().to_string(),
-                    execution: task.execution.clone(),
-                    msg_id: task.msg_id.clone(),
+                self.send_terminal(task_error_frame(
+                    task,
                     message,
-                    provider_session_key: Some(task.provider_session_key.clone()),
-                    provider_session_id: Some(acp_session_id.to_string()),
-                    session_id: task.session_id.clone(),
-                    acp_capability: None,
-                })
+                    Some(acp_session_id.to_string()),
+                ))
                 .await?;
             }
             return Ok(());
@@ -2485,17 +2685,11 @@ impl RuntimeContext {
                         .await?;
                 } else {
                     let terminal_ack = self
-                        .send_terminal(DataOutbound::Error {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            client_msg_id: Uuid::new_v4().to_string(),
-                            execution: task.execution.clone(),
-                            msg_id: task.msg_id.clone(),
-                            message: message.clone(),
-                            provider_session_key: Some(task.provider_session_key.clone()),
-                            provider_session_id: Some(acp_session_id.to_string()),
-                            session_id: task.session_id.clone(),
-                            acp_capability: None,
-                        })
+                        .send_terminal(task_error_frame(
+                            task,
+                            message.clone(),
+                            Some(acp_session_id.to_string()),
+                        ))
                         .await?;
                     if !terminal_ack_ok(&terminal_ack) {
                         self.trace(
@@ -2725,28 +2919,17 @@ impl RuntimeContext {
         session: RuntimeSessionControlSession,
     ) -> anyhow::Result<()> {
         let result = match action.as_str() {
-            "create" | "resume" => {
-                let task = TaskCommand {
-                    task_id: session
-                        .task_scope_id
-                        .clone()
-                        .unwrap_or_else(|| request_id.clone()),
-                    execution: None,
-                    channel_id: session.primary_scope_id.clone().unwrap_or_default(),
-                    msg_id: session.id.clone(),
-                    provider_session_key: session.provider_session_key.clone(),
-                    session_id: Some(session.id.clone()),
-                    trigger: None,
-                    trigger_message: None,
-                    attachments: Vec::new(),
-                    pinned: Vec::new(),
-                    cwd: session.cwd.clone(),
-                    additional_dirs: session.additional_dirs.clone(),
-                    context_bundle: None,
-                    session_config: session.session_config.clone(),
+            "create" | "resume" | "attach" => {
+                let started = if action == "attach" {
+                    self.attach_session(&request_id, &session).await
+                } else {
+                    let task = session_control_task(&request_id, &session);
+                    match self.session_start_options(&task).await {
+                        Ok(options) => self.ensure_acp_session(&task, options).await,
+                        Err(error) => Err(error),
+                    }
                 };
-                let options = self.session_start_options(&task).await;
-                self.ensure_acp_session(&task, options).await.map(|id| {
+                started.map(|id| {
                     (
                         true,
                         Some(RuntimeSessionAckSession {
@@ -2861,6 +3044,11 @@ impl RuntimeContext {
                     options: normalize_config_options_report(&update),
                 })
                 .await?;
+        }
+
+        // An attach's load replay has no run; keep it for the transcript.
+        if self.capture_history(&acp_session_id, &kind, &update).await {
+            return Ok(());
         }
 
         let run = self
@@ -3098,18 +3286,25 @@ impl RuntimeContext {
 
     /// Resolve the ACP session-start options for a task. The per-session `cwd`
     /// (ACP `session/new`) is the Backend-pinned one when it passes the local
-    /// `allowed_roots` + `backend_may_set_cwd` policy, else the connector default;
+    /// `allowed_roots` + `backend_may_set_cwd` policy, else the channel's own
+    /// directory under `default_cwd` ([`channel_cwd`], or `default_cwd` itself
+    /// with `shared_cwd`);
     /// `additional_dirs` (ACP `additionalDirectories`) is the pinned list with any
     /// out-of-policy entry dropped. cwd is a pure `session/new` argument — changing
     /// it needs no process restart (ACP: the agent MUST honor it regardless of
     /// spawn dir).
-    async fn session_start_options(&self, task: &TaskCommand) -> SessionStartOptions {
-        let default_cwd = self
-            .config
-            .agent
-            .cwd
-            .as_ref()
-            .map(|path| path.display().to_string());
+    async fn session_start_options(
+        &self,
+        task: &TaskCommand,
+    ) -> anyhow::Result<SessionStartOptions> {
+        let default_cwd = match self.config.agent.cwd.as_deref() {
+            Some(base) if !self.config.policy.workspace.shared_cwd => {
+                Some(channel_cwd(base, &task.channel_id)?)
+            }
+            Some(base) => Some(base.to_path_buf()),
+            None => None,
+        }
+        .map(|path| path.display().to_string());
         let cwd = match task.cwd.as_deref() {
             Some(requested) => match self.validate_backend_cwd(requested) {
                 Ok(canonical) => Some(canonical.display().to_string()),
@@ -3141,12 +3336,12 @@ impl RuntimeContext {
                 }
             })
             .collect();
-        SessionStartOptions {
+        Ok(SessionStartOptions {
             cwd,
             additional_dirs,
             mcp_servers: self.mcp_servers_for_task(task).await,
             request_route: request_route_for_task(task),
-        }
+        })
     }
 
     async fn mcp_servers_for_task(&self, task: &TaskCommand) -> Value {
@@ -3209,7 +3404,40 @@ impl RuntimeContext {
             );
             return Value::Array(servers);
         };
-        let bearer = match provider.bearer(&task.channel_id).await {
+        // Task binding only where each new token is known to reach the Agent
+        // (`mcp_delivery::Decision::bind_tasks`); an Agent that kept an ended
+        // task's token would otherwise be refused at once.
+        let execution = task
+            .execution
+            .as_ref()
+            .filter(|_| self.mcp_delivery.bind_tasks)
+            .map(|execution| execution.execution_id.as_str());
+        provider.retain_execution(&task.channel_id, execution).await;
+        if let Some(server) = self.mcp_over_acp.as_ref() {
+            server.bind_execution(&task.channel_id, execution).await;
+            servers.push(mcp_over_acp::server_entry(
+                &cheers_mcp_server_name(&task.channel_id),
+                &task.channel_id,
+            ));
+            return Value::Array(servers);
+        }
+        if let Some(gateway) = self.credential_gateway.as_ref() {
+            gateway.bind_execution(&task.channel_id, execution).await;
+            let secret = gateway.secret_for(&task.channel_id).await;
+            servers.push(native_cheers_mcp_server(
+                &task.channel_id,
+                gateway.local_url(),
+                &secret,
+            ));
+            return Value::Array(servers);
+        }
+        let token = if self.take_direct_renewal(&task.channel_id).await {
+            tracing::info!(account = %self.account_id, channel = %task.channel_id, "renewing the MCP token to test direct delivery");
+            provider.renew(&task.channel_id, execution).await
+        } else {
+            provider.bearer(&task.channel_id, execution).await
+        };
+        let bearer = match token {
             Ok(token) => token,
             Err(error) => {
                 tracing::warn!(
@@ -3405,6 +3633,9 @@ struct SharedRuntimeState {
     watches: Mutex<HashMap<String, WatchHandle>>,
     /// Daemon-wide turn cap; no lock, the semaphore is its own synchronization.
     turn_slots: TurnSlots,
+    /// Attached sessions whose `session/load` replay is being captured, keyed
+    /// by the Agent's session id until its load fence arrives.
+    history_captures: Mutex<HashMap<String, HistoryCapture>>,
 }
 
 #[derive(Default)]
@@ -3466,6 +3697,7 @@ impl SharedRuntimeState {
             channel_names: RwLock::new(channel_names),
             watches: Mutex::new(HashMap::new()),
             turn_slots: TurnSlots::new(max_concurrent),
+            history_captures: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -3751,6 +3983,57 @@ fn silent_result(
     }
 }
 
+/// The terminal `error` frame that fails an ordinary (non-evaluation) task.
+fn task_error_frame(
+    task: &TaskCommand,
+    message: String,
+    provider_session_id: Option<String>,
+) -> DataOutbound {
+    DataOutbound::Error {
+        v: BRIDGE_PROTOCOL_VERSION,
+        client_msg_id: Uuid::new_v4().to_string(),
+        execution: task.execution.clone(),
+        msg_id: task.msg_id.clone(),
+        message,
+        provider_session_key: Some(task.provider_session_key.clone()),
+        provider_session_id,
+        session_id: task.session_id.clone(),
+        acp_capability: None,
+    }
+}
+
+/// The directory a channel with no Backend-pinned cwd runs in:
+/// `<default_cwd>/.cheers/channels/<channel_id>`, created on first use. A
+/// `.gitignore` in `.cheers/` keeps these out of the repository `default_cwd`
+/// often is. This is not a sandbox (an Agent with a shell can still `cd`
+/// anywhere); it stops one channel's turn from starting among the files
+/// another channel's turn left behind.
+fn channel_cwd(default_cwd: &Path, channel_id: &str) -> anyhow::Result<PathBuf> {
+    if channel_id.is_empty()
+        || !channel_id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err(anyhow!(
+            "channel id {channel_id:?} cannot name a working directory"
+        ));
+    }
+    let cheers = default_cwd.join(".cheers");
+    let dir = cheers.join("channels").join(channel_id);
+    std::fs::create_dir_all(&dir).with_context(|| {
+        format!(
+            "could not create channel working directory {}",
+            dir.display()
+        )
+    })?;
+    let ignore = cheers.join(".gitignore");
+    if !ignore.exists() {
+        std::fs::write(&ignore, "*\n")
+            .with_context(|| format!("could not write {}", ignore.display()))?;
+    }
+    Ok(canonical_path(&dir))
+}
+
 /// Builds a trusted route only for a human-originated task. Bot/system work has
 /// no verified human identity and therefore cannot host request-scoped elicitation.
 fn request_route_for_task(task: &TaskCommand) -> Option<RequestRoute> {
@@ -3808,7 +4091,53 @@ enum RuntimeInput {
     Data(Box<DataInbound>),
     Adapter(RuntimeEvent),
     SocketClosed(&'static str),
-    SocketError { stream: &'static str, error: String },
+    SocketError {
+        stream: &'static str,
+        error: String,
+    },
+    /// Stop this Agent process and start a new one (MCP delivery switch).
+    RestartAgent,
+}
+
+/// Why an account runtime ended without an error.
+enum RunExit {
+    RestartAgent,
+}
+
+/// The `direct` delivery test for an Agent build the Gateway has not judged:
+/// at the first channel's second prompt, renew its token once.
+#[derive(Default)]
+struct DirectTest {
+    prompts_by_channel: HashMap<String, u32>,
+    renewed: bool,
+}
+
+impl DirectTest {
+    /// Counts a prompt on `channel_id`; true exactly once, at the first
+    /// channel to reach its second prompt.
+    fn take(&mut self, channel_id: &str) -> bool {
+        if self.renewed {
+            return false;
+        }
+        let prompts = self
+            .prompts_by_channel
+            .entry(channel_id.to_string())
+            .or_default();
+        *prompts += 1;
+        self.renewed = *prompts >= 2;
+        self.renewed
+    }
+}
+
+/// `name@version` of the Agent, as the Gateway keys its verdicts.
+fn agent_key(initialize: &Value) -> String {
+    let info = initialize.get("agentInfo");
+    let field = |name| info.and_then(|info| info.get(name)).and_then(Value::as_str);
+    format!(
+        "{}@{}",
+        field("name").unwrap_or("unknown"),
+        field("version").unwrap_or("unknown")
+    )
 }
 
 mod agent_files;
@@ -3819,12 +4148,14 @@ mod frames;
 mod io;
 mod permission;
 mod prompt;
+mod session_attach;
 mod signing;
 mod tasks;
 
 use frames::*;
 use io::*;
 use prompt::*;
+use session_attach::*;
 use signing::*;
 
 #[cfg(test)]
@@ -3835,6 +4166,7 @@ mod tests {
 
     mod config_discovery;
     mod prompt_drain;
+    mod session_attach;
 
     use crate::bridge::PermissionOption;
     use crate::runtime_adapter::{
@@ -3930,6 +4262,8 @@ mod tests {
         native_model_only: bool,
         auth_enabled: bool,
         config_calls: Arc<Mutex<Vec<String>>>,
+        /// `session/list` results, served one per page; empty ⇒ no list capability.
+        listed_sessions: Vec<Value>,
     }
 
     #[async_trait::async_trait]
@@ -3986,6 +4320,22 @@ mod tests {
                 metadata: json!({}),
             })
         }
+        async fn list_sessions(
+            &mut self,
+            cursor: Option<&str>,
+        ) -> anyhow::Result<crate::runtime_adapter::SessionListPage> {
+            let index: usize = cursor.map_or(Ok(0), str::parse)?;
+            Ok(crate::runtime_adapter::SessionListPage {
+                sessions: self
+                    .listed_sessions
+                    .get(index)
+                    .cloned()
+                    .into_iter()
+                    .collect(),
+                next_cursor: (index + 1 < self.listed_sessions.len())
+                    .then(|| (index + 1).to_string()),
+            })
+        }
         async fn cancel(&mut self, _session_id: &str) -> anyhow::Result<()> {
             Ok(())
         }
@@ -4032,6 +4382,7 @@ mod tests {
             // fixture needs no session persistence.
             AgentCapabilities {
                 load_session: self.load_sessions,
+                list_sessions: !self.listed_sessions.is_empty(),
                 prompt_image: false,
                 prompt_audio: false,
                 mcp_http: true,
@@ -4039,6 +4390,15 @@ mod tests {
             }
         }
         fn initialize_response(&self) -> Option<Value> {
+            if !self.listed_sessions.is_empty() {
+                return Some(json!({
+                    "agentInfo": {"name": "@agentclientprotocol/codex-acp", "version": "2.2.2"},
+                    "agentCapabilities": {
+                        "loadSession": self.load_sessions,
+                        "sessionCapabilities": {"list": {}}
+                    }
+                }));
+            }
             self.auth_enabled.then(|| {
                 json!({
                     "authMethods":[{"id":"fixture-auth", "name":"Fixture login"}]
@@ -4152,6 +4512,21 @@ max_concurrent = {max_concurrent}
         watch::Sender<Option<PromptOutcome>>,
         RuntimeTaps,
     ) {
+        fixture_runtime_with(dir, gate, max_concurrent, |_| {}).await
+    }
+
+    /// [`fixture_runtime`], with `customize` applied before the context is shared.
+    async fn fixture_runtime_with(
+        dir: &std::path::Path,
+        gate: PromptGate,
+        max_concurrent: usize,
+        customize: impl FnOnce(&mut RuntimeContext),
+    ) -> (
+        Arc<RuntimeContext>,
+        Arc<Semaphore>,
+        watch::Sender<Option<PromptOutcome>>,
+        RuntimeTaps,
+    ) {
         let (release, release_rx) = watch::channel(None);
         let started = Arc::new(Semaphore::new(0));
         let prompt_client = Arc::new(GatedPromptClient {
@@ -4167,6 +4542,7 @@ max_concurrent = {max_concurrent}
             native_model_only: false,
             auth_enabled: false,
             config_calls: Arc::new(Mutex::new(Vec::new())),
+            listed_sessions: Vec::new(),
         });
         let config = fixture_config(dir, max_concurrent).await;
         let TestIo {
@@ -4183,13 +4559,24 @@ max_concurrent = {max_concurrent}
             config.policy.prompt.max_concurrent,
             &config.agent,
         ));
-        let context = Arc::new(RuntimeContext {
+        let mut context = RuntimeContext {
             account_id: "test".to_string(),
             host_id: None,
             config,
             identity: test_identity(),
             mcp_url: "https://example.invalid/mcp".to_string(),
             mcp_token: None,
+            credential_gateway: None,
+            mcp_over_acp: None,
+            mcp_delivery: mcp_delivery::Decision {
+                mode: McpDeliveryMode::Direct,
+                reason: "test".into(),
+                test_direct: false,
+                bind_tasks: false,
+            },
+            agent: "fixture-agent@0".into(),
+            direct_test: Mutex::new(DirectTest::default()),
+            restart_pending: std::sync::atomic::AtomicBool::new(false),
             state: Arc::new(Mutex::new(SessionStateStore::new(dir.join("state.json")))),
             adapter: Arc::new(Mutex::new(adapter)),
             io: handle,
@@ -4207,9 +4594,10 @@ max_concurrent = {max_concurrent}
             .unwrap(),
             shared,
             runtime_tx,
-        });
+        };
+        customize(&mut context);
         (
-            context,
+            Arc::new(context),
             started,
             release,
             RuntimeTaps {
@@ -4752,6 +5140,7 @@ max_concurrent = {max_concurrent}
             native_model_only: true,
             auth_enabled: false,
             config_calls: calls.clone(),
+            listed_sessions: Vec::new(),
         });
         (runtime, calls, release, taps)
     }
@@ -4779,6 +5168,7 @@ max_concurrent = {max_concurrent}
                 native_model_only: false,
                 auth_enabled: true,
                 config_calls: calls.clone(),
+                listed_sessions: Vec::new(),
             });
             let standard = evaluation.is_none();
             let turn = tokio::spawn(runtime.clone().run_task(fixture_task("auth"), evaluation));
@@ -4828,6 +5218,86 @@ max_concurrent = {max_concurrent}
         }
     }
 
+    #[test]
+    fn direct_test_renews_once_at_the_first_second_prompt() {
+        let mut test = DirectTest::default();
+        assert!(!test.take("a"));
+        assert!(!test.take("b"));
+        assert!(test.take("a"), "channel a's second prompt renews");
+        assert!(!test.take("b"), "only once per Agent process");
+        assert!(!test.take("a"));
+    }
+
+    #[test]
+    fn unpinned_channels_get_their_own_ignored_working_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = channel_cwd(dir.path(), "channel-a").unwrap();
+        let b = channel_cwd(dir.path(), "channel-b").unwrap();
+        assert_ne!(a, b);
+        assert!(a.is_dir() && b.is_dir());
+        assert_eq!(
+            a,
+            canonical_path(&dir.path().join(".cheers/channels/channel-a"))
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".cheers/.gitignore")).unwrap(),
+            "*\n"
+        );
+        // Re-use is idempotent.
+        assert_eq!(channel_cwd(dir.path(), "channel-a").unwrap(), a);
+    }
+
+    #[test]
+    fn channel_ids_that_are_not_plain_names_never_become_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for bad in ["", "..", "../escape", "a/b", "a\\b", "c d"] {
+            assert!(channel_cwd(dir.path(), bad).is_err(), "{bad:?}");
+        }
+        assert!(!dir.path().join(".cheers").exists());
+    }
+
+    #[test]
+    fn agent_key_matches_the_gateway_format() {
+        assert_eq!(
+            agent_key(&json!({"agentInfo": {"name": "codex-acp", "version": "2.3.0"}})),
+            "codex-acp@2.3.0"
+        );
+        assert_eq!(agent_key(&json!({})), "unknown@unknown");
+    }
+
+    #[tokio::test]
+    async fn stale_verdict_is_cached_and_schedules_an_idle_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, _started, _release, _taps) =
+            fixture_runtime(dir.path(), PromptGate::All, 4).await;
+        assert_eq!(runtime.config.policy.mcp.delivery, McpDelivery::Auto);
+
+        // A verdict for some other Agent build changes nothing.
+        runtime
+            .handle_mcp_delivery_observed("channel-a", "other-agent@1", false)
+            .await;
+        assert!(!runtime
+            .restart_pending
+            .load(std::sync::atomic::Ordering::SeqCst));
+
+        runtime
+            .handle_mcp_delivery_observed("channel-a", "fixture-agent@0", false)
+            .await;
+        assert!(runtime
+            .restart_pending
+            .load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(
+            runtime
+                .state
+                .lock()
+                .await
+                .agent_mcp_facts("fixture-agent@0")
+                .map(|facts| facts.header_refresh),
+            Some(false)
+        );
+        assert!(runtime.is_idle().await);
+    }
+
     #[tokio::test]
     async fn desired_session_config_survives_new_load_and_connector_restart() {
         let dir = tempfile::tempdir().unwrap();
@@ -4835,7 +5305,7 @@ max_concurrent = {max_concurrent}
         let mut task = fixture_task("configured-channel");
         // This snapshot also covers a setting changed while the connector was offline.
         task.session_config = Some(session_override(3, "session-model"));
-        let options = runtime.session_start_options(&task).await;
+        let options = runtime.session_start_options(&task).await.unwrap();
         let id = runtime.ensure_acp_session(&task, options).await.unwrap();
         let applied = vec![
             "mode:session-mode",
@@ -4845,7 +5315,7 @@ max_concurrent = {max_concurrent}
         ];
         assert_eq!(&calls.lock().await[1..], &applied);
         calls.lock().await.clear();
-        let options = runtime.session_start_options(&task).await;
+        let options = runtime.session_start_options(&task).await.unwrap();
         assert_eq!(
             runtime.ensure_acp_session(&task, options).await.unwrap(),
             id
@@ -4857,7 +5327,7 @@ max_concurrent = {max_concurrent}
         // session-state file and the gateway's authoritative task snapshot.
         let (restarted, calls, _release2, _taps2) = config_runtime(dir.path()).await;
         restarted.state.lock().await.load().await.unwrap();
-        let options = restarted.session_start_options(&task).await;
+        let options = restarted.session_start_options(&task).await.unwrap();
         assert_eq!(
             restarted.ensure_acp_session(&task, options).await.unwrap(),
             id
@@ -4891,7 +5361,7 @@ max_concurrent = {max_concurrent}
             "pre-creation desired state needs no ACP request"
         );
         task.session_config = Some(session_override(4, "stale-model"));
-        let options = runtime.session_start_options(&task).await;
+        let options = runtime.session_start_options(&task).await.unwrap();
         runtime.ensure_acp_session(&task, options).await.unwrap();
         assert!(calls
             .lock()
@@ -4915,7 +5385,7 @@ max_concurrent = {max_concurrent}
             .config_options
             .insert("sandbox".into(), "unrestricted".into());
         task.session_config = Some(desired);
-        let options = runtime.session_start_options(&task).await;
+        let options = runtime.session_start_options(&task).await.unwrap();
         runtime.ensure_acp_session(&task, options).await.unwrap();
         let calls = calls.lock().await;
         assert!(calls.contains(&"mode:bot-mode".to_string()));
@@ -5035,6 +5505,45 @@ max_concurrent = {max_concurrent}
             error_msg_ids(&taps.drain_priority()),
             vec!["msg-channel-a".to_string(), "msg-channel-b".to_string()],
             "每个频道各拿到自己的终帧"
+        );
+    }
+
+    /// `acp` delivery declares each channel's server as an ACP server: no URL,
+    /// no token, and a `serverId` that names the channel its messages act in.
+    #[tokio::test]
+    async fn acp_delivery_declares_an_acp_server_per_channel() {
+        let dir = tempfile::tempdir().unwrap();
+        let upstream = "http://127.0.0.1:9/mcp".to_string();
+        let tokens = Arc::new(
+            McpTokenProvider::new(upstream.clone(), "host-1".into(), "secret".into()).unwrap(),
+        );
+        let server = Arc::new(AcpMcpServer::new(upstream, tokens.clone()).unwrap());
+        let (runtime, _started, _release, _taps) =
+            fixture_runtime_with(dir.path(), PromptGate::First, 4, |context| {
+                context.mcp_token = Some(tokens);
+                context.mcp_over_acp = Some(server);
+                context.mcp_delivery.mode = McpDeliveryMode::Acp;
+            })
+            .await;
+
+        let servers = runtime
+            .mcp_servers_for_task(&fixture_task("channel-a"))
+            .await;
+        let cheers: Vec<&Value> = servers
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|server| {
+                server["name"]
+                    .as_str()
+                    .is_some_and(is_cheers_mcp_server_name)
+            })
+            .collect();
+        assert_eq!(
+            cheers,
+            [
+                &json!({"type": "acp", "name": cheers_mcp_server_name("channel-a"), "serverId": "cheers:channel-a"})
+            ]
         );
     }
 

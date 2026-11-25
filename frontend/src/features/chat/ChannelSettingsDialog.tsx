@@ -101,6 +101,9 @@ export function ChannelSettingsDialog({
   )?.role;
   const canManage = globalAdmin || myRole === "owner" || myRole === "admin";
   const hasVoice = hasChannelFeature(channel, CHANNEL_FEATURE_VOICE);
+  const voiceToggleLabel = hasVoice
+    ? "Voice enabled (click to disable)"
+    : "Voice disabled (click to enable)";
   const visibleMembers = useMemo(() => {
     const normalized = memberQuery.trim().toLocaleLowerCase();
     if (!normalized) return members;
@@ -433,16 +436,8 @@ export function ChannelSettingsDialog({
                     </UiSelect>
 
                     <IconButton
-                      label={
-                        hasVoice
-                          ? "Voice enabled (click to disable)"
-                          : "Voice disabled (click to enable)"
-                      }
-                      title={
-                        hasVoice
-                          ? "Voice enabled (click to disable)"
-                          : "Voice disabled (click to enable)"
-                      }
+                      label={voiceToggleLabel}
+                      title={voiceToggleLabel}
                       controlSize="compact"
                       tone={hasVoice ? "success" : "neutral"}
                       disabled={!canManage || savingVoice}

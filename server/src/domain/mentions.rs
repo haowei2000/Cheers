@@ -27,6 +27,15 @@ impl MemberType {
             MemberType::Bot => "bot",
         }
     }
+
+    /// Parse a stored `member_type`; anything other than user/bot is `None`.
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "user" => Some(MemberType::User),
+            "bot" => Some(MemberType::Bot),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -66,12 +75,8 @@ pub async fn validate_mention_ids(
     let mut type_by_id: std::collections::HashMap<Uuid, MemberType> =
         std::collections::HashMap::new();
     for row in &rows {
-        let mid = Some(row.member_id.clone()).and_then(|s| s.parse::<Uuid>().ok());
-        let mty = match row.member_type.as_str() {
-            "bot" => Some(MemberType::Bot),
-            "user" => Some(MemberType::User),
-            _ => None,
-        };
+        let mid = row.member_id.parse::<Uuid>().ok();
+        let mty = MemberType::parse(&row.member_type);
         if let (Some(mid), Some(mty)) = (mid, mty) {
             type_by_id.insert(mid, mty);
         }
@@ -161,13 +166,11 @@ async fn expand_group_mention(
 
     let mut mentions = Vec::new();
     for row in rows.iter().take(GROUP_MENTION_CAP as usize) {
-        let Some(member_id) = Some(row.member_id.clone()).and_then(|s| s.parse().ok()) else {
+        let (Some(member_id), Some(member_type)) = (
+            row.member_id.parse::<Uuid>().ok(),
+            MemberType::parse(&row.member_type),
+        ) else {
             continue;
-        };
-        let member_type = match row.member_type.as_str() {
-            "bot" => MemberType::Bot,
-            "user" => MemberType::User,
-            _ => continue,
         };
         push_unique(&mut mentions, member_id, member_type);
     }
@@ -233,14 +236,11 @@ pub async fn resolve_mention_names(
         // arbitrarily under the old per-name `LIMIT 1`.
         let mut map: std::collections::HashMap<String, Mention> = std::collections::HashMap::new();
         for row in &rows {
-            let Some(member_id) = Some(row.member_id.clone()).and_then(|s| s.parse::<Uuid>().ok())
-            else {
+            let (Some(member_id), Some(member_type)) = (
+                row.member_id.parse::<Uuid>().ok(),
+                MemberType::parse(&row.member_type),
+            ) else {
                 continue;
-            };
-            let member_type = match row.member_type.as_str() {
-                "bot" => MemberType::Bot,
-                "user" => MemberType::User,
-                _ => continue,
             };
             let mention = Mention {
                 member_id,

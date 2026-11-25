@@ -99,6 +99,7 @@ struct BotSession {
 
 // ── 进程内实现 ────────────────────────────────────────────────────────────────
 
+#[derive(Default)]
 pub struct InProcessBotLocator {
     sessions: DashMap<Uuid, BotSession>,
     /// Last control bind identity survives unbind, so an old disconnect timer
@@ -111,11 +112,7 @@ pub struct InProcessBotLocator {
 
 impl InProcessBotLocator {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            sessions: DashMap::new(),
-            control_generations: DashMap::new(),
-            pending_data: DashMap::new(),
-        })
+        Arc::new(Self::default())
     }
 
     /// 查询 bot 是否在线（control + data 都已连接）。
@@ -124,16 +121,6 @@ impl InProcessBotLocator {
             .get(&bot_id)
             .map(|s| s.data_tx.is_some())
             .unwrap_or(false)
-    }
-}
-
-impl Default for InProcessBotLocator {
-    fn default() -> Self {
-        Self {
-            sessions: DashMap::new(),
-            control_generations: DashMap::new(),
-            pending_data: DashMap::new(),
-        }
     }
 }
 

@@ -34,10 +34,18 @@ pub struct AppState {
     pub stream_registry: Arc<StreamRegistry>,
     /// 远程工作区 RPC：gateway→connector 的 workspace_req/res 关联表。
     pub workspace_rpc: Arc<WorkspaceRpc>,
+    /// `runtime_session_control` → `_ack` correlation by `request_id`, for
+    /// callers that must know the outcome (session attach).
+    pub session_control_acks: Arc<WorkspaceRpc>,
     /// Web Push 发送器（VAPID 未配置则为 None，推送整体禁用）。
     pub web_push: Option<Arc<WebPushSender>>,
     /// OS push transport (direct APNs, or the official relay for self-hosted
     /// gateways). None = push unconfigured; in-app WS delivery is unaffected
     /// (docs/arch/MOBILE_APP_DESIGN.md §5).
     pub push: Option<Arc<crate::notify::PushTransport>>,
+    /// Observed MCP delivery: whether `direct` Agents pick up renewed tokens.
+    pub mcp_delivery: Arc<crate::gateway::mcp_delivery::McpDeliveryTracker>,
+    /// Admin-edited settings applied without a restart. Workers read this on
+    /// each use instead of the startup `config`.
+    pub runtime_settings: Arc<crate::domain::runtime_settings::RuntimeSettingsStore>,
 }

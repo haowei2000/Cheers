@@ -71,26 +71,19 @@ pub fn build_resource_call(
     name: &str,
     args: &Map<String, Value>,
 ) -> Result<ResourceCall, ToolCallError> {
-    let spec = registry::by_tool(name).ok_or_else(|| {
-        error(
-            "UNKNOWN_TOOL",
-            format!("unknown or unavailable remote tool: {name}"),
-        )
-    })?;
-    let tool = spec.tool.ok_or_else(|| {
-        error(
-            "UNKNOWN_TOOL",
-            format!("unknown or unavailable remote tool: {name}"),
-        )
-    })?;
+    let (spec, tool) = registry::by_tool(name)
+        .and_then(|spec| Some((spec, spec.tool?)))
+        .ok_or_else(|| {
+            error(
+                "UNKNOWN_TOOL",
+                format!("unknown or unavailable remote tool: {name}"),
+            )
+        })?;
 
     let mut params = Map::new();
     for param in tool.params {
-        match take(args, param)? {
-            Some(value) => {
-                params.insert(param.resource.to_string(), value);
-            }
-            None => continue,
+        if let Some(value) = take(args, param)? {
+            params.insert(param.resource.to_string(), value);
         }
     }
     for (key, value) in tool.constants {

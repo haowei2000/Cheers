@@ -170,14 +170,31 @@ pub struct Config {
     /// Canonical externally visible MCP protected-resource URL, including
     /// `/mcp`. Token audience binding and RFC 9728 metadata use this exact URL.
     pub mcp_public_url: Option<String>,
-    /// How strictly an MCP call must stay inside the channel its token was
-    /// minted for (`MCP_CHANNEL_SCOPE`: off | warn | enforce).
-    pub mcp_channel_scope: McpChannelScope,
+    /// MCP delivery modes connectors may use (`MCP_ALLOWED_DELIVERY_MODES`,
+    /// comma-separated `acp,direct,gateway`; unset = all). Leaving out
+    /// `direct` keeps real tokens out of Agent processes
+    /// (docs/arch/MCP_AUTH_ISOLATION.md §3.4.1).
+    pub mcp_allowed_delivery_modes: Option<Vec<cheers_bridge_protocol::McpDeliveryMode>>,
     /// OAuth authorization-server issuer advertised by RFC 9728 metadata.
     pub mcp_authorization_server_issuer: Option<String>,
     /// Lifetime of an MCP access token in seconds (`MCP_ACCESS_TOKEN_TTL_SECS`, default 86400 = 24h).
     /// Prevents premature expiration during long-running tasks and human-in-the-loop approval waits.
     pub mcp_access_token_ttl_secs: u64,
+    /// Lifetime for tokens minted to a host whose Agent uses `gateway` delivery
+    /// (`MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS`, default 600, at least 120). The
+    /// connector holds and renews these itself, so they never need to outlive
+    /// a turn; `direct` tokens keep `mcp_access_token_ttl_secs` because the
+    /// Agent cannot renew one mid-turn.
+    pub mcp_gateway_access_token_ttl_secs: u64,
+    /// Request-body cap in MiB (`MAX_REQUEST_BODY_MIB`, default 16). The proxy in
+    /// front of the gateway must allow the same size; the Helm chart and the
+    /// frontend image read the same setting.
+    pub max_request_body_mib: usize,
+    /// `/mcp` request-body cap in MiB (`MCP_MAX_BODY_MIB`, default 12, at least 11).
+    pub mcp_max_body_mib: usize,
+    /// Largest agent file upload in MiB (`AGENT_UPLOAD_MAX_MIB`, default 32). The
+    /// proxy must allow the same size, like the limits above.
+    pub agent_upload_max_mib: usize,
 
     /// Public WS base the connector dials to reach this gateway's agent-bridge,
     /// e.g. `ws://localhost:30080` (via the frontend proxy for local kind) or
@@ -282,6 +299,7 @@ pub struct Config {
     /// 待审批卡片超过该秒数仍未解决则扫为 expired（默认 1800 = 30 分钟）。
     /// 是连接器自身权限超时之上的兜底——正常情况下连接器先发 permission_cancel，
     /// 本扫描只兜底「连接器进程在超时前就死掉」导致卡片永久 pending 的情况。
+    /// 这里只是默认值；管理员可在运行时覆盖，读取请走 `AppState::runtime_settings`。
     pub approval_card_ttl_secs: u64,
     /// 审批卡扫描间隔秒数（默认 120；设为 0 则只在启动时扫一次）。
     pub approval_sweep_interval_secs: u64,
@@ -314,35 +332,77 @@ pub struct Config {
     pub task_claims_enabled: bool,
 }
 
-/// How strictly the MCP endpoint holds a call to the channel its token names.
-///
-/// A bot works in many channels at once through one agent process, and the
-/// channel an MCP call acts on arrives as a model-supplied argument. A token
-/// minted for one channel is the only per-turn thing the transport carries, so
-/// this decides what happens when a call names a different one.
-///
-/// Channel scoping is enforced by default. `Warn` and `Off` remain explicit
-/// rollout overrides for deployments that need to migrate legacy clients.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum McpChannelScope {
-    /// Never check. The pre-existing behaviour.
-    Off,
-    /// Check and log, allow either way. Explicit compatibility mode only.
-    Warn,
-    /// Refuse a call that leaves its token's channel, and refuse a token that
-    /// names no channel at all.
-    #[default]
-    Enforce,
+/// `MCP_CHANNEL_SCOPE` used to select off / warn / enforce. Channel scoping is
+/// now always enforced; `enforce` is still accepted for one release so existing
+/// deployments keep booting, and `off` / `warn` stop startup instead of being
+/// silently ignored. Remove this check (and the variable) in the next release.
+fn reject_removed_mcp_channel_scope(raw: Option<&str>) {
+    match raw.map(str::trim).unwrap_or_default() {
+        "" | "enforce" => {}
+        other => panic!(
+            "MCP_CHANNEL_SCOPE={other:?} was removed: MCP channel scoping is always enforced; unset MCP_CHANNEL_SCOPE"
+        ),
+    }
 }
 
-impl McpChannelScope {
-    fn from_env_value(raw: Option<&str>) -> Self {
-        match raw.map(str::trim).unwrap_or_default() {
-            "off" => Self::Off,
-            "" | "enforce" => Self::Enforce,
-            "warn" => Self::Warn,
-            other => panic!("MCP_CHANNEL_SCOPE must be off, warn or enforce (got {other:?})"),
-        }
+const DEFAULT_MAX_REQUEST_BODY_MIB: usize = 16;
+const DEFAULT_MCP_MAX_BODY_MIB: usize = 12;
+const DEFAULT_AGENT_UPLOAD_MAX_MIB: usize = 32;
+/// `artifact_deliver` sends up to 8 MiB as base64 (about 10.7 MiB) plus its JSON envelope.
+const MIN_MCP_MAX_BODY_MIB: usize = 11;
+
+/// Parses a body limit. Startup fails on a bad value rather than silently running
+/// with a limit that no longer matches the proxy in front of the gateway.
+fn body_limit_mib(key: &str, raw: Option<&str>, default: usize, minimum: usize) -> usize {
+    let Some(raw) = raw else {
+        return default;
+    };
+    match raw.parse() {
+        Ok(mib) if mib >= minimum => mib,
+        _ => panic!("{key}: expected a whole number of MiB, at least {minimum}, got {raw:?}"),
+    }
+}
+
+/// Parses `MCP_ALLOWED_DELIVERY_MODES`. Startup fails on an unknown mode, and
+/// on a list connectors could not satisfy: `acp` needs an Agent advertising
+/// `mcpCapabilities.acp`, so a list without `direct` or `gateway` would leave
+/// every other Agent without Cheers MCP.
+fn parse_mcp_allowed_delivery_modes(
+    raw: Option<&str>,
+) -> Option<Vec<cheers_bridge_protocol::McpDeliveryMode>> {
+    use cheers_bridge_protocol::McpDeliveryMode as Mode;
+    let raw = raw.map(str::trim).filter(|value| !value.is_empty())?;
+    let modes: Vec<Mode> = raw
+        .split(',')
+        .map(|item| match item.trim() {
+            "acp" => Mode::Acp,
+            "direct" => Mode::Direct,
+            "gateway" => Mode::Gateway,
+            other => panic!(
+                "MCP_ALLOWED_DELIVERY_MODES: unknown mode {other:?} (expected acp, direct, gateway)"
+            ),
+        })
+        .collect();
+    if !modes
+        .iter()
+        .any(|mode| matches!(mode, Mode::Direct | Mode::Gateway))
+    {
+        panic!("MCP_ALLOWED_DELIVERY_MODES={raw:?} allows neither direct nor gateway, which every Agent can use");
+    }
+    Some(modes)
+}
+
+/// Parses `MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS`. The floor leaves the connector,
+/// which renews at 80% of the lifetime and never closer than 30 s to expiry,
+/// room to renew before a request goes out with an expiring token.
+fn gateway_access_token_ttl(raw: Option<&str>) -> u64 {
+    const MIN: u64 = 120;
+    match raw.map(str::trim).filter(|value| !value.is_empty()) {
+        None => crate::api::mcp::DEFAULT_MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS,
+        Some(value) => match value.parse::<u64>() {
+            Ok(secs) if secs >= MIN => secs,
+            _ => panic!("MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS must be a whole number of seconds >= {MIN} (got {value:?})"),
+        },
     }
 }
 
@@ -350,6 +410,7 @@ impl Config {
     /// 从环境变量读取配置，缺少必填项时 panic（启动时快速失败）。
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();
+        reject_removed_mcp_channel_scope(optional("MCP_CHANNEL_SCOPE").as_deref());
 
         // Fail fast on the JWT keypair: read AND parse both PEMs here, before
         // anything binds the listener, so `helm install` / `docker compose up`
@@ -505,12 +566,10 @@ impl Config {
             s3_region: env::var("S3_REGION")
                 .or_else(|_| env::var("STORAGE_S3_REGION"))
                 .unwrap_or_else(|_| "us-east-1".into()),
-            cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            cors_allowed_origins: optional("CORS_ALLOWED_ORIGINS"),
             mcp_public_url,
-            mcp_channel_scope: McpChannelScope::from_env_value(
-                optional("MCP_CHANNEL_SCOPE").as_deref(),
+            mcp_allowed_delivery_modes: parse_mcp_allowed_delivery_modes(
+                optional("MCP_ALLOWED_DELIVERY_MODES").as_deref(),
             ),
             mcp_authorization_server_issuer: optional("MCP_AUTHORIZATION_SERVER_ISSUER").map(
                 |value| {
@@ -522,30 +581,43 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(crate::api::mcp::DEFAULT_MCP_ACCESS_TOKEN_TTL_SECS),
+            mcp_gateway_access_token_ttl_secs: gateway_access_token_ttl(
+                optional("MCP_GATEWAY_ACCESS_TOKEN_TTL_SECS").as_deref(),
+            ),
+            max_request_body_mib: body_limit_mib(
+                "MAX_REQUEST_BODY_MIB",
+                optional("MAX_REQUEST_BODY_MIB").as_deref(),
+                DEFAULT_MAX_REQUEST_BODY_MIB,
+                1,
+            ),
+            mcp_max_body_mib: body_limit_mib(
+                "MCP_MAX_BODY_MIB",
+                optional("MCP_MAX_BODY_MIB").as_deref(),
+                DEFAULT_MCP_MAX_BODY_MIB,
+                MIN_MCP_MAX_BODY_MIB,
+            ),
+            agent_upload_max_mib: body_limit_mib(
+                "AGENT_UPLOAD_MAX_MIB",
+                optional("AGENT_UPLOAD_MAX_MIB").as_deref(),
+                DEFAULT_AGENT_UPLOAD_MAX_MIB,
+                1,
+            ),
             connector_public_base,
-            connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
+            connector_release_repo: optional("CHEERS_CONNECTOR_RELEASE_REPO")
                 .unwrap_or_else(|| "haowei2000/Cheers".into()),
-            connector_release_version: env::var("CHEERS_CONNECTOR_RELEASE_VERSION")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            connector_release_version: optional("CHEERS_CONNECTOR_RELEASE_VERSION"),
 
-            gotenberg_url: env::var("GOTENBERG_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            gotenberg_url: optional("GOTENBERG_URL"),
             conversion_poll_interval_secs: env::var("CONVERSION_POLL_INTERVAL_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(20),
 
-            secret_store_key: env::var("SECRET_STORE_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            secret_store_key: optional("SECRET_STORE_KEY"),
             apple_auth,
             google_auth,
             github_oauth,
-            oauth_web_return_url: optional("OAUTH_WEB_RETURN_URL"),
+            oauth_web_return_url,
 
             github_app,
             github_api_base_url: optional("GITHUB_API_BASE_URL")
@@ -553,23 +625,12 @@ impl Config {
                 .trim_end_matches('/')
                 .to_string(),
 
-            brevo_api_key: env::var("BREVO_API_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            email_from_email: env::var("EMAIL_FROM_EMAIL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            email_from_name: env::var("EMAIL_FROM_NAME")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| "Cheers".into()),
+            brevo_api_key: optional("BREVO_API_KEY"),
+            email_from_email: optional("EMAIL_FROM_EMAIL"),
+            email_from_name: optional("EMAIL_FROM_NAME").unwrap_or_else(|| "Cheers".into()),
 
-            vapid_private_key_pem: env::var("VAPID_PRIVATE_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            vapid_subject: env::var("VAPID_SUBJECT")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
+            vapid_private_key_pem: optional("VAPID_PRIVATE_KEY"),
+            vapid_subject: optional("VAPID_SUBJECT")
                 .unwrap_or_else(|| "mailto:admin@tocheers.com".into()),
 
             open_registration: env_flag("OPEN_REGISTRATION", false),
@@ -587,10 +648,7 @@ impl Config {
                 .or_else(|_| env::var("CHEERS_WEBAUTHN_RP_ORIGIN"))
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
-            webauthn_rp_name: env::var("WEBAUTHN_RP_NAME")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| "Cheers".into()),
+            webauthn_rp_name: optional("WEBAUTHN_RP_NAME").unwrap_or_else(|| "Cheers".into()),
 
             trust_proxy_headers: env_flag("TRUST_PROXY_HEADERS", false),
 
@@ -612,36 +670,16 @@ impl Config {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(120),
 
-            livekit_url: env::var("LIVEKIT_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            livekit_internal_url: env::var("LIVEKIT_INTERNAL_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            livekit_api_key: env::var("LIVEKIT_API_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            livekit_api_secret: env::var("LIVEKIT_API_SECRET")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_transcriber_token: env::var("VOICE_TRANSCRIBER_TOKEN")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_provider: env::var("VOICE_STT_PROVIDER")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_api_key: env::var("VOICE_STT_API_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_base_url: env::var("VOICE_STT_BASE_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_model: env::var("VOICE_STT_MODEL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            voice_stt_language: env::var("VOICE_STT_LANGUAGE")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            livekit_url: optional("LIVEKIT_URL"),
+            livekit_internal_url: optional("LIVEKIT_INTERNAL_URL"),
+            livekit_api_key: optional("LIVEKIT_API_KEY"),
+            livekit_api_secret: optional("LIVEKIT_API_SECRET"),
+            voice_transcriber_token: optional("VOICE_TRANSCRIBER_TOKEN"),
+            voice_stt_provider: optional("VOICE_STT_PROVIDER"),
+            voice_stt_api_key: optional("VOICE_STT_API_KEY"),
+            voice_stt_base_url: optional("VOICE_STT_BASE_URL"),
+            voice_stt_model: optional("VOICE_STT_MODEL"),
+            voice_stt_language: optional("VOICE_STT_LANGUAGE"),
             task_claims_enabled: env::var("TASK_CLAIMS_ENABLED")
                 .ok()
                 .map(|v| v.trim().eq_ignore_ascii_case("true"))
@@ -714,6 +752,12 @@ impl Config {
     /// Canonical MCP resource identifier. The localhost fallback is only for
     /// development; production must set MCP_PUBLIC_URL so untrusted proxy/Host
     /// headers can never influence token audience or discovery metadata.
+    /// Where agents send upload bytes: beside `/mcp`, which they can already reach.
+    pub fn agent_upload_url_base(&self) -> String {
+        let mcp = self.mcp_resource_url();
+        format!("{}/api/v1/agent-uploads", mcp.trim_end_matches("/mcp"))
+    }
+
     pub fn mcp_resource_url(&self) -> String {
         self.mcp_public_url
             .clone()
@@ -763,25 +807,9 @@ fn resolve_mcp_public_url(
         return Some(url);
     }
 
-    if let Some(raw) = oauth_web_return_url
-        .map(str::trim)
-        .filter(|u| !u.is_empty())
-    {
-        if let Ok(parsed) = url::Url::parse(raw) {
-            if parsed.scheme() == "https" {
-                if let Some(host) = parsed.host_str() {
-                    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
-                        let origin = parsed.origin().ascii_serialization();
-                        let url = format!("{origin}/mcp");
-                        validate_mcp_url("MCP_PUBLIC_URL", &url, true);
-                        return Some(url);
-                    }
-                }
-            }
-        }
-    }
-
-    None
+    let url = format!("{}/mcp", public_https_origin(oauth_web_return_url)?);
+    validate_mcp_url("MCP_PUBLIC_URL", &url, true);
+    Some(url)
 }
 
 fn resolve_connector_public_base(
@@ -803,25 +831,24 @@ fn resolve_connector_public_base(
         return Some(format!("wss://{domain}"));
     }
 
-    if let Some(raw) = oauth_web_return_url
-        .map(str::trim)
-        .filter(|u| !u.is_empty())
-    {
-        if let Ok(parsed) = url::Url::parse(raw) {
-            if parsed.scheme() == "https" {
-                if let Some(host) = parsed.host_str() {
-                    if !matches!(host, "localhost" | "127.0.0.1" | "::1") {
-                        let origin = parsed.origin().ascii_serialization();
-                        if let Some(rest) = origin.strip_prefix("https://") {
-                            return Some(format!("wss://{rest}"));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let origin = public_https_origin(oauth_web_return_url)?;
+    origin
+        .strip_prefix("https://")
+        .map(|rest| format!("wss://{rest}"))
+}
 
-    None
+/// The origin of `OAUTH_WEB_RETURN_URL` when it is an https, non-loopback URL —
+/// the last-resort hint for this gateway's public address.
+fn public_https_origin(oauth_web_return_url: Option<&str>) -> Option<String> {
+    let raw = oauth_web_return_url
+        .map(str::trim)
+        .filter(|u| !u.is_empty())?;
+    let parsed = url::Url::parse(raw).ok()?;
+    let host = parsed.host_str()?;
+    if parsed.scheme() != "https" || matches!(host, "localhost" | "127.0.0.1" | "::1") {
+        return None;
+    }
+    Some(parsed.origin().ascii_serialization())
 }
 
 fn validate_mcp_url(name: &str, value: &str, require_mcp_path: bool) {
@@ -888,20 +915,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mcp_channel_scope_defaults_to_enforce() {
-        assert_eq!(McpChannelScope::default(), McpChannelScope::Enforce);
+    fn body_limit_uses_the_default_when_unset() {
+        assert_eq!(body_limit_mib("LIMIT", None, 16, 1), 16);
+    }
+
+    #[test]
+    fn body_limit_accepts_the_minimum() {
+        assert_eq!(body_limit_mib("LIMIT", Some("11"), 12, 11), 11);
+    }
+
+    #[test]
+    #[should_panic(expected = "LIMIT: expected a whole number of MiB, at least 11")]
+    fn body_limit_refuses_a_value_below_the_minimum() {
+        body_limit_mib("LIMIT", Some("10"), 12, 11);
+    }
+
+    #[test]
+    #[should_panic(expected = "LIMIT: expected a whole number of MiB")]
+    fn body_limit_refuses_a_value_that_is_not_a_number() {
+        body_limit_mib("LIMIT", Some("16m"), 16, 1);
+    }
+
+    #[test]
+    fn mcp_channel_scope_accepts_only_enforce_or_unset() {
+        reject_removed_mcp_channel_scope(None);
+        reject_removed_mcp_channel_scope(Some(" enforce "));
+        for removed in ["off", "warn"] {
+            let result =
+                std::panic::catch_unwind(|| reject_removed_mcp_channel_scope(Some(removed)));
+            assert!(result.is_err(), "{removed} must stop startup");
+        }
+    }
+
+    #[test]
+    fn gateway_token_ttl_defaults_short_and_has_a_floor() {
+        assert_eq!(gateway_access_token_ttl(None), 600);
+        assert_eq!(gateway_access_token_ttl(Some("900")), 900);
+        for bad in ["60", "ten", "-5"] {
+            let result = std::panic::catch_unwind(|| gateway_access_token_ttl(Some(bad)));
+            assert!(result.is_err(), "{bad} must stop startup");
+        }
+    }
+
+    #[test]
+    fn mcp_allowed_delivery_modes_parse_and_reject_unservable_lists() {
+        use cheers_bridge_protocol::McpDeliveryMode as Mode;
+        assert_eq!(parse_mcp_allowed_delivery_modes(None), None);
+        assert_eq!(parse_mcp_allowed_delivery_modes(Some(" ")), None);
         assert_eq!(
-            McpChannelScope::from_env_value(None),
-            McpChannelScope::Enforce
+            parse_mcp_allowed_delivery_modes(Some("acp, gateway")),
+            Some(vec![Mode::Acp, Mode::Gateway])
         );
-        assert_eq!(
-            McpChannelScope::from_env_value(Some("warn")),
-            McpChannelScope::Warn
-        );
-        assert_eq!(
-            McpChannelScope::from_env_value(Some("off")),
-            McpChannelScope::Off
-        );
+        for bad in ["acp", "proxy", "direct,"] {
+            let result = std::panic::catch_unwind(|| parse_mcp_allowed_delivery_modes(Some(bad)));
+            assert!(result.is_err(), "{bad} must stop startup");
+        }
     }
 
     #[test]

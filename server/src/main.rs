@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use server::domain::runtime_settings::{self, RuntimeSettingsStore, RuntimeValues};
 use server::gateway::realtime::manager::ConnectionManager;
 use server::gateway::stream::StreamRegistry;
 use server::{api, gateway, infra, router, AppState, Config};
@@ -154,6 +155,12 @@ async fn main() -> anyhow::Result<()> {
     }
     // Let the resource layer (channel.files.read / inbox_open) read chat-file bytes.
     server::resource::files::init_s3(s3.clone(), config.s3_bucket.clone());
+    server::resource::artifact_backfill::spawn(db.clone());
+    server::resource::artifact_store::spawn(db.clone(), s3.clone(), config.s3_bucket.clone());
+    server::resource::uploads::init(
+        config.agent_upload_url_base(),
+        config.agent_upload_max_mib as i64 * 1024 * 1024,
+    );
 
     // Single-instance deployment (R1-A): in-process fan-out + bot registry.
     // Redis is NOT a startup dependency on the realtime path. The Redis impls
@@ -218,6 +225,12 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let runtime_settings = Arc::new(RuntimeSettingsStore::new(RuntimeValues::from_config(
+        &config,
+    )));
+    runtime_settings.reload(&db).await?;
+    runtime_settings::spawn_reloader(db.clone(), runtime_settings.clone());
+
     let state = AppState {
         db,
         config: config.clone(),
@@ -229,8 +242,11 @@ async fn main() -> anyhow::Result<()> {
         bot_registry,
         stream_registry,
         workspace_rpc,
+        session_control_acks: Arc::new(gateway::workspace_rpc::WorkspaceRpc::new()),
         web_push,
         push,
+        mcp_delivery: Arc::default(),
+        runtime_settings,
     };
 
     // Recover admitted dispatches from the existing run ledger. Socket
@@ -256,11 +272,7 @@ async fn main() -> anyhow::Result<()> {
     // Approval-card TTL sweeper: finalize permission cards that were never
     // resolved and whose connector died before its own timeout could cancel
     // them, so they don't hang pending forever (no other server-side expiry).
-    gateway::approval_sweeper::spawn(
-        state.clone(),
-        config.approval_sweep_interval_secs,
-        config.approval_card_ttl_secs,
-    );
+    gateway::approval_sweeper::spawn(state.clone(), config.approval_sweep_interval_secs);
 
     // Reap spent/expired host pairing codes (audit follow-up L2):
     // the per-owner/per-bot caps count only live codes, so terminal rows would
@@ -352,6 +364,18 @@ async fn main() -> anyhow::Result<()> {
     // Scheduled bot self-status refresh (audit item 6). The connector was
     // historically meant to run this loop but ships no implementation, so the
     // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).
+    let uploads_db = state.db.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            match server::resource::uploads::sweep_expired(&uploads_db).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(removed = n, "agent upload retention sweep"),
+                Err(e) => tracing::warn!(err = %e, "agent upload retention sweep failed"),
+            }
+        }
+    });
     tokio::spawn(server::domain::bot_status_scheduler::run(state.clone()));
 
     // Verified inbound webhooks are stored by the ingress handler and turned

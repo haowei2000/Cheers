@@ -25,7 +25,7 @@ use crate::{
     infra::db::models::MESSAGE_SCHEMA_VERSION,
 };
 
-fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
+pub(crate) fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
     claims
         .sub
         .parse()
@@ -33,7 +33,11 @@ fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
 }
 
 /// The caller's current channel role for the event-policy `SEE` matrix.
-async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> Result<String, AppError> {
+pub(crate) async fn channel_role(
+    state: &AppState,
+    channel_id: Uuid,
+    uid: Uuid,
+) -> Result<String, AppError> {
     sqlx::query!(
         "SELECT role FROM channel_memberships
          WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
@@ -134,6 +138,57 @@ async fn require_bot_owner(
     }
 }
 
+/// The `message` frame that re-renders an interaction card (`permission`,
+/// `auth_required`, `elicitation`) with `content_data`.
+fn card_frame(
+    channel_id: Uuid,
+    pending: &approval::PendingPermission,
+    msg_type: &str,
+    content_data: &Value,
+) -> WireFrame {
+    WireFrame::channel(
+        channel_id,
+        "message",
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION,
+            "msg_id": pending.msg_id,
+            "channel_id": channel_id,
+            "channel_seq": pending.channel_seq,
+            "sender_type": "bot",
+            "sender_id": pending.bot_id,
+            "content": pending.content,
+            "msg_type": msg_type,
+            "is_partial": false,
+            "reply_to_msg_id": null,
+            "file_ids": [],
+            "mentions": [],
+            "files": [],
+            "content_data": content_data,
+        }),
+    )
+}
+
+/// Re-send an already-resolved card as stored, so a client that raced the
+/// resolution converges on the final state.
+async fn rebroadcast_permission_card(
+    state: &AppState,
+    channel_id: Uuid,
+    pending: &approval::PendingPermission,
+) {
+    let approval_seers = crate::gateway::ws::agent_bridge::allowed_seers(
+        state,
+        pending.bot_id,
+        channel_id,
+        crate::domain::bot_event_policy::EV_PERMISSION_REQUEST,
+    )
+    .await;
+    let wire = card_frame(channel_id, pending, "permission", &pending.content_data);
+    state
+        .fanout
+        .broadcast_channel_to_users(channel_id, wire, approval_seers)
+        .await;
+}
+
 // ── POST /channels/:cid/permissions/:request_id/resolve ─────────────────────
 
 #[derive(Deserialize)]
@@ -174,39 +229,24 @@ pub async fn resolve_permission(
         .and_then(Value::as_bool)
         == Some(true)
     {
-        let approval_seers = crate::gateway::ws::agent_bridge::allowed_seers(
-            &state,
-            pending.bot_id,
-            channel_id,
-            crate::domain::bot_event_policy::EV_PERMISSION_REQUEST,
-        )
-        .await;
-        let wire = WireFrame::channel(
-            channel_id,
-            "message",
-            json!({
-                "v": MESSAGE_SCHEMA_VERSION,
-                "msg_id": pending.msg_id,
-                "channel_id": channel_id,
-                "channel_seq": pending.channel_seq,
-                "sender_type": "bot",
-                "sender_id": pending.bot_id,
-                "content": pending.content,
-                "msg_type": "permission",
-                "is_partial": false,
-                "reply_to_msg_id": null,
-                "file_ids": [],
-                "mentions": [],
-                "files": [],
-                "content_data": pending.content_data,
-            }),
-        );
-        state
-            .fanout
-            .broadcast_channel_to_users(channel_id, wire, approval_seers)
-            .await;
-
+        rebroadcast_permission_card(&state, channel_id, &pending).await;
         return Err(AppError::Conflict("approval already resolved".into()));
+    }
+    // A server-enforced MCP approval (domain::mcp_approval) is answered only by
+    // the person whose task it is: neither the bot owner nor a delegate can
+    // approve a destructive call on someone else's behalf.
+    let mcp_approval = pending.content_data.get("kind").and_then(Value::as_str)
+        == Some(crate::domain::mcp_approval::KIND);
+    if mcp_approval
+        && pending
+            .content_data
+            .get("approver_user_id")
+            .and_then(Value::as_str)
+            != Some(uid.to_string().as_str())
+    {
+        return Err(AppError::Forbidden(
+            "only the person whose task this is can answer this approval".into(),
+        ));
     }
     // The operation_kind being approved (opaque ACP toolCall.kind) scopes which
     // delegates may resolve it; the owner may always resolve. Default '*'.
@@ -219,8 +259,9 @@ pub async fn resolve_permission(
     // Who may answer a permission_request = bot owner OR a per-kind approver
     // (approval_delegations) OR a RESPOND grant in the event-policy matrix. All three
     // compose; default is owner/approver-only (no loosening). See ACP_EVENT_TAXONOMY.md.
-    let may_respond =
-        approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind).await? || {
+    let may_respond = mcp_approval
+        || approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind).await?
+        || {
             let role = channel_role(&state, channel_id, uid).await?;
             crate::domain::acp_policy::allows(
                 &state.db,
@@ -262,37 +303,7 @@ pub async fn resolve_permission(
     {
         if let Ok(Some(latest)) = approval::find_pending_by_request_id(&state.db, &request_id).await
         {
-            let approval_seers = crate::gateway::ws::agent_bridge::allowed_seers(
-                &state,
-                latest.bot_id,
-                channel_id,
-                crate::domain::bot_event_policy::EV_PERMISSION_REQUEST,
-            )
-            .await;
-            let wire = WireFrame::channel(
-                channel_id,
-                "message",
-                json!({
-                    "v": MESSAGE_SCHEMA_VERSION,
-                    "msg_id": latest.msg_id,
-                    "channel_id": channel_id,
-                    "channel_seq": latest.channel_seq,
-                    "sender_type": "bot",
-                    "sender_id": latest.bot_id,
-                    "content": latest.content,
-                    "msg_type": "permission",
-                    "is_partial": false,
-                    "reply_to_msg_id": null,
-                    "file_ids": [],
-                    "mentions": [],
-                    "files": [],
-                    "content_data": latest.content_data,
-                }),
-            );
-            state
-                .fanout
-                .broadcast_channel_to_users(channel_id, wire, approval_seers)
-                .await;
+            rebroadcast_permission_card(&state, channel_id, &latest).await;
         }
         return Err(AppError::Conflict("approval already resolved".into()));
     }
@@ -389,7 +400,9 @@ pub async fn resolve_permission(
         &uid.to_string(),
         &now,
     );
-    let delivered = state.bot_locator.dispatch_task(pending.bot_id, frame).await;
+    // An MCP approval has no ACP request waiting on the connector: the gated
+    // call reads the card itself.
+    let delivered = !mcp_approval && state.bot_locator.dispatch_task(pending.bot_id, frame).await;
 
     // Broadcast the resolved card so every client clears the pending state.
     let mut content_data = pending.content_data.clone();
@@ -398,26 +411,7 @@ pub async fn resolve_permission(
             target.insert(k.clone(), v.clone());
         }
     }
-    let wire = WireFrame::channel(
-        channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": pending.msg_id,
-            "channel_id": channel_id,
-            "channel_seq": pending.channel_seq,
-            "sender_type": "bot",
-            "sender_id": pending.bot_id,
-            "content": pending.content,
-            "msg_type": "permission",
-            "is_partial": false,
-            "reply_to_msg_id": null,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "content_data": content_data,
-        }),
-    );
+    let wire = card_frame(channel_id, &pending, "permission", &content_data);
     state
         .fanout
         .broadcast_channel_to_users(channel_id, wire, approval_seers)
@@ -730,16 +724,17 @@ pub async fn ack_auth_required(
         approval::find_pending_of_type(&state.db, channel_id, &request_id, "auth_required")
             .await?
             .ok_or(AppError::NotFound)?;
-    if ensure_member(&state, channel_id, uid, &claims.role)
-        .await
-        .is_err()
-        && approval::bot_owner(&state.db, pending.bot_id).await? != Some(uid)
+    let is_owner = approval::bot_owner(&state.db, pending.bot_id).await? == Some(uid);
+    if !is_owner
+        && ensure_member(&state, channel_id, uid, &claims.role)
+            .await
+            .is_err()
     {
         return Err(AppError::Forbidden(
             "not authorized to acknowledge this bot's auth request".into(),
         ));
     }
-    if approval::bot_owner(&state.db, pending.bot_id).await? != Some(uid) {
+    if !is_owner {
         return Err(AppError::Forbidden(
             "only the bot owner can acknowledge agent auth".into(),
         ));
@@ -750,26 +745,7 @@ pub async fn ack_auth_required(
         .and_then(Value::as_bool)
         == Some(true)
     {
-        let wire = WireFrame::channel(
-            channel_id,
-            "message",
-            json!({
-                "v": MESSAGE_SCHEMA_VERSION,
-                "msg_id": pending.msg_id,
-                "channel_id": channel_id,
-                "channel_seq": pending.channel_seq,
-                "sender_type": "bot",
-                "sender_id": pending.bot_id,
-                "content": pending.content,
-                "msg_type": "auth_required",
-                "is_partial": false,
-                "reply_to_msg_id": null,
-                "file_ids": [],
-                "mentions": [],
-                "files": [],
-                "content_data": pending.content_data,
-            }),
-        );
+        let wire = card_frame(channel_id, &pending, "auth_required", &pending.content_data);
         state.fanout.broadcast_channel(channel_id, wire).await;
         return Err(AppError::Conflict("auth request already resolved".into()));
     }
@@ -817,26 +793,7 @@ pub async fn ack_auth_required(
             target.insert(k.clone(), v.clone());
         }
     }
-    let wire = WireFrame::channel(
-        channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": pending.msg_id,
-            "channel_id": channel_id,
-            "channel_seq": pending.channel_seq,
-            "sender_type": "bot",
-            "sender_id": pending.bot_id,
-            "content": pending.content,
-            "msg_type": "auth_required",
-            "is_partial": false,
-            "reply_to_msg_id": null,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "content_data": content_data,
-        }),
-    );
+    let wire = card_frame(channel_id, &pending, "auth_required", &content_data);
     state.fanout.broadcast_channel(channel_id, wire).await;
 
     Ok(Json(json!({
@@ -946,26 +903,7 @@ pub async fn resolve_elicitation(
         .and_then(Value::as_bool)
         == Some(true)
     {
-        let wire = WireFrame::channel(
-            channel_id,
-            "message",
-            json!({
-                "v": MESSAGE_SCHEMA_VERSION,
-                "msg_id": pending.msg_id,
-                "channel_id": channel_id,
-                "channel_seq": pending.channel_seq,
-                "sender_type": "bot",
-                "sender_id": pending.bot_id,
-                "content": pending.content,
-                "msg_type": "elicitation",
-                "is_partial": false,
-                "reply_to_msg_id": null,
-                "file_ids": [],
-                "mentions": [],
-                "files": [],
-                "content_data": pending.content_data,
-            }),
-        );
+        let wire = card_frame(channel_id, &pending, "elicitation", &pending.content_data);
         state.fanout.broadcast_channel(channel_id, wire).await;
         return Err(AppError::Conflict("elicitation already resolved".into()));
     }
@@ -1069,13 +1007,8 @@ pub async fn resolve_elicitation(
     if let (Value::Object(target), Value::Object(source)) = (&mut content_data, patch) {
         target.extend(source);
     }
-    state.fanout.broadcast_channel(channel_id, WireFrame::channel(channel_id, "message", json!({
-        "v": MESSAGE_SCHEMA_VERSION, "msg_id":pending.msg_id, "channel_id":channel_id,
-        "channel_seq":pending.channel_seq, "sender_type":"bot", "sender_id":pending.bot_id,
-        "content":pending.content, "msg_type":"elicitation", "is_partial":false,
-        "reply_to_msg_id":null, "file_ids":[], "mentions":[], "files":[],
-        "content_data":content_data,
-    }))).await;
+    let wire = card_frame(channel_id, &pending, "elicitation", &content_data);
+    state.fanout.broadcast_channel(channel_id, wire).await;
     Ok(Json(
         json!({"ok":true, "delivered":delivered, "action":action}),
     ))

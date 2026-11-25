@@ -1,5 +1,6 @@
 import { forwardRef, type SelectHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
+import { useFieldControl } from "./field-context";
 import { controlHeightClasses, controlSquareClasses, useControlSize, type ControlSize } from "./control-size";
 
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
@@ -14,6 +15,7 @@ export const Select = forwardRef<
   SelectProps
 >(({ controlSize, controlWidth = "fill", variant = "default", className, children, ...props }, ref) => {
   const size = useControlSize(controlSize);
+  const fieldProps = useFieldControl(props);
   return (
   <select
     ref={ref}
@@ -39,7 +41,7 @@ export const Select = forwardRef<
       "[&>option]:bg-panel [&>option]:text-content-primary",
       className
     )}
-    {...props}
+    {...fieldProps}
   >
     {children}
   </select>

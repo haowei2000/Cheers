@@ -21,20 +21,22 @@ struct AvatarView: View {
                     case .success(let image):
                         image.resizable().scaledToFill()
                     default:
-                        Text(Theme.initials(name))
-                            .font(.system(size: size * 0.36, weight: .semibold))
-                            .foregroundStyle(monochrome ? Theme.textSecondary : .white)
+                        initialsLabel
                     }
                 }
                 .clipShape(Circle())
             } else {
-                Text(Theme.initials(name))
-                    .font(.system(size: size * 0.36, weight: .semibold))
-                    .foregroundStyle(monochrome ? Theme.textSecondary : .white)
+                initialsLabel
             }
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
+    }
+
+    private var initialsLabel: some View {
+        Text(Theme.initials(name))
+            .font(.system(size: size * 0.36, weight: .semibold))
+            .foregroundStyle(monochrome ? Theme.textSecondary : .white)
     }
 }
 

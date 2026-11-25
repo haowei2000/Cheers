@@ -15,17 +15,27 @@ use crate::config::Config;
 /// Build an S3 client for the configured endpoint (force path-style for
 /// rustfs/minio, which do not support virtual-host-style buckets).
 pub fn build_client(config: &Config) -> Client {
-    let creds = Credentials::new(
-        config.s3_access_key.clone(),
-        config.s3_secret_key.clone(),
-        None,
-        None,
-        "cheers-static",
-    );
+    build_client_with_credentials(
+        &config.s3_endpoint,
+        &config.s3_region,
+        &config.s3_access_key,
+        &config.s3_secret_key,
+    )
+}
+
+/// Shared transport configuration for operator jobs that do not need gateway JWT
+/// or application settings. Credentials remain in memory and are never logged.
+pub fn build_client_with_credentials(
+    endpoint: &str,
+    region: &str,
+    access_key: &str,
+    secret_key: &str,
+) -> Client {
+    let creds = Credentials::new(access_key, secret_key, None, None, "cheers-static");
     let conf = aws_sdk_s3::config::Builder::new()
         .behavior_version(BehaviorVersion::latest())
-        .endpoint_url(config.s3_endpoint.clone())
-        .region(Region::new(config.s3_region.clone()))
+        .endpoint_url(endpoint)
+        .region(Region::new(region.to_owned()))
         .credentials_provider(creds)
         .force_path_style(true)
         .build();
@@ -64,6 +74,16 @@ pub async fn put_object(
         .key(key)
         .content_type(content_type)
         .body(ByteStream::from(bytes))
+        .send()
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_object(client: &Client, bucket: &str, key: &str) -> anyhow::Result<()> {
+    client
+        .delete_object()
+        .bucket(bucket)
+        .key(key)
         .send()
         .await?;
     Ok(())

@@ -8,7 +8,7 @@ import { Field } from "@/components/ui/field";
 import type { LensProps } from "../registry";
 import type { WorkbenchInteraction } from "../../interaction";
 import { formatLocator } from "../../../locator";
-import { a2uiPresentation, parseA2UIDocument, readBinding, setDataPath, type A2UIComponent, type A2UISurface } from "./document";
+import { a2uiPresentation, parseA2UIDocument, readBinding, setDataPath, validateFieldChecks, type A2UIComponent, type A2UISurface } from "./document";
 
 function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: LensProps; root: string }) {
   const prefix = useId();
@@ -24,6 +24,7 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
     return (node.component==="CheckBox"?typeof value==="boolean":typeof value==="string")?setDataPath(data,path,value):data;
   },surface.data),[inputs,surface.data,savedDraft.data]);
   const [feedback, setFeedback] = useState<{ error: boolean; text: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [executionId,setExecutionId]=useState<string>();
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
@@ -36,6 +37,12 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
     try {
       const path = (node.value as { path: string }).path;
       savedDraft.setData({...savedDraft.data,[path]:value});
+      setFieldErrors((prev) => {
+        if (!(node.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[node.id];
+        return next;
+      });
       setFeedback(null);
     } catch (error) {
       setFeedback({ error: true, text: error instanceof Error ? error.message : "The input could not be updated." });
@@ -44,6 +51,20 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
   const activate = async (node: A2UIComponent) => {
     if (busy.current) return;
     const event = node.action!.event;
+    if (event.name === "cheers.compose" || event.name === "cheers.request" || event.name === "cheers.execute") {
+      const nextErrors: Record<string, string> = {};
+      for (const field of inputs) {
+        if (field.component !== "TextField" || !field.checks?.length) continue;
+        const err = validateFieldChecks(text(field.value), field.checks);
+        if (err) nextErrors[field.id] = err;
+      }
+      if (Object.keys(nextErrors).length > 0) {
+        setFieldErrors(nextErrors);
+        setFeedback({ error: true, text: Object.values(nextErrors)[0] });
+        return;
+      }
+      setFieldErrors({});
+    }
     const context = Object.fromEntries(Object.entries(event.context).map(([key, value]) => [key, readBinding(value, draft)]));
     let intent: WorkbenchInteraction;
     if (event.name === "cheers.open" || event.name === "cheers.openNative") {
@@ -90,26 +111,31 @@ function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: Lens
   };
   const render = (id: string): ReactNode => {
     const node = surface.components.get(id)!;
+    const a11yLabel = node.accessibility?.label ? text(node.accessibility.label) : undefined;
+    const a11yDesc = node.accessibility?.description ? text(node.accessibility.description) : undefined;
     let content: ReactNode;
     if (node.component === "Column" || node.component === "Row") {
-      content = <div className={`${node.component === "Row" ? "flex min-w-0 flex-wrap items-start" : "flex min-w-0 flex-col"} ${spacing}`}>{node.children!.map(render)}</div>;
+      content = <div aria-label={a11yLabel || undefined} className={`${node.component === "Row" ? "flex min-w-0 flex-wrap items-start" : "flex min-w-0 flex-col"} ${spacing}`}>{node.children!.map(render)}</div>;
     } else if (node.component === "Text") {
-      content = <p className={host.presentation === "minimal" ? "line-clamp-3 whitespace-pre-wrap break-words font-reading text-regular leading-reading text-content-primary" : "whitespace-pre-wrap break-words font-reading text-regular leading-reading text-content-primary"}>{text(node.text)}</p>;
+      content = <p aria-label={a11yLabel || undefined} className={host.presentation === "minimal" ? "line-clamp-3 whitespace-pre-wrap break-words font-reading text-regular leading-reading text-content-primary" : "whitespace-pre-wrap break-words font-reading text-regular leading-reading text-content-primary"}>{text(node.text)}</p>;
     } else if (node.component === "TextField") {
       const inputId = `${prefix}-${node.id}`;
-      content = <Field htmlFor={inputId} label={text(node.label) || "Text input"} className="min-w-0">
-        <Input variant="plain" id={inputId} controlSize={controlSize} disabled={pending} value={text(node.value)} onChange={(event) => change(node, event.target.value)} />
+      const fieldError = fieldErrors[node.id];
+      const placeholder = node.placeholder ? text(node.placeholder) : undefined;
+      content = <Field htmlFor={inputId} label={text(node.label) || "Text input"} hint={a11yDesc || undefined} error={fieldError} className="min-w-0">
+        <Input variant="plain" id={inputId} controlSize={controlSize} disabled={pending} error={Boolean(fieldError)} placeholder={placeholder || undefined} aria-label={a11yLabel || undefined} value={text(node.value)} onChange={(event) => change(node, event.target.value)} />
       </Field>;
     } else if (node.component === "CheckBox") {
-      content = <CheckboxField controlSize={controlSize} disabled={pending} label={text(node.label) || "Option"} checked={readBinding(node.value, draft) === true} onChange={(event) => change(node, event.target.checked)} />;
+      content = <CheckboxField controlSize={controlSize} disabled={pending} label={text(node.label) || "Option"} aria-label={a11yLabel || undefined} checked={readBinding(node.value, draft) === true} onChange={(event) => change(node, event.target.checked)} />;
     } else {
       const label = text(node.label);
       const name = node.action!.event.name;
       const kind = name.slice("cheers.".length) as WorkbenchInteraction["kind"];
       const available = host.onInteraction?.capabilities.includes(kind);
+      const accessibleLabel = a11yLabel || (a11yDesc ? `${label || "Card action"} — ${a11yDesc}` : label || "Card action");
       content = <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="break-words font-reading text-regular leading-reading text-content-secondary">{label}</span>
-        <ActionButton context="resourceCard" action={kind === "open" || kind === "openNative" ? "open" : "request"} controlSize={controlSize} accessibleLabel={label || "Card action"} disabled={!available || pending} loading={pending} onClick={() => void activate(node)} />
+        <ActionButton context="resourceCard" action={kind === "open" || kind === "openNative" ? "open" : "request"} controlSize={controlSize} accessibleLabel={accessibleLabel} disabled={!available || pending} loading={pending} onClick={() => void activate(node)} />
         {!available && <span className="text-body-secondary">This action is unavailable on this client.</span>}
       </div>;
     }

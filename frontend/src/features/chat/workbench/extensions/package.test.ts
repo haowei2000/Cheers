@@ -46,6 +46,14 @@ const base = {
 };
 
 describe("parseExtensionPackage", () => {
+  it("accepts an explicit suffix and rejects path/glob rules in suffix", async () => {
+    for (const suffix of [".gantt.yaml", ".notes.md"]) {
+      const bytes = archive({ ...base, contributes: { renderers: [{ id: "r", title: "R", entry: "renderers/r.js", match: { suffix } }] } }, { "renderers/r.js": "console.log('ready')" });
+      await expect(parseExtensionPackage(bytes, "personal")).resolves.toMatchObject({ rendererExtension: { manifest: { renderers: [{ match: { suffix } }] } } });
+    }
+    const bytes = archive({ ...base, contributes: { renderers: [{ id: "r", title: "R", entry: "renderers/r.js", match: { suffix: "folder/*.yaml" } }] } }, { "renderers/r.js": "console.log('ready')" });
+    await expect(parseExtensionPackage(bytes, "personal")).rejects.toThrow("suffix");
+  });
   it("parses the same deterministic fixture as the SDK and server", async () => {
     const path = fileURLToPath(new URL("../../../../../../fixtures/workbench/scene-renderer.cheers-extension", import.meta.url));
     const parsed = await parseExtensionPackage(new Uint8Array(readFileSync(path)), "personal");
