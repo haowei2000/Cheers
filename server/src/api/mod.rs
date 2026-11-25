@@ -33,6 +33,7 @@ pub mod remote_executions;
 pub mod resources;
 pub mod runtime_settings;
 pub mod scheduled_messages;
+pub mod session_attach;
 pub mod session_control;
 pub mod stt_settings;
 pub mod task_claims;

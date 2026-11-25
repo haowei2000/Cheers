@@ -63,7 +63,7 @@ def write(session, channel, path, document):
 
 def demo_documents(contract):
     report = copy.deepcopy(contract["request_example"])
-    nodes = report["messages"][1]["updateComponents"]["components"]
+    nodes = report["messages"][0]["createSurface"]["components"]
     nodes[1]["text"] = "报告申请 · 本地演示"
     nodes[2]["text"] = "这是确定性 ACP 演示 Bot。提交后会更新同一份资源，不调用外部模型。"
     nodes[3]["label"] = "报告主题"
@@ -72,22 +72,21 @@ def demo_documents(contract):
     nodes[0]["children"].insert(0, "status")
     next(n for n in nodes if n["id"] == "summary")["children"].insert(0, "status")
     nodes.append(text_node("status", "状态：等待提交"))
-    report["messages"][2]["updateDataModel"]["value"]["report"]["topic"] = "智能卡片与统一资源链路"
+    report["messages"][0]["createSurface"]["dataModel"]["report"]["topic"] = "智能卡片与统一资源链路"
 
     complex_form = copy.deepcopy(report)
     complex_form.pop("views")
-    components = complex_form["messages"][1]["updateComponents"]["components"]
+    components = complex_form["messages"][0]["createSurface"]["components"]
     components[1]["text"] = "复杂表单 · 请在回复内展开"
     for at, label in enumerate(["目标读者", "输出格式", "交付日期", "补充说明"]):
         identity = f"extra-{at}"
-        components.append({"id": identity, "component": "TextField", "label": label, "value": {"path": f"/report/{identity}"}})
+        components.append({"id": identity, "component": "TextField", "label": label, "value": {"@path": f"/report/{identity}"}})
         components[0]["children"].insert(-1, identity)
-        components[6]["action"]["event"]["context"]["payload"][identity] = {"path": f"/report/{identity}"}
-        complex_form["messages"][2]["updateDataModel"]["value"]["report"][identity] = "待填写"
+        components[6]["action"]["event"]["context"]["payload"][identity] = {"@path": f"/report/{identity}"}
+        complex_form["messages"][0]["createSurface"]["dataModel"]["report"][identity] = "待填写"
 
-    native = {"a2ui": "v0.9.1", "messages": [
-        {"version": "v0.9.1", "createSurface": {"surfaceId": "native", "catalogId": contract["catalog_id"]}},
-        {"version": "v0.9.1", "updateComponents": {"surfaceId": "native", "components": [
+    native = {"a2ui": contract["version"], "messages": [
+        {"version": contract["version"], "createSurface": {"surfaceId": "native", "catalogId": contract["catalog_id"], "components": [
             {"id": "root", "component": "Column", "children": ["note", "open"]},
             text_node("note", "在 Finder 打开演示文档的下载副本。外部修改不会自动回写。"),
             {"id": "open", "component": "Button", "label": "在 Finder 打开文档副本",
@@ -113,10 +112,10 @@ def prompt(session_id, params):
             message = "资源版本已变化，请刷新卡片后重试。"
         else:
             document = source.get("data") or json.loads(source["content"])
-            for node in document["messages"][1]["updateComponents"]["components"]:
+            for node in document["messages"][0]["createSurface"]["components"]:
                 if node["id"] == "status":
                     node["text"] = f"状态：演示处理完成 · 主题：{event['input'].get('topic', '')}"
-            document["messages"][2]["updateDataModel"]["value"]["report"].update(event["input"])
+            document["messages"][0]["createSurface"]["dataModel"]["report"].update(event["input"])
             # Revalidate sourceVersion atomically in the same authorized write.
             tool(session, "desk_write", {"channel_id": channel, "path": path,
                 "content": json.dumps(document, ensure_ascii=False, indent=2), "if_version": event["sourceVersion"]})
@@ -125,16 +124,14 @@ def prompt(session_id, params):
     else:
         contract = tool(session, "read_ui_contract", {})
         documents = demo_documents(contract)
-        bot = contract["request_example"]["messages"][1]["updateComponents"]["components"][6]["action"]["event"]["context"]["botId"]
-        documents["demo/terminal.a2ui.json"] = {"a2ui":"v0.9.1","messages":[
-            {"version":"v0.9.1","createSurface":{"surfaceId":"terminal","catalogId":contract["catalog_id"]}},
-            {"version":"v0.9.1","updateComponents":{"surfaceId":"terminal","components":[
-                {"id":"root","component":"Column","children":["note","command","run"]},
-                text_node("note","真实远程终端 · 需确认目标设备。命令使用该设备账户权限。"),
-                {"id":"command","component":"TextField","label":"命令（可跨设备恢复草稿）","value":{"path":"/command"}},
-                {"id":"run","component":"Button","label":"运行终端命令","action":{"event":{"name":"cheers.execute","context":{"actionId":"terminal.run","botId":bot,"payload":{"action":"terminal.start","path":"","command":{"path":"/command"}}}}}}
-            ]}},
-            {"version":"v0.9.1","updateDataModel":{"surfaceId":"terminal","path":"/","value":{"command":"printf 'Cheers terminal ready\\n'"}}}
+        bot = contract["request_example"]["messages"][0]["createSurface"]["components"][6]["action"]["event"]["context"]["botId"]
+        documents["demo/terminal.a2ui.json"] = {"a2ui": contract["version"], "messages": [
+            {"version": contract["version"], "createSurface": {"surfaceId": "terminal", "catalogId": contract["catalog_id"], "components": [
+                {"id": "root", "component": "Column", "children": ["note", "command", "run"]},
+                text_node("note", "真实远程终端 · 需确认目标设备。命令使用该设备账户权限。"),
+                {"id": "command", "component": "TextField", "label": "命令（可跨设备恢复草稿）", "value": {"@path": "/command"}},
+                {"id": "run", "component": "Button", "label": "运行终端命令", "action": {"event": {"name": "cheers.execute", "context": {"actionId": "terminal.run", "botId": bot, "payload": {"action": "terminal.start", "path": "", "command": {"@path": "/command"}}}}}}
+            ], "dataModel": {"command": "printf 'Cheers terminal ready\\n'"}}}
         ]}
         identities = {path:write(session, channel, path, document)["uri"] for path,document in documents.items()}
         more = "其它" in html.unescape(content)

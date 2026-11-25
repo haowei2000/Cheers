@@ -175,6 +175,8 @@ pub async fn dispatch_with_effects(state: &AppState, principal: Principal, frame
             | "channel.artifacts.create"
             | "channel.artifacts.update"
             | "channel.artifacts.patch"
+            | "channel.artifacts.delete"
+            | "channel.artifacts.rename"
             | "channel.artifacts.deliver"
             | "channel.artifacts.upload_finish"
             | "channel.files.create",

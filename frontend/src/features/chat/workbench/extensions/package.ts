@@ -48,7 +48,7 @@ export interface RendererContribution {
   title: string;
   entry: string;
   style?: string;
-  match?: string[];
+  match?: string[] | { suffix: string };
 }
 
 export type PanelSourceContribution =
@@ -423,8 +423,16 @@ function parseManifest(bytes: Uint8Array): ExtensionManifest {
     rendererIds.add(renderer.id);
     if (renderer.entry !== `renderers/${renderer.id}.js`) throw new Error(`Non-canonical renderer path: ${renderer.id}`);
     if (renderer.style && renderer.style !== `renderers/${renderer.id}.css`) throw new Error(`Non-canonical renderer style: ${renderer.id}`);
-    if (renderer.match !== undefined && (!Array.isArray(renderer.match) || renderer.match.some((glob) => typeof glob !== "string" || !glob.trim()))) {
-      throw new Error(`Invalid renderer match: ${renderer.id}`);
+    if (renderer.match !== undefined) {
+      if (Array.isArray(renderer.match)) {
+        if (renderer.match.some((glob) => typeof glob !== "string" || !glob.trim())) throw new Error(`Invalid renderer match: ${renderer.id}`);
+      } else {
+        requireObject(renderer.match, "renderer match");
+        requireKnownKeys(renderer.match, ["suffix"], "renderer match");
+        if (typeof renderer.match.suffix !== "string" || !/^\.[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/i.test(renderer.match.suffix)) {
+          throw new Error(`Invalid renderer suffix: ${renderer.id}`);
+        }
+      }
     }
   }
   const automationIds = new Set<string>();

@@ -1,3 +1,4 @@
+import { AsyncContent } from "@/components/ui/async-content";
 import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import toast from "react-hot-toast";
@@ -11,10 +12,12 @@ import { ShieldAlert } from "lucide-react";
 export function AdminReports() {
   const [reports, setReports] = useState<ContentReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const reload = async () => {
-    try { setReports(await listReports()); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't load reports"); }
+    setLoading(true);
+    try { setReports(await listReports()); setLoadError(null); }
+    catch (error) { setLoadError(error instanceof Error ? error.message : "Couldn't load reports"); }
     finally { setLoading(false); }
   };
   useEffect(() => { void reload(); }, []);
@@ -32,8 +35,8 @@ export function AdminReports() {
         title="Reported content"
         description="Review user and message reports. IDs remain available for audit without exposing unrelated channel content."
       >
+        <AsyncContent loading={loading} error={loadError} onRetry={() => void reload()}>
         <ItemList presentationLevel="medium" controlSize="regular">
-          {loading && <OperationsItem title="Loading reports…" disabled />}
           {!loading && reports.length === 0 && <EmptyState icon={ShieldAlert} title="No reports" className="py-4" />}
           {reports.map((report) => (
           <OperationsItem key={report.report_id}
@@ -49,6 +52,7 @@ export function AdminReports() {
         />
           ))}
         </ItemList>
+        </AsyncContent>
       </SettingsCard>
     </SettingsSection>
   );

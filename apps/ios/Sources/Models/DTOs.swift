@@ -298,11 +298,13 @@ struct AuthCapabilities: Decodable {
         let password: Bool?
         let apple: Bool?
         let google: Bool?
+        let github: Bool?
     }
 
     let passwordLogin: Bool
     let signInWithApple: Bool
     let signInWithGoogle: Bool
+    let signInWithGitHub: Bool
     let appleClientId: String?
     let selfServiceRegistration: Bool
     let passkey: Bool
@@ -328,6 +330,7 @@ struct AuthCapabilities: Decodable {
             ?? providers?.apple
             ?? false
         signInWithGoogle = providers?.google ?? false
+        signInWithGitHub = providers?.github ?? false
         appleClientId = try values.decodeIfPresent(String.self, forKey: .appleClientId)
         selfServiceRegistration = try values.decodeIfPresent(Bool.self, forKey: .selfServiceRegistration) ?? false
         passkey = try values.decodeIfPresent(Bool.self, forKey: .passkey) ?? false
@@ -732,7 +735,7 @@ struct CreateReportRequest: Encodable {
 }
 
 struct ChangePasswordRequest: Encodable {
-    let currentPassword: String
+    let currentPassword: String?
     let newPassword: String
     let twoFactorCode: String?
 
@@ -1400,6 +1403,31 @@ struct MessageFileRef: Codable, Hashable, Identifiable {
         case downloadUrl = "download_url"
         case summary
         case transcriptStatus = "transcript_status"
+    }
+}
+
+/// An attachment the agent produced but the connector could not deliver
+/// (`content_data.attachment_errors`, written by the gateway on Done).
+struct AttachmentDeliveryError: Hashable {
+    let filename: String
+    let code: String
+    let message: String
+}
+
+extension MessageDto {
+    /// Undelivered reply attachments, shown as missing instead of omitted.
+    /// Only a finished bot reply carries them; the gateway caps the list at 8.
+    var attachmentErrors: [AttachmentDeliveryError] {
+        guard senderType == "bot", isPartial != true,
+              let raw = contentData?["attachment_errors"]?.arrayValue else { return [] }
+        return raw.prefix(8).compactMap { entry in
+            guard let object = entry.objectValue else { return nil }
+            return AttachmentDeliveryError(
+                filename: object["filename"]?.stringValue ?? "",
+                code: object["code"]?.stringValue ?? "",
+                message: object["message"]?.stringValue ?? ""
+            )
+        }
     }
 }
 
@@ -2406,7 +2434,9 @@ struct DmCreateRequest: Encodable {
 // MARK: - Errors (server/src/errors.rs → { "detail": ... })
 
 struct ApiErrorBody: Decodable {
-    let detail: String
+    let detail: String?
+    let message: String?
+    let code: String?
 }
 
 // MARK: - ViewBoard resource payloads (server/src/resource/*.rs)
@@ -3034,5 +3064,17 @@ extension JSONValue {
             }
         }
         return .object(result)
+    }
+}
+
+/// Session-bound confirmation shared by credential and provider changes.
+struct IdentityConfirmationFlow: Decodable {
+    let transactionId: String
+    let status: String
+    let methods: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case transactionId = "transaction_id"
+        case status, methods
     }
 }

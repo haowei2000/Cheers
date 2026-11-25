@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FsClient } from "./fsClient";
 import { errMsg } from "./jsonFile";
-import { seedManifest, viewOf, type TemplateManifest } from "./manifest";
+import { seedManifest, type TemplateManifest } from "./manifest";
 import { listOfficialScenes } from "./extensions/api";
 import { parsePersonalExtension } from "./extensions/parseOffThread";
 import { isPersonalExtensionDisabled } from "./extensions/runtime";
@@ -26,14 +26,6 @@ export interface UseWorkbenchDrawerStateOptions {
   filesTick?: number;
 }
 
-function readLocalBindings(key: string): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? "{}");
-  } catch {
-    return {};
-  }
-}
-
 export function useWorkbenchDrawerState({
   open,
   channelId,
@@ -49,9 +41,6 @@ export function useWorkbenchDrawerState({
   const [personalRendererExtensions, setPersonalRendererExtensions] = useState<RendererExtension[]>([]);
   const [sessionRendererExtensions, setSessionRendererExtensions] = useState<RendererExtension[]>([]);
   const [extensionsRevision, setExtensionsRevision] = useState(0);
-
-  const localBindingKey = `cheers.workbench.personal-bindings.${channelId}`;
-  const [localBindings, setLocalBindings] = useState<Record<string, string>>(() => readLocalBindings(localBindingKey));
 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -133,10 +122,6 @@ export function useWorkbenchDrawerState({
     };
   }, [open, fs, channelId, extensionsRevision]);
 
-  useEffect(() => {
-    setLocalBindings(readLocalBindings(localBindingKey));
-  }, [localBindingKey]);
-
   const mutateCfg = useCallback(
     async (mutate: (document: WorkbenchDocument) => void | false) => {
       const current = captureScope();
@@ -163,30 +148,6 @@ export function useWorkbenchDrawerState({
     [mutateCfg]
   );
 
-  const bindings = useMemo(
-    () => ({ ...(cfg.bindings ?? {}), ...localBindings }),
-    [cfg.bindings, localBindings]
-  );
-
-  const setBinding = useCallback(
-    (path: string, rendererId: string | null) => {
-      const local = { ...localBindings };
-      if (rendererId?.startsWith("personal:")) local[path] = rendererId;
-      else delete local[path];
-      setLocalBindings(local);
-      localStorage.setItem(localBindingKey, JSON.stringify(local));
-      void mutateCfg((document) => {
-        const shared = { ...(parseCfg(JSON.stringify(document)).bindings ?? {}) };
-        if (rendererId?.startsWith("builtin:")) shared[path] = rendererId;
-        else delete shared[path];
-        document.bindings = shared;
-      }).catch(() => {});
-    },
-    [localBindings, localBindingKey, mutateCfg]
-  );
-
-  const configs = useMemo(() => cfg.configs ?? {}, [cfg.configs]);
-
   const activate = useCallback(
     async (manifest: TemplateManifest): Promise<boolean> => {
       const current = captureScope();
@@ -195,14 +156,6 @@ export function useWorkbenchDrawerState({
         await seedManifest(fs, manifest);
         await mutateCfg((document) => {
           const base = parseCfg(JSON.stringify(document));
-          const nextBindings = { ...(base.bindings ?? {}) };
-          const nextConfigs = { ...(base.configs ?? {}) };
-          for (const item of manifest.items) {
-            const path = item.source.path;
-            const view = viewOf(item);
-            if (!view.startsWith("personal:") && !nextBindings[path] && view !== "auto") nextBindings[path] = view;
-            if (item.config !== undefined && nextConfigs[path] === undefined) nextConfigs[path] = item.config;
-          }
           const sceneState: WorkbenchSceneState = {
             version: 1,
             order: [...(base.scene_state?.order ?? []).filter((id) => id !== manifest.id), manifest.id],
@@ -212,20 +165,9 @@ export function useWorkbenchDrawerState({
               [manifest.id]: manifest.items.map((item) => item.source.path),
             },
           };
-          Object.assign(document, { environment: manifest.id, bindings: nextBindings, configs: nextConfigs, scene_state: sceneState });
+          Object.assign(document, { environment: manifest.id, scene_state: sceneState });
           if (manifest.pin?.length) document.pinned = [...new Set([...(base.pinned ?? []), ...manifest.pin])];
         });
-        {
-          // A channel switch must not copy the new channel's state into this
-          // transaction's device-local bindings or apply its focus to that view.
-          const next: Record<string, string> = JSON.parse(localStorage.getItem(localBindingKey) ?? "{}");
-          for (const item of manifest.items) {
-            const view = viewOf(item);
-            if (view.startsWith("personal:") && !next[item.source.path]) next[item.source.path] = view;
-          }
-          localStorage.setItem(localBindingKey, JSON.stringify(next));
-          if (current()) setLocalBindings(next);
-        }
         if (current()) setFocus(manifest.items[0]?.source.path ?? null);
         return current();
       } catch (e) {
@@ -235,7 +177,7 @@ export function useWorkbenchDrawerState({
         if (current()) setBusy(false);
       }
     },
-    [fs, mutateCfg, localBindingKey, captureScope]
+    [fs, mutateCfg, captureScope]
   );
 
   const addTab = useCallback(
@@ -287,9 +229,6 @@ export function useWorkbenchDrawerState({
     focus,
     pinned,
     togglePin,
-    bindings,
-    setBinding,
-    configs,
     activate,
     addTab,
     allEnvs,

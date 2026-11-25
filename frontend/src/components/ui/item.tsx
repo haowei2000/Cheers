@@ -1,6 +1,7 @@
 import { HelpLabel } from "./help-text";
 import { useNearbyContentActions } from "./content-action-scope";
 import { ButtonGroup } from "./button-group";
+import { useId } from "react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { selectedClasses } from "./selection";
@@ -86,6 +87,9 @@ export function ItemRow({
 }: ItemRowProps) {
   const level = usePresentationLevel(presentationLevel);
   const size = useControlSize(controlSize);
+  const subtitleId = useId();
+  const describeSubtitle = level === "medium" && typeof subtitle === "string" && Boolean(subtitle);
+  const describedBy = [buttonProps["aria-describedby"], describeSubtitle ? subtitleId : undefined].filter(Boolean).join(" ") || undefined;
   const content = (
     <>
       {leading && <span className="flex shrink-0 items-center">{leading}</span>}
@@ -97,9 +101,10 @@ export function ItemRow({
           {criticalStatus}
           {level !== "minimal" && status}
         </span>
-        {level !== "minimal" && subtitle && (
+        {level === "max" && subtitle && (
           <span className="mt-1 block truncate text-caption">{subtitle}</span>
         )}
+        {describeSubtitle && <span id={subtitleId} className="sr-only" aria-hidden="true">{subtitle}</span>}
         {level === "max" && metadata && (
           <span className="mt-1 block truncate text-caption">{metadata}</span>
         )}
@@ -144,6 +149,7 @@ export function ItemRow({
         onClick={onClick}
         disabled={disabled}
         {...buttonProps}
+        aria-describedby={describedBy}
       >
         {content}
       </button>
@@ -157,6 +163,8 @@ export function ItemRow({
       data-presentation-level={level}
       data-control-size={size}
       className={classes}
+      aria-label={buttonProps["aria-label"]}
+      aria-describedby={describedBy}
     >
       {content}
     </div>

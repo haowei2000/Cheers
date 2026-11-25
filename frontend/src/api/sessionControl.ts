@@ -52,6 +52,47 @@ export async function createChannelBotSession(
   });
 }
 
+/** Where a pasted session reference was found (docs/arch/SESSION_MODEL.md, attach). */
+export interface SessionReferenceMatch {
+  bot_id: string;
+  username: string;
+  display_name: string | null;
+  host_id: string | null;
+  device_name: string | null;
+  session: {
+    session_id: string;
+    cwd: string;
+    title: string | null;
+    updated_at: string | null;
+    /** False when the host's local policy would refuse to load in this folder. */
+    cwd_allowed: boolean;
+    cwd_error: string | null;
+  };
+}
+
+/** Look a pasted reference (e.g. `codex://threads/<id>`) up on the caller's bots. */
+export async function resolveSessionReference(
+  channelId: string,
+  reference: string
+): Promise<{ matches: SessionReferenceMatch[] }> {
+  return apiJson(`/channels/${channelId}/sessions/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ ref: reference }),
+  });
+}
+
+/** Bind the referenced Agent session to a new "other" session in this channel. */
+export async function attachSessionReference(
+  channelId: string,
+  botId: string,
+  reference: string
+): Promise<{ session_id: string; title: string | null; cwd: string }> {
+  return apiJson(`/channels/${channelId}/bots/${botId}/sessions/attach`, {
+    method: "POST",
+    body: JSON.stringify({ ref: reference }),
+  });
+}
+
 /**
  * Promote a session to the channel's PRIMARY for its bot — the session
  * Auto/mention messages route to. The demoted session stays addressable as an

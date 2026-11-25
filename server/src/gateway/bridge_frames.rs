@@ -172,6 +172,40 @@ pub(crate) fn send_ack_err(client_msg_id: &str, code: &str, error: &str) -> Valu
     })
 }
 
+/// Ack a stored `file_upload`. `file` is the `channel.files.create` result.
+pub(crate) fn file_upload_ack_ok(client_file_id: &str, file: &Value) -> Value {
+    let field = |key: &str| file.get(key).and_then(Value::as_str).map(str::to_string);
+    frame_value(&proto::DataInbound::FileUploadAck {
+        v: BRIDGE_PROTOCOL_VERSION,
+        client_file_id: Some(client_file_id.to_string()),
+        ok: true,
+        file_id: field("file_id"),
+        filename: field("filename"),
+        content_type: field("content_type"),
+        size_bytes: file.get("size_bytes").and_then(Value::as_u64),
+        preview_url: None,
+        download_url: field("download_url"),
+        error: None,
+        code: None,
+    })
+}
+
+pub(crate) fn file_upload_ack_err(client_file_id: Option<&str>, code: &str, error: &str) -> Value {
+    frame_value(&proto::DataInbound::FileUploadAck {
+        v: BRIDGE_PROTOCOL_VERSION,
+        client_file_id: client_file_id.map(str::to_string),
+        ok: false,
+        file_id: None,
+        filename: None,
+        content_type: None,
+        size_bytes: None,
+        preview_url: None,
+        download_url: None,
+        error: Some(error.to_string()),
+        code: Some(code.to_string()),
+    })
+}
+
 pub(crate) fn terminal_ack_ok(client_msg_id: &str, msg_id: Uuid) -> Value {
     frame_value(&proto::DataInbound::TerminalAck {
         v: BRIDGE_PROTOCOL_VERSION,
@@ -240,6 +274,32 @@ pub(crate) fn cancel_frame(placeholder_msg_id: Uuid, reason: &str) -> Value {
     frame_value(&proto::ControlInbound::Cancel {
         msg_id: placeholder_msg_id.to_string(),
         reason: Some(reason.to_string()),
+    })
+}
+
+/// Session lifecycle control (`attach`, `terminate`, …), answered by a
+/// `runtime_session_control_ack` carrying the same `request_id`.
+pub(crate) fn runtime_session_control_frame(
+    request_id: &str,
+    action: &str,
+    session: proto::RuntimeSessionControlSession,
+    reason: Option<&str>,
+) -> Value {
+    frame_value(&proto::ControlInbound::RuntimeSessionControl {
+        v: BRIDGE_PROTOCOL_VERSION,
+        request_id: request_id.to_string(),
+        action: action.to_string(),
+        session,
+        runtime: proto::RuntimeDescriptor {
+            protocol: "acp".to_string(),
+            name: None,
+            version: None,
+            provider_session_id: None,
+            config: None,
+            extra: Default::default(),
+        },
+        reason: reason.map(str::to_string),
+        deadline_ms: None,
     })
 }
 
@@ -363,6 +423,7 @@ pub(crate) struct WorkspaceReqExtra {
     commit: Option<String>,
     commit_path: Option<String>,
     watch_id: Option<String>,
+    session_ref: Option<proto::session_ref::SessionRef>,
 }
 
 /// Parse the caller-supplied op-specific fields. `Null` (the documented "this
@@ -402,6 +463,7 @@ pub(crate) fn workspace_req_frame(
         commit: extra.commit,
         commit_path: extra.commit_path,
         watch_id: extra.watch_id,
+        session_ref: extra.session_ref,
     })
 }
 
@@ -687,6 +749,33 @@ mod tests {
     }
 
     #[test]
+    fn runtime_session_control_attach_matches_fixture() {
+        let session_id = "eeeeeeee-ffff-4000-8111-222222222222";
+        let frame = runtime_session_control_frame(
+            "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+            "attach",
+            proto::RuntimeSessionControlSession {
+                id: session_id.into(),
+                provider_session_key: format!("cheers:session:{session_id}"),
+                primary_scope_type: Some("channel".into()),
+                primary_scope_id: Some("77777777-8888-4999-8aaa-bbbbbbbbbbbb".into()),
+                task_scope_id: None,
+                cwd: Some("/workspace".into()),
+                additional_dirs: vec![],
+                session_config: None,
+                provider_session_id: Some("01a1422e-d5e6-7e10-be3b-040fa49834a4".into()),
+                extra: Default::default(),
+            },
+            None,
+        );
+        assert_matches_fixture(
+            &frame,
+            "control/to_connector/runtime_session_control_attach.json",
+            &[],
+        );
+    }
+
+    #[test]
     fn config_option_set_matches_fixture() {
         let frame = config_option_set_frame(
             "99999999-aaaa-4bbb-8ccc-dddddddddddd",
@@ -791,5 +880,31 @@ mod tests {
             WorkspaceReqExtra::default(),
         );
         assert_matches_fixture(&frame, "data/to_connector/workspace_req_watch.json", &[]);
+    }
+
+    #[test]
+    fn workspace_req_session_resolve_matches_fixture() {
+        let reference = proto::session_ref::parse_session_ref(
+            "codex://threads/01a1422e-d5e6-7e10-be3b-040fa49834a4",
+            None,
+        )
+        .unwrap();
+        let frame = workspace_req_frame(
+            "req-5",
+            "session_resolve",
+            "",
+            None,
+            None,
+            &[],
+            WorkspaceReqExtra {
+                session_ref: Some(reference),
+                ..Default::default()
+            },
+        );
+        assert_matches_fixture(
+            &frame,
+            "data/to_connector/workspace_req_session_resolve.json",
+            &[],
+        );
     }
 }

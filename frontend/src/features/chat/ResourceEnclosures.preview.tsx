@@ -14,15 +14,13 @@ import "@/index.css";
 const documents:Record<string,string>={
   "letter/notes.md":"## A note on the next release\n\nThe resource chain is ready for review. This enclosure keeps the details close to the letter, while leaving the conversation easy to read.\n\n- Global links preserve the original resource.\n- Your draft follows you across devices.\n- Device actions wait for your approval.",
   "letter/report.a2ui.json":JSON.stringify(example),
-  "letter/terminal.a2ui.json":JSON.stringify({a2ui:"v0.9.1",messages:[
-    {version:"v0.9.1",createSurface:{surfaceId:"terminal",catalogId:"urn:cheers:a2ui:catalog:v1"}},
-    {version:"v0.9.1",updateComponents:{surfaceId:"terminal",components:[
+  "letter/terminal.a2ui.json":JSON.stringify({a2ui:"1.0",messages:[
+    {version:"1.0",createSurface:{surfaceId:"terminal",catalogId:"urn:cheers:a2ui:catalog:v2",components:[
       {id:"root",component:"Column",children:["note","command","review"]},
       {id:"note",component:"Text",text:"A command for the selected device. Review the draft before sending."},
-      {id:"command",component:"TextField",label:"Command",value:{path:"/command"}},
-      {id:"review",component:"Button",label:"Prepare a terminal request",action:{event:{name:"cheers.compose",context:{actionId:"terminal.review",payload:{command:{path:"/command"}}}}}}
-    ]}},
-    {version:"v0.9.1",updateDataModel:{surfaceId:"terminal",path:"/",value:{command:"printf 'Ready for review\\n'"}}}
+      {id:"command",component:"TextField",label:"Command",placeholder:"Enter a shell command",value:{"@path":"/command"}},
+      {id:"review",component:"Button",label:"Prepare a terminal request",action:{event:{name:"cheers.compose",context:{actionId:"terminal.review",payload:{command:{"@path":"/command"}}}}}}
+    ],dataModel:{command:"printf 'Ready for review\\n'"}}}
   ]}),
   "letter/canvas.tsx":"export default function Note(){return <article style={{padding:16,fontFamily:'Georgia,serif'}}><h3 style={{fontSize:16}}>A small interactive enclosure</h3><p>Canvas keeps its expressive content inside the same letter attachment.</p><button onClick={e=>e.currentTarget.textContent='Reviewed'}>Review note</button></article>}",
 };

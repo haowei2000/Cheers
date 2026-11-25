@@ -229,7 +229,7 @@ function ProfileCard({
         <UiButton action="mention" content="iconText" controlWidth="fill" variant="plain"
           type="button"
           onClick={onMention}
-          controlSize="comfortable" className="flex items-center justify-center gap-2 rounded-sm bg-indigo-500/12  font-medium text-accent-300 transition-colors hover:bg-indigo-500/20 hover:text-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          controlSize="comfortable" className="flex items-center rounded-sm bg-indigo-500/12  font-medium text-accent-300 transition-colors hover:bg-indigo-500/20 hover:text-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
         >
           <AtSign className="h-4 w-4" />
         </UiButton>

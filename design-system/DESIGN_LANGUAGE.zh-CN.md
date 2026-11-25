@@ -103,6 +103,9 @@ Cheers 使用“编辑部、报纸、信件”的正式语义（Editorial Corres
   使用 96px 标准槽，`iconText` 使用 128px 宽槽；表单主操作可显式 `fill`，但不形成第四个固定宽度。
   `iconText` 内部必须拆成独立 icon slot 与 label slot：icon slot 使用当前 ControlSize 的方形宽度，
   label slot 占据剩余空间并独立持有水平 padding；外层不使用共享 gap 混排两种内容。
+  文字与图标文字按钮统一左对齐，包含带底色、selected、loading 与 fill 模式；label 紧邻 icon slot，
+  不在剩余宽度中再次居中。Selector/Disclosure 的文字同样左对齐；纯图标保留方形槽内居中。
+  普通按钮使用平整背景，不添加静止描边、装饰性阴影或按压缩放；focus、selected 与危险确认保留语义标记。
   可见动作必须来自共享 `ActionKey`；对象名和上下文进入 `aria-label` 或邻近信息。英文标签除两词以内外，
   还必须满足 iconText 剩余文字槽的 8 字符预算，不能用减少字号或裁切规避。
   此规则 CI ceiling 为 0 且不允许业务例外；selector、tab、menu、disclosure 和 navigation 必须使用对应

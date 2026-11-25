@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.object_bucket,u.object_key FROM artifact_object_uploads u\n        WHERE u.created_at < NOW()-INTERVAL '1 day'\n          AND NOT EXISTS(SELECT 1 FROM artifact_revisions r WHERE r.artifact_id=u.artifact_id AND r.version=u.version)\n          AND NOT EXISTS(SELECT 1 FROM artifact_object_jobs j WHERE j.artifact_id=u.artifact_id AND j.version=u.version)\n        ORDER BY u.created_at LIMIT 10",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_bucket",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "object_key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "63019a91f11f87b47eb412f18bdc2a71e732e28d26690ec9e2a9c4938d030db5"
+}

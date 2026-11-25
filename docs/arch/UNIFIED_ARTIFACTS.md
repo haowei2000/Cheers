@@ -1,5 +1,9 @@
 # Unified artifacts
 
+> ⚠️ PARTLY SUPERSEDED (2026-11-13): the storage split (text in `context_files`, bytes in
+> object storage) and the renderer picker are replaced by [FLAT_ARTIFACTS.md](FLAT_ARTIFACTS.md)
+> once its phases land. Identity, versions, availability and links below still apply.
+
 Status: implementation in progress. This document records the target contract and
 the migration gates; a checked gate means verified implementation, not a proposal.
 
@@ -72,8 +76,10 @@ extension allowlist. Rendering failures remain visible and source remains availa
 | Android | Resource request lifecycle and scope binding; unified paginated library, availability, inert source preview, message-reference routing and system file export implemented | Native visual/accessibility and end-to-end verification; editing and composer context capabilities remain unavailable |
 
 New MCP tools are `artifact_list`, `artifact_get`, `artifact_read`,
-`artifact_create`, `artifact_update`, `artifact_upload_prepare`, `artifact_upload_finish`
-and `artifact_deliver`. Gateway initialization
+`artifact_create`, `artifact_update`, `artifact_rename`, `artifact_delete`,
+`artifact_upload_prepare`, `artifact_upload_finish` and `artifact_deliver`. Rename and
+delete cover text artifacts only, share the `fs.mv`/`fs.rm` approval gate, and check
+source identity and version under the provider row lock. Gateway initialization
 instructions direct new outputs to these tools and canonical artifact links.
 `inbox_list`, `inbox_open` and `inbox_deliver` are callable compatibility bindings,
 omitted from `tools/list`; discovery is declared in the shared tool registry and

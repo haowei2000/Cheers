@@ -62,7 +62,6 @@ export function useSceneWorkbenchCoordinator({
   const refreshId = useRef(0);
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
-  const [failedRenderers, setFailedRenderers] = useState<Record<string, string[]>>({});
   const reconciled = useMemo(
     () => reconcileSceneItems(sceneState, templates, legacyEnvironment),
     [sceneState, templates, legacyEnvironment]
@@ -107,11 +106,11 @@ export function useSceneWorkbenchCoordinator({
   const renderers = useMemo(() => {
     const found: Record<string, RendererDesc> = {};
     for (const path of existing) {
-      const renderer = rendererFor(path, contents[path], ctx, failedRenderers[path]);
+      const renderer = rendererFor(path, ctx);
       if (renderer) found[path] = renderer;
     }
     return found;
-  }, [existing, contents, ctx, failedRenderers]);
+  }, [existing, ctx]);
 
   const otherPaths = useMemo(() => {
     const claimed = new Set<string>();
@@ -375,8 +374,6 @@ export function useSceneWorkbenchCoordinator({
     addPathToContext,
     addSceneToContext,
     addTabAndSelect,
-    failedRenderers,
-    setFailedRenderers,
     isNewCollectionOpen,
     setIsNewCollectionOpen,
   };

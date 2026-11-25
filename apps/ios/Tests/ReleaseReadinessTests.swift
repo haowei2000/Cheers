@@ -2,6 +2,25 @@ import XCTest
 @testable import Cheers
 
 final class ReleaseReadinessTests: XCTestCase {
+    func testGitHubSignInCapabilityAndOptionalProviders() throws {
+        let enabled = try JSONDecoder().decode(AuthCapabilities.self,
+            from: Data("{\"providers\":{\"github\":true,\"google\":true}}".utf8))
+        XCTAssertTrue(enabled.signInWithGitHub)
+        XCTAssertTrue(enabled.signInWithGoogle)
+        let absent = try JSONDecoder().decode(AuthCapabilities.self, from: Data("{}".utf8))
+        XCTAssertFalse(absent.signInWithGitHub)
+    }
+
+    func testIdentityConfirmationAndStructuredAuthErrorDecode() throws {
+        let flow = try JSONDecoder().decode(IdentityConfirmationFlow.self,
+            from: Data("{\"transaction_id\":\"proof\",\"status\":\"method_required\",\"methods\":[\"passkey\",\"email\"]}".utf8))
+        XCTAssertEqual(flow.transactionId, "proof")
+        XCTAssertEqual(flow.methods, ["passkey", "email"])
+        let error = try JSONDecoder().decode(ApiErrorBody.self,
+            from: Data("{\"code\":\"account_link_required\",\"message\":\"Sign in first\"}".utf8))
+        XCTAssertEqual(error.message, "Sign in first")
+    }
+
     func testArtifactIdentityAndAttachmentAvailability() throws {
         let raw = Data("""
         {"artifact_id":"stable-id","channel_id":"channel","uri":"cheers:artifact/stable-id",
@@ -16,6 +35,32 @@ final class ReleaseReadinessTests: XCTestCase {
             from: Data(String(decoding: raw, as: UTF8.self).replacingOccurrences(of: "\"ready\"", with: "\"expired\"").utf8))
         XCTAssertNil(expired.attachment)
         XCTAssertFalse(expired.isReady)
+    }
+
+    func testUndeliveredAttachmentsDecodeOnlyOnFinishedBotReplies() throws {
+        func message(_ fields: String) throws -> MessageDto {
+            try JSONDecoder().decode(MessageDto.self, from: Data("""
+            {"msg_id":"m","channel_id":"c","sender_type":"bot","content":"done",\(fields)}
+            """.utf8))
+        }
+        let reply = try message("""
+        "content_data":{"attachment_errors":[
+          {"filename":"exec-1.png","code":"TOO_LARGE","message":"larger than the 8 MB attachment limit"},
+          {"filename":42},"not an object"]}
+        """)
+        XCTAssertEqual(reply.attachmentErrors, [
+            AttachmentDeliveryError(filename: "exec-1.png", code: "TOO_LARGE",
+                                    message: "larger than the 8 MB attachment limit"),
+            AttachmentDeliveryError(filename: "", code: "", message: ""),
+        ])
+
+        var human = reply
+        human.senderType = "user"
+        XCTAssertTrue(human.attachmentErrors.isEmpty)
+        var streaming = reply
+        streaming.isPartial = true
+        XCTAssertTrue(streaming.attachmentErrors.isEmpty)
+        XCTAssertTrue(try message("\"content_data\":{\"attachment_errors\":\"x\"}").attachmentErrors.isEmpty)
     }
 
     func testArtifactSnapshotUsesCanonicalVersionAndSourceData() throws {

@@ -56,8 +56,8 @@ const CLOSE_IDLE_TIMEOUT: u16 = 4409;
 /// can't spin the read loop / hammer logs. A good frame resets the counter.
 const MAX_MALFORMED_FRAMES: u32 = 20;
 use crate::gateway::bridge_frames::{
-    self, bridge_error, delta_capability_error, send_ack_err, send_ack_ok, terminal_ack_err,
-    terminal_ack_ok, BRIDGE_PROTOCOL_VERSION,
+    self, bridge_error, delta_capability_error, file_upload_ack_err, file_upload_ack_ok,
+    send_ack_err, send_ack_ok, terminal_ack_err, terminal_ack_ok, BRIDGE_PROTOCOL_VERSION,
 };
 
 /// Gateway-side liveness: probe with a WS ping every PROBE_INTERVAL (the peer's
@@ -514,6 +514,12 @@ async fn handle_control_frame(
                         "runtime session control ack rejected"
                     );
                 }
+            }
+            // Wake a waiting caller only after the session row reflects the ack.
+            if let Some(request_id) = frame.get("request_id").and_then(Value::as_str) {
+                state
+                    .session_control_acks
+                    .resolve(request_id, frame.clone());
             }
         }
         proto::ControlOutbound::ConfigOptions { options, v } => {
@@ -1327,6 +1333,17 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             }
         }
 
+        // ── attach 载入的历史（connector → gateway）────────────────────────
+        // Signed like `send` (acp_capability) for bots that require capabilities;
+        // that check ran in the read loop before this dispatch.
+        "session_history" => {
+            if let Err(error) =
+                crate::api::session_attach::store_session_history(state, bot.bot_id, frame).await
+            {
+                tracing::warn!(bot_id = %bot.bot_id, %error, "session_history not stored");
+            }
+        }
+
         // ── resource 访问 ──────────────────────────────────────────────────
         // ── 远程工作区 RPC 响应（connector → gateway，按 req_id 关联）──────────
         "workspace_res" => {
@@ -1480,6 +1497,15 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             handle_acp_event_frame(frame, state, bot).await;
         }
 
+        // ── agent 产出的文件（如生成的图片）→ 频道附件 ───────────────────────
+        // Stored through `channel.files.create`, so it gets the same channel
+        // write check, size cap and artifact catalog entry as an MCP delivery.
+        // The returned file_id is what the connector lists in `done.file_ids`.
+        "file_upload" => {
+            let ack = handle_file_upload_frame(frame, state, bot).await;
+            let _ = ws_send(socket, &ack).await;
+        }
+
         other => {
             tracing::debug!(bot_id = %bot.bot_id, frame_type = other, "unknown data frame");
         }
@@ -1489,6 +1515,51 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
 /// Persist a generic ACP event (the complete-stream passthrough). Best-effort:
 /// a log-write failure must never disrupt the live agent. Streaming text chunks
 /// are dropped here (the bot's message already carries the text).
+/// Store a connector-delivered file as a channel attachment and answer with a
+/// `file_upload_ack`. `client_file_id` doubles as the idempotency key, so a
+/// retried upload resolves to the same file instead of a duplicate.
+async fn handle_file_upload_frame(frame: &Value, state: &AppState, bot: &BotInfo) -> Value {
+    let client_file_id = frame
+        .get("client_file_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty());
+    let Some(client_file_id) = client_file_id else {
+        return file_upload_ack_err(None, "INVALID_FRAME", "client_file_id required");
+    };
+    let req = json!({
+        "type": "resource_req",
+        "v": 1,
+        "req_id": Uuid::new_v4().to_string(),
+        "resource": "channel.files.create",
+        "params": {
+            "channel_id": frame.get("channel_id"),
+            "filename": frame.get("filename"),
+            "content_type": frame.get("content_type"),
+            "data_b64": frame.get("data_b64"),
+            "idempotency_key": format!("file_upload:{client_file_id}"),
+        },
+    });
+    let res = crate::gateway::resource_effects::dispatch_with_effects(
+        state,
+        crate::resource::Principal::bot(bot.bot_id),
+        &req,
+    )
+    .await;
+    if res.get("ok").and_then(Value::as_bool) == Some(true) {
+        return file_upload_ack_ok(client_file_id, res.get("data").unwrap_or(&Value::Null));
+    }
+    let error = |field: &str| {
+        res.get("error")
+            .and_then(|error| error.get(field))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+    let code = error("code").unwrap_or_else(|| "FILE_UPLOAD_FAILED".to_string());
+    let message = error("message").unwrap_or_else(|| "file upload failed".to_string());
+    tracing::warn!(bot_id = %bot.bot_id, client_file_id, code, "file_upload rejected");
+    file_upload_ack_err(Some(client_file_id), &code, &message)
+}
+
 async fn handle_acp_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
     // The channel_id is bot-supplied and must not be trusted: only record,
     // promote (plan/usage/commands stores) and broadcast into channels the bot is
@@ -2885,7 +2956,9 @@ fn server_capabilities(state: &AppState) -> Value {
         "terminal_replay": true,
         "task_acceptance": true,
         "resume": "ack_only",
-        "file_upload": false,
+        // A limits object: the connector skips images the gateway would reject
+        // instead of sending them across the socket first.
+        "file_upload": { "max_bytes": crate::resource::files::MAX_DELIVER_BYTES },
         "acp_security": true,
         // Signed bots sign a stream's first Delta; later Delta on the same data
         // connection omit acp_capability. Done/Error stay signed per frame.

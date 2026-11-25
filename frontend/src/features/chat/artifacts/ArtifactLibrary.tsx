@@ -12,11 +12,12 @@ import { SurfaceSpinner } from "@/components/ui/spinner";
 import type { WorkbenchContext } from "../workbench/context";
 import { FilePanel } from "../workbench/panels/FilePanel";
 import { ArtifactLens } from "../workbench/lens/ArtifactLens";
-import { formatOf } from "../workbench/renderers/registry";
+import { formatOf } from "../workbench/renderers/formats";
 import { FileGrid } from "../fileView";
 import { locatorToContextItem, useContextPickStore } from "../context/contextPick";
 import { parseLocator } from "../locator";
 import { artifactEditorClient, makeArtifactClient, type Artifact, type ArtifactContent, type ArtifactListType } from "./client";
+import { ArtifactViewChanges } from "./ArtifactViewChanges";
 import { EMPTY_CANVAS, canvasPathFor } from "./newCanvas";
 import { artifactType, availabilityLabel } from "./presentation";
 
@@ -199,6 +200,7 @@ export function ArtifactLibrary({ ctx, target, onDirtyChange }: {
           }}
           onBlur={() => { if (!canvasName.trim() && !creating) setCanvasName(null); }} />
       </div>}
+      <ArtifactViewChanges items={items} client={client} ctx={ctx} onRenamed={() => { void refresh(); }} />
       <ItemList presentationLevel="medium" controlSize="regular" aria-label="Artifacts">
         {items.map((item) => <WorkbenchItem key={item.artifact_id} title={item.title}
           leading={<FileText className="h-4 w-4" aria-hidden="true" />}

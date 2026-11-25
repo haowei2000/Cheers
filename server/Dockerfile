@@ -50,7 +50,9 @@ COPY packages/cheers-acp-connector-rs/bridge-protocol \
 COPY packages/cheers-mcp-server /app/packages/cheers-mcp-server
 COPY packages/cheers-interactive-core /app/packages/cheers-interactive-core
 COPY packages/cheers-acp-registry /app/packages/cheers-acp-registry
+COPY shared/ /app/shared/
 COPY design-system/a2ui-catalog.json /app/design-system/a2ui-catalog.json
+COPY design-system/a2ui-catalog-v2.json /app/design-system/a2ui-catalog-v2.json
 COPY frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json /app/frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json
 COPY server/src ./src
 COPY server/build.rs ./build.rs
@@ -78,6 +80,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/server/target/release/server /usr/local/bin/gateway
+COPY --from=builder /app/server/target/release/artifact-backfill /usr/local/bin/artifact-backfill
 EXPOSE 8000
 # 启动即跑 sqlx 迁移（main.rs: sqlx::migrate!），无需独立 migrate 步骤。
 # The binary is installed as `gateway` (renamed on COPY above), so run that.

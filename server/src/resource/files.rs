@@ -8,8 +8,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{
-    authorize_channel_read, authorize_channel_write, idempotency::IdempotencyKey, not_found,
-    Principal, ResourceResult,
+    artifacts::SourceKind, authorize_channel_read, authorize_channel_write,
+    idempotency::IdempotencyKey, not_found, Principal, ResourceResult,
 };
 
 /// Largest chat-file content returned inline as decoded text (matches the workspace cap).
@@ -19,7 +19,7 @@ const TEXT_CAP: usize = 256 * 1024;
 
 /// Largest file an agent may deliver inline (base64) via `artifact_deliver` / `inbox_deliver`.
 /// Agents have no other upload path, so bigger files are refused.
-const MAX_DELIVER_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_DELIVER_BYTES: usize = 8 * 1024 * 1024;
 
 /// Process-global S3 handle (client + default bucket), injected at startup by main.rs.
 /// The resource dispatch only carries `db`, and threading S3 through it would force every
@@ -343,7 +343,7 @@ pub(super) struct DeliveredFile<'a> {
     pub size_bytes: i32,
 }
 
-/// Record a stored object as a channel attachment with a 7-day TTL. Its artifact comes from
+/// Bot deliveries do not expire; human deliveries retain their 7-day TTL. The artifact comes from
 /// the `file_records` trigger, so it commits with this row.
 pub(super) async fn record_delivered_file(
     tx: &mut sqlx::PgConnection,
@@ -360,7 +360,8 @@ pub(super) async fn record_delivered_file(
     .await
     .map_err(super::db_err("files.create: select channel workspace_id"))?;
 
-    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
+    let expires_at = (principal.principal_type == super::PrincipalType::User)
+        .then(|| chrono::Utc::now() + chrono::Duration::days(7));
     sqlx::query!(
         "INSERT INTO file_records
             (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
@@ -383,7 +384,8 @@ pub(super) async fn record_delivered_file(
     .map_err(super::db_err("files.create: insert file record"))?;
 
     let artifact =
-        super::artifacts::for_source(&mut *tx, channel_id, "attachment", file.file_id).await?;
+        super::artifacts::for_source(&mut *tx, channel_id, SourceKind::Attachment, file.file_id)
+            .await?;
     Ok(json!({
         "artifact": artifact,
         "channel_id": channel_id,
@@ -396,11 +398,12 @@ pub(super) async fn record_delivered_file(
     }))
 }
 
-/// channel.files.create (Inbox `inbox_deliver`): store an agent-delivered file as a channel
-/// attachment. Mirrors `api::files::upload_file`: decode the inline base64, `put_object` to S3
-/// (via the `init_s3` handle), and INSERT a `file_records` row as `status='uploaded'` with a
-/// 7-day TTL — so the delivered file behaves exactly like a human upload (listable via inbox_list,
-/// readable via inbox_open, downloadable over REST).
+/// Attachment provider write behind `channel.artifacts.deliver` (`artifact_deliver`) and its
+/// legacy alias `channel.files.create` (`inbox_deliver`). Mirrors `api::files::upload_file`:
+/// decode the inline base64, `put_object` to S3 (via the `init_s3` handle), and INSERT a
+/// `file_records` row as `status='uploaded'` with a 7-day TTL, so the delivered file behaves
+/// exactly like a human upload. Both verbs share one idempotency scope, so a retry through
+/// either name replays the same delivery.
 pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
     let idempotency = IdempotencyKey::from_params(principal, "channel.files.create", params)?;

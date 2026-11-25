@@ -1,9 +1,14 @@
 import { ButtonGroup } from "./button-group";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { ActionButton } from "./action-button";
 import { disarmHover } from "@/lib/hoverIntent";
+import { Button } from "./button";
+
+const DialogCloseContext = createContext<(() => void) | null>(null);
+/** Nested detail headers must use the same guarded close as dialog chrome. */
+export const useDialogClose = () => useContext(DialogCloseContext);
 
 // A centered modal shell: backdrop (click-to-close) + card (click-stop) + optional titled
 // header with a close button. Reused by NewDmDialog, the bot-token modal, etc.
@@ -36,6 +41,8 @@ export function Dialog({
   children,
   maxWidth = "max-w-md",
   fullScreenOnMobile = false,
+  dirty = false,
+  busy = false,
 }: {
   title?: ReactNode;
   // Accessible name when no visible `title` is rendered (e.g. media/preview modals).
@@ -44,12 +51,33 @@ export function Dialog({
   children: ReactNode;
   maxWidth?: string;
   fullScreenOnMobile?: boolean;
+  /** Preserve unfinished form input when closing via chrome, backdrop, or Escape. */
+  dirty?: boolean;
+  busy?: boolean;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   // Latest onClose without making the focus/key effect re-run (and steal focus) on every render.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
+  const discardReturnRef = useRef<HTMLElement | null>(null);
+  const keepEditing = () => {
+    setConfirmDiscard(false);
+    if (discardReturnRef.current?.isConnected) discardReturnRef.current.focus();
+  };
+  const requestClose = () => {
+    if (busy) return;
+    if (confirmDiscard) { keepEditing(); return; }
+    if (dirty) {
+      discardReturnRef.current = document.activeElement as HTMLElement | null;
+      setConfirmDiscard(true);
+    }
+    else onClose();
+  };
+  const onCloseRef = useRef(requestClose);
+  onCloseRef.current = requestClose;
+  useEffect(() => { if (confirmDiscard) keepEditingRef.current?.focus(); }, [confirmDiscard]);
+  useEffect(() => { if (!dirty) setConfirmDiscard(false); }, [dirty]);
   // Capture the element that opened us at RENDER time — before commit applies any
   // autoFocus inside the dialog. A useEffect would run too late and capture the
   // dialog's own autoFocus'd input, so closing would refocus a removed node (→ body).
@@ -111,17 +139,15 @@ export function Dialog({
   }, [previouslyFocused]);
 
   const content = (
+    <DialogCloseContext.Provider value={requestClose}>
     <div
       className="fixed inset-0 z-100 flex items-start justify-center bg-black/50 pt-24 max-md:items-end max-md:pt-0"
       role="presentation"
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) requestClose();
       }}
       onKeyDown={(event) => {
-        if (event.target === event.currentTarget && event.key === "Escape") onClose();
-      }}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget && event.key === "Escape") requestClose();
       }}
     >
       <div
@@ -150,7 +176,8 @@ export function Dialog({
               <ActionButton
                 action="close"
                 context="windowChrome"
-                onClick={onClose}
+                onClick={requestClose}
+                disabled={busy}
                 accessibleLabel="Close dialog"
                 controlSize="compact"
                 className="text-content-primary hover:text-content-strong"
@@ -165,10 +192,18 @@ export function Dialog({
             "max-md:pb-[max(1rem,env(safe-area-inset-bottom))]",
           )}
         >
+          {confirmDiscard && <div role="alert" className="space-y-2 rounded-sm bg-control p-3">
+            <p className="font-utility text-regular text-content-primary">Discard your unsaved changes?</p>
+            <div className="flex flex-wrap gap-2">
+              <Button ref={keepEditingRef} action="cancel" variant="secondary" disabled={busy} onClick={keepEditing} aria-label="Keep editing" />
+              <Button action="discard" variant="danger" disabled={busy} onClick={onClose} />
+            </div>
+          </div>}
           {children}
         </div>
       </div>
     </div>
+    </DialogCloseContext.Provider>
   );
 
   if (typeof document === "undefined") {

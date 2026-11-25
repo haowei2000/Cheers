@@ -16,6 +16,7 @@ import { A2UILens } from "./workbench/lens/a2ui/A2UILens";
 import { ArtifactLens } from "./workbench/lens/ArtifactLens";
 import { resolveDeskResource,type ResolvedDeskResource } from "@/api/resources";
 import { sendResourceInteraction } from "@/api/messages";
+import { builtinView } from "./workbench/renderers/registry";
 import { makeFsClient } from "./workbench/fsClient";
 
 function GlobalPreview({uri}:{uri:string}) {
@@ -65,10 +66,11 @@ function DeskPreview({ path, active }: { path: string; active: boolean }) {
   if (!snapshot.file) return <p role="status" className="text-body-secondary">Loading resource preview…</p>;
   const file = snapshot.file;
   if (file.is_dir) return <p className="text-body-secondary">Open this folder to browse its files.</p>;
-  const isA2ui = parsed.data && typeof parsed.data === "object" && "a2ui" in parsed.data;
-  const isTsx = /\.(tsx|jsx)$/i.test(path);
+  const view = builtinView(path);
+  const isA2ui = view === "a2ui";
+  const isTsx = view === "react";
   const limit = expanded ? 12_000 : 1_200;
-  const isMarkdown=/\.md$/i.test(path);
+  const isMarkdown = view === "markdown";
   const isText=/\.txt$/i.test(path);
   return <div className="space-y-2" aria-label={`Preview of ${path}`} aria-busy={snapshot.loading}>
     <div id={contentId} className={expanded ? "max-h-96 overflow-auto" : "min-w-0"}>

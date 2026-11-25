@@ -3,113 +3,30 @@
     {
       "id": "papers",
       "title": "Papers",
-      "file": "research/papers.yaml",
-      "renderer": "builtin:table",
-      "config": {
-        "columns": [
-          {
-            "key": "title",
-            "label": "Paper"
-          },
-          {
-            "key": "target",
-            "label": "Target venue"
-          },
-          {
-            "key": "status",
-            "label": "Status",
-            "options": [
-              "idea",
-              "drafting",
-              "internal-review",
-              "ready",
-              "submitted"
-            ]
-          },
-          {
-            "key": "owner",
-            "label": "Owner"
-          }
-        ]
-      }
+      "file": "research/papers.table.yaml"
     },
     {
       "id": "deadlines",
       "title": "Submission dates",
-      "file": "research/deadlines.yaml",
-      "renderer": "builtin:table",
-      "config": {
-        "columns": [
-          {
-            "key": "venue",
-            "label": "Venue"
-          },
-          {
-            "key": "deadline",
-            "label": "Deadline"
-          },
-          {
-            "key": "timezone",
-            "label": "Timezone"
-          },
-          {
-            "key": "source",
-            "label": "Official source"
-          },
-          {
-            "key": "checked",
-            "label": "Checked"
-          }
-        ]
-      }
+      "file": "research/deadlines.table.yaml"
     },
     {
       "id": "risks",
       "title": "Planning risks",
-      "file": "research/risks.yaml",
-      "renderer": "builtin:table",
-      "config": {
-        "columns": [
-          {
-            "key": "risk",
-            "label": "Risk"
-          },
-          {
-            "key": "impact",
-            "label": "Impact",
-            "options": [
-              "low",
-              "medium",
-              "high"
-            ]
-          },
-          {
-            "key": "owner",
-            "label": "Owner"
-          },
-          {
-            "key": "mitigation",
-            "label": "Mitigation"
-          },
-          {
-            "key": "reviewDate",
-            "label": "Review date"
-          }
-        ]
-      }
+      "file": "research/risks.table.yaml"
     }
   ],
   "seed": [
     {
-      "path": "research/papers.yaml",
+      "path": "research/papers.table.yaml",
       "source": "seed/planning/research/papers.yaml"
     },
     {
-      "path": "research/deadlines.yaml",
+      "path": "research/deadlines.table.yaml",
       "source": "seed/planning/research/deadlines.yaml"
     },
     {
-      "path": "research/risks.yaml",
+      "path": "research/risks.table.yaml",
       "source": "seed/planning/research/risks.yaml"
     },
     {

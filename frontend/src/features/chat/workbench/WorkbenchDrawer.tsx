@@ -127,9 +127,6 @@ function WorkbenchDrawerImpl({
       pinned: drawerState.pinned,
       togglePin: drawerState.togglePin,
       rendererExtensions: drawerState.rendererExtensions,
-      bindings: drawerState.bindings,
-      setBinding: drawerState.setBinding,
-      configs: drawerState.configs,
       openTarget: drawerState.focus,
       openInspectableId: (() => {
         const locator = openFilePath?.startsWith("cheers:") ? parseLocator(openFilePath) : null;
@@ -153,9 +150,6 @@ function WorkbenchDrawerImpl({
       drawerState.pinned,
       drawerState.togglePin,
       drawerState.rendererExtensions,
-      drawerState.bindings,
-      drawerState.setBinding,
-      drawerState.configs,
       drawerState.focus,
       openFilePath,
       filesTick,

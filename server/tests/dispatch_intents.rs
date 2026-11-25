@@ -498,8 +498,7 @@ async fn an_admitted_ui_request_keeps_its_original_action_after_the_source_chang
     let principal = server::resource::Principal::bot(bot);
     let mut document: Value =
         serde_json::from_str(cheers_mcp_server::interactive::EXAMPLE).unwrap();
-    let action =
-        &mut document["messages"][1]["updateComponents"]["components"][6]["action"]["event"];
+    let action = &mut document["messages"][0]["createSurface"]["components"][6]["action"]["event"];
     action["name"] = json!("cheers.request");
     action["context"]["botId"] = json!(bot);
     server::resource::fs::handle_write(&db, &principal, &json!({"channel_id":fixture.channel,"path":"forms/report.a2ui.json","content":document.to_string(),"if_version":0})).await.unwrap();
@@ -512,7 +511,7 @@ async fn an_admitted_ui_request_keeps_its_original_action_after_the_source_chang
     interrupt_after_commit(&db, &fixture, params).await;
     // The valid source now declares a different required payload. It was
     // validated at admission; recovery does not reinterpret the accepted input.
-    document["messages"][1]["updateComponents"]["components"][6]["action"]["event"]["context"]
+    document["messages"][0]["createSurface"]["components"][6]["action"]["event"]["context"]
         ["payload"]["includeSources"] = json!(true);
     server::resource::fs::handle_write(&db, &principal, &json!({"channel_id":fixture.channel,"path":"forms/report.a2ui.json","content":document.to_string(),"if_version":1})).await.unwrap();
     let capture = Locator::ready();

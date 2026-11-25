@@ -1,4 +1,4 @@
-import { formatOf } from "../workbench/renderers/registry";
+import { builtinView, VIEW_SUFFIXES } from "../workbench/renderers/registry";
 import type { Artifact } from "./client";
 
 // How an artifact is named in chrome. Shared by the library and by canvas cards that
@@ -9,11 +9,6 @@ export const availabilityLabel: Record<Artifact["availability"], string> = {
 };
 
 export function artifactType(artifact: Pick<Artifact, "title" | "content_type">): string {
-  const format = formatOf(artifact.title);
-  if (format === "html" || format === "react") return "Interactive page";
-  if (/\.canvas\.(json|ya?ml)$/i.test(artifact.title)) return "Canvas";
-  if (format === "markdown") return "Document";
-  if (artifact.content_type?.startsWith("image/")) return "Image";
-  if (artifact.content_type === "application/pdf") return "PDF";
-  return "File";
+  const view = builtinView(artifact.title);
+  return VIEW_SUFFIXES.find((row) => row.view === view)?.title ?? "File";
 }

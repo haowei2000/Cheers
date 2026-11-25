@@ -25,6 +25,8 @@
 //! `[bridge_protocol_version]`; both ends select max(intersection) and stamp
 //! it as `v`; empty intersection ⇒ close 4400.
 
+pub mod session_ref;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -447,6 +449,10 @@ pub struct RuntimeSessionControlSession {
     /// Persisted session overrides, replayed when the runtime session is created/loaded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_config: Option<SessionConfigOverrides>,
+    /// `action == "attach"`: the Agent's own id of an existing session (e.g. a
+    /// Codex thread id) to bind to `provider_session_key` and `session/load`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_session_id: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }
@@ -572,6 +578,15 @@ pub enum TaskAcceptanceStatus {
     Granted,
     Owned,
     Rejected,
+}
+
+/// A reply attachment that was produced but could not be delivered, so the
+/// message can say so instead of silently missing it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentError {
+    pub filename: String,
+    pub code: String,
+    pub message: String,
 }
 
 /// Immutable execution owner carried across result delivery connections.
@@ -1111,6 +1126,10 @@ pub enum DataInbound {
         /// identifying the fs watcher to stop.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         watch_id: Option<String>,
+        /// `op == "session_resolve"`: the parsed reference to look up in the
+        /// Agent's own `session/list`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_ref: Option<session_ref::SessionRef>,
     },
     #[serde(other)]
     Unknown,
@@ -1183,6 +1202,9 @@ pub enum DataOutbound {
         execution: Option<TaskExecution>,
         #[serde(default)]
         file_ids: Vec<String>,
+        /// Reply attachments the connector could not deliver; omitted when none.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        attachment_errors: Vec<AttachmentError>,
         #[serde(default)]
         mention_ids: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1246,6 +1268,23 @@ pub enum DataOutbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         content_type: Option<String>,
         data_b64: String,
+    },
+    /// Connector → gateway: the conversation an `attach` loaded, captured from
+    /// the Agent's `session/load` replay and rendered as Markdown. The gateway
+    /// stores it as a channel file for the attached Cheers session.
+    #[serde(rename = "session_history")]
+    SessionHistory {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        session_id: String,
+        channel_id: String,
+        provider_session_key: String,
+        provider_session_id: String,
+        filename: String,
+        markdown: String,
+        /// Signed like `send`: it writes content into the channel.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_capability: Option<AcpCapabilityEnvelope>,
     },
     /// Connector → gateway: reply to a `workspace_req`, correlated by `req_id`.
     #[serde(rename = "workspace_res")]

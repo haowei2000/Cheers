@@ -135,7 +135,19 @@ pub struct RendererContribution {
     #[serde(default)]
     pub style: Option<String>,
     #[serde(default, rename = "match")]
-    pub matches: Vec<String>,
+    pub matches: RendererMatch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum RendererMatch {
+    Legacy(Vec<String>),
+    Suffix { suffix: String },
+}
+impl Default for RendererMatch {
+    fn default() -> Self {
+        Self::Legacy(Vec::new())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -589,9 +601,21 @@ fn validate_manifest(manifest: &ExtensionManifest, allow_code: bool) -> Result<(
                 renderer.id
             ));
         }
-        if renderer.matches.iter().any(|glob| glob.trim().is_empty()) {
+        let invalid = match &renderer.matches {
+            RendererMatch::Legacy(globs) => globs.iter().any(|glob| glob.trim().is_empty()),
+            RendererMatch::Suffix { suffix } => {
+                !suffix.starts_with('.')
+                    || suffix[1..].split('.').any(|part| {
+                        part.is_empty()
+                            || !part
+                                .bytes()
+                                .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+                    })
+            }
+        };
+        if invalid {
             return Err(format!(
-                "renderer `{}` contains an empty match rule",
+                "renderer `{}` contains an invalid match rule",
                 renderer.id
             ));
         }
@@ -811,6 +835,21 @@ mod tests {
     use serde_json::json;
     use std::io::Write;
     use zip::{write::SimpleFileOptions, ZipWriter};
+
+    #[test]
+    fn renderer_suffix_contract_accepts_suffixes_and_legacy_lists() {
+        for rule in [json!({"suffix":".gantt.yaml"}), json!(["notes/*.md"])] {
+            let value =
+                manifest(json!([{"id":"r","title":"R","entry":"renderers/r.js","match":rule}]));
+            let parsed: ExtensionManifest = serde_json::from_value(value).unwrap();
+            validate_manifest(&parsed, true).unwrap();
+        }
+        let value = manifest(
+            json!([{"id":"r","title":"R","entry":"renderers/r.js","match":{"suffix":"folder/*.yaml"}}]),
+        );
+        let parsed: ExtensionManifest = serde_json::from_value(value).unwrap();
+        assert!(validate_manifest(&parsed, true).is_err());
+    }
 
     fn package(manifest: Value, extra: &[(&str, &[u8])]) -> Vec<u8> {
         let mut output = Cursor::new(Vec::new());

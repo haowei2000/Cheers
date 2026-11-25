@@ -20,10 +20,10 @@ use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
     AuthenticateRequest, CancelNotification, CreateElicitationRequest, CreateElicitationResponse,
-    ElicitationAction, Implementation, InitializeRequest, LoadSessionRequest, NewSessionRequest,
-    PromptRequest, RequestPermissionOutcome, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionConfigValueId, SetSessionConfigOptionRequest, SetSessionModeRequest, AGENT_METHOD_NAMES,
-    CLIENT_METHOD_NAMES,
+    ElicitationAction, Implementation, InitializeRequest, ListSessionsRequest, LoadSessionRequest,
+    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionConfigValueId, SetSessionConfigOptionRequest,
+    SetSessionModeRequest, AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{
@@ -44,7 +44,7 @@ use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, Permiss
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
     drain_updates, AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient,
-    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult,
+    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionListPage, SessionLoadResult,
     SessionStartOptions, SessionStartResult,
 };
 
@@ -312,6 +312,17 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
             )
             .await?;
         Ok(SessionLoadResult { metadata: result })
+    }
+
+    async fn list_sessions(&mut self, cursor: Option<&str>) -> anyhow::Result<SessionListPage> {
+        let result = self
+            .request(
+                AGENT_METHOD_NAMES.session_list,
+                typed_params(ListSessionsRequest::new().cursor(cursor.map(str::to_string))),
+                self.request_timeout_ms(),
+            )
+            .await?;
+        Ok(SessionListPage::from_response(&result))
     }
 
     async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()> {

@@ -26,7 +26,7 @@ import { BallotCheckbox } from "@/components/ui/ballot-checkbox";
 import { TypewriterCursor } from "@/components/ui/typewriter-cursor";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { ResourceRefCards, resourceRefCards } from "./ResourceRefCards";
-import { FileGrid } from "./fileView";
+import { attachmentErrors, FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
 import { AgentInteractionCard } from "./AgentInteractionCard";
@@ -825,7 +825,7 @@ function RegularMessageItem({
       ];
     }
     const next: ContextAction[] = [
-      { id: "reply", label: "Reply", icon: <MessageCircleMore className="h-4 w-4" />, run: () => actions.onReply(message) },
+      { id: "reply", label: "Reply", icon: <MessageCircleMore className="h-4 w-4" />, restoreFocus: false, run: () => actions.onReply(message) },
       { id: "copy", label: "Copy message", icon: <Copy className="h-4 w-4" />, run: () => copyMessage(message) },
       { id: "forward", label: "Forward", icon: <Forward className="h-4 w-4" />, run: () => actions.onForward(message) },
       { id: "select", label: "Select message", icon: <CheckSquare className="h-4 w-4" />, run: () => actions.onToggleSelect(message) },
@@ -887,6 +887,7 @@ function RegularMessageItem({
             ? [{
                 id: "reply-with-quote",
                 label: "Reply with quote",
+                restoreFocus: false,
                 icon: <TextQuote className="h-4 w-4" />,
                 run: () => actions.onReplyWithQuote?.(message, selection.text),
               } satisfies ContextAction]
@@ -1147,6 +1148,9 @@ function MessageBody({
   const cards = message.sender_type === "bot" && !active
     ? resourceRefCards(message.content_data)
     : [];
+  const missing = message.sender_type === "bot" && !active
+    ? attachmentErrors(message.content_data)
+    : [];
 
   return (
     <div className="relative">
@@ -1172,7 +1176,7 @@ function MessageBody({
           <StopButton channelId={channelId} msgId={message.msg_id} />
         </div>
       )}
-      <FileGrid files={files} className="mt-1" channelId={channelId} />
+      <FileGrid files={files} missing={missing} className="mt-1" channelId={channelId} />
     </div>
   );
 }

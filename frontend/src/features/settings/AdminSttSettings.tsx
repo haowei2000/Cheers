@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { AsyncContent } from "@/components/ui/async-content";
+import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/ui/action-button";
 import { Banner } from "@/components/ui/banner";
 import { CheckboxField } from "@/components/ui/checkbox-field";
@@ -21,6 +22,9 @@ import {
 // nothing for non-admins (route-level nav is also admin-gated; defense in depth).
 export function AdminSttSettings() {
   const isAdmin = useIsAdmin();
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<SttSettings | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [endpoint, setEndpoint] = useState("");
@@ -30,21 +34,23 @@ export function AdminSttSettings() {
   const [busy, setBusy] = useState<"save" | "test" | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!isAdmin) return;
-    getSttSettings()
-      .then((s) => {
-        setLoaded(s);
-        setEnabled(s.enabled);
-        setEndpoint(s.endpoint);
-        setModel(s.model);
-      })
-      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load STT settings"));
+    setLoading(true);
+    try {
+      const value = await getSttSettings();
+      setLoaded(value); setEnabled(value.enabled); setEndpoint(value.endpoint); setModel(value.model);
+      setLoadError(null);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Couldn't load speech-to-text settings"); }
+    finally { setLoading(false); }
   }, [isAdmin]);
+  useEffect(() => { void load(); }, [load]);
 
   if (!isAdmin) return null;
 
   async function save() {
+    if (!loaded || loading || loadError || busy) return;
+    setSaveError(null);
     setBusy("save");
     setTestResult(null);
     try {
@@ -60,7 +66,7 @@ export function AdminSttSettings() {
       setClearKey(false);
       toast.success("STT settings saved — takes effect within seconds");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      setSaveError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setBusy(null);
     }
@@ -98,6 +104,8 @@ export function AdminSttSettings() {
           </>
         }
       >
+        <AsyncContent loading={loading} error={loadError} onRetry={() => void load()}>
+        {saveError && <Banner severity="error">{saveError}</Banner>}
         <form className="max-w-lg space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <CheckboxField
             label="Enable speech-to-text"
@@ -166,7 +174,7 @@ export function AdminSttSettings() {
               context="settings"
               type="submit"
               accessibleLabel="Save speech-to-text settings"
-              disabled={busy !== null}
+              disabled={busy !== null || !loaded || loading || Boolean(loadError)}
               loading={busy === "save"}
             />
             <ActionButton
@@ -193,6 +201,7 @@ export function AdminSttSettings() {
             </Banner>
           )}
         </form>
+        </AsyncContent>
       </SettingsCard>
     </SettingsSection>
   );

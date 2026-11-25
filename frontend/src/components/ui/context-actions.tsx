@@ -28,6 +28,8 @@ export interface ContextAction {
   shortcut?: string;
   disabled?: boolean;
   group?: ContextActionGroup;
+  /** Disable when the action moves focus into another surface, such as a reply. */
+  restoreFocus?: boolean;
   run: () => void | Promise<void>;
 }
 
@@ -159,7 +161,7 @@ function ContextActionsOverlay({
     if (action.disabled) return;
     try {
       await action.run();
-      onClose(true);
+      onClose(action.restoreFocus !== false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Action failed");
     }

@@ -70,10 +70,11 @@ Rust 网关（唯一后端）
 | `leave_channel` | 退出频道；DM 不允许 |
 | `artifact_create` | 创建文档、HTML/TSX 页面或画布；重试复用 `idempotency_key` |
 | `artifact_update` | 按产物 ID 编辑文本，使用读取结果中的产物版本作为 `if_version` |
+| `artifact_rename` / `artifact_delete` | 按产物 ID 和 `if_version` 移动或删除文本产物；重命名后 ID 不变，删除后 `artifact_get` 仍可查到该产物。在用户的任务中需先用 `request_approval` 请求批准 |
 | `artifact_upload_prepare` / `artifact_upload_finish` | 投递二进制文件且不经模型转抄：先准备，由 Agent 的 shell 发送原始文件，再发布（默认 ≤ 32 MiB） |
 | `artifact_deliver` | 适用于没有 shell 的 Agent：投递二进制文件（base64，≤ 8 MB）；传入源文件的 `sha256`，损坏的副本会被拒绝；重试复用 `idempotency_key` |
 | `desk_write` / `desk_edit` / `desk_append` | 旧版路径操作；新生成内容使用产物工具 |
-| `desk_rm` / `desk_mv` | 旧版源文件或子树删除、移动操作 |
+| `desk_rm` / `desk_mv` | 旧版路径删除、移动操作；目录和子树仍需使用 |
 
 文档、上传文件、页面和画布统一进入频道的 **Artifacts（产物）** 库。
 它们受频道成员资格和角色权限控制，不是 Bot 的私有工作区。

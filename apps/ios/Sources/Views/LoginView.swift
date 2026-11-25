@@ -21,6 +21,7 @@ struct LoginView: View {
     @State private var errorText: String?
     @State private var appleEnabled = false
     @State private var googleEnabled = false
+    @State private var githubEnabled = false
     @State private var capabilityLoaded = false
     @State private var capabilityError: String?
     @State private var showAdvancedServer = false
@@ -29,7 +30,7 @@ struct LoginView: View {
     @State private var showingRegistration = false
     @State private var showingForgotPassword = false
     @State private var passkeyController = PasskeyController()
-    @State private var googleOAuth = GoogleOAuthSession()
+    @State private var oauthSession = OAuthSession()
     @FocusState private var focusedField: Field?
 
     private enum Field { case server, username, password, factor }
@@ -197,11 +198,33 @@ struct LoginView: View {
             }
 
             if capabilityLoaded && googleEnabled {
-                Button(action: submitGoogle) {
+                Button { submitOAuth(provider: "google") } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "g.circle.fill")
                             .font(.title3)
                         Text("Continue with Google")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 48)
+                    .background(Theme.bgRaised)
+                    .foregroundStyle(Theme.textPrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Theme.borderStrong, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+            }
+
+            if capabilityLoaded && githubEnabled {
+                Button { submitOAuth(provider: "github") } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            .font(.title3)
+                        Text("Continue with GitHub")
                             .font(.subheadline.weight(.medium))
                     }
                     .frame(maxWidth: .infinity)
@@ -630,12 +653,14 @@ struct LoginView: View {
             let (capabilities, challenge) = try await app.appleCapabilities(server: server)
             appleEnabled = capabilities.signInWithApple
             googleEnabled = capabilities.signInWithGoogle
+            githubEnabled = capabilities.signInWithGitHub
             registrationEnabled = capabilities.selfServiceRegistration
             appleChallenge = challenge
             capabilityLoaded = true
         } catch {
             appleEnabled = false
             googleEnabled = false
+            githubEnabled = false
             registrationEnabled = false
             appleChallenge = nil
             capabilityError = String(localized: "Couldn't check sign-in options. Tap to retry.")
@@ -643,7 +668,7 @@ struct LoginView: View {
         }
     }
 
-    private func submitGoogle() {
+    private func submitOAuth(provider: String) {
         guard !isBusy else { return }
         isBusy = true
         errorText = nil
@@ -651,17 +676,18 @@ struct LoginView: View {
         Task {
             defer { isBusy = false }
             do {
-                let authURL = try await app.startGoogleOAuth(
+                let authURL = try await app.startOAuth(
+                    provider: provider,
                     server: server,
                     deviceName: UIDevice.current.name
                 )
-                let callback = try await googleOAuth.authenticate(authorizationURL: authURL)
-                if let factor = try await app.completeGoogleOAuth(server: server, callbackURL: callback) {
+                let callback = try await oauthSession.authenticate(authorizationURL: authURL)
+                if let factor = try await app.completeOAuth(server: server, callbackURL: callback) {
                     factorChallenge = factor
                     factorCode = ""
                     focusedField = .factor
                 }
-            } catch let oauthError as GoogleOAuthError {
+            } catch let oauthError as OAuthError {
                 if case .cancelled = oauthError { return }
                 errorText = oauthError.localizedDescription
             } catch {

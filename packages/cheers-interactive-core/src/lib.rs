@@ -3,15 +3,19 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 pub mod global_uri;
 
-pub const VERSION: &str = "v0.9.1";
-pub const CATALOG_ID: &str = "urn:cheers:a2ui:catalog:v1";
+pub const VERSION_V1: &str = "v0.9.1";
+pub const CATALOG_ID_V1: &str = "urn:cheers:a2ui:catalog:v1";
+pub const VERSION: &str = "1.0";
+pub const CATALOG_ID: &str = "urn:cheers:a2ui:catalog:v2";
 pub const GUIDE_URI: &str = "cheers://help/interactive-ui";
 pub const CATALOG_URI: &str = "cheers://help/interactive-ui/catalog";
 pub const EXAMPLE_URI: &str = "cheers://help/interactive-ui/example";
-pub const CATALOG: &str = include_str!("../../../design-system/a2ui-catalog.json");
+pub const CATALOG_V1: &str = include_str!("../../../design-system/a2ui-catalog.json");
+pub const CATALOG: &str = include_str!("../../../design-system/a2ui-catalog-v2.json");
 pub const EXAMPLE: &str =
     include_str!("../../../frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json");
-pub const GUIDE: &str = "# Cheers interactive resources\n\nRead `read_ui_contract` before authoring UI. Its example prepares a draft; request_example sends a structured request. When called as a Bot, request_example is bound to your authenticated Bot id; human discovery uses an example UUID that must be replaced. Use A2UI v0.9.1 and catalog urn:cheers:a2ui:catalog:v1, not the Basic Catalog. Persist {a2ui:\"v0.9.1\",messages:[...]} using desk_write with channel_id, path forms/<name>.a2ui.json, content, and if_version (0 for create-only). Use desk_patch/desk_edit with if_version for updates. Use the global uri returned by desk_write/desk_read for cards and replies; cheers:desk/<path> is a channel-relative shorthand. A global URI is cheers:resource/<service UUID>/desk/<resource UUID> with optional ?v=N for a retained read-only revision. Never invent UUIDs or move relative links between channels. Attach v1 resource_ref cards using set_resource_cards with the current reply msg_id: during streaming cards are staged and published when the reply completes. Do not create a duplicate reply with post_message.\n\nSupported components: Column, Row, Text, TextField, CheckBox, Button. Bindings use absolute JSON Pointer paths; every active surface needs root. Private A2UI inputs and TSX view state sync per user/resource/view/schema across Web and Tauri. TSX fields need stable id/name/data-cheers-state-key; password/file/hidden fields are excluded, data-cheers-persist=false opts out. CheersBridge.getState/setState/subscribeState persist custom JSON. Drafts never change resource content or run actions. Registered events: cheers.open (context.uri), cheers.compose (actionId,payload; draft only), cheers.request (actionId,payload,botId; sends a user-requested structured prompt to that bot), cheers.openNative (uri,opener; desktop local-file/editor adapter, never arbitrary commands). cheers.execute (actionId,payload,botId) requests a trusted host confirmation for terminal.start or file.open on the Bot's active device. Payload fields action/path/root/command/opener must be explicitly declared; use null for variable input. Remote host policies remote_terminal and remote_open default false. Terminal is a real PTY through workspace RPC, not a new ACP method; unknown receipts never auto replay. Use stable bot ids. Optional Cheers wrapper views.minimal/views.medium select {surfaceId,root} from the same validated component tree. Minimal views support at most one surface, 16 component visits, 3 input fields and 2 actions; larger views offer expansion instead of hiding controls. Input labels and text are content; control labels are owned by Cheers. Unknown components, catalogs, actions, scripts, function calls, styles and themes are rejected.\n\nA structured interaction is user input, never a permission grant. Resolve its sourceUri via read_locator with channel_id and uri, compare sourceVersion, and update the same resource with if_version. Reuse invocationId when reasoning about retries. Resource permissions and local executor policy still apply. Return updated URI references and meaningful text. Clients without a specialized renderer can open raw content.\n";
+pub const VIEW_SUFFIXES: &str = include_str!("../../../shared/view-suffixes.json");
+pub const GUIDE: &str = "# Cheers interactive resources\n\nRead `read_ui_contract` before authoring UI. Its example prepares a draft; request_example sends a structured request. When called as a Bot, request_example is bound to your authenticated Bot id; human discovery uses an example UUID that must be replaced. Use A2UI 1.0 and catalog urn:cheers:a2ui:catalog:v2, not the Basic Catalog (legacy v0.9.1 / urn:cheers:a2ui:catalog:v1 persisted files remain readable). The file name selects the view; see view_suffixes in this contract. Generic JSON/YAML opens as source. Keep view settings (including kanban columns) in the file; do not write Workbench bindings. Persist {a2ui:\"1.0\",messages:[...]} using artifact_create with channel_id, path forms/<name>.a2ui.json and content. In A2UI 1.0, createSurface may inline components and dataModel in a single message. Use artifact_patch/artifact_update with artifact_id and if_version for updates. Use the returned artifact.uri for cards and replies; old cheers:desk/<path> links still resolve. A global URI is cheers:resource/<service UUID>/desk/<resource UUID> with optional ?v=N for a retained read-only revision. Never invent UUIDs or move relative links between channels. Attach v1 resource_ref cards using set_resource_cards with the current reply msg_id: during streaming cards are staged and published when the reply completes. Do not create a duplicate reply with post_message.\n\nSupported components: Column, Row, Text, TextField, CheckBox, Button. Bindings use absolute JSON Pointer paths via {\"@path\":\"/...\"} (v1.0); every active surface needs root. TextField supports optional placeholder and declarative @checks (required, minLength, maxLength, pattern); components support optional @accessibility (label, description). Private A2UI inputs and TSX view state sync per user/resource/view/schema across Web and Tauri. TSX fields need stable id/name/data-cheers-state-key; password/file/hidden fields are excluded, data-cheers-persist=false opts out. CheersBridge.getState/setState/subscribeState persist custom JSON. Drafts never change resource content or run actions. Registered events: cheers.open (context.uri), cheers.compose (actionId,payload; draft only), cheers.request (actionId,payload,botId; sends a user-requested structured prompt to that bot), cheers.openNative (uri,opener; desktop local-file/editor adapter, never arbitrary commands). cheers.execute (actionId,payload,botId) requests a trusted host confirmation for terminal.start or file.open on the Bot's active device. Payload fields action/path/root/command/opener must be explicitly declared; use null for variable input. Remote host policies remote_terminal and remote_open default false. Terminal is a real PTY through workspace RPC, not a new ACP method; unknown receipts never auto replay. Use stable bot ids. Optional Cheers wrapper views.minimal/views.medium select {surfaceId,root} from the same validated component tree. Minimal views support at most one surface, 16 component visits, 3 input fields and 2 actions; larger views offer expansion instead of hiding controls. Input labels and text are content; control labels are owned by Cheers. Unknown components, catalogs, actions, scripts, function calls, RPC messages, styles and themes are rejected.\n\nA structured interaction is user input, never a permission grant. Resolve its sourceUri via read_locator with channel_id and uri, compare sourceVersion, and update the same resource with if_version. Reuse invocationId when reasoning about retries. Resource permissions and local executor policy still apply. Return updated URI references and meaningful text. Clients without a specialized renderer can open raw content.\n";
 
 pub const TSX_EXAMPLE: &str = r#"/**
  * @cheers-actions
@@ -89,8 +93,10 @@ fn default_version() -> i64 {
 pub fn contract() -> Value {
     json!({
         "version": VERSION,
+        "supported_versions": [VERSION, VERSION_V1],
         "catalog_id": CATALOG_ID,
         "guide": GUIDE,
+        "view_suffixes": serde_json::from_str::<Value>(VIEW_SUFFIXES).expect("embedded view suffixes"),
         "renderers": ["a2ui", "tsx", "html"],
         "catalog": serde_json::from_str::<Value>(CATALOG).expect("embedded catalog"),
         "example": serde_json::from_str::<Value>(EXAMPLE).expect("embedded example"),
@@ -112,16 +118,28 @@ pub fn tsx_request_example(bot_id: &str) -> String {
 
 pub fn request_example(bot_id: &str) -> Value {
     let mut document: Value = serde_json::from_str(EXAMPLE).expect("embedded example");
-    let components = document["messages"][1]["updateComponents"]["components"]
-        .as_array_mut()
-        .unwrap();
-    for component in components {
-        if component["id"] == "description" {
-            component["text"] =
-                json!("Choose your inputs, then send an explicit request to the Bot.");
-        } else if component["id"] == "prepare" {
-            component["action"]["event"]["name"] = json!("cheers.request");
-            component["action"]["event"]["context"]["botId"] = json!(bot_id);
+    if let Some(messages) = document["messages"].as_array_mut() {
+        for message in messages {
+            let key = if message.get("createSurface").is_some() {
+                "createSurface"
+            } else {
+                "updateComponents"
+            };
+            let components = message
+                .get_mut(key)
+                .and_then(|section| section.get_mut("components"))
+                .and_then(Value::as_array_mut);
+            if let Some(components) = components {
+                for component in components {
+                    if component["id"] == "description" {
+                        component["text"] =
+                            json!("Choose your inputs, then send an explicit request to the Bot.");
+                    } else if component["id"] == "prepare" {
+                        component["action"]["event"]["name"] = json!("cheers.request");
+                        component["action"]["event"]["context"]["botId"] = json!(bot_id);
+                    }
+                }
+            }
         }
     }
     document
@@ -184,12 +202,230 @@ pub fn pointer(path: &str) -> Result<Vec<String>, &'static str> {
     Ok(parts)
 }
 
-fn binding(value: &Value) -> Result<(), &'static str> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProtoVersion {
+    V0_9_1,
+    V1_0,
+}
+
+impl ProtoVersion {
+    fn from_value(value: &Value) -> Result<Self, &'static str> {
+        match value.as_str() {
+            Some(VERSION_V1) => Ok(Self::V0_9_1),
+            Some(VERSION) => Ok(Self::V1_0),
+            _ => Err("unsupported version"),
+        }
+    }
+
+    fn version_str(self) -> &'static str {
+        match self {
+            Self::V0_9_1 => VERSION_V1,
+            Self::V1_0 => VERSION,
+        }
+    }
+
+    fn catalog_id(self) -> &'static str {
+        match self {
+            Self::V0_9_1 => CATALOG_ID_V1,
+            Self::V1_0 => CATALOG_ID,
+        }
+    }
+
+    fn binding_key(self) -> &'static str {
+        match self {
+            Self::V0_9_1 => "path",
+            Self::V1_0 => "@path",
+        }
+    }
+}
+
+fn binding(value: &Value, proto: ProtoVersion) -> Result<(), &'static str> {
     if value.is_string() {
         return Ok(());
     }
-    keys(value, &["path"])?;
-    pointer(value["path"].as_str().ok_or("binding needs path")?)?;
+    let key = proto.binding_key();
+    keys(value, &[key])?;
+    pointer(value[key].as_str().ok_or("binding needs path")?)?;
+    Ok(())
+}
+
+fn validate_accessibility(value: &Value, proto: ProtoVersion) -> Result<(), &'static str> {
+    keys(value, &["label", "description"])?;
+    if let Some(label) = value.get("label") {
+        binding(label, proto)?;
+    }
+    if let Some(desc) = value.get("description") {
+        binding(desc, proto)?;
+    }
+    Ok(())
+}
+
+fn parse_quantifier(bytes: &[u8], start: usize) -> Option<(usize, bool)> {
+    let ch = *bytes.get(start)?;
+    if ch == b'?' || ch == b'*' || ch == b'+' {
+        return Some((start + 1, ch == b'*' || ch == b'+'));
+    }
+    if ch == b'{' {
+        let end = bytes[start + 1..].iter().position(|&b| b == b'}')? + start + 1;
+        let body = std::str::from_utf8(&bytes[start + 1..end]).ok()?;
+        let (min_s, max_opt) = match body.split_once(',') {
+            Some((a, b)) => (a, Some(b)),
+            None => (body, None),
+        };
+        if min_s.is_empty() || !min_s.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let min: u32 = min_s.parse().ok()?;
+        if min > 256 {
+            return None;
+        }
+        let repeating = match max_opt {
+            None => min > 1,
+            Some("") => true,
+            Some(max_s) => {
+                if !max_s.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                let max: u32 = max_s.parse().ok()?;
+                if max > 256 || max < min {
+                    return None;
+                }
+                max > 1
+            }
+        };
+        return Some((end + 1, repeating));
+    }
+    None
+}
+
+fn is_safe_check_pattern(pattern: &str) -> bool {
+    let bytes = pattern.as_bytes();
+    let mut stack: Vec<(bool, bool)> = vec![(false, false)];
+    let mut in_class = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let ch = bytes[i];
+        if ch == b'\\' {
+            let Some(&next) = bytes.get(i + 1) else {
+                return false;
+            };
+            if next.is_ascii_digit() && next != b'0' || next == b'k' {
+                return false;
+            }
+            i += 2;
+            if let Some((next_i, _)) = parse_quantifier(bytes, i) {
+                stack.last_mut().unwrap().0 = true;
+                i = next_i;
+                if parse_quantifier(bytes, i).is_some() {
+                    return false;
+                }
+            }
+            continue;
+        }
+        if in_class {
+            if ch == b']' {
+                in_class = false;
+                i += 1;
+                if let Some((next_i, _)) = parse_quantifier(bytes, i) {
+                    stack.last_mut().unwrap().0 = true;
+                    i = next_i;
+                    if parse_quantifier(bytes, i).is_some() {
+                        return false;
+                    }
+                }
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        if ch == b'[' {
+            in_class = true;
+            i += 1;
+            continue;
+        }
+        if ch == b'(' {
+            if bytes.get(i + 1) == Some(&b'?')
+                && matches!(bytes.get(i + 2), Some(b'=' | b'!' | b'<'))
+            {
+                return false;
+            }
+            stack.push((false, false));
+            i += 1;
+            continue;
+        }
+        if ch == b')' {
+            if stack.len() <= 1 {
+                return false;
+            }
+            let (has_q, has_alt) = stack.pop().unwrap();
+            i += 1;
+            if let Some((next_i, repeating)) = parse_quantifier(bytes, i) {
+                if repeating && (has_q || has_alt) {
+                    return false;
+                }
+                stack.last_mut().unwrap().0 = true;
+                i = next_i;
+                if parse_quantifier(bytes, i).is_some() {
+                    return false;
+                }
+            } else if has_q {
+                stack.last_mut().unwrap().0 = true;
+            }
+            continue;
+        }
+        if ch == b'|' {
+            stack.last_mut().unwrap().1 = true;
+            i += 1;
+            continue;
+        }
+        i += 1;
+        if let Some((next_i, _)) = parse_quantifier(bytes, i) {
+            stack.last_mut().unwrap().0 = true;
+            i = next_i;
+            if parse_quantifier(bytes, i).is_some() {
+                return false;
+            }
+        }
+    }
+    !in_class && stack.len() == 1
+}
+
+fn validate_checks(value: &Value) -> Result<(), &'static str> {
+    let items = value.as_array().ok_or("checks must be an array")?;
+    if items.len() > 8 {
+        return Err("too many checks");
+    }
+    for item in items {
+        let rule = item
+            .get("rule")
+            .and_then(Value::as_str)
+            .ok_or("check rule required")?;
+        if let Some(msg) = item.get("message") {
+            let s = msg.as_str().ok_or("check message must be string")?;
+            if s.len() > 256 {
+                return Err("check message too long");
+            }
+        }
+        match rule {
+            "required" => keys(item, &["rule", "message"])?,
+            "minLength" | "maxLength" => {
+                keys(item, &["rule", "value", "message"])?;
+                let bound = item["value"].as_u64().ok_or("invalid check length bound")?;
+                let min = if rule == "minLength" { 0 } else { 1 };
+                if bound < min || bound > 4096 {
+                    return Err("invalid check length bound");
+                }
+            }
+            "pattern" => {
+                keys(item, &["rule", "value", "message"])?;
+                let pat = item["value"].as_str().ok_or("invalid check pattern")?;
+                if pat.is_empty() || pat.len() > 256 || !is_safe_check_pattern(pat) {
+                    return Err("invalid check pattern");
+                }
+            }
+            _ => return Err("unsupported check rule"),
+        }
+    }
     Ok(())
 }
 
@@ -222,13 +458,26 @@ fn safe_json(value: &Value, depth: usize) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn validate_component(node: &Value) -> Result<(), &'static str> {
+fn validate_component(node: &Value, proto: ProtoVersion) -> Result<(), &'static str> {
     if !id(&node["id"], 128) {
         return Err("invalid component id");
     }
+    let v2 = proto == ProtoVersion::V1_0;
+    if v2 {
+        if let Some(a11y) = node.get("@accessibility") {
+            validate_accessibility(a11y, proto)?;
+        }
+    }
     match node["component"].as_str().ok_or("component required")? {
         "Row" | "Column" => {
-            keys(node, &["id", "component", "children"])?;
+            keys(
+                node,
+                if v2 {
+                    &["id", "component", "children", "@accessibility"]
+                } else {
+                    &["id", "component", "children"]
+                },
+            )?;
             let children = node["children"].as_array().ok_or("children required")?;
             let mut seen = HashSet::new();
             if children.len() > 256
@@ -240,15 +489,41 @@ fn validate_component(node: &Value) -> Result<(), &'static str> {
             }
         }
         "Text" => {
-            keys(node, &["id", "component", "text"])?;
-            binding(&node["text"])?;
+            keys(
+                node,
+                if v2 {
+                    &["id", "component", "text", "@accessibility"]
+                } else {
+                    &["id", "component", "text"]
+                },
+            )?;
+            binding(&node["text"], proto)?;
         }
         "TextField" | "CheckBox" => {
-            keys(node, &["id", "component", "label", "value"])?;
-            binding(&node["label"])?;
-            binding(&node["value"])?;
+            let is_text_field = node["component"] == "TextField";
+            keys(
+                node,
+                if v2 && is_text_field {
+                    &[
+                        "id",
+                        "component",
+                        "label",
+                        "value",
+                        "placeholder",
+                        "@checks",
+                        "@accessibility",
+                    ]
+                } else if v2 {
+                    &["id", "component", "label", "value", "@accessibility"]
+                } else {
+                    &["id", "component", "label", "value"]
+                },
+            )?;
+            binding(&node["label"], proto)?;
+            binding(&node["value"], proto)?;
+            let key = proto.binding_key();
             if pointer(
-                node["value"]["path"]
+                node["value"][key]
                     .as_str()
                     .ok_or("input requires binding")?,
             )?
@@ -256,10 +531,25 @@ fn validate_component(node: &Value) -> Result<(), &'static str> {
             {
                 return Err("input requires non-root binding");
             }
+            if v2 && is_text_field {
+                if let Some(placeholder) = node.get("placeholder") {
+                    binding(placeholder, proto)?;
+                }
+                if let Some(checks) = node.get("@checks") {
+                    validate_checks(checks)?;
+                }
+            }
         }
         "Button" => {
-            keys(node, &["id", "component", "label", "action"])?;
-            binding(&node["label"])?;
+            keys(
+                node,
+                if v2 {
+                    &["id", "component", "label", "action", "@accessibility"]
+                } else {
+                    &["id", "component", "label", "action"]
+                },
+            )?;
+            binding(&node["label"], proto)?;
             keys(&node["action"], &["event"])?;
             keys(&node["action"]["event"], &["name", "context"])?;
             let event = &node["action"]["event"];
@@ -268,7 +558,7 @@ fn validate_component(node: &Value) -> Result<(), &'static str> {
                 Some("cheers.open" | "cheers.openNative") => {
                     let native = event["name"] == "cheers.openNative";
                     keys(context, if native { &["uri", "opener"] } else { &["uri"] })?;
-                    binding(&context["uri"])?;
+                    binding(&context["uri"], proto)?;
                     if let Some(uri) = context["uri"].as_str() {
                         if !uri.starts_with("cheers:") {
                             return Err("invalid locator");
@@ -307,7 +597,7 @@ fn validate_component(node: &Value) -> Result<(), &'static str> {
                         .ok_or("payload must be object")?;
                     for value in payload.values() {
                         if value.is_object() {
-                            binding(value)?;
+                            binding(value, proto)?;
                         } else if value.is_array() {
                             return Err("invalid payload value");
                         }
@@ -340,7 +630,8 @@ pub fn validate_document(
     doc: &Value,
 ) -> Result<HashMap<String, HashMap<String, Value>>, &'static str> {
     keys(doc, &["a2ui", "messages", "views"])?;
-    if doc["a2ui"] != VERSION || doc.to_string().len() > 256_000 {
+    let proto = ProtoVersion::from_value(&doc["a2ui"])?;
+    if doc.to_string().len() > 256_000 {
         return Err("unsupported version or oversized document");
     }
     safe_json(doc, 0)?;
@@ -350,6 +641,27 @@ pub fn validate_document(
     }
     let mut surfaces: HashMap<String, HashMap<String, Value>> = HashMap::new();
     let mut data_models: HashMap<String, Value> = HashMap::new();
+    let apply_components = |surface: &mut HashMap<String, Value>,
+                            components_val: &Value|
+     -> Result<(), &'static str> {
+        let components = components_val.as_array().ok_or("components required")?;
+        if components.len() > 256 {
+            return Err("too many components");
+        }
+        let mut seen = HashSet::new();
+        for node in components {
+            validate_component(node, proto)?;
+            let cid = node["id"].as_str().unwrap();
+            if !seen.insert(cid) {
+                return Err("duplicate component");
+            }
+            surface.insert(cid.into(), node.clone());
+        }
+        if surface.len() > 256 {
+            return Err("too many components");
+        }
+        Ok(())
+    };
     for message in messages {
         let kinds: Vec<_> = [
             "createSurface",
@@ -360,7 +672,7 @@ pub fn validate_document(
         .into_iter()
         .filter(|key| message.get(key).is_some())
         .collect();
-        if message["version"] != VERSION || kinds.len() != 1 {
+        if message["version"] != proto.version_str() || kinds.len() != 1 {
             return Err("invalid message envelope");
         }
         let kind = kinds[0];
@@ -371,13 +683,32 @@ pub fn validate_document(
         }
         let sid = body["surfaceId"].as_str().unwrap();
         if kind == "createSurface" {
-            keys(body, &["surfaceId", "catalogId"])?;
-            if body["catalogId"] != CATALOG_ID || surfaces.contains_key(sid) || surfaces.len() >= 8
+            keys(
+                body,
+                if proto == ProtoVersion::V1_0 {
+                    &["surfaceId", "catalogId", "components", "dataModel"]
+                } else {
+                    &["surfaceId", "catalogId"]
+                },
+            )?;
+            if body["catalogId"] != proto.catalog_id()
+                || surfaces.contains_key(sid)
+                || surfaces.len() >= 8
             {
                 return Err("unsupported catalog or duplicate surface");
             }
-            surfaces.insert(sid.into(), HashMap::new());
-            data_models.insert(sid.into(), json!({}));
+            let mut surface = HashMap::new();
+            let mut data = json!({});
+            if proto == ProtoVersion::V1_0 {
+                if let Some(dm) = body.get("dataModel") {
+                    patch_data(&mut data, &[], Some(dm))?;
+                }
+                if let Some(components) = body.get("components") {
+                    apply_components(&mut surface, components)?;
+                }
+            }
+            surfaces.insert(sid.into(), surface);
+            data_models.insert(sid.into(), data);
             continue;
         }
         let surface = surfaces.get_mut(sid).ok_or("surface not created")?;
@@ -402,22 +733,7 @@ pub fn validate_document(
             }
             _ => {
                 keys(body, &["surfaceId", "components"])?;
-                let components = body["components"].as_array().ok_or("components required")?;
-                if components.len() > 256 {
-                    return Err("too many components");
-                }
-                let mut seen = HashSet::new();
-                for node in components {
-                    validate_component(node)?;
-                    let cid = node["id"].as_str().unwrap();
-                    if !seen.insert(cid) {
-                        return Err("duplicate component");
-                    }
-                    surface.insert(cid.into(), node.clone());
-                }
-                if surface.len() > 256 {
-                    return Err("too many components");
-                }
+                apply_components(surface, &body["components"])?;
             }
         }
     }
@@ -754,16 +1070,75 @@ mod tests {
     fn embedded_contract_matches() {
         let c: Value = serde_json::from_str(CATALOG).unwrap();
         assert_eq!(c["catalogId"], CATALOG_ID);
+        let c1: Value = serde_json::from_str(CATALOG_V1).unwrap();
+        assert_eq!(c1["catalogId"], CATALOG_ID_V1);
         assert!(validate_document(&serde_json::from_str(EXAMPLE).unwrap()).is_ok());
         assert!(validate_document(&contract()["request_example"]).is_ok());
     }
     #[test]
     fn rejects_unknown_binding_and_cycle() {
         let mut d: Value = serde_json::from_str(EXAMPLE).unwrap();
-        d["messages"][1]["updateComponents"]["components"][0]["children"] = json!(["root"]);
+        d["messages"][0]["createSurface"]["components"][0]["children"] = json!(["root"]);
         assert!(validate_document(&d).is_err());
         assert!(pointer("/__proto__/polluted").is_err());
         assert!(pointer("/bad~2").is_err());
+
+        // Reject legacy path inside v1.0 document
+        let mut mixed: Value = serde_json::from_str(EXAMPLE).unwrap();
+        mixed["messages"][0]["createSurface"]["components"][3]["value"] =
+            json!({"path": "/report/topic"});
+        assert!(validate_document(&mixed).is_err());
+
+        // Reject unsupported @checks rule and unsafe ReDoS pattern
+        let mut bad_check: Value = serde_json::from_str(EXAMPLE).unwrap();
+        bad_check["messages"][0]["createSurface"]["components"][3]["@checks"] =
+            json!([{"rule": "eval"}]);
+        assert!(validate_document(&bad_check).is_err());
+
+        bad_check["messages"][0]["createSurface"]["components"][3]["@checks"] =
+            json!([{"rule": "pattern", "value": "^(a+)+$"}]);
+        assert!(validate_document(&bad_check).is_err());
+    }
+    #[test]
+    fn supports_legacy_v0_9_1_documents() {
+        let legacy = json!({
+            "a2ui": "v0.9.1",
+            "messages": [
+                {
+                    "version": "v0.9.1",
+                    "createSurface": {
+                        "surfaceId": "report",
+                        "catalogId": "urn:cheers:a2ui:catalog:v1"
+                    }
+                },
+                {
+                    "version": "v0.9.1",
+                    "updateComponents": {
+                        "surfaceId": "report",
+                        "components": [
+                            { "id": "root", "component": "Column", "children": ["topic", "prepare"] },
+                            { "id": "topic", "component": "TextField", "label": "Topic", "value": { "path": "/topic" } },
+                            {
+                                "id": "prepare",
+                                "component": "Button",
+                                "label": "Send",
+                                "action": {
+                                    "event": {
+                                        "name": "cheers.compose",
+                                        "context": {
+                                            "actionId": "report.prepare",
+                                            "payload": { "topic": { "path": "/topic" } }
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        });
+        assert!(validate_document(&legacy).is_ok());
+        assert_eq!(extract_a2ui_actions(&legacy).unwrap().len(), 1);
     }
     #[test]
     fn presentation_views_reference_only_validated_active_components() {
@@ -801,6 +1176,7 @@ mod tests {
         supplied.insert("topic".into(), json!("My Topic"));
         supplied.insert("includeSources".into(), json!(false));
         assert!(validate_action_input(&tsx_actions[0].payload, &supplied).is_ok());
+        assert!(validate_action_input(&a2ui_actions[0].payload, &supplied).is_ok());
 
         supplied.insert("includeSources".into(), json!(true));
         assert!(validate_action_input(&tsx_actions[0].payload, &supplied).is_ok());
@@ -812,7 +1188,7 @@ mod tests {
         let doc = contract()["request_example"].clone();
         let expected = extract_a2ui_actions(&doc).unwrap();
         for path in ["forms/report.a2ui.yaml", "forms/report.a2ui.yml"] {
-            let actual = extract_action_declarations(path, "a2ui: v0.9.1", Some(&doc)).unwrap();
+            let actual = extract_action_declarations(path, "a2ui: \"1.0\"", Some(&doc)).unwrap();
             assert_eq!(actual, expected);
             assert_eq!(actual[0].surface_id.as_deref(), Some("report"));
             assert_eq!(actual[0].component_id.as_deref(), Some("prepare"));
@@ -821,10 +1197,10 @@ mod tests {
     #[test]
     fn repeated_a2ui_action_ids_retain_their_component_and_surface() {
         let mut doc = contract()["request_example"].clone();
-        let mut other = doc["messages"][1]["updateComponents"]["components"][6].clone();
+        let mut other = doc["messages"][0]["createSurface"]["components"][6].clone();
         other["id"] = json!("prepare-other");
         other["action"]["event"]["context"]["payload"]["includeSources"] = json!(true);
-        doc["messages"][1]["updateComponents"]["components"]
+        doc["messages"][0]["createSurface"]["components"]
             .as_array_mut()
             .unwrap()
             .push(other);

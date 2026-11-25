@@ -6,7 +6,7 @@ import { LockOff, SlashedIcon, withSlash, SLASH_PATH } from "./slashed-icon";
 describe("slashed-icon", () => {
   it("renders LockOff with standard top-left to bottom-right diagonal slash", () => {
     const markup = renderToStaticMarkup(<LockOff className="h-4 w-4" />);
-    expect(markup).toContain('class="lucide lucide-lock-off lucide-LockOff h-4 w-4"');
+    expect(markup).toContain('class="lucide lucide-lock-off h-4 w-4"');
     expect(markup).toContain(`<path d="${SLASH_PATH}">`);
     // Includes lock body and shackle
     expect(markup).toContain("<rect");

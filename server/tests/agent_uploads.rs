@@ -213,11 +213,47 @@ async fn an_uploaded_file_downloads_byte_for_byte(db: PgPool) {
     let published = fixture.finish(&upload).await;
     assert_eq!(published["isError"], false, "{published}");
     let file_id = published["structuredContent"]["file_id"].as_str().unwrap();
+    let expires_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT expires_at FROM file_records WHERE file_id=$1")
+            .bind(file_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(
+        expires_at.is_none(),
+        "Bot-authored artifacts must not expire"
+    );
     assert!(
         published["structuredContent"]["artifact"]["uri"].is_string(),
         "{published}"
     );
     assert_eq!(fixture.download(file_id).await, bytes);
+    let human: Value = fixture
+        .client
+        .post(format!("{}/api/v1/files", fixture.base))
+        .bearer_auth(&fixture.user_token)
+        .query(&[
+            ("channel_id", fixture.channel.as_str()),
+            ("filename", "human.txt"),
+            ("content_type", "text/plain"),
+        ])
+        .body("human upload")
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let human_expiry: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT expires_at FROM file_records WHERE file_id=$1")
+            .bind(human["file_id"].as_str().unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let remaining = human_expiry - chrono::Utc::now();
+    assert!(remaining > chrono::Duration::days(6) && remaining <= chrono::Duration::days(7));
 }
 
 #[sqlx::test]

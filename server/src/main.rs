@@ -155,6 +155,8 @@ async fn main() -> anyhow::Result<()> {
     }
     // Let the resource layer (channel.files.read / inbox_open) read chat-file bytes.
     server::resource::files::init_s3(s3.clone(), config.s3_bucket.clone());
+    server::resource::artifact_backfill::spawn(db.clone());
+    server::resource::artifact_store::spawn(db.clone(), s3.clone(), config.s3_bucket.clone());
     server::resource::uploads::init(
         config.agent_upload_url_base(),
         config.agent_upload_max_mib as i64 * 1024 * 1024,
@@ -240,6 +242,7 @@ async fn main() -> anyhow::Result<()> {
         bot_registry,
         stream_registry,
         workspace_rpc,
+        session_control_acks: Arc::new(gateway::workspace_rpc::WorkspaceRpc::new()),
         web_push,
         push,
         mcp_delivery: Arc::default(),

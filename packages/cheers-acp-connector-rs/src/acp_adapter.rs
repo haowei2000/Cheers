@@ -32,7 +32,7 @@ use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, Permiss
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
     drain_updates, AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient,
-    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult,
+    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionListPage, SessionLoadResult,
     SessionStartOptions, SessionStartResult,
 };
 
@@ -556,6 +556,17 @@ impl RuntimeAdapter for AcpAdapter {
             )
             .await?;
         Ok(SessionLoadResult { metadata: result })
+    }
+
+    async fn list_sessions(&mut self, cursor: Option<&str>) -> anyhow::Result<SessionListPage> {
+        let mut params = json!({});
+        if let Some(cursor) = cursor {
+            params["cursor"] = json!(cursor);
+        }
+        let result = self
+            .request("session/list", params, self.request_timeout_ms())
+            .await?;
+        Ok(SessionListPage::from_response(&result))
     }
 
     async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()> {

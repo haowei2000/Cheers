@@ -9,6 +9,7 @@ import { FilePanel } from "./FilePanel";
 import type { WorkbenchContext } from "../context";
 import { applyPatchOps, type PatchOp } from "../patchOps";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
+import a2uiExample from "../lens/a2ui/example.a2ui.json";
 import "../lens/builtins";
 import "@/index.css";
 
@@ -17,7 +18,7 @@ import "@/index.css";
 // show is about the two views disagreeing about those three things.
 //
 // Walk it:
-//  1. Pick dev/plan.yaml (previews as a kanban). Switch to Raw, add a column, DON'T save,
+//  1. Pick dev/plan.kanban.yaml (previews as a kanban). Switch to Raw, add a column, DON'T save,
 //     switch back to Preview — the new column is there. (It used to be invisible: Raw and
 //     Preview each ran their own fs.read.)
 //  2. Still unsaved, the dirty dot ● shows in BOTH modes and one Save serves both.
@@ -27,12 +28,20 @@ import "@/index.css";
 //  4. Fix it; the controls come back.
 //  5. Edit in Preview, Save, switch to Raw — the text is the serialized edit and Save is
 //     disabled. (It used to conflict: Raw's version was stale.)
-//  6. Set dev/plan.yaml to Raw, click another file, click back — still Raw. (Mode used to
+//  6. Set dev/plan.kanban.yaml to Raw, click another file, click back — still Raw. (Mode used to
 //     reset to Preview on every selection change.)
 //  7. dev/notes.md has NO structured renderer: Preview is disabled, Raw only.
 
 const initial: Record<string, string> = {
-  "dev/plan.yaml": `# The board the channel works from. Comments here must survive every edit.
+  "views/form.a2ui.json": JSON.stringify(a2uiExample),
+  "views/trend.chart.json": JSON.stringify({ series: [{ name: "Requests", points: [[1, 2], [2, 4]] }] }),
+  "views/map.codemap.yaml": "codemap: 1\nnodes:\n  root:\n    label: Gateway\nedges: []\n",
+  "views/page.html": "<main><h1>HTML preview</h1><p>Selected by file name</p></main>",
+  "views/page.tsx": "export default function App() { return <main>React preview</main>; }",
+  "views/data.json": "[{\"name\":\"Source only\"}]",
+  "views/broken.table.json": "[invalid",
+
+  "dev/plan.kanban.yaml": `# The board the channel works from. Comments here must survive every edit.
 columns:
   - name: Planned
     items: [Unify the file session]
@@ -41,13 +50,13 @@ columns:
   - name: Shipped
     items: []
 `,
-  "dev/issues.yaml": `# One row per issue.
-- title: Unsaved Raw edits vanished on switch
-  severity: P1
-  status: fixed
-- title: Renderer matched against the wrong buffer
-  severity: P1
-  status: fixed
+  "dev/issues.table.yaml": `# Columns travel with the file.
+columns:
+  - { key: title, label: Issue }
+  - { key: severity, label: Severity, options: [P0, P1, P2] }
+rows:
+  - { title: Unsaved Raw edits vanished on switch, severity: P1 }
+  - { title: Renderer matched against the wrong buffer, severity: P1 }
 `,
   "dev/notes.md": "# Notes\n\nPlain markdown — previews, but as text.\n",
   "canvases/architecture.canvas.yaml": `canvas: 1
@@ -115,14 +124,7 @@ const context: WorkbenchContext = {
   pinned: [],
   togglePin: () => undefined,
   rendererExtensions: [],
-  // table/kanban are `pickable: false` — they need config, so a template's `view` binds
-  // them rather than the generic picker offering them. Same as a real channel.
-  bindings: {
-    "dev/plan.yaml": "builtin:kanban",
-    "dev/issues.yaml": "builtin:table",
-  },
-  setBinding: () => undefined,
-  configs: {},
+
 };
 
 function Preview() {
@@ -143,7 +145,7 @@ function Preview() {
             defaultPosClassName="left-1/2 top-8 -translate-x-1/2"
             bodyClassName="flex flex-col overflow-hidden p-0 space-y-0"
           >
-            <FilePanel ctx={context} />
+            <FilePanel ctx={{ ...context, openTarget: new URLSearchParams(location.search).get("file") }} />
           </FloatingPanel>
         </main>
       </AnnotationPreviewProvider>

@@ -6,7 +6,7 @@ import { AddContextIcon, AnnotationIcon } from "@/components/ui/editorial-icons"
 import { rangedFileContextItem, useContextPickStore } from "@/features/chat/context/contextPick";
 import { ResourceError } from "@/lib/realtimeTransport";
 import type { FsClient } from "../fsClient";
-import { formatOf } from "../renderers/registry";
+import { formatOf } from "../renderers/formats";
 import type { RendererExtension } from "./rendererExtension";
 import { reportRendererStatus } from "../extensions/runtime";
 import { uniqueSourceTextRange } from "../contextSource";
