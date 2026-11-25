@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-desktop"
-version = "0.1.48"
+version = "0.1.49"
 dependencies = [
  "base64 0.22.1",
  "cheers-acp-registry",
