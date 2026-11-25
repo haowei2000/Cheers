@@ -74,14 +74,13 @@ async fn interactive_http_rejects_forged_stale_requests_and_replays_accepted_rec
     sqlx::query("INSERT INTO channel_memberships(channel_id,member_id,member_type,role) VALUES($1,$2,'bot','member')").bind(channel.to_string()).bind(bot.to_string()).execute(&db).await.unwrap();
     let mut document: Value =
         serde_json::from_str(cheers_mcp_server::interactive::EXAMPLE).unwrap();
-    let action =
-        &mut document["messages"][1]["updateComponents"]["components"][6]["action"]["event"];
+    let action = &mut document["messages"][0]["createSurface"]["components"][6]["action"]["event"];
     action["name"] = json!("cheers.request");
     action["context"]["botId"] = json!(bot);
-    let mut duplicate = document["messages"][1]["updateComponents"]["components"][6].clone();
+    let mut duplicate = document["messages"][0]["createSurface"]["components"][6].clone();
     duplicate["id"] = json!("prepare-other");
     duplicate["action"]["event"]["context"]["payload"]["includeSources"] = json!(true);
-    document["messages"][1]["updateComponents"]["components"]
+    document["messages"][0]["createSurface"]["components"]
         .as_array_mut()
         .unwrap()
         .push(duplicate);

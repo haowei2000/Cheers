@@ -22,7 +22,7 @@
    Bot 调用时会绑定到自己的认证 Bot id；人类读取时使用示例 UUID，需替换目标。
    也可通过 MCP resources/read 读取
    `cheers://help/interactive-ui`、`/catalog`、`/example`。
-   本地规范源文件是 `design-system/a2ui-catalog.json`。
+   本地规范源文件是 `design-system/a2ui-catalog-v2.json`（存量 `v0.9.1` / `design-system/a2ui-catalog.json` 文档继续兼容读取）。
 2. 用 `artifact_create` 创建 `forms/report.a2ui.json`，已有文件使用
    `artifact_update` 或 `artifact_patch` 修改。
 3. 回复返回的 `artifact.uri`（`cheers:artifact/<id>`）。在完成前调用 `set_resource_cards`，
@@ -31,17 +31,19 @@
    Desk 卡片在回复内显示 minimal 预览，小表单可直接填写和提交；Expand 在聊天里
    展开更多内容。点击标题仍可打开 Workbench 的完整视图。
 
-文件结构是 `{ "a2ui": "v0.9.1", "messages": [...] }`。这是 Cheers 的持久化包装，
-其中消息使用固定的 A2UI v0.9.1 envelope。`createSurface.catalogId` 必须为
-`urn:cheers:a2ui:catalog:v1`；每个有效 surface 必须有 `root` 组件。
+文件结构是 `{ "a2ui": "1.0", "messages": [...] }`。这是 Cheers 的持久化包装，
+其中消息使用固定的 A2UI 1.0 envelope（存量 `v0.9.1` / `urn:cheers:a2ui:catalog:v1` 文档向后兼容）。`createSurface.catalogId` 必须为
+`urn:cheers:a2ui:catalog:v2`；每个有效 surface 必须有 `root` 组件。
 
-支持四种消息：createSurface、updateComponents、updateDataModel、deleteSurface。
+支持四种消息：createSurface（1.0 支持单消息内联 `components` 与 `dataModel`）、updateComponents、updateDataModel、deleteSurface。
 按顺序重放，最多八个有效 surface。不支持任意 Basic Catalog，也不宣称全协议兼容。
 
 ## 组件与动作
 
 目录包含 Column、Row、Text、TextField、CheckBox、Button。容器通过 children 引用
-组件 id；字符串可直接填写或使用 `{ "path": "/report/topic" }` 绑定。
+组件 id；字符串可直接填写或使用 `{ "@path": "/report/topic" }` 绑定。
+TextField 支持可选 `placeholder` 和声明式 `@checks`（`required`、`minLength`、`maxLength`、`pattern`）；
+组件支持可选 `@accessibility`（`label`、`description`）。
 输入只改变本地表单草稿，不修改源文件。文本按纯文本安全展示，控件复用 Cheers 组件。
 
 按钮的描述性 label 显示在旁边，实际按钮使用统一 Open/Request 标签。支持：
@@ -115,7 +117,7 @@ msg_id，并说明流式附卡。Agent 必须声明 HTTP MCP 支持，使用现�
 原生 renderer 尚未实现。cheers:desk 仍隐含当前频道；消息卡片显示有界 Desk 预览，
 完整视图继续由 Workbench 承载。
 
-协议参考：[A2UI v0.9.1](https://a2ui.org/specification/v0.9.1-a2ui/)。
+协议参考：[A2UI 1.0](https://a2ui.org/)。
 
 ## TSX 请求确认
 

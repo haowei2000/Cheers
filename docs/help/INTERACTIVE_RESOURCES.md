@@ -26,7 +26,8 @@ loader, or navigation surface. Existing file access and revision checks apply.
    Human discovery uses an example UUID; replace it with the intended Bot id.
    MCP `resources/read` also serves `cheers://help/interactive-ui`,
    `/catalog`, and `/example`. The canonical local catalog is
-   `design-system/a2ui-catalog.json`.
+   `design-system/a2ui-catalog-v2.json` (legacy v1 documents using
+   `design-system/a2ui-catalog.json` remain readable).
 2. Use `artifact_create`, or `artifact_update`/`artifact_patch` for existing
    artifacts, to persist a document such as `forms/report.a2ui.json`.
 3. Return the resulting `artifact.uri` (`cheers:artifact/<id>`) in the reply. Call
@@ -42,19 +43,13 @@ The persisted wrapper is a Cheers convention:
 
 ```json
 {
-  "a2ui": "v0.9.1",
+  "a2ui": "1.0",
   "messages": [
     {
-      "version": "v0.9.1",
+      "version": "1.0",
       "createSurface": {
         "surfaceId": "summary",
-        "catalogId": "urn:cheers:a2ui:catalog:v1"
-      }
-    },
-    {
-      "version": "v0.9.1",
-      "updateComponents": {
-        "surfaceId": "summary",
+        "catalogId": "urn:cheers:a2ui:catalog:v2",
         "components": [
           { "id": "root", "component": "Text", "text": "Report is ready." }
         ]
@@ -64,10 +59,11 @@ The persisted wrapper is a Cheers convention:
 }
 ```
 
-Each message follows the pinned A2UI envelope. This is a bounded custom catalog,
+Each message follows the pinned A2UI 1.0 envelope (`v0.9.1` / `urn:cheers:a2ui:catalog:v1`
+persisted documents remain supported for backward compatibility). This is a bounded custom catalog,
 not support for the entire Basic Catalog or all A2UI features. It accepts
-`createSurface`, `updateComponents`, `updateDataModel`, and `deleteSurface` in
-order, with at most eight active surfaces. Every active surface needs `root`.
+`createSurface` (with optional inline `components` and `dataModel`), `updateComponents`,
+`updateDataModel`, and `deleteSurface` in order, with at most eight active surfaces. Every active surface needs `root`.
 Component updates may reference later definitions within the transcript; final
 missing children or cycles are rejected. Only this catalog id is supported.
 
@@ -75,10 +71,13 @@ missing children or cycles are rejected. Only this catalog id is supported.
 
 `Column` / `Row` hold explicit child ids. `Text` renders escaped plain text.
 `TextField` and `CheckBox` have persistent labels and write to absolute JSON
-Pointer paths in local draft data. `Button` uses a descriptive adjacent label
+Pointer paths in local draft data. `TextField` supports optional `placeholder`
+and declarative `@checks` (`required`, `minLength`, `maxLength`, `pattern`).
+Components accept optional `@accessibility` (`label`, `description`).
+`Button` uses a descriptive adjacent label
 with registered Cheers Open/Request controls. Strings can be literal or
-`{"path":"/report/topic"}` bindings. Relative paths, collection templates,
-function calls, custom scripts, arbitrary styles, media URLs, and custom themes
+`{"@path":"/report/topic"}` bindings. Relative paths, collection templates,
+function calls, bidirectional RPC messages, custom scripts, arbitrary styles, media URLs, and custom themes
 are not in this catalog. Unknown properties fail validation.
 
 Buttons support four explicit event names:
@@ -91,7 +90,7 @@ Buttons support four explicit event names:
   agent turn, send a message, or execute a desktop command.
 
 - `cheers.request`: context `{ "actionId": "report.prepare", "botId": "<stable
-  bot UUID>", "payload": { "topic": { "path": "/report/topic" } } }`.
+  bot UUID>", "payload": { "topic": { "@path": "/report/topic" } } }`.
   Sends an explicit user request through the existing human message endpoint,
   then the existing Bot task/ACP `session/prompt` pipeline. The host adds
   `sourceUri`, `sourceVersion`, surface/component ids and a UUID `invocationId`.
@@ -182,7 +181,7 @@ Canvas embedding, non-Desk inline adapters, and SwiftUI/Compose renderers remain
 Channel-relative `cheers:desk/…` is still scoped to the current channel. Message
 cards expose bounded Desk previews and navigate to the complete Workbench view.
 
-Reference: [A2UI v0.9.1](https://a2ui.org/specification/v0.9.1-a2ui/).
+Reference: [A2UI 1.0](https://a2ui.org/).
 
 ## TSX request approval
 

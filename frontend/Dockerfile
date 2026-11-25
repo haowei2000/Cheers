@@ -26,6 +26,7 @@ COPY frontend/ ./
 COPY website/ ../website/
 COPY shared/ ../shared/
 COPY design-system/a2ui-catalog.json ../design-system/a2ui-catalog.json
+COPY design-system/a2ui-catalog-v2.json ../design-system/a2ui-catalog-v2.json
 RUN pnpm run build
 
 FROM ${BASE_REGISTRY}/library/nginx:alpine
