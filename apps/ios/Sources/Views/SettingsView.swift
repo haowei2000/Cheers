@@ -831,6 +831,8 @@ private struct SignInMethodsView: View {
     @Binding var googleIdentity: ExternalIdentityStatusDto?
     @Binding var githubIdentity: ExternalIdentityStatusDto?
 
+    @State private var newPassword = ""
+    @State private var confirmation = ""
     @State private var showIdentityConfirmation = false
     @State private var retryAction: (() -> Void)?
     @State private var errorText: String?
