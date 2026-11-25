@@ -11,6 +11,13 @@ import {
 } from "./builtins";
 import { getLens, lensIds } from "./registry";
 import "./builtins"; // side effect: register the lenses under test
+it("table reads file-owned columns and anchors rows inside the document", () => {
+  const data = { columns: [{ key: "name", label: "Task" }], rows: [{ name: "First" }], extra: true };
+  const markup = renderToStaticMarkup(<>{getLens("table")!.render({ data, config: undefined, onChange: () => {}, readOnly: true })}</>);
+  expect(markup).toContain("Task");
+  expect(markup).toContain("First");
+  expect(markup).toContain('data-workbench-anchor="[&quot;rows&quot;,0]"');
+});
 
 // The registry only OFFERS the table for arrays of plain objects, but the lens can
 // still receive anything (template bindings, files edited after binding) — these are

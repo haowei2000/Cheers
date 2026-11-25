@@ -37,13 +37,15 @@ pub fn build(state: AppState) -> Router {
     // Keep CORS policy explicit at the top-level router so every grouped route
     // shares a consistent browser/API access policy.
     Router::new()
-        .merge(build_public_routes())
+        .merge(build_public_routes(&state))
         .merge(build_auth_flow_routes(state.clone()))
         .merge(build_authed_routes(state.clone()))
         .merge(build_ws_routes())
         // Explicit request-body cap (audit H3/M5): replaces the implicit 2MB
-        // default with an intentional 16 MiB ceiling sized for attachments.
-        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
+        // default with an intentional ceiling sized for attachments.
+        .layer(DefaultBodyLimit::max(
+            state.config.max_request_body_mib * 1024 * 1024,
+        ))
         // Backstop request timeout so a stuck handler can't pin a worker; set
         // generously so legitimate slow connector RPCs aren't cut off.
         .layer(TimeoutLayer::new(Duration::from_secs(120)))
@@ -375,6 +377,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         // DM: a type='dm' channel. Static segment → matches before :channel_id.
         .route(
+            "/api/v1/channels/latest-messages",
+            post(api::messages::latest_messages),
+        )
+        .route(
             "/api/v1/channels/dm",
             get(api::channels::list_dms).post(api::channels::create_dm),
         )
@@ -524,11 +530,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/channels/:channel_id/voice/consent",
-            post(api::voice::grant_consent),
-        )
-        .route(
-            "/api/v1/channels/:channel_id/voice/consent",
-            delete(api::voice::withdraw_consent),
+            post(api::voice::grant_consent).delete(api::voice::withdraw_consent),
         )
         .route(
             "/api/v1/channels/:channel_id/voice/transcript/export",
@@ -547,6 +549,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::messages::cancel_message),
         )
         // ── Per-channel sessions: primary + other (docs/arch/SESSION_MODEL.md) ─
+        .route(
+            "/api/v1/channels/:channel_id/sessions/resolve",
+            post(api::session_attach::resolve_session),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/bots/:bot_id/sessions/attach",
+            post(api::session_attach::attach_session),
+        )
         .route(
             "/api/v1/channels/:channel_id/bots/:bot_id/sessions",
             get(api::session_control::list_sessions).post(api::session_control::create_session),
@@ -667,6 +677,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/bots/:bot_id/social-policy",
             get(api::bots::get_bot_social_policy).put(api::bots::update_bot_social_policy),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/mcp-policy",
+            get(api::bots::get_bot_mcp_policy).put(api::bots::update_bot_mcp_policy),
         )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
         .route("/api/v1/bots/:bot_id/disable", post(api::bots::disable_bot))
@@ -961,6 +975,19 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/admin/settings/stt/test",
             post(api::stt_settings::test_settings),
         )
+        // Admin instance settings: reviewed runtime overrides (no restart).
+        .route(
+            "/api/v1/admin/settings/runtime",
+            get(api::runtime_settings::list_settings),
+        )
+        .route(
+            "/api/v1/admin/settings/runtime/:key",
+            put(api::runtime_settings::put_setting),
+        )
+        .route(
+            "/api/v1/admin/settings/runtime/:key/revisions",
+            get(api::runtime_settings::list_revisions),
+        )
         .route(
             "/api/v1/mcp/oauth/authorize",
             get(api::mcp::authorize_inspect).post(api::mcp::authorize_approve),
@@ -968,7 +995,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .layer(middleware::from_fn_with_state(state.clone(), jwt_auth))
 }
 
-fn build_public_routes() -> Router<AppState> {
+fn build_public_routes(state: &AppState) -> Router<AppState> {
     // Public endpoints used before token acquisition.
     Router::new()
         .route("/health", get(health))
@@ -990,11 +1017,19 @@ fn build_public_routes() -> Router<AppState> {
         // initialization-based 2025-06-18/2025-11-25 clients get no session.
         // Every POST carries a host-bound, channel-narrowed bearer token; the
         // host is re-validated on each request, so revocation is immediate.
-        // 12 MiB accommodates the existing 8 MiB binary attachment limit after
-        // base64 expansion while retaining an endpoint-local hard cap.
+        // The default 12 MiB accommodates the existing 8 MiB binary attachment
+        // limit after base64 expansion while retaining an endpoint-local hard cap.
         .route(
             "/mcp",
-            post(api::mcp::mcp_http).layer(DefaultBodyLimit::max(12 * 1024 * 1024)),
+            post(api::mcp::mcp_http).layer(DefaultBodyLimit::max(
+                state.config.mcp_max_body_mib * 1024 * 1024,
+            )),
+        )
+        // Authenticated by its single-file ticket. The handler reads the body itself, up
+        // to the size the ticket allows, so the body limit above does not apply.
+        .route(
+            "/api/v1/agent-uploads/:upload_id",
+            put(api::agent_uploads::receive_upload),
         )
         .route(
             "/oauth/token",

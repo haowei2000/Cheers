@@ -103,6 +103,8 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private val SYSTEM_TYPES = setOf("routing", "announcement", "notification")
 
+private val CHEERS_LINK = Regex("""cheers:(?:artifact|desk|inbox)/[^\s<>()\[\]`]+""")
+
 private sealed interface ChatItem {
     val key: String
 
@@ -597,7 +599,7 @@ private fun BubbleRow(item: ChatItem.Bubble, maxBubbleWidth: Dp, onOpenArtifact:
                             text = remember(m.content, onOpenArtifact) {
                                 buildAnnotatedString {
                                     append(m.content)
-                                    Regex("""cheers:(?:artifact|desk|inbox)/[^\s<>()\[\]`]+""").findAll(m.content).forEach { match ->
+                                    CHEERS_LINK.findAll(m.content).forEach { match ->
                                         addLink(LinkAnnotation.Clickable(
                                             tag = match.value,
                                             styles = TextLinkStyles(style = SpanStyle(textDecoration = TextDecoration.Underline)),

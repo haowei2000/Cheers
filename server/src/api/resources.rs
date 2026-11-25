@@ -23,6 +23,15 @@ fn resource_error((code, message): (String, String)) -> AppError {
     }
 }
 
+/// The calling user as a resource principal.
+pub(crate) fn user_principal(claims: &Claims) -> Result<Principal, AppError> {
+    claims
+        .sub
+        .parse()
+        .map(Principal::user)
+        .map_err(|_| AppError::Unauthorized("Invalid user".into()))
+}
+
 #[derive(Deserialize)]
 pub struct ResolveBody {
     pub uri: String,
@@ -134,12 +143,7 @@ pub async fn resolve(
     Extension(claims): Extension<Claims>,
     Json(body): Json<ResolveBody>,
 ) -> Result<Json<Value>, AppError> {
-    let principal = Principal::user(
-        claims
-            .sub
-            .parse()
-            .map_err(|_| AppError::Unauthorized("Invalid user".into()))?,
-    );
+    let principal = user_principal(&claims)?;
     Ok(Json(
         resolve_descriptor(&state.db, &principal, &body.uri, body.channel_id, None).await?,
     ))
@@ -194,12 +198,7 @@ pub async fn read_draft(
     Query(key): Query<DraftQuery>,
 ) -> Result<Json<Value>, AppError> {
     validate_draft_key(&key)?;
-    let principal = Principal::user(
-        claims
-            .sub
-            .parse()
-            .map_err(|_| AppError::Unauthorized("Invalid user".into()))?,
-    );
+    let principal = user_principal(&claims)?;
     let source = desk_resource(&state.db, &principal, &key.uri, key.channel_id).await?;
     let row=sqlx::query!("SELECT revision,source_version,data FROM resource_view_drafts WHERE user_id=$1 AND resource_id=$2 AND view_id=$3 AND schema_version=$4",claims.sub,source.resource_id,key.view_id,key.schema_version).fetch_optional(&state.db).await?;
     Ok(Json(row.map_or(json!({"revision":0,"data":null,"source_version":source.version}),|r|
@@ -217,12 +216,7 @@ pub async fn write_draft(
     if body.data.to_string().len() > 60_000 {
         return Err(AppError::PayloadTooLarge("Draft exceeds 60 KB".into()));
     }
-    let principal = Principal::user(
-        claims
-            .sub
-            .parse()
-            .map_err(|_| AppError::Unauthorized("Invalid user".into()))?,
-    );
+    let principal = user_principal(&claims)?;
     let source = desk_resource(&state.db, &principal, &body.key.uri, body.key.channel_id).await?;
     if source.deleted
         || source.version != body.source_version

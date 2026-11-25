@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.artifact_id,r.version,a.source_kind,r.object_key AS \"object_key!\",r.object_bucket AS \"object_bucket!\",r.sha256 AS \"sha256!\",r.snapshot,a.expires_at\n        FROM artifact_revisions r JOIN artifacts a USING(artifact_id)\n        WHERE r.object_key IS NOT NULL AND r.object_bucket IS NOT NULL AND r.sha256 IS NOT NULL\n          AND (r.verified_at IS NULL OR r.verified_at < NOW()-INTERVAL '1 hour')\n        ORDER BY r.verified_at NULLS FIRST,r.artifact_id,r.version LIMIT 10",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "artifact_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_kind",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "object_key!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "object_bucket!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "sha256!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "snapshot",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "7a72d071dccbbc342dece3b0039b3a9a695d39bce3d24a8e6be519ba461cba61"
+}

@@ -23,14 +23,6 @@ export interface WorkbenchContext {
   togglePin: (path: string) => void;
   /** Personal or temporary macOS renderer extensions. */
   rendererExtensions: RendererExtension[];
-  /** path -> renderer id: the user's explicit Preview renderer for a file (otherwise the
-   *  best content-matching candidate is used). Persisted in .workbench.json. */
-  bindings: Record<string, string>;
-  /** Set (or clear, with null) a file's renderer binding. */
-  setBinding: (path: string, rendererId: string | null) => void;
-  /** path -> lens config (e.g. table columns). Written create-only by scenario
-   *  activation; consumed by built-in lenses at preview time. Persisted in .workbench.json. */
-  configs: Record<string, unknown>;
   /** Deep-link target: a file path the browser should auto-open (e.g. a clicked Desk
    *  ref in a bot reply, or a just-activated scenario's first file). */
   openTarget?: string | null;

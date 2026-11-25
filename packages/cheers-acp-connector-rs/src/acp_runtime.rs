@@ -20,10 +20,10 @@ use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
     AuthenticateRequest, CancelNotification, CreateElicitationRequest, CreateElicitationResponse,
-    ElicitationAction, Implementation, InitializeRequest, LoadSessionRequest, NewSessionRequest,
-    PromptRequest, RequestPermissionOutcome, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionConfigValueId, SetSessionConfigOptionRequest, SetSessionModeRequest, AGENT_METHOD_NAMES,
-    CLIENT_METHOD_NAMES,
+    ElicitationAction, Implementation, InitializeRequest, ListSessionsRequest, LoadSessionRequest,
+    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionConfigValueId, SetSessionConfigOptionRequest,
+    SetSessionModeRequest, AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{
@@ -44,7 +44,7 @@ use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, Permiss
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
     drain_updates, AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient,
-    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult,
+    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionListPage, SessionLoadResult,
     SessionStartOptions, SessionStartResult,
 };
 
@@ -314,6 +314,17 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         Ok(SessionLoadResult { metadata: result })
     }
 
+    async fn list_sessions(&mut self, cursor: Option<&str>) -> anyhow::Result<SessionListPage> {
+        let result = self
+            .request(
+                AGENT_METHOD_NAMES.session_list,
+                typed_params(ListSessionsRequest::new().cursor(cursor.map(str::to_string))),
+                self.request_timeout_ms(),
+            )
+            .await?;
+        Ok(SessionListPage::from_response(&result))
+    }
+
     async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()> {
         self.notify(
             AGENT_METHOD_NAMES.session_cancel,
@@ -512,38 +523,7 @@ async fn run_actor(
     request_routes: RequestRoutes,
     cmd_rx: mpsc::Receiver<Command>,
 ) -> anyhow::Result<()> {
-    let mut command = TokioCommand::new(&config.command);
-    command
-        .args(&config.args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if !config.inherit_env {
-        command.env_clear();
-    }
-    if let Some(cwd) = &config.cwd {
-        command.current_dir(cwd);
-    }
-    for (key, value) in &config.env {
-        command.env(key, value);
-    }
-    let mut child = command.spawn().with_context(|| {
-        format!(
-            "failed to start ACP agent account={account_id} command={}",
-            config.command
-        )
-    })?;
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow!("ACP agent stdin was not piped"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow!("ACP agent stdout was not piped"))?;
-    if let Some(stderr) = child.stderr.take() {
-        spawn_stderr_reader(account_id.clone(), stderr);
-    }
+    let (mut child, stdin, stdout) = spawn_agent(&account_id, &config)?;
     // ByteStreams takes (outgoing/write, incoming/read) as futures-io streams.
     let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
 
@@ -606,6 +586,8 @@ async fn run_actor(
                     });
                 }
                 if msg.method == CLIENT_METHOD_NAMES.elicitation_create {
+                    let cancel =
+                        || typed_params(CreateElicitationResponse::new(ElicitationAction::Cancel));
                     let parsed = CreateElicitationRequest::deserialize(&msg.params);
                     let response = match parsed {
                         Ok(_request) => {
@@ -626,9 +608,7 @@ async fn run_actor(
                                 None => None,
                             };
                             if acp_session_id.is_none() && request_route.is_none() {
-                                typed_params(CreateElicitationResponse::new(
-                                    ElicitationAction::Cancel,
-                                ))
+                                cancel()
                             } else {
                                 let (tx, rx) = oneshot::channel();
                                 if event_req
@@ -641,29 +621,21 @@ async fn run_actor(
                                     .await
                                     .is_err()
                                 {
-                                    typed_params(CreateElicitationResponse::new(
-                                        ElicitationAction::Cancel,
-                                    ))
+                                    cancel()
                                 } else {
-                                    rx.await.unwrap_or_else(|_| {
-                                        typed_params(CreateElicitationResponse::new(
-                                            ElicitationAction::Cancel,
-                                        ))
-                                    })
+                                    rx.await.unwrap_or_else(|_| cancel())
                                 }
                             }
                         }
                         Err(err) => {
                             tracing::warn!(account = %account_req, "invalid elicitation/create: {err}");
-                            typed_params(CreateElicitationResponse::new(ElicitationAction::Cancel))
+                            cancel()
                         }
                     };
                     // Validate the bridge response against the SDK before it reaches the agent.
                     let response = serde_json::from_value::<CreateElicitationResponse>(response)
                         .map(typed_params)
-                        .unwrap_or_else(|_| {
-                            typed_params(CreateElicitationResponse::new(ElicitationAction::Cancel))
-                        });
+                        .unwrap_or_else(|_| cancel());
                     responder.respond(response)?;
                     return Ok(Handled::Yes);
                 }
@@ -876,10 +848,55 @@ async fn send_request(
 }
 
 /// Canonical map key for ACP request IDs while preserving string/number distinction.
-fn request_id_key(value: &Value) -> Option<String> {
+pub(crate) fn request_id_key(value: &Value) -> Option<String> {
     matches!(value, Value::String(_) | Value::Number(_))
         .then(|| serde_json::to_string(value).ok())
         .flatten()
+}
+
+/// Spawns the agent child with the configured env/cwd policy, piping stdio and
+/// logging its stderr. Shared by both transports.
+pub(crate) fn spawn_agent(
+    account_id: &str,
+    config: &StdioAgentConfig,
+) -> anyhow::Result<(
+    tokio::process::Child,
+    tokio::process::ChildStdin,
+    tokio::process::ChildStdout,
+)> {
+    let mut command = TokioCommand::new(&config.command);
+    command
+        .args(&config.args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if !config.inherit_env {
+        command.env_clear();
+    }
+    if let Some(cwd) = &config.cwd {
+        command.current_dir(cwd);
+    }
+    for (key, value) in &config.env {
+        command.env(key, value);
+    }
+    let mut child = command.spawn().with_context(|| {
+        format!(
+            "failed to start ACP agent account={account_id} command={}",
+            config.command
+        )
+    })?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("ACP agent stdin was not piped"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("ACP agent stdout was not piped"))?;
+    if let Some(stderr) = child.stderr.take() {
+        spawn_stderr_reader(account_id.to_string(), stderr);
+    }
+    Ok((child, stdin, stdout))
 }
 
 fn spawn_stderr_reader(account_id: String, stderr: tokio::process::ChildStderr) {

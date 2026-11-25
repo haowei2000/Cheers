@@ -112,6 +112,21 @@ pub(crate) fn config_update_frame(settings: proto::ConnectorControlSettings) -> 
     })
 }
 
+/// Tells a connector whether its `direct` Agent picked up a renewed MCP token
+/// (`gateway::mcp_delivery`).
+pub(crate) fn mcp_delivery_observed_frame(
+    channel_id: String,
+    agent: String,
+    header_refresh: bool,
+) -> Value {
+    frame_value(&proto::ControlInbound::McpDeliveryObserved {
+        v: BRIDGE_PROTOCOL_VERSION,
+        channel_id,
+        agent,
+        header_refresh,
+    })
+}
+
 /// App-level heartbeat reply. Deliberately version-less (wire-compat).
 pub(crate) fn pong_frame() -> Value {
     frame_value(&proto::DataInbound::Pong)
@@ -225,6 +240,32 @@ pub(crate) fn cancel_frame(placeholder_msg_id: Uuid, reason: &str) -> Value {
     frame_value(&proto::ControlInbound::Cancel {
         msg_id: placeholder_msg_id.to_string(),
         reason: Some(reason.to_string()),
+    })
+}
+
+/// Session lifecycle control (`attach`, `terminate`, …), answered by a
+/// `runtime_session_control_ack` carrying the same `request_id`.
+pub(crate) fn runtime_session_control_frame(
+    request_id: &str,
+    action: &str,
+    session: proto::RuntimeSessionControlSession,
+    reason: Option<&str>,
+) -> Value {
+    frame_value(&proto::ControlInbound::RuntimeSessionControl {
+        v: BRIDGE_PROTOCOL_VERSION,
+        request_id: request_id.to_string(),
+        action: action.to_string(),
+        session,
+        runtime: proto::RuntimeDescriptor {
+            protocol: "acp".to_string(),
+            name: None,
+            version: None,
+            provider_session_id: None,
+            config: None,
+            extra: Default::default(),
+        },
+        reason: reason.map(str::to_string),
+        deadline_ms: None,
     })
 }
 
@@ -348,6 +389,7 @@ pub(crate) struct WorkspaceReqExtra {
     commit: Option<String>,
     commit_path: Option<String>,
     watch_id: Option<String>,
+    session_ref: Option<proto::session_ref::SessionRef>,
 }
 
 /// Parse the caller-supplied op-specific fields. `Null` (the documented "this
@@ -387,6 +429,7 @@ pub(crate) fn workspace_req_frame(
         commit: extra.commit,
         commit_path: extra.commit_path,
         watch_id: extra.watch_id,
+        session_ref: extra.session_ref,
     })
 }
 
@@ -647,6 +690,20 @@ mod tests {
     }
 
     #[test]
+    fn mcp_delivery_observed_matches_fixture() {
+        let frame = mcp_delivery_observed_frame(
+            "11111111-2222-4333-8444-555555555555".into(),
+            "codex-acp@2.3.0".into(),
+            false,
+        );
+        assert_matches_fixture(
+            &frame,
+            "control/to_connector/mcp_delivery_observed.json",
+            &[],
+        );
+    }
+
+    #[test]
     fn mode_set_matches_fixture() {
         let frame = mode_set_frame(
             "99999999-aaaa-4bbb-8ccc-dddddddddddd",
@@ -655,6 +712,33 @@ mod tests {
             None,
         );
         assert_matches_fixture(&frame, "control/to_connector/mode_set.json", &[]);
+    }
+
+    #[test]
+    fn runtime_session_control_attach_matches_fixture() {
+        let session_id = "eeeeeeee-ffff-4000-8111-222222222222";
+        let frame = runtime_session_control_frame(
+            "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+            "attach",
+            proto::RuntimeSessionControlSession {
+                id: session_id.into(),
+                provider_session_key: format!("cheers:session:{session_id}"),
+                primary_scope_type: Some("channel".into()),
+                primary_scope_id: Some("77777777-8888-4999-8aaa-bbbbbbbbbbbb".into()),
+                task_scope_id: None,
+                cwd: Some("/workspace".into()),
+                additional_dirs: vec![],
+                session_config: None,
+                provider_session_id: Some("01a1422e-d5e6-7e10-be3b-040fa49834a4".into()),
+                extra: Default::default(),
+            },
+            None,
+        );
+        assert_matches_fixture(
+            &frame,
+            "control/to_connector/runtime_session_control_attach.json",
+            &[],
+        );
     }
 
     #[test]
@@ -762,5 +846,31 @@ mod tests {
             WorkspaceReqExtra::default(),
         );
         assert_matches_fixture(&frame, "data/to_connector/workspace_req_watch.json", &[]);
+    }
+
+    #[test]
+    fn workspace_req_session_resolve_matches_fixture() {
+        let reference = proto::session_ref::parse_session_ref(
+            "codex://threads/01a1422e-d5e6-7e10-be3b-040fa49834a4",
+            None,
+        )
+        .unwrap();
+        let frame = workspace_req_frame(
+            "req-5",
+            "session_resolve",
+            "",
+            None,
+            None,
+            &[],
+            WorkspaceReqExtra {
+                session_ref: Some(reference),
+                ..Default::default()
+            },
+        );
+        assert_matches_fixture(
+            &frame,
+            "data/to_connector/workspace_req_session_resolve.json",
+            &[],
+        );
     }
 }

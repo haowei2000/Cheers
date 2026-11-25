@@ -1,4 +1,7 @@
 pub mod activity;
+pub mod artifact_backfill;
+pub mod artifact_store;
+mod artifact_views;
 pub mod artifacts;
 pub mod bot_status;
 pub mod channel_info;
@@ -14,6 +17,7 @@ pub mod messages;
 pub mod plan;
 pub mod sessions;
 pub mod task_claims;
+pub mod uploads;
 pub mod usage;
 pub mod voice;
 
@@ -47,6 +51,13 @@ impl PrincipalType {
 pub struct Principal {
     pub principal_type: PrincipalType,
     pub principal_id: Uuid,
+    /// A bot working on this user's task: every channel check uses the lower
+    /// of the bot's and the user's role there, and the user must be a member.
+    /// It only narrows; the bot never gains what the user has and it lacks.
+    pub on_behalf_of: Option<Uuid>,
+    /// The task execution a task-bound token serves. Work that outlives the call, such as an
+    /// upload ticket, must stop when this task does.
+    pub task: Option<Uuid>,
 }
 
 impl Principal {
@@ -54,14 +65,30 @@ impl Principal {
         Self {
             principal_type: PrincipalType::Bot,
             principal_id: bot_id,
+            on_behalf_of: None,
+            task: None,
+        }
+    }
+
+    /// The bot, narrowed to what `user_id` may do (see `on_behalf_of`).
+    pub fn bot_for(bot_id: Uuid, user_id: Option<Uuid>) -> Self {
+        Self {
+            on_behalf_of: user_id,
+            ..Self::bot(bot_id)
         }
     }
 
     #[allow(dead_code)]
+    pub fn for_task(self, task: Option<Uuid>) -> Self {
+        Self { task, ..self }
+    }
+
     pub fn user(user_id: Uuid) -> Self {
         Self {
             principal_type: PrincipalType::User,
             principal_id: user_id,
+            on_behalf_of: None,
+            task: None,
         }
     }
 
@@ -166,11 +193,7 @@ fn resolve_frame(resource: &str, params: &Value) -> Result<(String, Value), (Str
 }
 
 async fn resolve_resource(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel = params
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .and_then(|v| v.parse().ok())
-        .ok_or_else(|| resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel = uuid_param(params, "channel_id")?;
     crate::api::resources::resolve_descriptor(
         db,
         principal,
@@ -223,7 +246,13 @@ pub async fn dispatch(
         "channel.artifacts.create" => artifacts::handle_create(db, &principal, &params).await,
         "channel.artifacts.update" => artifacts::handle_update(db, &principal, &params).await,
         "channel.artifacts.patch" => artifacts::handle_patch(db, &principal, &params).await,
-        "channel.artifacts.deliver" => files::handle_create(db, &principal, &params).await,
+        "channel.artifacts.delete" => artifacts::handle_delete(db, &principal, &params).await,
+        "channel.artifacts.rename" => artifacts::handle_rename(db, &principal, &params).await,
+        "channel.artifacts.deliver" => artifacts::handle_deliver(db, &principal, &params).await,
+        "channel.artifacts.upload_prepare" => {
+            uploads::handle_prepare(db, &principal, &params).await
+        }
+        "channel.artifacts.upload_finish" => uploads::handle_finish(db, &principal, &params).await,
         "channel.context" => context::handle(db, &principal, &params).await,
 
         // ── mesh step 6：新增读操作 ───────────────────────────────────────
@@ -331,11 +360,7 @@ async fn require_channel_admin(
     principal: &Principal,
     params: &Value,
 ) -> Result<(), (String, String)> {
-    let channel_id = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<Uuid>().ok())
-        .ok_or_else(|| resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id = uuid_param(params, "channel_id")?;
     let membership = authorize_channel_read(db, principal, channel_id).await?;
     if role_can_admin(&membership.role) {
         Ok(())
@@ -402,6 +427,25 @@ pub fn not_found(what: &str) -> (String, String) {
     resource_error("NOT_FOUND", format!("{what} not found"))
 }
 
+/// A required UUID param; absent or malformed is `INVALID_PARAMS` "`{key} required`".
+fn uuid_param(params: &Value, key: &str) -> Result<Uuid, (String, String)> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| resource_error("INVALID_PARAMS", format!("{key} required")))
+}
+
+/// The required `channel_id` as the activity/board/fs verbs report it:
+/// `BAD_REQUEST` "missing channel_id".
+fn channel_id_or_bad_request(params: &Value) -> Result<Uuid, (String, String)> {
+    params
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| resource_error("BAD_REQUEST", "missing channel_id"))
+}
+
 pub async fn authorize_channel_read(
     db: &PgPool,
     principal: &Principal,
@@ -426,22 +470,51 @@ async fn authorize_channel_read_with_executor<'a, E>(
 where
     E: Executor<'a, Database = Postgres>,
 {
+    // One query, so the executor (a pool, connection or transaction) is used
+    // once; the delegating user's role joins in only when there is one.
     let row = sqlx::query!(
-        "SELECT role
-         FROM channel_memberships
-         WHERE channel_id = $1 AND member_id = $2 AND member_type = $3",
+        r#"SELECT b.role AS "role!", u.role AS "user_role?"
+         FROM channel_memberships b
+         LEFT JOIN channel_memberships u
+           ON u.channel_id = b.channel_id AND u.member_type = 'user' AND u.member_id = $4
+         WHERE b.channel_id = $1 AND b.member_id = $2 AND b.member_type = $3"#,
         channel_id.to_string(),
         principal.principal_id.to_string(),
         principal.member_type(),
+        principal.on_behalf_of.map(|user| user.to_string()),
     )
     .fetch_optional(executor)
     .await
-    .map_err(db_err("authorize_channel_read: select membership role"))?;
+    .map_err(db_err("authorize_channel_read: select membership role"))?
+    .ok_or_else(not_member)?;
 
-    row.map(|row| ChannelMembership {
-        role: row.role.clone(),
-    })
-    .ok_or_else(not_member)
+    match (principal.on_behalf_of, row.user_role) {
+        (None, _) => Ok(ChannelMembership { role: row.role }),
+        (Some(_), Some(user_role)) => Ok(ChannelMembership {
+            role: narrower_role(&row.role, &user_role).to_string(),
+        }),
+        (Some(_), None) => Err(resource_error(
+            "NOT_MEMBER",
+            "the user this task acts for is not a member of this channel",
+        )),
+    }
+}
+
+/// The less privileged of two channel roles.
+pub fn narrower_role<'a>(a: &'a str, b: &'a str) -> &'a str {
+    fn rank(role: &str) -> u8 {
+        match role {
+            "owner" => 3,
+            "admin" => 2,
+            "member" => 1,
+            _ => 0,
+        }
+    }
+    if rank(a) <= rank(b) {
+        a
+    } else {
+        b
+    }
 }
 
 pub async fn authorize_channel_write(
@@ -492,6 +565,16 @@ mod tests {
 
     // ── locator frames ──────────────────────────────────────────────────────────
     // resolve_frame is pure, so the interesting properties are testable without a DB.
+
+    #[test]
+    fn narrower_role_takes_the_less_privileged() {
+        assert_eq!(narrower_role("owner", "member"), "member");
+        assert_eq!(narrower_role("member", "admin"), "member");
+        assert_eq!(narrower_role("admin", "readonly"), "readonly");
+        assert_eq!(narrower_role("readonly", "owner"), "readonly");
+        // An unknown role ranks lowest, so it can never widen.
+        assert_eq!(narrower_role("owner", "guest"), "guest");
+    }
 
     #[test]
     fn a_plain_resource_frame_passes_through_untouched() {
@@ -779,8 +862,16 @@ mod registry_contract {
     }
 
     #[test]
-    fn the_destructive_gate_still_covers_the_fs_mutations() {
+    fn the_destructive_gate_covers_every_delete_and_move() {
         let gated: Vec<_> = cheers_mcp_server::registry::destructive_resources().collect();
-        assert_eq!(gated, vec!["fs.rm", "fs.mv"]);
+        assert_eq!(
+            gated,
+            vec![
+                "channel.artifacts.delete",
+                "channel.artifacts.rename",
+                "fs.rm",
+                "fs.mv"
+            ]
+        );
     }
 }

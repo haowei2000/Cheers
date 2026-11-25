@@ -144,14 +144,14 @@ struct GitHubEmail {
     verified: bool,
 }
 
-fn random_url_secret() -> Result<String, AppError> {
+pub(crate) fn random_url_secret() -> Result<String, AppError> {
     let mut bytes = [0_u8; 32];
     getrandom::getrandom(&mut bytes)
         .map_err(|e| AppError::Internal(format!("secure random generation failed: {e}")))?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-fn pkce_challenge(verifier: &str) -> String {
+pub(crate) fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()))
 }
 
@@ -225,15 +225,43 @@ pub async fn start(
 ) -> Result<Json<StartResponse>, AppError> {
     let provider = provider_name(&provider_path)?;
     let client = auth_sessions::ClientType::parse(body.client.as_deref())?;
+    let response = begin_authorization(
+        &state,
+        provider,
+        client,
+        json!({
+            "device_name": body.device_name,
+            "invite_token": body.invite_token,
+        }),
+    )
+    .await?;
+    tracing::info!(
+        transaction_id = %response.transaction_id,
+        %provider,
+        client = client.as_str(),
+        "OAuth authorization started"
+    );
+    Ok(Json(response))
+}
+
+/// Shared tail of [`start`] and [`link_start`]: resolve the provider endpoint,
+/// persist the pending transaction (adding `return_uri` + `nonce` to
+/// `context`), and build the provider authorization URL.
+async fn begin_authorization(
+    state: &AppState,
+    provider: &'static str,
+    client: auth_sessions::ClientType,
+    mut context: Value,
+) -> Result<StartResponse, AppError> {
     if client == auth_sessions::ClientType::Web && state.config.oauth_web_return_url.is_none() {
         return Err(AppError::ServiceUnavailable(
             "web OAuth is not configured".into(),
         ));
     }
-    let return_uri = return_uri(&state, client)?;
+    let return_uri = return_uri(state, client)?;
     let (authorization_endpoint, provider_client_id, provider_redirect_uri) = match provider {
         "apple" => {
-            let (_, client_id, redirect_uri) = apple_web_config(&state)?;
+            let (_, client_id, redirect_uri) = apple_web_config(state)?;
             (
                 "https://appleid.apple.com/auth/authorize",
                 client_id.to_string(),
@@ -241,7 +269,7 @@ pub async fn start(
             )
         }
         "google" => {
-            let config = google_config(&state)?;
+            let config = google_config(state)?;
             (
                 "https://accounts.google.com/o/oauth2/v2/auth",
                 config.client_id.clone(),
@@ -249,7 +277,7 @@ pub async fn start(
             )
         }
         "github" => {
-            let config = github_oauth_config(&state)?;
+            let config = github_oauth_config(state)?;
             (
                 GITHUB_AUTHORIZE_URL,
                 config.client_id.clone(),
@@ -263,12 +291,8 @@ pub async fn start(
     let state_secret = random_url_secret()?;
     let nonce = random_url_secret()?;
     let verifier = random_url_secret()?;
-    let context = json!({
-        "device_name": body.device_name,
-        "invite_token": body.invite_token,
-        "return_uri": return_uri,
-        "nonce": nonce,
-    });
+    context["return_uri"] = json!(return_uri);
+    context["nonce"] = json!(nonce);
     let encrypted_verifier = crypto::encrypt_secret(
         &crypto::derive_master_key(
             state.config.secret_store_key.as_deref(),
@@ -298,13 +322,6 @@ pub async fn start(
     .execute(&state.db)
     .await?;
 
-    tracing::info!(
-        %transaction_id,
-        %provider,
-        client = client.as_str(),
-        "OAuth authorization started"
-    );
-
     let mut url = Url::parse(authorization_endpoint)
         .map_err(|e| AppError::Internal(format!("OAuth endpoint URL: {e}")))?;
     {
@@ -326,11 +343,11 @@ pub async fn start(
             query.append_pair("prompt", "select_account");
         }
     }
-    Ok(Json(StartResponse {
+    Ok(StartResponse {
         transaction_id,
         authorization_url: url.to_string(),
         expires_in: 600,
-    }))
+    })
 }
 
 /// Authenticated Google (or future provider) link: starts the same OAuth dance but
@@ -365,95 +382,18 @@ pub async fn link_start(
     }
 
     let client = auth_sessions::ClientType::parse(body.client.as_deref())?;
-    if client == auth_sessions::ClientType::Web && state.config.oauth_web_return_url.is_none() {
-        return Err(AppError::ServiceUnavailable(
-            "web OAuth is not configured".into(),
-        ));
-    }
-    let return_uri = return_uri(&state, client)?;
-    let (authorization_endpoint, provider_client_id, provider_redirect_uri, scope) =
-        if provider == "github" {
-            let config = github_oauth_config(&state)?;
-            (
-                GITHUB_AUTHORIZE_URL,
-                config.client_id.clone(),
-                config.redirect_uri.clone(),
-                "read:user user:email",
-            )
-        } else {
-            let config = google_config(&state)?;
-            (
-                "https://accounts.google.com/o/oauth2/v2/auth",
-                config.client_id.clone(),
-                config.redirect_uri.clone(),
-                "openid email profile",
-            )
-        };
-
-    let transaction_id = Uuid::new_v4().to_string();
-    let state_secret = random_url_secret()?;
-    let nonce = random_url_secret()?;
-    let verifier = random_url_secret()?;
-    let context = json!({
-        "device_name": body.device_name,
-        "return_uri": return_uri,
-        "nonce": nonce,
-        "link_user_id": claims.sub,
-        "purpose": "link",
-    });
-    let encrypted_verifier = crypto::encrypt_secret(
-        &crypto::derive_master_key(
-            state.config.secret_store_key.as_deref(),
-            &state.config.jwt_private_key_pem,
-        ),
-        &verifier,
-    )
-    .map_err(|e| AppError::Internal(format!("encrypt OAuth verifier: {e}")))?;
-    let expires_at = Utc::now() + Duration::minutes(10);
-    sqlx::query!(
-        "INSERT INTO auth_transactions
-         (transaction_id, kind, status, provider, client_type, redirect_uri,
-          state_hash, nonce_hash, pkce_verifier_hash, oauth_code_verifier_encrypted,
-          context_json, expires_at)
-         VALUES ($1, 'oauth', 'pending', $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-        &transaction_id,
+    let response = begin_authorization(
+        &state,
         provider,
-        client.as_str(),
-        &provider_redirect_uri,
-        crypto::sha256_hex(&state_secret),
-        crypto::sha256_hex(&nonce),
-        crypto::sha256_hex(&verifier),
-        encrypted_verifier,
-        context,
-        expires_at,
+        client,
+        json!({
+            "device_name": body.device_name,
+            "link_user_id": claims.sub,
+            "purpose": "link",
+        }),
     )
-    .execute(&state.db)
     .await?;
-
-    let mut url = Url::parse(authorization_endpoint)
-        .map_err(|e| AppError::Internal(format!("OAuth endpoint URL: {e}")))?;
-    {
-        let mut query = url.query_pairs_mut();
-        query.append_pair("client_id", &provider_client_id);
-        query.append_pair("redirect_uri", &provider_redirect_uri);
-        query.append_pair("response_type", "code");
-        query.append_pair("scope", scope);
-        query.append_pair("state", &state_secret);
-        if provider != "github" {
-            query.append_pair("nonce", &nonce);
-        }
-        query.append_pair("code_challenge", &pkce_challenge(&verifier));
-        query.append_pair("code_challenge_method", "S256");
-        if provider == "google" {
-            query.append_pair("access_type", "online");
-            query.append_pair("prompt", "select_account");
-        }
-    }
-    Ok(Json(StartResponse {
-        transaction_id,
-        authorization_url: url.to_string(),
-        expires_in: 600,
-    }))
+    Ok(Json(response))
 }
 
 pub async fn google_callback(

@@ -208,12 +208,6 @@ struct ApprovalSheetView: View {
             } else {
                 undelivered = true
             }
-        } catch let error as APIError {
-            if case .unauthorized = error {
-                app.clearSession()
-                return
-            }
-            errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }

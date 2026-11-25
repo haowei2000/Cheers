@@ -24,7 +24,6 @@ use crate::app_state::AppState;
 use crate::domain::approval::{self, PendingPermission};
 use crate::domain::trace;
 use crate::gateway::realtime::frame::WireFrame;
-use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 
 /// Build the live counterpart of an append-only approval trace row. The
 /// `request_id` is also the event id so clients replace the pending lifecycle
@@ -172,25 +171,14 @@ pub(crate) async fn finalize_expired(
             target.insert(k.clone(), v.clone());
         }
     }
-    let wire = WireFrame::channel(
+    let wire = crate::gateway::ws::agent_bridge::bot_card_frame(
         pending.channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": pending.msg_id,
-            "channel_id": pending.channel_id,
-            "channel_seq": pending.channel_seq,
-            "sender_type": "bot",
-            "sender_id": pending.bot_id,
-            "content": pending.content,
-            "msg_type": "permission",
-            "is_partial": false,
-            "reply_to_msg_id": null,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "content_data": content_data,
-        }),
+        pending.msg_id,
+        pending.channel_seq,
+        pending.bot_id,
+        &pending.content,
+        "permission",
+        content_data,
     );
     state
         .fanout
@@ -236,10 +224,12 @@ pub async fn sweep_once(state: &AppState, ttl_secs: u64) -> usize {
 
 /// Start the background sweeper: one sweep at startup (clears cards orphaned
 /// while the process was down), then every `interval_secs`. `interval_secs == 0`
-/// runs only the startup sweep.
-pub fn spawn(state: AppState, interval_secs: u64, ttl_secs: u64) {
+/// runs only the startup sweep. The TTL is re-read on every sweep so an admin
+/// change applies from the next tick.
+pub fn spawn(state: AppState, interval_secs: u64) {
     tokio::spawn(async move {
-        sweep_once(&state, ttl_secs).await;
+        let ttl_secs = || state.runtime_settings.values().approval_card_ttl_secs;
+        sweep_once(&state, ttl_secs()).await;
 
         if interval_secs == 0 {
             return;
@@ -249,7 +239,7 @@ pub fn spawn(state: AppState, interval_secs: u64, ttl_secs: u64) {
         tick.tick().await; // first tick is immediate — skip (startup sweep done).
         loop {
             tick.tick().await;
-            sweep_once(&state, ttl_secs).await;
+            sweep_once(&state, ttl_secs()).await;
         }
     });
 }

@@ -65,16 +65,32 @@ impl Clone for WireFrame {
 impl WireFrame {
     const FRAME_VERSION: u8 = 1;
 
-    pub fn channel(channel_id: Uuid, frame_type: impl Into<String>, data: Value) -> Self {
+    fn new(
+        scope: FrameScope,
+        channel_id: Option<Uuid>,
+        frame_type: String,
+        seq: Option<u64>,
+        data: Value,
+    ) -> Self {
         Self {
             v: Self::FRAME_VERSION,
-            scope: FrameScope::Channel,
-            channel_id: Some(channel_id),
-            frame_type: frame_type.into(),
-            seq: None,
+            scope,
+            channel_id,
+            frame_type,
+            seq,
             data,
             encoded: OnceLock::new(),
         }
+    }
+
+    pub fn channel(channel_id: Uuid, frame_type: impl Into<String>, data: Value) -> Self {
+        Self::new(
+            FrameScope::Channel,
+            Some(channel_id),
+            frame_type.into(),
+            None,
+            data,
+        )
     }
 
     pub fn channel_stream(
@@ -83,27 +99,17 @@ impl WireFrame {
         seq: u64,
         data: Value,
     ) -> Self {
-        Self {
-            v: Self::FRAME_VERSION,
-            scope: FrameScope::Channel,
-            channel_id: Some(channel_id),
-            frame_type: frame_type.into(),
-            seq: Some(seq),
+        Self::new(
+            FrameScope::Channel,
+            Some(channel_id),
+            frame_type.into(),
+            Some(seq),
             data,
-            encoded: OnceLock::new(),
-        }
+        )
     }
 
     pub fn user(frame_type: impl Into<String>, data: Value) -> Self {
-        Self {
-            v: Self::FRAME_VERSION,
-            scope: FrameScope::User,
-            channel_id: None,
-            frame_type: frame_type.into(),
-            seq: None,
-            data,
-            encoded: OnceLock::new(),
-        }
+        Self::new(FrameScope::User, None, frame_type.into(), None, data)
     }
 
     /// 编码后的 JSON，首次调用时序列化并缓存，同一帧的其余订阅者复用。

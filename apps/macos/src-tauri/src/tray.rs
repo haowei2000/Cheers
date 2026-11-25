@@ -23,14 +23,6 @@ pub struct TrayAgent {
     pub busy: bool,
 }
 
-/// Show + focus the main window (tray "Open" item / left click).
-fn surface(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.show();
-        let _ = win.set_focus();
-    }
-}
-
 /// Build the resident tray icon with its initial (static) menu and the global
 /// menu-event handler. Called once from `main.rs` `.setup()`; later liveness
 /// pushes swap the menu in place via [`tray_update_liveness`].
@@ -50,7 +42,7 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         // set on the tray, including one swapped in by `tray_update_liveness`.
         // The roster/header items are disabled, so only "open"/"quit" arrive.
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "open" => surface(app),
+            "open" => crate::surface_main_window(app),
             "quit" => app.exit(0),
             _ => {}
         })

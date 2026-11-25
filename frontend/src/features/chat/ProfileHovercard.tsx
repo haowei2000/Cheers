@@ -83,9 +83,7 @@ export function ProfileCardProvider({
     id: string,
     fallback?: Partial<ProfileData>
   ) => {
-    const member =
-      members.get(id) ?? { member_id: id, member_type: "user", ...fallback };
-    setState({ member, rect: anchor.getBoundingClientRect() });
+    open(anchor, members.get(id) ?? { member_id: id, member_type: "user", ...fallback });
   };
 
   // Keep an open card live: `state.member` is a snapshot captured at open time, so a
@@ -159,6 +157,7 @@ function ProfileCard({
   const name =
     member.display_name || member.username || member.member_id.slice(0, 8);
   const handle = member.username ? `@${member.username}` : null;
+  const statusAge = member.status_updated_at ? relativeTime(member.status_updated_at) : "";
 
   // Anchor near the clicked element; clamp horizontally, flip above when the
   // click is in the lower half of the viewport so the card stays on-screen.
@@ -204,13 +203,11 @@ function ProfileCard({
               {member.status_text}
             </p>
           )}
-          {member.status_updated_at &&
-            (member.status_emoji || member.status_text) &&
-            relativeTime(member.status_updated_at) && (
-              <p className="mt-1 text-minimal text-content-muted">
-                updated {relativeTime(member.status_updated_at)}
-              </p>
-            )}
+          {(member.status_emoji || member.status_text) && statusAge && (
+            <p className="mt-1 text-minimal text-content-muted">
+              updated {statusAge}
+            </p>
+          )}
         </div>
       </div>
 
@@ -232,7 +229,7 @@ function ProfileCard({
         <UiButton action="mention" content="iconText" controlWidth="fill" variant="plain"
           type="button"
           onClick={onMention}
-          controlSize="comfortable" className="flex items-center justify-center gap-2 rounded-sm bg-indigo-500/12  font-medium text-accent-300 transition-colors hover:bg-indigo-500/20 hover:text-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          controlSize="comfortable" className="flex items-center rounded-sm bg-indigo-500/12  font-medium text-accent-300 transition-colors hover:bg-indigo-500/20 hover:text-accent-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
         >
           <AtSign className="h-4 w-4" />
         </UiButton>

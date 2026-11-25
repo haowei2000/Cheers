@@ -8,6 +8,7 @@ Operational notes and incident analyses.
 
 - [RustFS issues analysis](rustfs-issues-analysis.md) / [中文](rustfs-issues-analysis.zh-CN.md)
 - [ACP capability reject logs query](capability-reject-logs.md)
+- [Apple secrets and signing assets](apple-secrets-and-signing.md) / [中文](apple-secrets-and-signing.zh-CN.md)
 
 ## Back to Hub
 

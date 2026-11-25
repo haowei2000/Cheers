@@ -66,6 +66,21 @@ struct RawRepository {
     html_url: Option<String>,
 }
 
+impl From<RawRepository> for Repository {
+    fn from(raw: RawRepository) -> Self {
+        Self {
+            id: raw.id,
+            full_name: raw.full_name,
+            name: raw.name,
+            private: raw.private,
+            description: raw.description,
+            default_branch: raw.default_branch.unwrap_or_else(|| "main".into()),
+            clone_url: raw.clone_url.unwrap_or_default(),
+            html_url: raw.html_url.unwrap_or_default(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct RawCollaborator {
     id: i64,
@@ -175,16 +190,7 @@ pub async fn list_repositories(config: &Config, token: &Secret) -> anyhow::Resul
             break;
         };
         let count = body.repositories.len();
-        all.extend(body.repositories.into_iter().map(|raw| Repository {
-            id: raw.id,
-            full_name: raw.full_name,
-            name: raw.name,
-            private: raw.private,
-            description: raw.description,
-            default_branch: raw.default_branch.unwrap_or_else(|| "main".into()),
-            clone_url: raw.clone_url.unwrap_or_default(),
-            html_url: raw.html_url.unwrap_or_default(),
-        }));
+        all.extend(body.repositories.into_iter().map(Repository::from));
         // A short page is the last page.
         if count < PER_PAGE {
             break;
@@ -207,16 +213,7 @@ pub async fn get_repository(
     let Some(raw) = get_json::<RawRepository>(token, &url).await? else {
         return Ok(None);
     };
-    Ok(Some(Repository {
-        id: raw.id,
-        full_name: raw.full_name,
-        name: raw.name,
-        private: raw.private,
-        description: raw.description,
-        default_branch: raw.default_branch.unwrap_or_else(|| "main".into()),
-        clone_url: raw.clone_url.unwrap_or_default(),
-        html_url: raw.html_url.unwrap_or_default(),
-    }))
+    Ok(Some(raw.into()))
 }
 
 /// Everyone with access to `full_name`, with their access reduced to one name.

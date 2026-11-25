@@ -20,6 +20,17 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
+/** Decode a server credential list (base64url ids) into WebAuthn descriptors. */
+function credentialDescriptors(value: unknown): PublicKeyCredentialDescriptor[] | undefined {
+  return Array.isArray(value)
+    ? (value as Array<Record<string, unknown>>).map((c) => ({
+        type: "public-key" as const,
+        id: b64urlToBuffer(String(c.id ?? "")),
+        transports: c.transports as AuthenticatorTransport[] | undefined,
+      }))
+    : undefined;
+}
+
 /** Prefer nested `publicKey`, else treat the whole payload as creation options. */
 export function creationPublicKey(options: Record<string, unknown>): PublicKeyCredentialCreationOptions {
   const raw = asRecord(options.publicKey ?? options);
@@ -33,13 +44,7 @@ export function creationPublicKey(options: Record<string, unknown>): PublicKeyCr
   const pubKeyCredParams = Array.isArray(raw.pubKeyCredParams)
     ? (raw.pubKeyCredParams as PublicKeyCredentialParameters[])
     : [{ type: "public-key" as const, alg: -7 }];
-  const excludeCredentials = Array.isArray(raw.excludeCredentials)
-    ? (raw.excludeCredentials as Array<Record<string, unknown>>).map((c) => ({
-        type: "public-key" as const,
-        id: b64urlToBuffer(String(c.id ?? "")),
-        transports: c.transports as AuthenticatorTransport[] | undefined,
-      }))
-    : undefined;
+  const excludeCredentials = credentialDescriptors(raw.excludeCredentials);
   return {
     rp: {
       name: String(rp.name ?? "Cheers"),
@@ -65,13 +70,7 @@ export function assertionPublicKey(options: Record<string, unknown>): PublicKeyC
   const raw = asRecord(options.publicKey ?? options);
   const challenge = String(raw.challenge ?? "");
   if (!challenge) throw new Error("Passkey assertion options are incomplete");
-  const allowCredentials = Array.isArray(raw.allowCredentials)
-    ? (raw.allowCredentials as Array<Record<string, unknown>>).map((c) => ({
-        type: "public-key" as const,
-        id: b64urlToBuffer(String(c.id ?? "")),
-        transports: c.transports as AuthenticatorTransport[] | undefined,
-      }))
-    : undefined;
+  const allowCredentials = credentialDescriptors(raw.allowCredentials);
   return {
     challenge: b64urlToBuffer(challenge),
     rpId: raw.rpId ? String(raw.rpId) : undefined,

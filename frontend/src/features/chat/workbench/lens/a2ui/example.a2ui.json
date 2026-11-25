@@ -1,17 +1,11 @@
 {
-  "a2ui": "v0.9.1",
+  "a2ui": "1.0",
   "messages": [
     {
-      "version": "v0.9.1",
+      "version": "1.0",
       "createSurface": {
         "surfaceId": "report",
-        "catalogId": "urn:cheers:a2ui:catalog:v1"
-      }
-    },
-    {
-      "version": "v0.9.1",
-      "updateComponents": {
-        "surfaceId": "report",
+        "catalogId": "urn:cheers:a2ui:catalog:v2",
         "components": [
           {
             "id": "root",
@@ -38,16 +32,23 @@
             "id": "topic",
             "component": "TextField",
             "label": "Report topic",
+            "placeholder": "Enter a report topic",
             "value": {
-              "path": "/report/topic"
-            }
+              "@path": "/report/topic"
+            },
+            "@checks": [
+              {
+                "rule": "required",
+                "message": "Please enter a report topic."
+              }
+            ]
           },
           {
             "id": "includeSources",
             "component": "CheckBox",
             "label": "Include sources",
             "value": {
-              "path": "/report/includeSources"
+              "@path": "/report/includeSources"
             }
           },
           {
@@ -62,6 +63,9 @@
             "id": "prepare",
             "component": "Button",
             "label": "Prepare report request",
+            "@accessibility": {
+              "description": "Prepares a structured report draft in the chat composer."
+            },
             "action": {
               "event": {
                 "name": "cheers.compose",
@@ -69,10 +73,10 @@
                   "actionId": "report.prepare",
                   "payload": {
                     "topic": {
-                      "path": "/report/topic"
+                      "@path": "/report/topic"
                     },
                     "includeSources": {
-                      "path": "/report/includeSources"
+                      "@path": "/report/includeSources"
                     }
                   }
                 }
@@ -88,7 +92,7 @@
                 "name": "cheers.open",
                 "context": {
                   "uri": {
-                    "path": "/report/source"
+                    "@path": "/report/source"
                   }
                 }
               }
@@ -103,15 +107,8 @@
               "prepare"
             ]
           }
-        ]
-      }
-    },
-    {
-      "version": "v0.9.1",
-      "updateDataModel": {
-        "surfaceId": "report",
-        "path": "/",
-        "value": {
+        ],
+        "dataModel": {
           "report": {
             "topic": "Resource-oriented UI",
             "includeSources": true,

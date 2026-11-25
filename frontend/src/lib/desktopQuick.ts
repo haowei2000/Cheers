@@ -2,7 +2,7 @@
 // (B5/B6). Kept out of lib/desktop.ts so the two feature slices stay separable;
 // everything here is a no-op / null in the browser, gated on isTauri().
 
-import { invokeDesktop } from "@/lib/desktop";
+import { bytesFromBase64, invokeDesktop } from "@/lib/desktop";
 import { isTauri } from "@/lib/serverConfig";
 
 /** Drain a cheers:// link that arrived before the webview was ready (cold
@@ -29,10 +29,7 @@ export interface CapturedFile {
 }
 
 function capturedToFile(c: CapturedFile): File {
-  const bin = atob(c.content_b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new File([bytes], c.filename, {
+  return new File([bytesFromBase64(c.content_b64)], c.filename, {
     type: c.mime || "application/octet-stream",
   });
 }

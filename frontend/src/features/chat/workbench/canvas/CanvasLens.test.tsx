@@ -48,4 +48,18 @@ describe("CanvasLens accessibility", () => {
     expect(html).toContain('data-cheers-locator="cheers:desk/src/main.rs"');
     expect(html).toContain('data-cheers-label="main.rs"');
   });
+
+  it("links an artifact node by its stable id, not a path", () => {
+    const id = "0f8b6c2e-4d3a-4b1c-9e7f-2a5d8c1b3e60";
+    const html = renderToStaticMarkup(
+      <CanvasLens
+        data={{ canvas: 1, nodes: [{ id: "plan", source: { kind: "artifact", id } }], edges: [] }}
+        config={undefined}
+        onChange={() => {}}
+        onOps={() => {}}
+        openLocator={() => {}}
+      />
+    );
+    expect(html).toContain(`data-cheers-locator="cheers:artifact/${id}"`);
+  });
 });

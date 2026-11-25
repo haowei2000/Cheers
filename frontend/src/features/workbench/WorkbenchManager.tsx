@@ -1,3 +1,4 @@
+import { CollectionConfirmationItem } from "@/components/ui/collection-manager";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Blocks, CircleCheck, ExternalLink, Laptop, Package, Power, PowerOff, Trash2, Upload, X } from "lucide-react";
 import { Button as UiButton } from "@/components/ui/button";
@@ -64,6 +65,10 @@ export interface CatalogData {
   entries: (CatalogPackageEntry | { kind: "builtin"; id: string; [key: string]: unknown })[];
 }
 
+function reasonMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
 export function WorkbenchManager() {
   const desktop = isTauri();
   const [official, setOfficial] = useState<ExtensionSummary[]>([]);
@@ -75,6 +80,9 @@ export function WorkbenchManager() {
   const [notice, setNotice] = useState<string | null>(null);
   const [candidate, setCandidate] = useState<ExtensionInstallCandidate | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [uninstallTarget, setUninstallTarget] = useState<string | null>(null);
+  const [uninstalling, setUninstalling] = useState(false);
+  const uninstallInFlight = useRef(false);
   const [, setRuntimeRevision] = useState(0);
   const personalRef = useRef<HTMLInputElement>(null);
   const catalogLoading = useRef(false);
@@ -90,7 +98,7 @@ export function WorkbenchManager() {
         setPersonal(parsed);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reasonMessage(reason));
     }
   }, [desktop]);
 
@@ -114,7 +122,7 @@ export function WorkbenchManager() {
         }
       })
       .catch((err) => {
-        if (alive) setCatalogError(err instanceof Error ? err.message : String(err));
+        if (alive) setCatalogError(reasonMessage(err));
       })
       .finally(() => {
         if (alive) setCatalogLoadingState(false);
@@ -132,7 +140,7 @@ export function WorkbenchManager() {
       const extension = await parseExtensionPackageOffThread(await file.arrayBuffer(), scope);
       setCandidate({ extension, scope, source: "file", sourceLabel: file.name });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reasonMessage(reason));
     }
   }, []);
 
@@ -151,7 +159,7 @@ export function WorkbenchManager() {
       clearExtensionInstallIntent();
     } catch (reason) {
       clearExtensionInstallIntent();
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reasonMessage(reason));
     } finally {
       catalogLoading.current = false;
     }
@@ -175,7 +183,7 @@ export function WorkbenchManager() {
         }
         setCandidate({ extension, scope, source: "official-catalog", sourceLabel: entry.title.en });
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(reasonMessage(reason));
       }
     },
     [desktop]
@@ -204,11 +212,28 @@ export function WorkbenchManager() {
       setCandidate(null);
       await reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(reasonMessage(reason));
     } finally {
       setInstalling(false);
     }
   }, [candidate, installing, reload]);
+
+  async function confirmUninstall(id: string) {
+    if (uninstallInFlight.current) return;
+    uninstallInFlight.current = true;
+    setUninstalling(true); setError(null); setNotice(null);
+    try {
+      await removePersonalExtension(id);
+      setPersonal(items => items.filter(item => item.manifest.id !== id));
+      setPersonalExtensionDisabled(id, false);
+      setUninstallTarget(null);
+      setNotice("Extension uninstalled from this Mac");
+      await reload();
+    } catch (reason) { setError(reasonMessage(reason)); }
+    finally { uninstallInFlight.current = false; setUninstalling(false); }
+  }
+
+  const temporary = listTemporaryExtensions();
 
   return (
     <SettingsSection title="Workbench extensions" icon={Blocks}>
@@ -246,6 +271,14 @@ export function WorkbenchManager() {
           />
         ))}
         {personal.map((extension) => {
+          if (uninstallTarget === extension.manifest.id) return <CollectionConfirmationItem
+            key={`personal:${extension.manifest.id}`}
+            title={extension.manifest.title}
+            description="This removes the installed package from this Mac. Collections that use it may stop working."
+            action="uninstall" prompt="Uninstall?" busy={uninstalling}
+            onCancel={() => { setUninstallTarget(null); setError(null); }}
+            onConfirm={() => void confirmUninstall(extension.manifest.id)}
+          />;
           const permissions = permissionSummary(extension.manifest);
           const disabled = isPersonalExtensionDisabled(extension.manifest.id);
           const runtime = personalExtensionStatus(extension.manifest.id);
@@ -254,24 +287,24 @@ export function WorkbenchManager() {
             key={`personal:${extension.manifest.id}`}
             title={`${extension.manifest.title} · ${extension.manifest.version}`}
             leading={<Laptop className="h-3.5 w-3.5 text-success-300" />}
-            status={<span className={runtime.status === "failed" && !disabled ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtime.error ?? (permissions.join(", ") || "No permissions")}>This Mac · Installed · {status} · {extension.scenes.length} Collections · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {extension.manifest.contributes.automations?.length ?? 0} Automations · {permissions.length || "No"} Permissions</span>}
+            status={<span className={runtime.status === "failed" && !disabled ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtime.error ?? (permissions.join(", ") || "No permissions")}>This Mac · Installed · {status} · {extension.scenes.length} Collections · {extension.manifest.contributes.renderers?.length ?? 0} Renderer{extension.manifest.contributes.renderers?.some((renderer) => !renderer.match || Array.isArray(renderer.match)) ? " · Preview unavailable: declare match.suffix" : ""} · {extension.manifest.contributes.automations?.length ?? 0} Automations · {permissions.length || "No"} Permissions</span>}
             actions={<div className="flex items-center gap-1">
-              <UiButton action={disabled ? "enable" : "disable"} content="icon" variant="plain" aria-label={`${disabled ? "Enable" : "Disable"} ${extension.manifest.title}`} title={disabled ? "Enable" : "Disable"} onClick={() => setPersonalExtensionDisabled(extension.manifest.id, !disabled)} className="text-content-primary hover:text-content-strong">{disabled ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}</UiButton>
-              <UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.manifest.title}`} title="Uninstall from this Mac" onClick={async () => { setPersonalExtensionDisabled(extension.manifest.id, false); await removePersonalExtension(extension.manifest.id); await reload(); }} className="text-content-primary hover:text-danger-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>
+              <UiButton action={disabled ? "enable" : "disable"} content="icon" variant="plain" aria-label={`${disabled ? "Enable" : "Disable"} ${extension.manifest.title}`} title={disabled ? "Enable" : "Disable"} disabled={uninstalling} onClick={() => setPersonalExtensionDisabled(extension.manifest.id, !disabled)} className="text-content-primary hover:text-content-strong">{disabled ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}</UiButton>
+              <UiButton action="uninstall" content="icon" variant="plain" aria-label={`Uninstall ${extension.manifest.title}`} title="Uninstall from this Mac" disabled={uninstalling} onClick={() => { setUninstallTarget(extension.manifest.id); setError(null); setNotice(null); }} className="text-content-primary hover:text-danger-400"><Trash2 className="h-3.5 w-3.5" /></UiButton>
             </div>}
           />;
         })}
-        {listTemporaryExtensions().map(({ extension, status, error: runtimeError }) => {
+        {temporary.map(({ extension, status, error: runtimeError }) => {
           const permissions = permissionSummary(extension.manifest);
           return <WorkbenchItem
             key={`temporary:${extension.manifest.id}`}
             title={`${extension.manifest.title} · ${extension.manifest.version}`}
             leading={<Upload className="h-3.5 w-3.5 text-warning-300" />}
-            status={<span className={status === "failed" ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtimeError ?? (permissions.join(", ") || "No permissions")}>Temporary · {status === "failed" ? "Failed" : status === "running" ? "Running" : "Ready"} · {extension.scenes.length} Collections · {extension.manifest.contributes.renderers?.length ?? 0} Renderer · {permissions.length || "No"} Permissions</span>}
+            status={<span className={status === "failed" ? "text-minimal text-danger-400" : "text-minimal text-content-muted"} title={runtimeError ?? (permissions.join(", ") || "No permissions")}>Temporary · {status === "failed" ? "Failed" : status === "running" ? "Running" : "Ready"} · {extension.scenes.length} Collections · {extension.manifest.contributes.renderers?.length ?? 0} Renderer{extension.manifest.contributes.renderers?.some((renderer) => !renderer.match || Array.isArray(renderer.match)) ? " · Preview unavailable: declare match.suffix" : ""} · {permissions.length || "No"} Permissions</span>}
             actions={<UiButton action="remove" content="icon" variant="plain" aria-label={`Remove temporary ${extension.manifest.title}`} title="Remove temporary extension" onClick={() => removeTemporaryExtension(extension.manifest.id)} className="text-content-primary hover:text-danger-400"><X className="h-3.5 w-3.5" /></UiButton>}
           />;
         })}
-        {official.length === 0 && personal.length === 0 && listTemporaryExtensions().length === 0 && <WorkbenchItem title="No extensions installed" />}
+        {official.length === 0 && personal.length === 0 && temporary.length === 0 && <WorkbenchItem title="No extensions installed" />}
       </ItemSection>
 
       <ItemSection

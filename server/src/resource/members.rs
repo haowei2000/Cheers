@@ -5,11 +5,7 @@ use uuid::Uuid;
 use super::{authorize_channel_read, Principal, PrincipalType, ResourceResult};
 
 pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
 
     authorize_channel_read(db, principal, channel_id).await?;
 
@@ -87,11 +83,7 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
 /// - 只删自己的 membership 行；session 等衍生状态保留（与管理员移除 bot 的
 ///   remove_channel_member 行为一致）。presence 广播由 WS 边界补发。
 pub async fn handle_leave(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
 
     if principal.principal_type != PrincipalType::Bot {
         return Err(super::permission_denied(

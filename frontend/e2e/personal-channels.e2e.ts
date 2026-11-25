@@ -152,7 +152,7 @@ test("an ordinary user registers, signs in, and creates persisted Public and Pri
   await expect(page.getByRole("separator", { name: "Direct messages", exact: true })).toBeVisible();
   await expect(page).toHaveURL((url) => url.pathname === `/chat/${personal.workspace_id}`);
 
-  const channels = [];
+  const channels: Awaited<ReturnType<typeof createAndReloadChannel>>[] = [];
   for (const visibility of ["public", "private"] as const) {
     channels.push(await test.step(`Create and reload a ${visibility} Personal channel`, () =>
       createAndReloadChannel(page, personal.workspace_id, visibility)));
@@ -161,4 +161,34 @@ test("an ordinary user registers, signs in, and creates persisted Public and Pri
   for (const channel of channels) {
     await expect(page.getByRole("button", { name: channel.name, exact: true })).toBeVisible();
   }
+
+  await test.step("Rename a legacy artifact and open its filename-selected table", async () => {
+    const channelId = channels[1].channel_id;
+    const created = await page.evaluate(async ({ token, channelId }) => {
+      return await new Promise<{ artifact: { artifact_id: string } }>((resolve, reject) => {
+        const socket = new WebSocket(`${location.origin.replace(/^http/, "ws")}/ws`);
+        const timer = setTimeout(() => { socket.close(); reject(new Error("Artifact create timed out")); }, 15000);
+        socket.onopen = () => socket.send(JSON.stringify({ type: "auth", token }));
+        socket.onerror = () => { clearTimeout(timer); socket.close(); reject(new Error("Artifact socket failed")); };
+        socket.onmessage = ({ data }) => {
+          const frame = JSON.parse(data);
+          if (frame.type === "auth_ok") socket.send(JSON.stringify({ type: "resource_req", req_id: "f1-create",
+            resource: "channel.artifacts.create", params: { channel_id: channelId, path: "legacy-rows.json",
+              content: JSON.stringify([{ task: "Live gateway row" }]), idempotency_key: crypto.randomUUID() } }));
+          if (frame.type === "resource_res" && frame.req_id === "f1-create") {
+            clearTimeout(timer); socket.close();
+            if (frame.ok) resolve(frame.data); else reject(new Error(JSON.stringify(frame.error)));
+          }
+        };
+      });
+    }, { token: signedIn.access_token, channelId });
+    expect(created.artifact.artifact_id).toMatch(/^[0-9a-f-]{36}$/i);
+    await page.getByRole("button", { name: "Panels", exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Artifacts" }).click();
+    await page.getByRole("button", { name: "Rename to legacy-rows.table.json", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Rename to legacy-rows.table.json", exact: true })).toHaveCount(0);
+    await page.getByLabel("Artifacts", { exact: true }).getByText("legacy-rows.table.json", { exact: true }).click();
+    await expect(page.locator('input[value="Live gateway row"]')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("artifact-filename-table.png") });
+  });
 });

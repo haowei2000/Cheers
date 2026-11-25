@@ -110,11 +110,15 @@ struct UserTokenResponse {
     error: Option<String>,
 }
 
-async fn app_get<T: serde::de::DeserializeOwned>(config: &Config, path: &str) -> anyhow::Result<T> {
-    let app = config
+fn configured_app(config: &Config) -> anyhow::Result<&GitHubAppConfig> {
+    config
         .github_app
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("GitHub is not configured on this gateway"))?;
+        .ok_or_else(|| anyhow::anyhow!("GitHub is not configured on this gateway"))
+}
+
+async fn app_get<T: serde::de::DeserializeOwned>(config: &Config, path: &str) -> anyhow::Result<T> {
+    let app = configured_app(config)?;
     let jwt = app_jwt(app, Utc::now())?;
     let response = http()
         .get(format!("{}{}", config.github_api_base_url, path))
@@ -154,10 +158,7 @@ pub async fn installation_account(
 /// Exchange the short-lived callback code issued to this GitHub App. The
 /// resulting user token is deliberately returned only to the callback stack.
 pub async fn exchange_user_code(config: &Config, code: &str) -> anyhow::Result<Secret> {
-    let app = config
-        .github_app
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("GitHub is not configured on this gateway"))?;
+    let app = configured_app(config)?;
     let client_id = app
         .client_id
         .as_deref()
@@ -263,10 +264,7 @@ pub async fn installation_token(
     external_installation_id: &str,
     installed_by: &str,
 ) -> anyhow::Result<Secret> {
-    let app = config
-        .github_app
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("GitHub is not configured on this gateway"))?;
+    let app = configured_app(config)?;
 
     let cached = credentials::load_for_account(
         db,

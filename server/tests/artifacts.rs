@@ -304,6 +304,40 @@ async fn artifact_deletion_and_directory_conversion_leave_tombstones(db: PgPool)
 }
 
 #[sqlx::test]
+async fn deleting_a_workspace_keeps_its_files_and_removes_their_artifacts(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    let file = Uuid::new_v4().to_string();
+    let ws: String = sqlx::query_scalar("SELECT workspace_id FROM channels WHERE channel_id=$1")
+        .bind(ch.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO file_records(file_id,channel_id,workspace_id,uploader_id,original_path,original_filename,status) VALUES($1,$2,$3,$4,'report.pdf','report.pdf','uploaded')")
+        .bind(&file).bind(ch.to_string()).bind(&ws).bind(p.principal_id.to_string()).execute(&db).await.unwrap();
+
+    sqlx::query("DELETE FROM workspaces WHERE workspace_id=$1")
+        .bind(&ws)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let artifacts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM artifacts WHERE source_id=$1")
+        .bind(&file)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(artifacts, 0);
+    let unscoped: bool = sqlx::query_scalar(
+        "SELECT channel_id IS NULL AND workspace_id IS NULL FROM file_records WHERE file_id=$1",
+    )
+    .bind(&file)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(unscoped);
+}
+
+#[sqlx::test]
 async fn artifact_pagination_and_authorization_use_channel_scope(db: PgPool) {
     let (ch, p) = channel(&db).await;
     for path in ["a.md", "b.html", "c.tsx"] {
@@ -359,4 +393,232 @@ async fn artifact_pagination_and_authorization_use_channel_scope(db: PgPool) {
     )
     .await
     .is_err());
+}
+
+#[sqlx::test]
+async fn artifact_list_filters_canvases_across_pages(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    for path in [
+        "plan.canvas.yaml",
+        "notes.md",
+        "map.canvas.json",
+        "page.html",
+        "canvas.md",
+    ] {
+        create(&db, ch, &p, path).await;
+    }
+    let first =
+        artifacts::handle_list(&db, &p, &json!({"channel_id":ch,"limit":1,"type":"canvas"}))
+            .await
+            .unwrap();
+    let second = artifacts::handle_list(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"limit":1,"type":"canvas","before":first["next_cursor"]}),
+    )
+    .await
+    .unwrap();
+    let titles = |page: &Value| {
+        page["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["title"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(titles(&first), ["map.canvas.json"]);
+    assert_eq!(titles(&second), ["plan.canvas.yaml"]);
+    assert!(second["next_cursor"].is_null());
+    assert_eq!(
+        artifacts::handle_list(&db, &p, &json!({"channel_id":ch,"type":"page"}))
+            .await
+            .unwrap_err()
+            .0,
+        "INVALID_PARAMS"
+    );
+}
+
+#[sqlx::test]
+async fn artifact_rename_keeps_identity_and_refuses_stale_or_taken_paths(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    let first = create(&db, ch, &p, "notes.md").await;
+    let id = &first["artifact_id"];
+    create(&db, ch, &p, "taken.md").await;
+    let rename = |to: &str, version: i64| json!({"channel_id":ch,"artifact_id":id,"new_path":to,"if_version":version});
+
+    let taken = artifacts::handle_rename(&db, &p, &rename("taken.md", 1))
+        .await
+        .unwrap_err();
+    assert_eq!(taken.0, "PATH_CONFLICT");
+    let renamed = artifacts::handle_rename(&db, &p, &rename("docs/notes.md", 1))
+        .await
+        .unwrap();
+    assert_eq!(renamed["artifact"]["artifact_id"], *id);
+    assert_eq!(renamed["artifact"]["path"], "docs/notes.md");
+    assert_eq!(renamed["artifact"]["uri"], first["uri"]);
+    assert_eq!(renamed["artifact"]["version"], 2);
+    let stale = artifacts::handle_rename(&db, &p, &rename("again.md", 1))
+        .await
+        .unwrap_err();
+    assert_eq!(stale.0, "VERSION_CONFLICT");
+
+    // The provider lock checks identity and version, not only the catalog read before it.
+    for (file_id, version) in [
+        (json!("different-file"), 2),
+        (first["source_id"].clone(), 1),
+    ] {
+        let wrong = fs::handle_mv(
+            &db,
+            &p,
+            &json!({"channel_id":ch,"from":"docs/notes.md","to":"moved.md",
+                "expected_file_id":file_id,"if_version":version}),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(wrong.0, "VERSION_CONFLICT");
+    }
+}
+
+#[sqlx::test]
+async fn artifact_delete_leaves_a_tombstone_and_refuses_stale_versions(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    let first = create(&db, ch, &p, "draft.md").await;
+    let id = &first["artifact_id"];
+    let delete = |version: i64| json!({"channel_id":ch,"artifact_id":id,"if_version":version});
+
+    let stale = artifacts::handle_delete(&db, &p, &delete(0))
+        .await
+        .unwrap_err();
+    assert_eq!(stale.0, "VERSION_CONFLICT");
+    let deleted = artifacts::handle_delete(&db, &p, &delete(1)).await.unwrap();
+    assert_eq!(deleted["artifact"]["artifact_id"], *id);
+    assert_eq!(deleted["artifact"]["availability"], "deleted");
+    let again = artifacts::handle_delete(&db, &p, &delete(2))
+        .await
+        .unwrap_err();
+    assert_eq!(again.0, "ARTIFACT_NOT_EDITABLE");
+
+    // A recreated file at the same path is a different artifact; an ID-based delete
+    // aimed at the old one must not remove it.
+    let other = create(&db, ch, &p, "draft.md").await;
+    let wrong = fs::handle_rm(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"path":"draft.md","expected_file_id":first["source_id"]}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(wrong.0, "VERSION_CONFLICT");
+    let survivor = artifacts::handle_get(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"artifact_id":other["artifact_id"]}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(survivor["availability"], "ready");
+}
+
+#[sqlx::test]
+async fn artifact_mutations_only_touch_the_named_file(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    let parent = create(&db, ch, &p, "notes.md").await;
+    let child = create(&db, ch, &p, "notes.md/child.txt").await;
+    let destination_child = create(&db, ch, &p, "renamed.md/other.txt").await;
+    let renamed = artifacts::handle_rename(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "artifact_id":parent["artifact_id"],
+            "new_path":"renamed.md", "if_version":1,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(renamed["artifact"]["path"], "renamed.md");
+    assert_eq!(renamed["artifact"]["version"], 2);
+    artifacts::handle_delete(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "artifact_id":parent["artifact_id"], "if_version":2,
+        }),
+    )
+    .await
+    .unwrap();
+    for untouched in [&child, &destination_child] {
+        let current = artifacts::handle_get(
+            &db,
+            &p,
+            &json!({
+                "channel_id":ch, "artifact_id":untouched["artifact_id"],
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(&current, untouched);
+    }
+    // Legacy folder operations must retain subtree behavior.
+    let moved = fs::handle_mv(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "from":"notes.md", "to":"archive",
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(moved["moved"], 1);
+    let moved_child = artifacts::handle_get(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "artifact_id":child["artifact_id"],
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(moved_child["path"], "archive/child.txt");
+    let deleted = fs::handle_rm(
+        &db,
+        &p,
+        &json!({
+            "channel_id":ch, "path":"archive", "recursive":true,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(deleted["deleted"], 1);
+}
+
+#[sqlx::test]
+async fn artifact_view_types_follow_names_before_pagination(db: PgPool) {
+    let (ch, p) = channel(&db).await;
+    for path in [
+        "first.table.yaml",
+        "generic.json",
+        "second.TABLE.JSON",
+        "report.chart.yaml",
+    ] {
+        create(&db, ch, &p, path).await;
+    }
+    let first = artifacts::handle_list(&db, &p, &json!({"channel_id":ch,"type":"table","limit":1}))
+        .await
+        .unwrap();
+    assert_eq!(first["artifacts"][0]["type"], "table");
+    assert_eq!(first["artifacts"][0]["path"], "second.TABLE.JSON");
+    let next = artifacts::handle_list(
+        &db,
+        &p,
+        &json!({"channel_id":ch,"type":"table","limit":1,"before":first["next_cursor"]}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(next["artifacts"][0]["path"], "first.table.yaml");
+    assert!(next["next_cursor"].is_null());
+    let generic =
+        artifacts::handle_resolve(&db, &p, &json!({"channel_id":ch,"path":"generic.json"}))
+            .await
+            .unwrap();
+    assert_eq!(generic["type"], "source");
 }

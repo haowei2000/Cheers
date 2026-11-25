@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "real browser password + TOTP login",
+    "real browser send -> task acceptance -> bridge trace -> channel WS; single progress/status/Stop",
+    "tool failure remains Running; streamed content does not duplicate progress",
+    "real permission request; one inline approval; browser resolution",
+    "terminal ACK; completion with tool error; PG-backed summary/history survives reload; keyboard record",
+    "single Stop -> real cancel HTTP -> connector control WS -> cancelled lifecycle",
+    "real conversation: light/dark 390/768/1280, no page overflow or summary clipping"
+  ],
+  "browserErrors": [],
+  "bridgeErrors": [],
+  "passed": true,
+  "cleanup": "Temporary test channel, bot/host, workspaces, and user removed; credential artifacts scrubbed"
+}

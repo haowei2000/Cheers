@@ -28,6 +28,13 @@ owns the 128px slot. All three use the global `regular` typography token.
 Inside `iconText`, the leading icon owns a square ControlSize slot while the
 label owns the remaining width and its own horizontal padding. The outer button
 must not emulate this with a shared `gap` or a feature-local padding rule.
+Text labels align left in every variant and width mode, including fill, selected,
+disabled, and loading. Icon+text labels sit next to the icon slot with 4px leading
+padding and 12px trailing padding; they never center within the remaining space.
+Selectors and disclosures also align their text left. Icon-only controls center
+their glyph in the square slot. Ordinary buttons use flat fills without resting
+outlines, decorative shadows, or press scaling; focus, selection, and destructive
+confirmation keep their semantic indicators.
 Visible action labels come from `ActionKey`; object names and context belong in
 `aria-label`, adjacent status, or supporting content. Latin labels are limited
 to the calibrated 68px label-slot budget (at most eight characters and two words).
@@ -86,13 +93,16 @@ levels change information density, never business behavior:
 | Level | Visible information |
 |---|---|
 | `max` | identity, title, full supporting content, preview, state, common actions |
-| `medium` | identity, title, one supporting line, state, primary/overflow action |
+| `medium` | identity, title, inline supporting status, primary/overflow action; browse rows stay single-line |
 | `minimal` | minimum identity/title plus every critical state |
 
 Unread, mention, approval, error, and online state must remain perceivable in
 all three levels. New semantic entity rows must use `ItemRow` instead of
 recreating the leading/title/supporting/status/trailing anatomy in a feature.
 Use `ItemGallery` as the canonical visual fixture for the three levels.
+`ItemRow.subtitle` is visible at `max` only; a plain-string subtitle remains an
+accessible description at `medium`. Current values belong in `status`, and states
+that must survive every level belong in `criticalStatus`.
 
 ---
 
@@ -293,6 +303,37 @@ dividers, not disclosure buttons: do not add a chevron, collapsed state, or
 
 ## 2. Component catalog
 
+### Route pages and asynchronous sections
+
+Settings, Fleet, Friends, Permissions, and Activity use `PageLayout` for their
+scroll owner, route header, content width, gutters, and optional `SectionNav`.
+Desktop route actions still pass through `RouteChromeHeader`; specialized chat,
+file trees, and workbench canvases retain their own layouts.
+
+Use `AsyncContent` to distinguish loading, failure with retry, and loaded content.
+A failed request must retain an explicit error; never replace it with an empty
+array and display a successful empty state. Activity's page and dialog both use
+`ActivityInbox`, including the same invitation actions and membership refresh.
+
+Existing profiles start in read mode. `InlineEditActions` opens the editor and
+keeps Save/Cancel next to its title; cancel restores the saved fields and polling
+must preserve an active draft. Collection actions replace the affected row with
+`CollectionConfirmationItem`. Read-only/revoke-only collections set `showAdd={false}`
+without providing a fabricated add handler.
+
+Form dialogs set `dirty` and `busy` when appropriate. The shared dialog guards
+chrome, backdrop, and Escape dismissal, keeps input after Cancel, and blocks
+closing during submission. Nested detail headers call `useDialogClose` so they
+cannot bypass that guard. Explicit form cancellation remains an intentional exit.
+The local `/dev/page-structure.html` preview mounts the real route components for
+responsive, theme, form, and error-state verification with an isolated API fixture.
+Social-policy drafts remain mounted per visited bot while switching sections or
+bots; Cancel restores the saved policy. Failed initial loads replace editable
+settings with a retry boundary, so missing data cannot be saved as blank defaults.
+Task deletion and personal-extension removal use a pending lock and retain their
+confirmation after failure. `/dev/extension-manager.html` exercises the real
+extension manager with mocked native commands and never removes machine files.
+
 ### 2.1 Buttons — always borderless
 
 Use `<ActionButton>` for registered common actions and `<Button>` for all other
@@ -487,6 +528,15 @@ registered treatments and no third:
 record icon; raw attachment/trace counts belong in the accessible label and
 tooltip, not as unexplained zero-padded folio numbers in the timeline.
 
+Bot progress has one owner: the run overview shows the outcome, tool/error
+counts, record disclosure, and adjacent Stop action. Its text wraps so critical
+status remains visible on narrow screens. While this overview is present, the
+message body renders content without another progress cursor or trace title.
+Inline steps show pending approvals first, otherwise the latest tool/event;
+pending approvals render their command and direct choices once, without an
+additional trace disclosure header. Run lifecycle rows belong only in the
+record, and status badges do not repeat as event previews.
+
 `w-2 h-2 rounded-full ring-2 ring-zinc-900` overlaid bottom-right of the
 avatar; `bg-emerald-500` online / `bg-zinc-600` offline. One size, one ring
 style — don't mix `border` and `ring` variants. (This ring is the avatar
@@ -561,6 +611,12 @@ form-label recipe; the control is any shared field (`Input`/`Textarea`/
   <Input id="dn" value={name} onChange={…} />
 </Field>
 ```
+
+Shared `Input`, `Select`, and `Textarea` inherit the field's accessible label even
+through nested layout wrappers. Explicit `aria-label`/`aria-labelledby` values
+remain authoritative for composite fields. `htmlFor` links a single control's ID;
+give multiple controls distinct names. Visible `status` and `error` text is linked
+through `aria-describedby`, and a field error sets `aria-invalid`.
 
 `hint` and `tip` are supplementary help on the label itself. Use `error` for visible
 validation failures and `status` for visible current values or required confirmation

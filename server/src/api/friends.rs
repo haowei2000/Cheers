@@ -45,6 +45,27 @@ fn pair_key(a: &str, b: &str) -> String {
     }
 }
 
+/// Best-effort DM between two newly connected friends (`peer_id` is a bot when
+/// `peer_is_bot`). `None` when either id is not a uuid or the DM can't be opened.
+async fn open_friend_dm(
+    state: &AppState,
+    user_id: &str,
+    peer_id: &str,
+    peer_is_bot: bool,
+) -> Option<String> {
+    let user = Uuid::parse_str(user_id).ok()?;
+    let peer = Uuid::parse_str(peer_id).ok()?;
+    let peer = if peer_is_bot {
+        crate::domain::dms::Participant::Bot(peer)
+    } else {
+        crate::domain::dms::Participant::User(peer)
+    };
+    crate::domain::dms::open_dm(&state.db, crate::domain::dms::Participant::User(user), peer)
+        .await
+        .ok()
+        .map(|opened| opened.channel_id.to_string())
+}
+
 #[cfg(test)]
 #[derive(Debug, PartialEq)]
 struct FriendLookup<'a> {
@@ -304,20 +325,7 @@ pub async fn add_friend(
             .execute(&state.db)
             .await?;
 
-            let me = Uuid::parse_str(&claims.sub).ok();
-            let bot_uuid = Uuid::parse_str(&body.friend_id).ok();
-            let channel_id = if let (Some(me), Some(bot_uuid)) = (me, bot_uuid) {
-                crate::domain::dms::open_dm(
-                    &state.db,
-                    crate::domain::dms::Participant::User(me),
-                    crate::domain::dms::Participant::Bot(bot_uuid),
-                )
-                .await
-                .ok()
-                .map(|opened| opened.channel_id.to_string())
-            } else {
-                None
-            };
+            let channel_id = open_friend_dm(&state, &claims.sub, &body.friend_id, true).await;
 
             return Ok(Json(json!({
                 "friend_id": body.friend_id,
@@ -337,20 +345,7 @@ pub async fn add_friend(
         {
             let status: String = row.status.clone();
             if status == "accepted" {
-                let me = Uuid::parse_str(&claims.sub).ok();
-                let bot_uuid = Uuid::parse_str(&body.friend_id).ok();
-                let channel_id = if let (Some(me), Some(bot_uuid)) = (me, bot_uuid) {
-                    crate::domain::dms::open_dm(
-                        &state.db,
-                        crate::domain::dms::Participant::User(me),
-                        crate::domain::dms::Participant::Bot(bot_uuid),
-                    )
-                    .await
-                    .ok()
-                    .map(|opened| opened.channel_id.to_string())
-                } else {
-                    None
-                };
+                let channel_id = open_friend_dm(&state, &claims.sub, &body.friend_id, true).await;
                 return Ok(Json(json!({
                     "friend_id": body.friend_id,
                     "status": "accepted",
@@ -422,20 +417,7 @@ pub async fn add_friend(
         let friendship_id: String = row.friendship_id.clone();
         match status.as_str() {
             "accepted" => {
-                let me = Uuid::parse_str(&claims.sub).ok();
-                let peer = Uuid::parse_str(&body.friend_id).ok();
-                let channel_id = if let (Some(me), Some(peer)) = (me, peer) {
-                    crate::domain::dms::open_dm(
-                        &state.db,
-                        crate::domain::dms::Participant::User(me),
-                        crate::domain::dms::Participant::User(peer),
-                    )
-                    .await
-                    .ok()
-                    .map(|opened| opened.channel_id.to_string())
-                } else {
-                    None
-                };
+                let channel_id = open_friend_dm(&state, &claims.sub, &body.friend_id, false).await;
                 return Ok(Json(
                     json!({"friend_id": body.friend_id, "status": "accepted", "channel_id": channel_id}),
                 ));
@@ -455,20 +437,7 @@ pub async fn add_friend(
                 )
                 .await;
 
-                let me = Uuid::parse_str(&claims.sub).ok();
-                let peer = Uuid::parse_str(&body.friend_id).ok();
-                let channel_id = if let (Some(me), Some(peer)) = (me, peer) {
-                    crate::domain::dms::open_dm(
-                        &state.db,
-                        crate::domain::dms::Participant::User(me),
-                        crate::domain::dms::Participant::User(peer),
-                    )
-                    .await
-                    .ok()
-                    .map(|opened| opened.channel_id.to_string())
-                } else {
-                    None
-                };
+                let channel_id = open_friend_dm(&state, &claims.sub, &body.friend_id, false).await;
 
                 return Ok(Json(
                     json!({"friend_id": body.friend_id, "status": "accepted", "channel_id": channel_id}),
@@ -735,20 +704,7 @@ pub async fn accept_friend(
         )
         .await;
 
-        let user_uuid = Uuid::parse_str(&user_id).ok();
-        let bot_uuid = Uuid::parse_str(&bid).ok();
-        let channel_id = if let (Some(u), Some(b)) = (user_uuid, bot_uuid) {
-            crate::domain::dms::open_dm(
-                &state.db,
-                crate::domain::dms::Participant::User(u),
-                crate::domain::dms::Participant::Bot(b),
-            )
-            .await
-            .ok()
-            .map(|opened| opened.channel_id.to_string())
-        } else {
-            None
-        };
+        let channel_id = open_friend_dm(&state, &user_id, &bid, true).await;
 
         return Ok(Json(
             json!({"friend_id": bid, "user_id": user_id, "status": "accepted", "channel_id": channel_id, "is_bot": true}),
@@ -775,20 +731,7 @@ pub async fn accept_friend(
     .await;
 
     // Auto-open DM for newly accepted friends
-    let me = Uuid::parse_str(&claims.sub).ok();
-    let peer = Uuid::parse_str(&user_id).ok();
-    let channel_id = if let (Some(me), Some(peer)) = (me, peer) {
-        crate::domain::dms::open_dm(
-            &state.db,
-            crate::domain::dms::Participant::User(me),
-            crate::domain::dms::Participant::User(peer),
-        )
-        .await
-        .ok()
-        .map(|opened| opened.channel_id.to_string())
-    } else {
-        None
-    };
+    let channel_id = open_friend_dm(&state, &claims.sub, &user_id, false).await;
 
     Ok(Json(
         json!({"friend_id": user_id, "status": "accepted", "channel_id": channel_id}),

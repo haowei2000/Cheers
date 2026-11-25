@@ -5,12 +5,13 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { DESKTOP_MEDIA_QUERY } from "@/hooks/useIsMobile";
 
 export type PresentationLevel = "max" | "medium" | "minimal";
 
 const PresentationLevelContext = createContext<PresentationLevel>("medium");
 
-const MEDIUM_QUERY = "(min-width: 768px)";
+const MEDIUM_QUERY = DESKTOP_MEDIA_QUERY;
 const MAX_QUERY = "(min-width: 1280px)";
 
 function subscribeViewport(onChange: () => void): () => void {

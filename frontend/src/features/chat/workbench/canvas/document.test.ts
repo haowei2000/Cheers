@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nodeTitle, parseCanvas } from "./document";
+import { nodeLocator, nodeTitle, parseCanvas } from "./document";
 
 describe("parseCanvas", () => {
   it("reads nodes, edges and the layout strategy", () => {
@@ -143,5 +143,46 @@ describe("nodeTitle", () => {
 
   it("falls back to the id when the text has no first line", () => {
     expect(nodeTitle({ id: "blank", at: 0, kind: "text", text: "\n\n  \n" })).toBe("blank");
+  });
+});
+
+describe("artifact source nodes", () => {
+  const id = "0f8b6c2e-4d3a-4b1c-9e7f-2a5d8c1b3e60";
+
+  it("reads an artifact reference by its stable id", () => {
+    const doc = parseCanvas({ canvas: 1, nodes: [{ id: "plan", source: { kind: "artifact", id }, view: "kanban" }] });
+    expect(doc?.nodes[0]).toMatchObject({ kind: "source", source: { kind: "artifact", artifactId: id }, view: "kanban" });
+  });
+
+  it("drops an artifact reference whose id a link could not carry", () => {
+    // Same rule as `cheers:artifact/` links: a node that cannot be opened is not kept.
+    const doc = parseCanvas({
+      canvas: 1,
+      nodes: [
+        { id: "no-id", source: { kind: "artifact" } },
+        { id: "path", source: { kind: "artifact", id: "dev/plan.yaml" } },
+        { id: "number", source: { kind: "artifact", id: 42 } },
+      ],
+    });
+    expect(doc?.nodes).toEqual([]);
+  });
+
+  it("addresses each source kind by its canonical locator", () => {
+    const doc = parseCanvas({
+      canvas: 1,
+      nodes: [
+        { id: "a", source: { kind: "artifact", id } },
+        { id: "f", source: { kind: "fs", path: "dev/plan.yaml" } },
+        { id: "r", source: { kind: "resource", verb: "channel.plan.read" } },
+        { id: "t", text: "note" },
+      ],
+    });
+    expect(doc?.nodes.map(nodeLocator)).toEqual([
+      `cheers:artifact/${id}`,
+      "cheers:desk/dev/plan.yaml",
+      "cheers:plan",
+      undefined,
+    ]);
+    expect(nodeTitle(doc!.nodes[0])).toBe("a");
   });
 });

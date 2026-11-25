@@ -44,13 +44,3 @@ export function putCodeProfile(channelId: string, config: CodeProfileConfig): Pr
     body: JSON.stringify(config),
   });
 }
-
-export function putCodeStatus(
-  channelId: string,
-  status: ChannelProfile["status"],
-): Promise<ChannelProfile> {
-  return apiJson(`/channels/${channelId}/profile/code/status`, {
-    method: "PUT",
-    body: JSON.stringify(status),
-  });
-}

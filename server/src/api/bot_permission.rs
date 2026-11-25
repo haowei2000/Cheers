@@ -72,6 +72,30 @@ fn normalize_channel(raw: Option<String>) -> String {
     }
 }
 
+/// Best-effort push of connector-control settings to the bot's live connector.
+/// Returns whether a connected connector received the frame.
+async fn push_connector_control(
+    state: &AppState,
+    bot_id: &str,
+    settings: cheers_bridge_protocol::ConnectorControlSettings,
+) -> bool {
+    let Ok(uuid) = bot_id.parse::<Uuid>() else {
+        return false;
+    };
+    let frame = crate::gateway::bridge_frames::config_update_frame(settings);
+    state.bot_locator.dispatch_task(uuid, frame).await
+}
+
+fn parse_decision(raw: &str) -> Result<bool, AppError> {
+    match raw.trim() {
+        "allow" => Ok(true),
+        "deny" => Ok(false),
+        other => Err(AppError::BadRequest(format!(
+            "decision must be allow|deny, got {other:?}"
+        ))),
+    }
+}
+
 // ── GET /bots/:bot_id/permissions ───────────────────────────────────────────
 
 pub async fn list_permissions(
@@ -172,18 +196,15 @@ pub async fn set_posture(
     .await?;
 
     // L2 push to a live connector (best-effort). It re-clamps via L0 (both gates).
-    let delivered = match bot_id.parse::<Uuid>() {
-        Ok(uuid) => {
-            let frame = crate::gateway::bridge_frames::config_update_frame(
-                cheers_bridge_protocol::ConnectorControlSettings {
-                    agent_native_permission_mode: Some(mode.clone()),
-                    ..Default::default()
-                },
-            );
-            state.bot_locator.dispatch_task(uuid, frame).await
-        }
-        Err(_) => false,
-    };
+    let delivered = push_connector_control(
+        &state,
+        &bot_id,
+        cheers_bridge_protocol::ConnectorControlSettings {
+            agent_native_permission_mode: Some(mode.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
     Ok(Json(
         json!({ "ok": true, "permission_mode": mode, "delivered": delivered }),
     ))
@@ -283,18 +304,15 @@ pub async fn set_config_option(
 
     // L2 push to a live connector (best-effort): full desired map. It re-clamps
     // via L0 allowed_config_options and applies per-session.
-    let delivered = match bot_id.parse::<Uuid>() {
-        Ok(uuid) => {
-            let frame = crate::gateway::bridge_frames::config_update_frame(
-                cheers_bridge_protocol::ConnectorControlSettings {
-                    config_options: Some(desired.clone()),
-                    ..Default::default()
-                },
-            );
-            state.bot_locator.dispatch_task(uuid, frame).await
-        }
-        Err(_) => false,
-    };
+    let delivered = push_connector_control(
+        &state,
+        &bot_id,
+        cheers_bridge_protocol::ConnectorControlSettings {
+            config_options: Some(desired),
+            ..Default::default()
+        },
+    )
+    .await;
     Ok(Json(
         json!({ "ok": true, "config_id": config_id, "value": value, "delivered": delivered }),
     ))
@@ -419,15 +437,7 @@ pub async fn upsert_event_rule(
         return Err(AppError::BadRequest("event_class required".into()));
     }
     let capability = parse_capability(body.capability.trim())?;
-    let allow = match body.decision.trim() {
-        "allow" => true,
-        "deny" => false,
-        other => {
-            return Err(AppError::BadRequest(format!(
-                "decision must be allow|deny, got {other:?}"
-            )))
-        }
-    };
+    let allow = parse_decision(&body.decision)?;
     if allow {
         crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid)
             .await?;
@@ -635,15 +645,7 @@ pub async fn upsert_bot_grant(
 ) -> Result<Json<Value>, AppError> {
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let (event_class, capability) = bot_grant_key(body.grant.trim())?;
-    let allow = match body.decision.trim() {
-        "allow" => true,
-        "deny" => false,
-        other => {
-            return Err(AppError::BadRequest(format!(
-                "decision must be allow|deny, got {other:?}"
-            )))
-        }
-    };
+    let allow = parse_decision(&body.decision)?;
     if allow {
         crate::domain::auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid)
             .await?;
@@ -787,13 +789,12 @@ pub async fn list_acp_events(
         .into_iter()
         .map(|r| {
             json!({
-                "name": r.name.clone(),
-                "home": r.home.clone(),
-                "channel_id": r.channel_id.clone(),
-                "session_id": r.session_id.clone(),
-                "payload": r.payload.clone(),
-                "created_at": Some(r.created_at.clone())
-                    .map(|t| t.to_rfc3339()).unwrap_or_default(),
+                "name": r.name,
+                "home": r.home,
+                "channel_id": r.channel_id,
+                "session_id": r.session_id,
+                "payload": r.payload,
+                "created_at": r.created_at.to_rfc3339(),
             })
         })
         .collect();

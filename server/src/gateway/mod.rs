@@ -5,6 +5,7 @@ pub mod conversion_worker;
 pub mod dispatch_intents;
 pub mod dispatcher;
 pub mod integration_event_worker;
+pub mod mcp_delivery;
 pub mod pairing_reaper;
 pub mod presence;
 pub mod realtime;

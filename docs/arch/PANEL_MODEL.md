@@ -7,6 +7,9 @@
 > plugin-able. Related: [PLUGIN_SYSTEM.md](PLUGIN_SYSTEM.md) (the authority boundary this
 > must not move), [WORKBENCH.md](WORKBENCH.md) (the package contract it extends),
 > [CLIENT_NAV_IA.md](CLIENT_NAV_IA.md) (why the mobile clients follow).
+>
+> File and line references to the old panel code describe the tree before the
+> refactor in `ce5a4cfa` and `64ab12dd`, which removed those files.
 
 ## The claim
 
@@ -36,13 +39,13 @@ that requires no new security boundary.
 | Truth lives in | the gateway file store | the event / session / usage stores | a remote filesystem and its git history |
 | Extensible today | yes — scenes and personal renderers | **no** — compile-time registration only | **no** — a single 1,928-line component |
 
-Entry points: [ChannelToolbar.tsx:32](../../frontend/src/features/chat/ChannelToolbar.tsx:32)
+Entry points: [ChannelToolbar.tsx:32](../../frontend/src/features/chat/ChannelToolbar.tsx#L32)
 lists all four as peer toggles. Verbs:
-[resource/mod.rs:86](../../server/src/resource/mod.rs:86) onward. Remote workspace
-authorization: [workspace.rs:606](../../server/src/api/workspace.rs:606).
+[resource/mod.rs:86](../../server/src/resource/mod.rs#L86) onward. Remote workspace
+authorization: [workspace.rs:606](../../server/src/api/workspace.rs#L606).
 
 The two-class argument at the top of
-[viewBoard.tsx:2](../../frontend/src/features/chat/workbench/viewBoard.tsx:2) — agent-edited
+`viewBoard.tsx:2` — agent-edited
 files belong to the Workbench, self-maintained state belongs to a ViewBoard — is correct
 and this proposal keeps it. What it does not justify is separate hosts, separate context
 types, and separate registries. A source distinction was implemented as a subsystem
@@ -52,11 +55,11 @@ distinction.
 
 **The lane treats them as one kind.** The shared window layer names all four in a single
 union: `SpawnKind = "workbench" | "viewboard" | "files" | "workspace"`
-([laneSnap.ts:30](../../frontend/src/features/chat/workbench/laneSnap.ts:30)). Each panel
+([laneSnap.ts:30](../../frontend/src/features/chat/workbench/laneSnap.ts#L30)). Each panel
 gets floating, dragging, resizing, zone-snapping, and first-open placement from
-[useLaneWindow.ts:34](../../frontend/src/hooks/useLaneWindow.ts:34) and the lane rect
+`useLaneWindow.ts:34` and the lane rect
 published through
-[LaneBoundsContext](../../frontend/src/hooks/useLaneWindow.ts:10). The *window* concept is
+`LaneBoundsContext`. The *window* concept is
 merged. Only the contents still pretend to be unrelated.
 
 **One feature is implemented three times.** GitHub Code reads the same `ChannelProfile`
@@ -65,21 +68,21 @@ context types through three registries:
 
 | Surface | Registry | Call site |
 |---|---|---|
-| Channel header | `registerChannelHeader` ([channelSlots.tsx:17](../../frontend/src/features/chat/extensions/channelSlots.tsx:17)) | [githubCode.tsx:21](../../frontend/src/features/chat/extensions/githubCode.tsx:21) |
-| ViewBoard | `registerComponentViewBoard` ([viewBoard.tsx:144](../../frontend/src/features/chat/workbench/viewBoard.tsx:144)) | [GitHubCodePanel.tsx:33](../../frontend/src/features/chat/workbench/panels/GitHubCodePanel.tsx:33) |
-| Workbench panel | `registerWorkbenchPanel` ([workbenchPanels.tsx:12](../../frontend/src/features/chat/workbench/workbenchPanels.tsx:12)) | [GitHubCodeWorkbenchPanel.tsx:52](../../frontend/src/features/chat/workbench/panels/GitHubCodeWorkbenchPanel.tsx:52) |
+| Channel header | `registerChannelHeader` (`channelSlots.tsx:17`) | `githubCode.tsx:21` |
+| ViewBoard | `registerComponentViewBoard` (`viewBoard.tsx:144`) | `GitHubCodePanel.tsx:33` |
+| Workbench panel | `registerWorkbenchPanel` (`workbenchPanels.tsx:12`) | `GitHubCodeWorkbenchPanel.tsx:52` |
 
 All three filter by the same `profiles: ["code"]`. That triplication is the running cost
 of the split, and it is paid again by every profile-scoped feature that follows.
 
 **The two render contracts are already the same function.** A lens is
 `render(data, config, onChange)`
-([lens/registry.ts:7](../../frontend/src/features/chat/workbench/lens/registry.ts:7)); a
+([lens/registry.ts:7](../../frontend/src/features/chat/workbench/lens/registry.ts#L7)); a
 board is `render(data, ctx, refetch)`
-([viewBoard.tsx:122](../../frontend/src/features/chat/workbench/viewBoard.tsx:122)). Same
+(`viewBoard.tsx:122`). Same
 shape, different names. More telling, `Lens` already carries
 `viewOnly?: boolean` — "never calls onChange (machine-written data, humans only view)"
-([lens/registry.ts:17](../../frontend/src/features/chat/workbench/lens/registry.ts:17)).
+([lens/registry.ts:17](../../frontend/src/features/chat/workbench/lens/registry.ts#L17)).
 That flag describes a ViewBoard exactly. The convergence was anticipated in the type and
 then not taken.
 
@@ -159,7 +162,7 @@ boundary introduced.
 Tier A is the whole point. A declarative panel over `resource://channel.plan.read`
 rendered by `builtin:table` is expressible in the existing manifest grammar the moment
 `source` accepts a verb, and the verb allowlist already exists as
-[`EXTENSION_CHANNEL_RESOURCES`](../../frontend/src/features/chat/workbench/extensions/package.ts:16).
+[`EXTENSION_CHANNEL_RESOURCES`](../../frontend/src/features/chat/workbench/extensions/package.ts#L16).
 Plan, Cost, and Sessions are close to expressible this way today; what blocks them is not
 safety but that a scene's source is hardcoded to a file path.
 
@@ -175,7 +178,7 @@ of them is a regression, not a simplification.
 
 1. **`workspace://` is not `fs://`.** The Workbench's fs verbs authorize by channel-role.
    Remote workspace authorizes per bot against the session-workdir root-set
-   ([workspace.rs:606](../../server/src/api/workspace.rs:606),
+   ([workspace.rs:606](../../server/src/api/workspace.rs#L606),
    [SESSION_WORKDIR_ROOTSET.md](SESSION_WORKDIR_ROOTSET.md)). Unify the *client* contract;
    leave the *server* seam exactly where it is. One panel type reading two verb families
    is fine. One verb family serving both is a privilege escalation.
@@ -227,7 +230,7 @@ Risk-ascending. Each step is independently shippable and steps 1–2 are invisib
    `LaneBoundsContext` survives, in `hooks/laneBounds.ts`.
 
 3. **Source abstraction.** Introduce `PanelSource`, `usePanelData`, and `tickKeyFor`.
-   [makeFsClient](../../frontend/src/features/chat/workbench/fsClient.ts:25) becomes one
+   [makeFsClient](../../frontend/src/features/chat/workbench/fsClient.ts#L25) becomes one
    adapter among several rather than the Workbench's private door, and
    `PLUGGABLE_SOURCE_KINDS` becomes the single declaration of which kinds a manifest may
    name — the one step 4's corpus enforces on both sides.

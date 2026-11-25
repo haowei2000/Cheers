@@ -389,12 +389,13 @@ pub fn catalog() -> &'static [ResourceSpec] {
         db(
             "channel.artifacts.list",
             read_tool("artifact_list", "List channel artifacts",
-                "List documents, interactive pages, canvases and delivered files together. Follow next_cursor with before. Internal configuration files are hidden by default.",
+                "List documents, interactive pages, canvases and delivered files together. Filter by a built-in view type from read_ui_contract.view_suffixes (for example canvas or table). Follow next_cursor with before. Internal configuration files are hidden by default.",
                 &[
                     Param::req("channel_id", ParamKind::String),
                     Param::opt("limit", ParamKind::Integer),
                     Param::opt("before", ParamKind::String),
                     Param::opt("include_internal", ParamKind::Boolean),
+                    Param::opt("type", ParamKind::String),
                 ]),
         ),
         db(
@@ -411,12 +412,53 @@ pub fn catalog() -> &'static [ResourceSpec] {
                 SCOPE_WORKSPACE_WRITE,
                 &[Param::req("channel_id", ParamKind::String), Param::req("artifact_id", ParamKind::String), Param::req("content", ParamKind::String), Param::req("if_version", ParamKind::Integer)]),
         ),
+        destructive(
+            "channel.artifacts.delete",
+            Some(ToolBinding {
+                discoverable: true,
+                name: "artifact_delete",
+                title: "Delete an artifact",
+                description: "Delete a text artifact by stable ID. if_version is the artifact version returned by artifact_get/read; a stale version fails. artifact_get still returns it, marked deleted. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
+                scope: SCOPE_WORKSPACE_WRITE,
+                read_only: false,
+                destructive_hint: true,
+                params: &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::req("artifact_id", ParamKind::String),
+                    Param::req("if_version", ParamKind::Integer),
+                    Param::opt("approval_id", ParamKind::String),
+                ],
+                constants: &[],
+                shaping: Shaping::None,
+            }),
+        ),
+        destructive(
+            "channel.artifacts.rename",
+            write_tool("artifact_rename", "Rename an artifact",
+                "Move a text artifact to new_path. Its ID and links keep working. if_version is the artifact version returned by artifact_get/read; a stale version fails, and an existing new_path is never overwritten. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
+                SCOPE_WORKSPACE_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("artifact_id", ParamKind::String), Param::req("new_path", ParamKind::String), Param::req("if_version", ParamKind::Integer), Param::opt("approval_id", ParamKind::String)]),
+        ),
         db(
             "channel.artifacts.deliver",
             write_tool("artifact_deliver", "Deliver an artifact file",
-                "Deliver binary or exported content as a channel artifact. Supply base64 bytes and filename; reuse idempotency_key for retries. Reference the returned artifact.uri. The response includes the actual expiry policy.",
+                "Deliver binary or exported content as a channel artifact when you have no shell; otherwise use artifact_upload_prepare, which keeps file bytes out of the conversation. Supply base64 bytes and filename; reuse idempotency_key for retries. Copying long base64 can silently damage it, so compute the source file's SHA-256 with a command and pass the hex digest as sha256: a damaged copy is then refused instead of stored. Reference the returned artifact.uri. The response includes the actual expiry policy.",
                 SCOPE_FILES_WRITE,
-                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("data_b64", ParamKind::String), Param::opt("content_type", ParamKind::String), Param::opt("idempotency_key", ParamKind::String)]),
+                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("data_b64", ParamKind::String), Param::opt("sha256", ParamKind::String), Param::opt("content_type", ParamKind::String), Param::opt("idempotency_key", ParamKind::String)]),
+        ),
+        db(
+            "channel.artifacts.upload_prepare",
+            write_tool("artifact_upload_prepare", "Prepare a file upload",
+                "Start delivering a file as a channel artifact. Use this for any file you did not just type yourself. Compute size_bytes and the hex sha256 with a command, then run the returned command in your shell to send the raw file, and call artifact_upload_finish. The upload expires after 15 minutes and needs network access to Cheers from your shell.",
+                SCOPE_FILES_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("filename", ParamKind::String), Param::req("size_bytes", ParamKind::Integer), Param::req("sha256", ParamKind::String), Param::opt("content_type", ParamKind::String)]),
+        ),
+        db(
+            "channel.artifacts.upload_finish",
+            write_tool("artifact_upload_finish", "Publish an uploaded file",
+                "Publish a file sent with artifact_upload_prepare's command as a channel artifact. Safe to repeat: it returns the same artifact. Reference the returned artifact.uri.",
+                SCOPE_FILES_WRITE,
+                &[Param::req("channel_id", ParamKind::String), Param::req("upload_id", ParamKind::String)]),
         ),
         db(
             "channel.artifacts.get",
@@ -462,6 +504,25 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("path", ParamKind::String),
                     Param::opt("session_id", ParamKind::String),
                     Param::opt("root", ParamKind::String),
+                ],
+            ),
+        },
+        // Answered by the Gateway's MCP endpoint itself (domain::mcp_approval): it
+        // posts an approval card and waits for the person's decision.
+        ResourceSpec {
+            resource: "approval.request",
+            routing: Routing::Brokered,
+            destructive: false,
+            tool: write_tool(
+                "request_approval",
+                "Ask for approval",
+                "Ask the person whose task this is to approve one destructive call (artifact_delete, artifact_rename, desk_rm, desk_mv) with these exact arguments. Waits for their answer (up to 10 minutes) and returns decision approved, denied or expired, plus approval_id to pass to that call.",
+                SCOPE_WORKSPACE_WRITE,
+                &[
+                    Param::req("channel_id", ParamKind::String),
+                    Param::req("tool", ParamKind::String),
+                    Param::req("arguments_json", ParamKind::String),
+                    Param::opt("reason", ParamKind::String),
                 ],
             ),
         },
@@ -547,7 +608,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "set_status",
                 "Update Bot status",
-                "Update this Bot's own status/profile card.",
+                "Update this Bot's own status/profile card. It is shown in every channel, so it only works in your owner's direct message with you; elsewhere it is refused.",
                 SCOPE_PROFILE_WRITE,
                 &[
                     Param::opt("status_text", ParamKind::String),
@@ -583,6 +644,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("channel_id", ParamKind::String),
                     Param::req("filename", ParamKind::String),
                     Param::req("data_b64", ParamKind::String),
+                    Param::opt("sha256", ParamKind::String),
                     Param::opt("content_type", ParamKind::String),
                     Param::opt("idempotency_key", ParamKind::String),
                 ],
@@ -665,7 +727,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                 discoverable: true,
                 name: "desk_rm",
                 title: "Remove a Desk path",
-                description: "Remove a Desk file or subtree.",
+                description: "Remove a Desk file or subtree. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
                 scope: SCOPE_WORKSPACE_WRITE,
                 read_only: false,
                 destructive_hint: true,
@@ -673,6 +735,7 @@ pub fn catalog() -> &'static [ResourceSpec] {
                     Param::req("channel_id", ParamKind::String),
                     Param::req("path", ParamKind::String),
                     Param::opt("recursive", ParamKind::Boolean),
+                    Param::opt("approval_id", ParamKind::String),
                 ],
                 constants: &[],
                 shaping: Shaping::None,
@@ -683,12 +746,13 @@ pub fn catalog() -> &'static [ResourceSpec] {
             write_tool(
                 "desk_mv",
                 "Move a Desk path",
-                "Move or rename a Desk file or subtree.",
+                "Move or rename a Desk file or subtree. On a person's task this needs their approval first: call request_approval with this tool and the same arguments, then pass the returned approval_id.",
                 SCOPE_WORKSPACE_WRITE,
                 &[
                     Param::req("channel_id", ParamKind::String),
                     Param::req("from", ParamKind::String),
                     Param::req("to", ParamKind::String),
+                    Param::opt("approval_id", ParamKind::String),
                 ],
             ),
         ),
@@ -791,15 +855,24 @@ mod tests {
     }
 
     #[test]
-    fn only_fs_mutations_are_destructive() {
+    fn only_delete_and_move_are_destructive() {
         let names: Vec<_> = destructive_resources().collect();
-        assert_eq!(names, vec!["fs.rm", "fs.mv"]);
+        assert_eq!(
+            names,
+            vec![
+                "channel.artifacts.delete",
+                "channel.artifacts.rename",
+                "fs.rm",
+                "fs.mv"
+            ]
+        );
     }
 
     #[test]
     fn brokered_resources_are_not_database_routed() {
         let db: BTreeSet<_> = database_resources().collect();
         assert!(!db.contains("workspace.read"));
+        assert!(!db.contains("approval.request"));
         assert!(db.contains("channel.info"));
     }
 }

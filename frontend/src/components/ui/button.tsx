@@ -38,20 +38,20 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 
 const variantCls: Record<Variant, string> = {
   primary:
-    "bg-content-strong text-content-on-light hover:opacity-90 active:scale-[0.98] shadow-sm",
+    "bg-content-strong text-content-on-light hover:opacity-90 active:opacity-80",
   emphasis:
-    "bg-emphasis text-content-on-accent hover:bg-emphasis-hover active:bg-emphasis-active active:scale-[0.98]",
+    "bg-emphasis text-content-on-accent hover:bg-emphasis-hover active:bg-emphasis-active",
   ghost:
     "bg-transparent text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
   danger:
-    "bg-transparent text-danger-400 hover:bg-red-950 hover:text-danger-300 active:bg-red-900 active:scale-[0.98]",
+    "bg-transparent text-danger-400 hover:bg-red-950 hover:text-danger-300 active:bg-red-900",
   // The one destructive action of a section or dialog (delete a channel, revoke
   // everything, confirm a delete). Outlined so it never reads weaker than the
   // neutral secondary beside it; repeated per-row actions stay `danger`.
   destructive:
-    "bg-transparent text-danger-400 ring-1 ring-inset ring-danger-400/60 hover:bg-red-950 hover:text-danger-300 active:bg-red-900 active:scale-[0.98]",
+    "bg-transparent text-danger-400 ring-1 ring-inset ring-danger-400/60 hover:bg-red-950 hover:text-danger-300 active:bg-red-900",
   secondary:
-    "bg-control text-content-primary ring-1 ring-inset ring-zinc-300/80 dark:ring-zinc-700/80 hover:bg-control-hover hover:text-content-strong active:bg-control-active active:scale-[0.98]",
+    "bg-control text-content-primary hover:bg-control-hover hover:text-content-strong active:bg-control-active",
   plain:
     "bg-transparent text-inherit hover:bg-control-hover hover:text-content-strong active:bg-control-active",
 };
@@ -81,19 +81,12 @@ function LoadingIndicator() {
   );
 }
 
-/** Variants without a resting surface. Nothing outlines their slot, so a label
- *  centred in the space left over drifts away from its icon and the pair reads
- *  as two controls ("✕      Revoke"). */
-const TRANSPARENT_VARIANTS = new Set<Variant>(["plain", "ghost", "danger"]);
-
-function IconTextContent({ action, children, label, loading, size, grouped }: {
+function IconTextContent({ action, children, label, loading, size }: {
   action?: ActionKey;
   children: ReactNode;
   label?: ReactNode;
   loading?: boolean;
   size: ControlSize;
-  /** Keep the label beside the icon instead of centring it in the label slot. */
-  grouped: boolean;
 }) {
   const parts = Children.toArray(children);
   const leading = parts.shift();
@@ -124,10 +117,7 @@ function IconTextContent({ action, children, label, loading, size, grouped }: {
       </span>
       <span
         data-button-slot="label"
-        className={cn(
-          "inline-flex min-w-0 flex-1 items-center self-stretch",
-          grouped ? "justify-start pl-1 pr-3" : "justify-center px-3",
-        )}
+        className="inline-flex min-w-0 flex-1 items-center justify-start self-stretch pl-1 pr-3 text-left"
       >
         {action ? actionLabel(action) : label ?? parts}
       </span>
@@ -155,8 +145,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const inheritedSize = useControlSize(controlSize);
-    const resolvedSize = inheritedSize;
+    const resolvedSize = useControlSize(controlSize);
     // Fill-only labels exceed the 128px slot budget on purpose; rendering one
     // in a slot-width button would truncate it.
     if (DEV && content !== "icon" && action && isFillActionKey(action) && controlWidth !== "fill") {
@@ -176,7 +165,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       aria-pressed={isTab || props["aria-expanded"] !== undefined ? undefined : (props["aria-pressed"] as boolean | undefined) ?? (selected || undefined)}
       data-selected={selected || undefined}
       className={cn(
-        "inline-flex min-w-0 items-center justify-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:shrink-0",
+        "inline-flex min-w-0 items-center font-utility font-medium whitespace-nowrap transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700/60 dark:focus-visible:ring-zinc-300/60 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer [&>svg]:shrink-0",
+        content === "icon" ? "justify-center" : "justify-start text-left",
         variantCls[variant],
         isTab ? tabClasses(selected, tabOrientation) : selected && selectedClasses("ring"),
         content === "icon" ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
@@ -206,7 +196,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           label={label}
           loading={loading}
           size={resolvedSize}
-          grouped={controlWidth !== "fill" && TRANSPARENT_VARIANTS.has(variant)}
         >
           {children}
         </IconTextContent>

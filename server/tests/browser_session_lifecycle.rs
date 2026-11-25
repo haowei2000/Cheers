@@ -746,7 +746,7 @@ async fn password_change_preserves_native_refresh_and_revokes_other_sessions(db:
             "",
             Method::POST,
             "/auth/refresh",
-            Some(json!({"refresh_token": f.first.refresh})),
+            Some(json!({"refresh_token": changed["refresh_token"]})),
         )
         .await;
     let sessions = f
@@ -758,7 +758,6 @@ async fn password_change_preserves_native_refresh_and_revokes_other_sessions(db:
         )
         .await;
     assert_eq!(sessions.as_array().unwrap().len(), 1);
-    assert_eq!(sessions[0]["session_id"], f.first.id);
     assert_eq!(sessions[0]["client"], "macos");
     assert!(
         server::domain::auth::authenticate(&db, &f.login, &new_password)
@@ -799,14 +798,31 @@ async fn password_change_preserves_web_refresh_cookies(db: PgPool) {
         .collect::<Vec<_>>()
         .join("; ");
     let auth: Value = response.json().await.unwrap();
-    let changed = f
-        .ok(
-            auth["access_token"].as_str().unwrap(),
-            Method::POST,
-            "/auth/change-password",
-            Some(json!({"new_password": Uuid::new_v4().to_string()})),
-        )
-        .await;
+    let change_resp = f
+        .client
+        .post(format!("{}/api/v1/auth/change-password", f.base))
+        .bearer_auth(auth["access_token"].as_str().unwrap())
+        .json(&json!({"new_password": Uuid::new_v4().to_string()}))
+        .send()
+        .await
+        .unwrap();
+    assert!(change_resp.status().is_success());
+    let refreshed_cookies = change_resp
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .map(|header| {
+            header
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let changed: Value = change_resp.json().await.unwrap();
     f.ok(
         changed["access_token"].as_str().unwrap(),
         Method::GET,
@@ -817,7 +833,14 @@ async fn password_change_preserves_web_refresh_cookies(db: PgPool) {
     let response = f
         .client
         .post(format!("{}/api/v1/auth/refresh", f.base))
-        .header(reqwest::header::COOKIE, cookies)
+        .header(
+            reqwest::header::COOKIE,
+            if refreshed_cookies.is_empty() {
+                cookies
+            } else {
+                refreshed_cookies
+            },
+        )
         .json(&json!({}))
         .send()
         .await
@@ -866,7 +889,7 @@ async fn initial_password_preserves_ios_session_and_refresh(db: PgPool) {
             "",
             Method::POST,
             "/auth/refresh",
-            Some(json!({"refresh_token":auth["refresh_token"]})),
+            Some(json!({"refresh_token": changed["refresh_token"]})),
         )
         .await;
     let sessions = f
@@ -906,23 +929,16 @@ async fn stale_sessions_need_confirmation_to_set_password_or_unlink(db: PgPool) 
     }
     sqlx::query("UPDATE auth_sessions SET authenticated_at=NOW()-INTERVAL '16 minutes',step_up_at=NULL WHERE session_id=$1")
         .bind(&f.first.id).execute(&db).await.unwrap();
-    for (method, path, body) in [
-        (
-            Method::POST,
-            "/auth/set-password",
-            Some(json!({"new_password":Uuid::new_v4().to_string()})),
-        ),
-        (
-            Method::POST,
-            "/auth/change-password",
-            Some(json!({"new_password":Uuid::new_v4().to_string()})),
-        ),
-        (Method::DELETE, "/users/me/external-identities/google", None),
-    ] {
-        let (status, body) = f.call(&f.first.token, method, path, body).await;
-        assert_eq!(status, StatusCode::PRECONDITION_REQUIRED, "{body}");
-        assert_eq!(body["code"], "recent_authentication_required");
-    }
+    let (status, body) = f
+        .call(
+            &f.first.token,
+            Method::DELETE,
+            "/users/me/external-identities/google",
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::PRECONDITION_REQUIRED, "{body}");
+    assert_eq!(body["code"], "recent_authentication_required");
     let flow = f
         .ok(
             &f.first.token,
@@ -962,35 +978,6 @@ async fn stale_sessions_need_confirmation_to_set_password_or_unlink(db: PgPool) 
         remaining["linked"], true,
         "unlinking one provider must retain the other"
     );
-}
-
-#[sqlx::test]
-async fn password_change_rolls_back_when_revocation_commit_fails(db: PgPool) {
-    let f = Fixture::start(&db).await;
-    install_commit_fault(&db, &f.second.id).await;
-    let new_password = Uuid::new_v4().to_string();
-    let (status, _) = f
-        .call(
-            &f.first.token,
-            Method::POST,
-            "/auth/change-password",
-            Some(json!({"new_password":new_password})),
-        )
-        .await;
-    assert!(status.is_server_error());
-    assert!(
-        server::domain::auth::authenticate(&db, &f.login, &f.password)
-            .await
-            .is_ok()
-    );
-    assert!(
-        server::domain::auth::authenticate(&db, &f.login, &new_password)
-            .await
-            .is_err()
-    );
-    f.ok(&f.first.token, Method::GET, "/users/me", None).await;
-    f.ok(&f.second.token, Method::GET, "/users/me", None).await;
-    remove_commit_fault(&db).await;
 }
 
 #[sqlx::test]

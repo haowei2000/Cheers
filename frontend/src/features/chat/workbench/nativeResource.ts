@@ -5,7 +5,7 @@ import { openDesktopFile } from "@/lib/desktopResource";
 import { parseLocator } from "../locator";
 import type { FsClient } from "./fsClient";
 import { isTauri } from "@/lib/serverConfig";
-import { createInteractionDispatcher } from "./interaction";
+import { createInteractionDispatcher, UUID } from "./interaction";
 
 /** All resource containers use the same host capabilities and executor adapters. */
 export function createResourceInteractionDispatcher(host: Parameters<typeof createInteractionDispatcher>[0] & { channelId: string; fs: FsClient }) {
@@ -23,7 +23,7 @@ export function createNativeResourceOpener(channelId: string, fs: FsClient) {
       for (let at = 0; at < bytes.length; at += 8192) binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
       return openDesktopFile({ filename: file.path.split("/").pop()!, getBytesB64: () => btoa(binary), opener });
     }
-    if (target?.kind === "ws" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target.bot)) {
+    if (target?.kind === "ws" && UUID.test(target.bot)) {
       // The gateway checks workspace grants and resolves the root. The native
       // shell rechecks canonical local roots before opening the original file.
       const file = await getWorkspaceFile(channelId, target.bot, target.path);

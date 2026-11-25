@@ -88,30 +88,11 @@ pub async fn chain_of_message(db: &PgPool, msg_id: Uuid) -> Result<Option<String
 /// （`is_partial=TRUE`）占位的 `chain_id`。用于主动 post_message/send 路径——那里
 /// 拿不到当前任务上下文（与 depth-reset 同源），故用「进行中占位」做 best-effort
 /// 归属，让多跳 post_message 级联共享同一条链而不是各起一条。
-pub async fn chain_of_active_bot_task(
-    db: &PgPool,
-    channel_id: Uuid,
-    bot_id: Uuid,
-) -> Result<Option<String>, sqlx::Error> {
-    chain_of_active_bot_task_with_executor(db, channel_id, bot_id).await
-}
-
 pub(crate) async fn chain_of_active_bot_task_tx(
     tx: &mut Transaction<'_, Postgres>,
     channel_id: Uuid,
     bot_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
-    chain_of_active_bot_task_with_executor(&mut **tx, channel_id, bot_id).await
-}
-
-async fn chain_of_active_bot_task_with_executor<'a, E>(
-    executor: E,
-    channel_id: Uuid,
-    bot_id: Uuid,
-) -> Result<Option<String>, sqlx::Error>
-where
-    E: Executor<'a, Database = Postgres>,
-{
     let row = sqlx::query!(
         "SELECT chain_id FROM messages
          WHERE channel_id = $1 AND sender_id = $2 AND sender_type = 'bot'
@@ -121,9 +102,9 @@ where
         channel_id.to_string(),
         bot_id.to_string(),
     )
-    .fetch_optional(executor)
+    .fetch_optional(&mut **tx)
     .await?;
-    Ok(row.and_then(|r| r.chain_id.clone()))
+    Ok(row.and_then(|r| r.chain_id))
 }
 
 /// 取消一条链：原子地把 `active → cancelled`，并返回链上仍在进行中的 bot 占位
@@ -157,8 +138,8 @@ pub async fn cancel_chain(
     Ok(rows
         .iter()
         .filter_map(|r| {
-            let msg_id = Some(r.msg_id.clone())?.parse().ok()?;
-            let bot_id = Some(r.sender_id.clone())?.parse().ok()?;
+            let msg_id = r.msg_id.parse().ok()?;
+            let bot_id = r.sender_id.parse().ok()?;
             Some((msg_id, bot_id))
         })
         .collect())

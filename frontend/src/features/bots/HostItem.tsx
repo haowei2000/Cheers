@@ -11,7 +11,11 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { listConnectorHosts, type ConnectorHost } from "@/api/bots";
+import {
+  listConnectorHosts,
+  type ConnectorHost,
+  type McpDeliveryReport,
+} from "@/api/bots";
 import { Avatar } from "@/components/ui/avatar";
 import { ActionButton } from "@/components/ui/action-button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -267,6 +271,19 @@ export function HostDetailDialog({
           <Detail label="Last request">
             {dateLabel(host.mcp_last_seen_at)}
           </Detail>
+          {details && (
+            <>
+              <Detail label="MCP delivery">
+                {mcpDeliveryLabel(details.mcp_delivery)}
+                {details.mcp_delivery?.reason && (
+                  <span className="block text-content-muted">
+                    {details.mcp_delivery.reason}
+                  </span>
+                )}
+              </Detail>
+              <Detail label="Token refresh">{headerRefreshLabel(details)}</Detail>
+            </>
+          )}
           {details?.agent_profile?.verified_version_range && (
             <Detail label="Verified versions">
               {details.agent_profile.verified_version_range}
@@ -294,6 +311,37 @@ export function HostDetailDialog({
       </div>
     </Dialog>
   );
+}
+
+const MCP_DELIVERY_LABELS: Record<McpDeliveryReport["mode"], string> = {
+  direct: "Direct (the Agent holds the token)",
+  gateway: "Loopback gateway (the connector holds the token)",
+  acp: "Over ACP (the connector answers MCP)",
+};
+
+/** The mode the connector last reported in `ready`; older connectors report none. */
+export function mcpDeliveryLabel(delivery?: McpDeliveryReport | null) {
+  return delivery ? MCP_DELIVERY_LABELS[delivery.mode] : "Not reported";
+}
+
+/** Whether this Agent build picks up a renewed token, as the Gateway observed it. */
+export function headerRefreshLabel(
+  host: Pick<
+    ConnectorHost,
+    "mcp_header_refresh" | "mcp_header_refresh_agent" | "mcp_header_refresh_at"
+  >,
+) {
+  if (host.mcp_header_refresh == null) return "Not tested yet";
+  const verdict = host.mcp_header_refresh
+    ? "Picks up renewed tokens"
+    : "Keeps old tokens";
+  return [
+    verdict,
+    host.mcp_header_refresh_agent,
+    host.mcp_header_refresh_at && dateLabel(host.mcp_header_refresh_at),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function dateLabel(value?: string | null) {

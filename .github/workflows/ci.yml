@@ -90,6 +90,12 @@ jobs:
       - name: Format
         run: cargo fmt --check
 
+      # Shared with the desktop shell; its unit tests are not part of `server`.
+      - name: Format and test shared ACP registry crate
+        run: |
+          cargo fmt --manifest-path ../packages/cheers-acp-registry/Cargo.toml -- --check
+          cargo test --manifest-path ../packages/cheers-acp-registry/Cargo.toml
+
   # ─────────────────────────────────────────────
   # Gateway (Rust): compile once, then run unit + integration tests against a
   # real Postgres. Keeping this job name preserves existing required checks.
@@ -119,6 +125,16 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      # Matches the version the Helm chart deploys.
+      rustfs:
+        image: rustfs/rustfs:1.0.0-beta.8
+        env:
+          RUSTFS_VOLUMES: /data
+          RUSTFS_ADDRESS: 0.0.0.0:9000
+          RUSTFS_ACCESS_KEY: cheers-ci-access-key
+          RUSTFS_SECRET_KEY: cheers-ci-secret-key
+        ports:
+          - 9000:9000
 
     env:
       # #[sqlx::test] connects here, then CREATEs/DROPs an isolated database per
@@ -164,6 +180,17 @@ jobs:
       # unit, doc, and Postgres-backed integration suites.
       - name: Unit and integration tests (real Postgres)
         run: cargo test --features integration
+
+      # These need object storage, so `cargo test` above skips them.
+      - name: Agent upload and artifact storage tests (real RustFS)
+        env:
+          INTEGRATION_S3_ENDPOINT: http://localhost:9000
+          INTEGRATION_S3_ACCESS_KEY: cheers-ci-access-key
+          INTEGRATION_S3_SECRET_KEY: cheers-ci-secret-key
+          S3_BUCKET: cheers-ci
+        run: |
+          timeout 60 bash -c 'until curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/rustfs/health/live | grep -Eq "200|403"; do sleep 1; done'
+          cargo test --features integration --test agent_uploads --test artifact_store -- --ignored
 
       # Known warnings remain informational, but reuse the artifacts above.
       - name: Clippy (non-blocking)
@@ -397,10 +424,10 @@ jobs:
 
   desktop-check:
     name: Desktop Check
-    # macos-14: the Tauri crate needs Apple frameworks; no `tauri build` in CI
+    # macos-15: the Tauri crate needs Apple frameworks; no `tauri build` in CI
     # (slow, and unsigned artifacts aren't shippable anyway). Unit tests cover
     # the shell's local logic without launching an installed app or agent.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'

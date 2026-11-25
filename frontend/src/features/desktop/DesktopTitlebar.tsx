@@ -29,6 +29,7 @@ import {
   type WindowChromeVariant,
 } from "./desktopPlatform";
 import {
+  DEFAULT_DESKTOP_WINDOW_STATE,
   useDesktopWindowState,
   type DesktopWindowState,
 } from "./WindowStateBridge";
@@ -321,12 +322,7 @@ export function DesktopTitlebarChrome({
   onNavigateUp: () => void;
   actionsRef?: RefCallback<HTMLElement>;
 }) {
-  const resolvedWindowState = windowState ?? {
-    active: true,
-    fullscreen: false,
-    maximized: false,
-    scaleFactor: 1,
-  };
+  const resolvedWindowState = windowState ?? DEFAULT_DESKTOP_WINDOW_STATE;
   const resolvedPanes = panes ?? createWindowChromePaneGeometry(sidebarOpen);
   const isMacOverlay = variant === "macos-overlay";
   const nativeControlsInset = isMacOverlay
@@ -421,30 +417,7 @@ export function DesktopWindowFrame({ children }: { children: ReactNode }) {
 }
 
 export function DesktopPageFrame({ children }: { children: ReactNode }) {
-  const [actionsTarget, setActionsTarget] = useState<HTMLElement | null>(null);
-  const platform = resolveDesktopPlatform();
-  const windowState = useDesktopWindowState(platform);
-  const variant = resolveWindowChromeVariant(platform);
-  if (platform === "web" || variant === "inline") return <>{children}</>;
-  return (
-    <WindowChromeProvider
-      placement="window"
-      actionsTarget={actionsTarget}
-      platform={platform}
-      variant={variant}
-      windowState={windowState}
-    >
-      <div className="flex h-full min-h-0 flex-col bg-canvas text-content-primary">
-        <DesktopTitlebar
-          platform={platform}
-          variant={variant}
-          windowState={windowState}
-          actionsRef={setActionsTarget}
-        />
-        <div className="min-h-0 flex-1">{children}</div>
-      </div>
-    </WindowChromeProvider>
-  );
+  return <DesktopChromeFrame>{children}</DesktopChromeFrame>;
 }
 
 export function DesktopChatFrame({
@@ -456,11 +429,27 @@ export function DesktopChatFrame({
   onToggleSidebar?: () => void;
   children: ReactNode;
 }) {
+  return (
+    <DesktopChromeFrame panes={createWindowChromePaneGeometry(sidebarOpen)} onToggleSidebar={onToggleSidebar}>
+      {children}
+    </DesktopChromeFrame>
+  );
+}
+
+/** Titlebar + window chrome context around a routed page; `panes` only for chat. */
+function DesktopChromeFrame({
+  panes,
+  onToggleSidebar,
+  children,
+}: {
+  panes?: WindowChromePaneGeometry;
+  onToggleSidebar?: () => void;
+  children: ReactNode;
+}) {
   const [actionsTarget, setActionsTarget] = useState<HTMLElement | null>(null);
   const platform = resolveDesktopPlatform();
   const windowState = useDesktopWindowState(platform);
   const variant = resolveWindowChromeVariant(platform);
-  const panes = createWindowChromePaneGeometry(sidebarOpen);
   if (platform === "web" || variant === "inline") return <>{children}</>;
   return (
     <WindowChromeProvider

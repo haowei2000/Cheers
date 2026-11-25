@@ -40,6 +40,10 @@ enum Theme {
     static let messageInnerGap: CGFloat = 4
     /// Avatar size for primary list rows (friends / conversations).
     static let avatarList: CGFloat = 40
+    /// Regular avatar on Chat, Discussion and Reply rows.
+    static let messageAvatar: CGFloat = 28
+    /// Chat's column of avatar + name (ContentSize regular).
+    static let identityRail: CGFloat = 96
 
     // System semantic surfaces and labels inherit iOS contrast, accessibility,
     // increased-contrast and light/dark appearance behavior automatically.

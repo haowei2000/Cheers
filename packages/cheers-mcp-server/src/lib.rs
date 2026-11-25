@@ -459,12 +459,17 @@ mod tests {
             | "read_ui_contract" | "read_locator" | "artifact_list" | "artifact_get" | "artifact_read" => Some(SCOPE_READ),
 
             "post_message" | "set_suggested_questions" | "set_resource_cards" => Some(SCOPE_MESSAGES_WRITE),
-            "inbox_deliver" | "artifact_deliver" => Some(SCOPE_FILES_WRITE),
+            "inbox_deliver" | "artifact_deliver" | "artifact_upload_prepare"
+            | "artifact_upload_finish" => Some(SCOPE_FILES_WRITE),
             "artifact_create" | "artifact_update" | "desk_write"
             | "desk_edit"
             | "desk_append"
             | "desk_rm"
             | "desk_mv"
+            | "artifact_delete"
+            | "artifact_rename"
+            // Asks for the approval the four tools above need; same scope as them.
+            | "request_approval"
             | "report_code_workspace" => Some(SCOPE_WORKSPACE_WRITE),
             "set_status" => Some(SCOPE_PROFILE_WRITE),
             "leave_channel" | "open_direct_message" => Some(SCOPE_MEMBERSHIP_WRITE),

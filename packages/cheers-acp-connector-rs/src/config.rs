@@ -67,10 +67,10 @@ pub struct AdvancedConfig {
 impl Default for AdvancedConfig {
     fn default() -> Self {
         Self {
-            reconnect_base_ms: 500,
-            reconnect_max_ms: 30_000,
-            heartbeat_interval_ms: 25_000,
-            send_ack_timeout_ms: 10 * 60_000,
+            reconnect_base_ms: default_reconnect_base_ms(),
+            reconnect_max_ms: default_reconnect_max_ms(),
+            heartbeat_interval_ms: default_heartbeat_interval_ms(),
+            send_ack_timeout_ms: default_send_ack_timeout_ms(),
         }
     }
 }
@@ -150,6 +150,11 @@ pub struct WorkspacePolicy {
     /// Explicit host opt-in to open allow-listed files in registered applications.
     pub remote_open: bool,
     pub default_cwd: Option<PathBuf>,
+    /// Run every channel the Backend pins no cwd for directly in `default_cwd`
+    /// (the pre-isolation behaviour). Off by default: each such channel gets
+    /// its own `<default_cwd>/.cheers/channels/<channel_id>`, so files one
+    /// channel's turn writes are not where another channel's turn starts.
+    pub shared_cwd: bool,
     pub backend_may_set_cwd: bool,
     pub allowed_roots: Vec<PathBuf>,
     /// Whether the connector serves the READ-ONLY git inspection ops
@@ -265,8 +270,33 @@ pub struct SessionUpdatePolicy {
     pub include_metadata: bool,
 }
 
+/// How the Agent reaches the Cheers MCP endpoint
+/// (docs/arch/MCP_AUTH_ISOLATION.md §3.4.1).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpDelivery {
+    /// `acp` for an Agent that advertises it; otherwise decide per Agent build
+    /// from the Gateway's observations: `direct` for an Agent that picks up
+    /// renewed tokens (tested on first use), `gateway` for one that keeps old
+    /// ones (`crate::mcp_delivery`).
+    #[default]
+    Auto,
+    /// The Agent calls the Gateway's `/mcp` itself, with the real bearer in
+    /// `mcpServers[].headers`. Needs an Agent that re-reads headers on
+    /// `session/load` to pick up a renewed token.
+    Direct,
+    /// The Agent calls the connector's loopback credential gateway with a
+    /// per-channel local secret; the connector swaps in the real bearer.
+    Gateway,
+    /// The Agent sends MCP to the connector over the ACP connection
+    /// (`mcp/message`), for an Agent advertising `mcpCapabilities.acp`. Falls
+    /// back as `auto` would for one that does not.
+    Acp,
+}
+
 #[derive(Debug, Clone)]
 pub struct McpPolicy {
+    pub delivery: McpDelivery,
     pub backend_may_inject_extra_servers: bool,
     pub allowed_servers: Vec<String>,
     pub servers: Value,
@@ -360,10 +390,10 @@ struct RawAdapter {
     command: String,
     #[serde(default)]
     args: Vec<String>,
-    /// Temporary stopgap: force the agent's ACP session mode on session start
+    /// Host default for the agent's ACP session mode, applied on session start
     /// via `session/set_mode` (e.g. "default" to make it ask for permissions).
-    /// The full design moves this into platform bot config — see
-    /// docs/arch/ACP_APPROVAL_FLOW.md.
+    /// The bot's platform posture (`PUT /bots/:id/permissions/posture`) arrives
+    /// as a `config_update` and overrides it — see docs/arch/ACP_APPROVAL_FLOW.md.
     #[serde(default)]
     permission_mode: Option<String>,
 }
@@ -476,6 +506,8 @@ struct RawWorkspacePolicy {
     remote_open: bool,
     #[serde(default)]
     default_cwd: Option<String>,
+    #[serde(default)]
+    shared_cwd: bool,
     #[serde(default)]
     backend_may_set_cwd: bool,
     #[serde(default)]
@@ -622,7 +654,7 @@ impl Default for RawSessionUpdatePolicy {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawMcpPolicy {
     /// Retired and ignored. Kept parseable so an existing TOML does not fail
@@ -631,6 +663,8 @@ struct RawMcpPolicy {
     #[serde(rename = "inject_cheers")]
     _inject_cheers: bool,
     #[serde(default)]
+    delivery: McpDelivery,
+    #[serde(default)]
     backend_may_inject_extra_servers: bool,
     #[serde(default)]
     allowed_servers: Vec<String>,
@@ -638,30 +672,11 @@ struct RawMcpPolicy {
     servers: Vec<TomlValue>,
 }
 
-impl Default for RawMcpPolicy {
-    fn default() -> Self {
-        Self {
-            _inject_cheers: false,
-            backend_may_inject_extra_servers: false,
-            allowed_servers: Vec::new(),
-            servers: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLoopbackPolicy {
     #[serde(default, rename = "request_timeout_ms")]
     _request_timeout_ms: Option<u64>,
-}
-
-impl Default for RawLoopbackPolicy {
-    fn default() -> Self {
-        Self {
-            _request_timeout_ms: None,
-        }
-    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -876,6 +891,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             remote_terminal: raw.workspace.remote_terminal,
             remote_open: raw.workspace.remote_open,
             default_cwd,
+            shared_cwd: raw.workspace.shared_cwd,
             backend_may_set_cwd: raw.workspace.backend_may_set_cwd,
             allowed_roots: workspace_roots,
             git_ops,
@@ -918,6 +934,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             include_metadata: raw.session_update.include_metadata,
         },
         mcp: McpPolicy {
+            delivery: raw.mcp.delivery,
             backend_may_inject_extra_servers: raw.mcp.backend_may_inject_extra_servers,
             allowed_servers: raw.mcp.allowed_servers,
             servers: mcp_servers,
@@ -1270,6 +1287,18 @@ fn default_acp_capability_algorithm() -> String {
 mod tests {
     use super::*;
 
+    /// `delivery` 缺省为 auto；未知值在加载时报错，不能悄悄回落。
+    #[test]
+    fn mcp_delivery_defaults_to_auto_and_rejects_unknown_modes() {
+        let empty: RawMcpPolicy = toml::from_str("").unwrap();
+        assert_eq!(empty.delivery, McpDelivery::Auto);
+        assert_eq!(RawMcpPolicy::default().delivery, McpDelivery::Auto);
+        let gateway: RawMcpPolicy = toml::from_str("delivery = \"gateway\"").unwrap();
+        assert_eq!(gateway.delivery, McpDelivery::Gateway);
+        assert!(toml::from_str::<RawMcpPolicy>("delivery = \"proxy\"").is_err());
+        assert!(toml::from_str::<RawMcpPolicy>("credential_gateway = true").is_err());
+    }
+
     /// 配置里整个 `[policy.prompt]` 表缺席时，走的是 `Default` impl 而不是 serde
     /// 的字段默认——两者曾经不一致，把并发上限悄悄钉死在 1。
     #[test]
@@ -1382,6 +1411,9 @@ include_metadata = false
 
 [accounts.local.policy.loopback]
 request_timeout_ms = 666000
+
+[accounts.local.policy.mcp]
+delivery = "gateway"
 "#,
                 std::env::current_exe().unwrap().display(),
                 workspace.display(),
@@ -1451,6 +1483,7 @@ request_timeout_ms = 666000
         );
         assert_eq!(account.policy.trace.max_message_bytes, 888);
         assert!(!account.policy.session_update.include_metadata);
+        assert_eq!(account.policy.mcp.delivery, McpDelivery::Gateway);
     }
 
     #[tokio::test]

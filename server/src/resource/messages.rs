@@ -75,16 +75,8 @@ pub async fn handle_cards_write(
             "only a bot can add cards to its reply",
         ));
     }
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
-    let msg_id: Uuid = params
-        .get("msg_id")
-        .and_then(Value::as_str)
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "msg_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
+    let msg_id: Uuid = super::uuid_param(params, "msg_id")?;
     let cards_json = params
         .get("cards_json")
         .and_then(Value::as_str)
@@ -140,16 +132,8 @@ pub async fn handle_suggestions_write(
             "only a bot can suggest questions on its reply",
         ));
     }
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
-    let msg_id: Uuid = params
-        .get("msg_id")
-        .and_then(Value::as_str)
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "msg_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
+    let msg_id: Uuid = super::uuid_param(params, "msg_id")?;
     authorize_channel_write(db, principal, channel_id).await?;
     let questions_json = params
         .get("questions_json")
@@ -186,11 +170,7 @@ pub async fn handle_suggestions_write(
 }
 
 pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
 
     authorize_channel_read(db, principal, channel_id).await?;
 
@@ -251,11 +231,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
 }
 
 pub async fn handle_by_seq(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
     authorize_channel_read(db, principal, channel_id).await?;
 
     let min_seq = params
@@ -277,11 +253,7 @@ pub async fn handle_by_seq(db: &PgPool, principal: &Principal, params: &Value) -
 }
 
 pub async fn handle_search(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
     authorize_channel_read(db, principal, channel_id).await?;
 
     let query = params
@@ -366,11 +338,7 @@ pub async fn handle_create(
     // is captured before the transaction; source/mentions/children/receipt then
     // commit together. Browser fanout remains a postcommit effect.
     let started = std::time::Instant::now();
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
     let idempotency = IdempotencyKey::from_params(principal, "channel.messages.create", params)?;
 
     authorize_channel_write(db, principal, channel_id).await?;
@@ -397,7 +365,7 @@ pub async fn handle_create(
         .unwrap_or("")
         .to_string();
     let content_data = match params.get("cards_json") {
-        Some(Value::String(raw)) if principal.principal_type == PrincipalType::Bot => {
+        Some(Value::String(raw)) => {
             if content.trim().is_empty() {
                 return Err(super::resource_error(
                     "INVALID_PARAMS",

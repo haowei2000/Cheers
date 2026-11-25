@@ -16,6 +16,28 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuthStore } from "@/stores/authStore";
 import { queryKeys } from "@/lib/queryClient";
 
+type Me = Awaited<ReturnType<typeof getMe>>;
+
+function savedFields(me: Me) {
+  return {
+    displayName: me.display_name ?? "",
+    statusEmoji: me.status_emoji ?? "",
+    statusText: me.status_text ?? "",
+    bio: me.bio ?? "",
+  };
+}
+
+/** Merge the fresh profile into the signed-in user so it updates everywhere. */
+function syncAuthUser(
+  me: Me,
+  setAuth: ReturnType<typeof useAuthStore.getState>["setAuth"],
+  token: string | null,
+) {
+  if (!token) return;
+  const currentUser = useAuthStore.getState().user;
+  setAuth({ ...(currentUser ?? { user_id: me.user_id, display_name: null }), ...me }, token);
+}
+
 /** Self-service editor for display name, status line (emoji + text), and bio. */
 export function ProfileEditCard() {
   const user = useAuthStore((s) => s.user);
@@ -44,33 +66,16 @@ export function ProfileEditCard() {
     setStatusEmoji(me.status_emoji ?? "");
     setStatusText(me.status_text ?? "");
     setBio(me.bio ?? "");
-    setSavedProfile({
-      displayName: me.display_name ?? "",
-      statusEmoji: me.status_emoji ?? "",
-      statusText: me.status_text ?? "",
-      bio: me.bio ?? "",
-    });
+    setSavedProfile(savedFields(me));
     setAvatarUrl(me.avatar_url ?? null);
-    if (token) {
-      const currentUser = useAuthStore.getState().user;
-      setAuth(
-        { ...(currentUser ?? { user_id: me.user_id, display_name: null }), ...me },
-        token,
-      );
-    }
+    syncAuthUser(me, setAuth, token);
   }, [editing, profile.data, setAuth, token]);
 
   const saveProfile = useMutation({
     mutationFn: updateMe,
     onSuccess: (me) => {
       queryClient.setQueryData(queryKeys.currentUser, me);
-      if (token) {
-        const currentUser = useAuthStore.getState().user;
-        setAuth(
-          { ...(currentUser ?? { user_id: me.user_id, display_name: null }), ...me },
-          token,
-        );
-      }
+      syncAuthUser(me, setAuth, token);
     },
   });
 
@@ -82,12 +87,7 @@ export function ProfileEditCard() {
         status_text: statusText.trim(),
         bio: bio.trim(),
       });
-      setSavedProfile({
-        displayName: me.display_name ?? "",
-        statusEmoji: me.status_emoji ?? "",
-        statusText: me.status_text ?? "",
-        bio: me.bio ?? "",
-      });
+      setSavedProfile(savedFields(me));
       setEditing(false);
       toast.success("Profile saved");
     } catch (e) {
@@ -98,7 +98,7 @@ export function ProfileEditCard() {
   async function handleAvatarUpload(file: File) {
     const url = await uploadUserAvatar(file);
     setAvatarUrl(url);
-    queryClient.setQueryData(queryKeys.currentUser, (current: Awaited<ReturnType<typeof getMe>> | undefined) =>
+    queryClient.setQueryData(queryKeys.currentUser, (current: Me | undefined) =>
       current ? { ...current, avatar_url: url } : current,
     );
     // Hydrate the store so the avatar updates everywhere it's shown.

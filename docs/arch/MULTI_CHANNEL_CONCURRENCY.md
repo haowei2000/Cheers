@@ -42,7 +42,7 @@ agent 去读写该 bot 所属的频道 B。半径限于该 bot 自己的成员�
 | 不变量 | 现状 |
 | --- | --- |
 | 1 每频道一会话 | ✅ 阶段 3：不同会话并发占用同一规范化 cwd 时拒绝后启动回合；会话映射 30 天未用即清扫，`updated_at` 在复用时刷新以度量闲置而非年龄 |
-| 2 权限随回合收窄 | ✅ 阶段 2：token 带 `chan` 声明，铸造时校验成员资格；`MCP_CHANNEL_SCOPE` 控制 off/warn/enforce，默认 enforce |
+| 2 权限随回合收窄 | ✅ 阶段 2：token 带 `chan` 声明，铸造时校验成员资格；始终 enforce（off/warn 已移除） |
 | 3 绑定不放在可变连接状态 | ✅ 阶段 2a：server 名按频道唯一，名字键控的 client 无法把两个频道的连接合并 |
 | 4 容量有界 | ✅ 阶段 1：`TurnSlots` 信号量，默认 4（原默认 1 从未生效，实际并发无上限）；超限回合发 `turn_queued` trace |
 | 4 配额按维度 | ✅ 阶段 3：`MAX_WATCHES` 改为按 workspace root 计费。注：workspace RPC 帧不带频道，watch 由工作台浏览驱动，真实维度是 root——而会话的 root 集合本就是它的 `cwd` + `additionalDirectories`，所以按 root 分摊即按各频道的工作区分摊 |
@@ -86,18 +86,18 @@ per-session 锁**之后**获取，频道 A 连收 10 条消息时，排队的回
   `read_resource` / `prompts/get` 三条入口做等值校验，不匹配即 `PERMISSION_DENIED`
   （资源读侧返回与"不存在"相同的不透明结果，避免探测）。
 
-  判定表（`MCP_CHANNEL_SCOPE`，默认 `enforce`）：
+  判定表（始终 enforce；`MCP_CHANNEL_SCOPE` 的 off/warn 灰度模式已移除，设了会拒绝启动）：
 
-  | verdict | 含义 | off | warn | enforce |
-  | --- | --- | --- | --- | --- |
-  | `in_scope` | 调用频道 = token 频道 | 放行 | 放行 | 放行 |
-  | `out_of_scope` | token 有频道，调用指向别处 | 放行 | 放行+告警 | **拒绝** |
-  | `unnarrowed` | token 无频道声明（旧连接器） | 放行 | 放行 | **拒绝** |
-  | `channelless` | 资源本身无频道（`dm.open`） | 放行 | 放行 | 放行 |
+  | verdict | 含义 | 结果 |
+  | --- | --- | --- |
+  | `in_scope` | 调用频道 = token 频道 | 放行 |
+  | `out_of_scope` | token 有频道，调用指向别处 | **拒绝** |
+  | `unnarrowed` | token 无频道声明（旧连接器） | **拒绝** |
+  | `channelless` | 资源本身无频道（`dm.open`） | 放行 |
 
-  `channelless` 在 enforce 下也不拒——无频道的资源不可能"越出"频道，拒了会打断每个 bot
-  的 `dm.open`。`unnarrowed` 单独成一类正是为了灰度：旧连接器不发频道，warn 期先量出
-  enforce 会拒掉多少，再决定何时收紧。
+  `channelless` 不拒——无频道的资源不可能"越出"频道，拒了会打断每个 bot 的 `dm.open`。
+  例外是 `bot.status.write`（`set_status`）：状态卡在所有频道可见，只有 token 频道是
+  owner↔bot 私聊（状态刷新提示所在处）时才放行。
 
 只做第二层是"能扛"，只做第一层是"侥幸"。两层一起，才满足不变量 2 + 3。
 

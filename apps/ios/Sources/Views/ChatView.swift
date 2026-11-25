@@ -59,16 +59,6 @@ enum ChannelPanel: String, Identifiable {
         case .settings: return "gearshape"
         }
     }
-    var blurb: String {
-        switch self {
-        case .members: return "People and bots in this channel."
-        case .viewboard: return "Live plan, cost, sessions and audit for this channel's agents (the instrument plane)."
-        case .workbench: return "The channel's file workspace."
-        case .remoteWorkspace: return "Browse an agent's live workspace and Git state."
-        case .taskClaims: return "Pending proactive work proposals and monitoring settings."
-        case .settings: return "Name, purpose, invites, membership and the danger zone."
-        }
-    }
 }
 
 private struct ChannelMessageSearchSheet: View {
@@ -436,6 +426,9 @@ struct ChatView: View {
             if let error = model.errorMessage {
                 errorBanner(error)
             }
+            if let active = model.activeSuggestions {
+                suggestionBar(active.questions) { model.dismissSuggestions(msgId: active.msgId) }
+            }
             pendingAttachmentBar
             ComposerView(
                 initialText: model.composerText,
@@ -461,6 +454,28 @@ struct ChatView: View {
                 }
             )
         }
+    }
+
+    private func suggestionBar(_ questions: [SuggestedQuestion], onDismiss: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(questions, id: \.self) { question in
+                        Button {
+                            model.useSuggestion(question)
+                        } label: {
+                            Text(question.displayText).lineLimit(1)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+            CheersContentActionButton(action: .dismiss, perform: onDismiss)
+                .labelStyle(.iconOnly)
+                .foregroundStyle(Theme.textMuted)
+        }
+        .padding(.leading, Theme.space5)
     }
 
     @ViewBuilder
@@ -548,14 +563,6 @@ struct ChatView: View {
         }
     }
 
-    private static func fileContext(_ file: MessageFileRef) -> ResourceContextItem {
-        ResourceContextItem(
-            id: "file:\(file.fileId)", verb: "channel.files.read",
-            params: ["file_id": .string(file.fileId)],
-            label: file.originalFilename ?? "File", kind: "file"
-        )
-    }
-
     private var composerPlaceholder: String {
         model.channel.isDM
             ? String(localized: "Message \(model.channel.displayName)")
@@ -575,18 +582,13 @@ struct ChatView: View {
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
             }
-            if let subtitle, !subtitle.isEmpty {
-                Text(subtitle)
+            if let purpose = model.channel.purpose, !purpose.isEmpty {
+                Text(purpose)
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }
         }
-    }
-
-    private var subtitle: String? {
-        if let purpose = model.channel.purpose, !purpose.isEmpty { return purpose }
-        return nil
     }
 
     private var moreMenu: some View {
@@ -786,7 +788,9 @@ struct ChatView: View {
 
     // MARK: Item building
 
-    private static let systemTypes: Set<String> = ["routing", "announcement", "notification", "permission", "auth_required"]
+    private static let systemTypes: Set<String> = [
+        "routing", "announcement", "notification", "permission", "auth_required", "elicitation",
+    ]
 
     private func rebuildMessageItems() {
         let interval = timelinePerformanceSignposter.beginInterval("BuildPresentationItems")
@@ -827,6 +831,10 @@ struct ChatView: View {
         // Top-level walk: roots keep channel order; children nest under parents.
         let roots = tree.roots
 
+        func isSystemMessage(_ message: MessageDto) -> Bool {
+            message.senderType == "system" || Self.systemTypes.contains(message.msgType ?? "")
+        }
+
         func appendDayIfNeeded(for message: MessageDto, depth: Int) {
             guard depth == 0 else { return }
             let day = message.createdDate
@@ -839,9 +847,7 @@ struct ChatView: View {
         func emit(_ message: MessageDto, depth: Int, prevSibling: MessageDto?, nextSibling: MessageDto?) {
             appendDayIfNeeded(for: message, depth: depth)
 
-            let isSystem = message.senderType == "system"
-                || Self.systemTypes.contains(message.msgType ?? "")
-            if isSystem {
+            if isSystemMessage(message) {
                 result.append(.system(message))
                 return
             }
@@ -851,9 +857,7 @@ struct ChatView: View {
 
             func groupable(_ other: MessageDto?) -> Bool {
                 guard depth == 0, let other else { return false }
-                let otherIsSystem = other.senderType == "system"
-                    || Self.systemTypes.contains(other.msgType ?? "")
-                return !otherIsSystem
+                return !isSystemMessage(other)
                     && other.senderId == message.senderId
                     && other.senderType == message.senderType
                     && TimeFormat.sameDay(other.createdDate, message.createdDate)
@@ -1190,6 +1194,8 @@ private struct ChatTimelineRow: View {
                 ApprovalCardView(message: message)
             } else if message.msgType == "auth_required" {
                 AuthRequiredCardView(message: message)
+            } else if message.msgType == "elicitation" {
+                ElicitationCardView(message: message)
             } else {
                 SystemMessageView(message: message)
             }
@@ -1267,8 +1273,9 @@ private struct ChatTimelineRow: View {
 }
 
 /// L-shaped reply connector (web MessageList parity): vertical rail + stub
-/// into the nested row. Last sibling stops the rail at the elbow.
-private struct ThreadCornerRail: View {
+/// into the nested row. Last sibling stops the rail at the elbow. Shared by the
+/// chat timeline and discussion threads.
+struct ThreadCornerRail: View {
     let isLastSibling: Bool
 
     var body: some View {
@@ -1322,11 +1329,6 @@ private struct AIConsentSheet: View {
         }
     }
 }
-
-// MARK: - Members sheet
-
-/// The channel roster (web MembersPopover): people and bots with online dots
-/// and roles, fetched from GET /channels/:id/members.
 
 // MARK: - Forward sheet
 
@@ -1394,12 +1396,6 @@ private struct ForwardSheet: View {
         }
     }
 }
-
-// MARK: - ViewBoard (Audit board)
-
-/// The channel's instrument plane. Plan/cost/activity are live-WS-only (view on
-/// web); the Audit board is REST-fetchable, so iOS shows the permission audit
-/// trail — who approved/denied which agent action, when.
 
 // MARK: - File preview sheet
 
@@ -1793,10 +1789,11 @@ private struct ModelSettingsSheet: View {
             for bot in bots {
                 let id = bot.memberId
                 group.addTask {
-                    let ctrl = try? await api.sessionControls(channelId: channelId, botId: id)
-                    let sessions = (try? await api.listSessions(channelId: channelId, botId: id)) ?? []
+                    async let ctrl = try? api.sessionControls(channelId: channelId, botId: id)
+                    async let listed = try? api.listSessions(channelId: channelId, botId: id)
+                    let sessions = await listed ?? []
                     let primary = sessions.first { $0.isPrimary == true }?.sessionId ?? sessions.first?.sessionId
-                    return (id, ctrl, primary)
+                    return (id, await ctrl, primary)
                 }
             }
             for await (botId, ctrl, primary) in group {

@@ -43,3 +43,55 @@ export interface SttTestResult {
 export async function testSttSettings(): Promise<SttTestResult> {
   return apiJson<SttTestResult>(`/admin/settings/stt/test`, { method: "POST" });
 }
+
+// Runtime settings: admin overrides of env-configured defaults, applied without
+// a restart. Every change records its author and reason.
+
+export interface RuntimeSetting {
+  key: string;
+  label: string;
+  description: string;
+  unit: string;
+  min: number;
+  max: number;
+  default_value: number;
+  /** Null when the setting is on its default. */
+  override_value: number | null;
+  effective_value: number;
+}
+
+export interface RuntimeSettingRevision {
+  id: string;
+  /** Null means the setting was on its default. */
+  old_value: number | null;
+  new_value: number | null;
+  actor_id: string;
+  /** Null when the author's account no longer exists. */
+  actor_name: string | null;
+  reason: string;
+  created_at: string;
+}
+
+export async function listRuntimeSettings(): Promise<RuntimeSetting[]> {
+  const body = await apiJson<{ settings: RuntimeSetting[] }>(`/admin/settings/runtime`);
+  return body.settings;
+}
+
+/** `value: null` removes the override and returns to the default. */
+export async function putRuntimeSetting(
+  key: string,
+  update: { value: number | null; reason: string },
+): Promise<RuntimeSetting[]> {
+  const body = await apiJson<{ settings: RuntimeSetting[] }>(
+    `/admin/settings/runtime/${encodeURIComponent(key)}`,
+    { method: "PUT", body: JSON.stringify(update) },
+  );
+  return body.settings;
+}
+
+export async function listRuntimeSettingRevisions(key: string): Promise<RuntimeSettingRevision[]> {
+  const body = await apiJson<{ revisions: RuntimeSettingRevision[] }>(
+    `/admin/settings/runtime/${encodeURIComponent(key)}/revisions`,
+  );
+  return body.revisions;
+}

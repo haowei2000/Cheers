@@ -70,6 +70,7 @@ class PlanTests(unittest.TestCase):
     def test_embedded_rust_inputs_select_consumers(self):
         cases = {
             "design-system/a2ui-catalog.json": {"gateway", "frontend", "plugin", "ios"},
+            "design-system/a2ui-catalog-v2.json": {"gateway", "frontend", "plugin", "ios"},
             "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json": {
                 "gateway", "frontend", "plugin"
             },
@@ -81,6 +82,10 @@ class PlanTests(unittest.TestCase):
                 self.assertIn("gateway", self.selected("cd", [path]))
         self.assertEqual(
             self.selected("cd", ["design-system/a2ui-catalog.json"]),
+            {"gateway", "frontend"},
+        )
+        self.assertEqual(
+            self.selected("cd", ["design-system/a2ui-catalog-v2.json"]),
             {"gateway", "frontend"},
         )
 
@@ -193,6 +198,7 @@ class AuditTests(unittest.TestCase):
     def test_audit_catches_missing_compiler_include_inputs(self):
         for path in (
             "design-system/a2ui-catalog.json",
+            "design-system/a2ui-catalog-v2.json",
             "frontend/src/features/chat/workbench/lens/a2ui/example.a2ui.json",
         ):
             with self.subTest(path=path):

@@ -13,9 +13,7 @@ pub const BOT_TOKEN_PREFIX: &str = "agb_";
 /// 对 botToken 做 SHA-256，返回小写 hex 字符串。
 /// bot_accounts.bot_token_hash 列存的就是这个值。
 pub fn hash_bot_token(token: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    hex::encode(hasher.finalize())
+    sha256_hex(token)
 }
 
 /// Host-bound Agent Bridge credential. Unlike the legacy `agb_`
@@ -54,9 +52,14 @@ pub fn hash_pairing_code(code: &str) -> String {
 
 /// 32 字节 OS CSPRNG → 256-bit 十六进制秘密，带可识别前缀。
 fn generate_prefixed_secret(prefix: &str) -> String {
-    let mut bytes = [0u8; 32];
+    format!("{prefix}{}", random_hex::<32>())
+}
+
+/// `N` bytes from the OS CSPRNG, hex-encoded.
+fn random_hex<const N: usize>() -> String {
+    let mut bytes = [0u8; N];
     getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
-    format!("{prefix}{}", hex::encode(bytes))
+    hex::encode(bytes)
 }
 
 /// Workspace invite-link token 前缀（Cheers INVite）。
@@ -65,17 +68,13 @@ pub const INVITE_LINK_PREFIX: &str = "cinv_";
 /// 生成 invite-link token：`cinv_<128-bit hex>`。16 字节（而非 32）让分享出去的
 /// URL 更短，仍然不可枚举；与 pairing code 不同，它明文入库（见 0044 迁移头注）。
 pub fn generate_invite_link_token() -> String {
-    let mut bytes = [0u8; 16];
-    getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
-    format!("{INVITE_LINK_PREFIX}{}", hex::encode(bytes))
+    format!("{INVITE_LINK_PREFIX}{}", random_hex::<16>())
 }
 
 /// Raw nonce returned only to the native Apple authorization request. The DB
 /// stores only its SHA-256 value, which is what Apple signs into the ID token.
 pub fn generate_auth_nonce() -> String {
-    let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
-    hex::encode(bytes)
+    random_hex::<32>()
 }
 
 pub fn sha256_hex(value: &str) -> String {

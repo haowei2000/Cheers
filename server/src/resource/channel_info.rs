@@ -5,11 +5,7 @@ use uuid::Uuid;
 use super::{authorize_channel_read, not_found, Principal, ResourceResult};
 
 pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let channel_id: Uuid = super::uuid_param(params, "channel_id")?;
 
     authorize_channel_read(db, principal, channel_id).await?;
 

@@ -1,6 +1,7 @@
 //! ACP v1 elicitation orchestration between the runtime and Cheers UI.
 
 use super::*;
+use crate::extensions::McpToolApproval;
 
 const SENSITIVE_TERMS: &[&str] = &[
     "password",
@@ -45,93 +46,15 @@ pub(super) fn cancel_response() -> Value {
     json!({"action": "cancel"})
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct McpToolApproval {
-    pub server_name: String,
-    pub tool_name: String,
-}
-
-pub(super) fn parse_mcp_tool_approval_message(message: &str) -> Option<(String, String)> {
-    let marker = " MCP server to run tool ";
-    if let Some(pos) = message.find(marker) {
-        let before = &message[..pos];
-        let after = &message[pos + marker.len()..];
-        let server = before
-            .strip_prefix("Allow the ")
-            .or_else(|| before.strip_prefix("Allow "))
-            .unwrap_or(before)
-            .trim();
-        let tool_trimmed = after.trim().trim_end_matches('?').trim();
-        let tool = tool_trimmed
-            .strip_prefix('"')
-            .and_then(|t| t.strip_suffix('"'))
-            .or_else(|| {
-                tool_trimmed
-                    .strip_prefix('\'')
-                    .and_then(|t| t.strip_suffix('\''))
-            })
-            .unwrap_or(tool_trimmed);
-        if !server.is_empty() && !tool.is_empty() {
-            return Some((server.to_string(), tool.to_string()));
-        }
-    }
-    None
-}
-
+/// Recognizes an MCP tool approval: vendor-shaped prompts via the extensions,
+/// otherwise the protocol-level `approval_scope` form field.
 pub(super) fn detect_mcp_tool_approval(params: &Value) -> Option<McpToolApproval> {
-    let is_codex_mcp = params
-        .get("_meta")
-        .and_then(|m| m.get("codex_approval_kind"))
-        .and_then(Value::as_str)
-        == Some("mcp_tool_call");
-
-    let has_approval_scope_schema = params
-        .get("requestedSchema")
-        .and_then(|s| s.get("properties"))
-        .and_then(Value::as_object)
-        .is_some_and(|props| {
-            props.contains_key("approval_scope")
-                || props
-                    .get("persist")
-                    .and_then(|p| p.get("title"))
-                    .and_then(Value::as_str)
-                    == Some("Approval scope")
-        });
-
-    let message = params.get("message").and_then(Value::as_str).unwrap_or("");
-    let parsed_from_message = parse_mcp_tool_approval_message(message);
-
-    if is_codex_mcp || has_approval_scope_schema || parsed_from_message.is_some() {
-        if let Some((server_name, tool_name)) = parsed_from_message {
-            return Some(McpToolApproval {
-                server_name,
-                tool_name,
-            });
-        }
-        let server_name = params
-            .get("serverName")
-            .or_else(|| params.get("_meta").and_then(|m| m.get("serverName")))
-            .and_then(Value::as_str)
-            .unwrap_or("mcp")
-            .to_string();
-        let tool_name = params
-            .get("toolName")
-            .or_else(|| params.get("_meta").and_then(|m| m.get("toolName")))
-            .or_else(|| {
-                params
-                    .get("toolCall")
-                    .and_then(|t| t.get("name").or_else(|| t.get("tool")))
-            })
-            .and_then(Value::as_str)
-            .unwrap_or("unknown")
-            .to_string();
-        return Some(McpToolApproval {
-            server_name,
-            tool_name,
-        });
-    }
-
-    None
+    crate::extensions::decode_mcp_approval(params).or_else(|| {
+        params
+            .pointer("/requestedSchema/properties/approval_scope")
+            .is_some()
+            .then(|| McpToolApproval::from_structured_fields(params))
+    })
 }
 
 impl RuntimeContext {
@@ -346,34 +269,13 @@ impl RuntimeContext {
                     permission_resolution,
                     ..
                 }) => {
-                    if let Some(value) = permission_resolution {
-                        if let Ok(resolution) =
-                            serde_json::from_value::<PermissionResolution>(value)
-                        {
-                            self.handle_permission_resolution(resolution).await?;
-                        }
-                    }
+                    self.apply_inline_permission_resolution(permission_resolution)
+                        .await?;
                 }
                 Ok(_) | Err(_) => {
-                    let pending = self
-                        .shared
-                        .interactions
-                        .lock()
-                        .await
-                        .pending_permissions
-                        .remove(&request_id);
-                    if let Some(pending) = pending {
-                        if let PendingPermissionTarget::TranslatedElicitation(tx) = pending.target {
-                            let _ = tx.send(cancel_response());
-                        }
-                    }
-                    let _ = self
-                        .io
-                        .send_data(DataOutbound::PermissionCancel {
-                            v: BRIDGE_PROTOCOL_VERSION,
-                            request_id: request_id.clone(),
-                            reason: "bridge_rejected".to_string(),
-                        })
+                    // Inserted above as a translated elicitation, so the cancel
+                    // answers ACP with `cancel_response()`.
+                    self.cancel_pending_permission(&request_id, "bridge_rejected")
                         .await;
                 }
             }
@@ -498,35 +400,6 @@ mod tests {
                 "max_tokens": {"type":"integer", "description":"Token budget"}
             }
         })));
-    }
-
-    #[test]
-    fn parses_mcp_tool_approval_messages() {
-        let msg = r#"Allow the cheers-0cc488cced5747c881687c9485b4af3c MCP server to run tool "post_message"?"#;
-        let parsed = parse_mcp_tool_approval_message(msg);
-        assert_eq!(
-            parsed,
-            Some((
-                "cheers-0cc488cced5747c881687c9485b4af3c".to_string(),
-                "post_message".to_string()
-            ))
-        );
-
-        let msg2 = "Allow the github MCP server to run tool 'create_issue'?";
-        let parsed2 = parse_mcp_tool_approval_message(msg2);
-        assert_eq!(
-            parsed2,
-            Some(("github".to_string(), "create_issue".to_string()))
-        );
-
-        let msg3 = "Allow local-fs MCP server to run tool read_file";
-        let parsed3 = parse_mcp_tool_approval_message(msg3);
-        assert_eq!(
-            parsed3,
-            Some(("local-fs".to_string(), "read_file".to_string()))
-        );
-
-        assert_eq!(parse_mcp_tool_approval_message("What is your name?"), None);
     }
 
     #[test]

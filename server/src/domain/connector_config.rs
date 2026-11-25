@@ -6,7 +6,7 @@
 //! and the hand-written examples; this is the single place the gateway produces
 //! that file so the manual / script / agent modes can never drift apart.
 //!
-//! Agent presets: Claude / Codex / OpenCode stay finely tuned here. Every other
+//! Agent presets: builtins come from [`crate::domain::agent_catalog`]. Every other
 //! id is resolved from the live ACP registry's **npx** distribution (see
 //! [`crate::domain::acp_registry`]) so new registry agents need no gateway
 //! release to get a usable config. Unknown / unreachable ids fall back to a
@@ -18,10 +18,15 @@
 //! keeping the secret out of the (potentially copied / committed) config body.
 
 use crate::domain::acp_registry::{self, BinaryLaunch, PackageLaunch};
+use crate::domain::agent_catalog::{self, BuiltinLaunch};
 
 /// WS sub-paths the connector dials on the gateway's agent-bridge.
 const CONTROL_PATH: &str = "/ws/agent-bridge/control";
 const DATA_PATH: &str = "/ws/agent-bridge/data";
+
+/// adapter.command when the real one is unknown. Absolute and nonexistent, so
+/// install scripts refuse it instead of resolving a same-named program on PATH.
+const PLACEHOLDER_COMMAND: &str = "/path/to/your-acp-agent";
 
 /// Fallback public base when `CHEERS_CONNECTOR_PUBLIC_BASE` is unset. Points at
 /// the gateway directly; for local kind this requires a `kubectl port-forward`
@@ -47,7 +52,7 @@ struct AgentPreset {
     /// policy.env.allow — only these are copied from the connector env into the
     /// child (env.inherit stays false, the safe default).
     env_allow: Vec<String>,
-    /// adapter.permission_mode (session/set_mode stopgap); None omits the key.
+    /// adapter.permission_mode — host default the bot posture overrides; None omits it.
     permission_mode: Option<String>,
     /// policy.permission.allowed_modes — opaque ACP modeIds the platform may select
     /// at runtime (L0 set-mode envelope). Agent-SPECIFIC. Empty = any mode the
@@ -55,76 +60,40 @@ struct AgentPreset {
     allowed_modes: Vec<String>,
     /// policy.config.allowed_config_options — opaque ACP config option ids.
     allowed_config_options: Vec<String>,
+}
+
+impl AgentPreset {
     /// True when `command` is a placeholder the user must replace before it runs.
-    needs_edit: bool,
+    fn needs_edit(&self) -> bool {
+        self.command == PLACEHOLDER_COMMAND
+    }
 }
 
 fn strings(xs: &[&str]) -> Vec<String> {
     xs.iter().map(|s| (*s).to_string()).collect()
 }
 
-fn claude_preset() -> AgentPreset {
+fn preset_from_builtin(launch: &BuiltinLaunch) -> AgentPreset {
+    let mut env_allow = strings(&["HOME", "PATH"]);
+    env_allow.extend(strings(launch.env_allow));
     AgentPreset {
-        command: "claude-agent-acp".into(),
-        args: vec![],
-        env_allow: strings(&[
-            "HOME",
-            "PATH",
-            "ANTHROPIC_API_KEY",
-            "CLAUDE_CODE_OAUTH_TOKEN",
-        ]),
-        // "default" = Claude's "prompts for dangerous operations" mode, which
-        // routes un-pre-approved tools through ACP request_permission → an
-        // in-channel approval card.
-        permission_mode: Some("default".into()),
-        // Claude's advertised modes minus "bypassPermissions".
-        allowed_modes: strings(&["default", "plan", "acceptEdits", "dontAsk", "auto"]),
-        allowed_config_options: strings(&["model", "reasoning_effort", "thinking_mode"]),
-        needs_edit: false,
-    }
-}
-
-fn codex_preset() -> AgentPreset {
-    AgentPreset {
-        command: "codex-acp".into(),
-        args: vec![],
-        env_allow: strings(&["HOME", "PATH", "OPENAI_API_KEY", "CODEX_API_KEY"]),
-        permission_mode: None,
-        allowed_modes: vec![],
-        allowed_config_options: strings(&[
-            "model",
-            "reasoning_effort",
-            "approval_policy",
-            "sandbox",
-        ]),
-        needs_edit: false,
-    }
-}
-
-fn opencode_preset() -> AgentPreset {
-    // OpenCode ships ACP as a subcommand of its main binary (`opencode acp`) —
-    // there is no separate `opencode-acp` adapter (and the registry lists it as
-    // binary-only, not npx).
-    AgentPreset {
-        command: "opencode".into(),
-        args: vec!["acp".into()],
-        env_allow: strings(&["HOME", "PATH"]),
-        permission_mode: None,
-        allowed_modes: vec![],
-        allowed_config_options: strings(&["model"]),
-        needs_edit: false,
+        command: launch.command.into(),
+        args: strings(launch.args),
+        env_allow,
+        permission_mode: launch.permission_mode.map(str::to_string),
+        allowed_modes: strings(launch.allowed_modes),
+        allowed_config_options: strings(launch.allowed_config_options),
     }
 }
 
 fn generic_preset() -> AgentPreset {
     AgentPreset {
-        command: "/path/to/your-acp-agent".into(),
+        command: PLACEHOLDER_COMMAND.into(),
         args: vec![],
         env_allow: strings(&["HOME", "PATH"]),
         permission_mode: None,
         allowed_modes: vec![],
         allowed_config_options: vec![],
-        needs_edit: true,
     }
 }
 
@@ -135,14 +104,17 @@ fn preset_from_package(launch: &PackageLaunch) -> AgentPreset {
             env_allow.push(k.clone());
         }
     }
+    // npm unreachable, or a package with several unrelated commands: never guess
+    // from the package name (`@minimax-ai/code` would launch VS Code's `code`).
+    let command =
+        acp_registry::adapter_command_for(launch).unwrap_or_else(|| PLACEHOLDER_COMMAND.into());
     AgentPreset {
-        command: acp_registry::adapter_command_for(launch),
+        command,
         args: acp_registry::adapter_args_for(launch),
         env_allow,
         permission_mode: None,
         allowed_modes: vec![],
         allowed_config_options: strings(&["model"]),
-        needs_edit: false,
     }
 }
 
@@ -156,11 +128,10 @@ fn preset_from_binary(launch: &BinaryLaunch) -> AgentPreset {
             env_allow.push(k.clone());
         }
     }
-    // Cursor Agent CLI needs its auth env when not already logged in.
-    if launch.id == "cursor" {
-        for k in ["CURSOR_API_KEY", "CURSOR_API_ENDPOINT"] {
+    if let Some(agent) = agent_catalog::lookup(&launch.id) {
+        for k in agent.extra_env_allow {
             if !env_allow.iter().any(|e| e == k) {
-                env_allow.push(k.into());
+                env_allow.push((*k).into());
             }
         }
     }
@@ -171,19 +142,16 @@ fn preset_from_binary(launch: &BinaryLaunch) -> AgentPreset {
         permission_mode: None,
         allowed_modes: vec![],
         allowed_config_options: strings(&["model"]),
-        needs_edit: false,
     }
 }
 
 fn preset_for(agent_type: &str) -> AgentPreset {
-    let id = acp_registry::canonicalize_agent_id(agent_type);
-    match id.as_str() {
-        // Fine-tuned builtins (also cover registry ids claude-acp / codex-acp).
-        "claude" | "claude-acp" => return claude_preset(),
-        "codex" | "codex-acp" => return codex_preset(),
-        "opencode" => return opencode_preset(),
-        "generic" => return generic_preset(),
-        _ => {}
+    if let Some(launch) = agent_catalog::lookup(agent_type).and_then(|a| a.launch.as_ref()) {
+        return preset_from_builtin(launch);
+    }
+    let id = agent_catalog::registry_id(agent_type);
+    if id == agent_catalog::GENERIC_ID {
+        return generic_preset();
     }
     if let Some(launch) = acp_registry::package_launch_for(&id) {
         return preset_from_package(&launch);
@@ -199,8 +167,16 @@ fn preset_for(agent_type: &str) -> AgentPreset {
 /// the dropdown — it mirrors the same per-agent `preset_for` source of truth that
 /// renders the connector TOML, so platform and connector agree on selectable modes.
 pub fn posture_preset(agent_type: &str) -> (Option<String>, Vec<String>) {
-    let p = preset_for(agent_type);
-    (p.permission_mode, p.allowed_modes)
+    // Only builtins carry a mode envelope; registry-derived presets never do, so
+    // this stays a pure catalog read (callers are async handlers — no registry
+    // or npm fetch here).
+    match agent_catalog::lookup(agent_type).and_then(|a| a.launch.as_ref()) {
+        Some(launch) => (
+            launch.permission_mode.map(str::to_string),
+            strings(launch.allowed_modes),
+        ),
+        None => (None, vec![]),
+    }
 }
 
 /// Drop the `mode` config option for agents whose permission mode is a first-class
@@ -334,14 +310,14 @@ pub fn advertised_config_options(
 
 /// Inputs for [`render_toml`]. `account_id` is the TOML table key under
 /// `[accounts.<id>...]` and the daemon `--name`; it is sanitized for you.
-pub struct RenderParams<'a> {
+pub struct RenderParams {
     /// Bot display/login name; sanitized into a TOML bare key.
-    pub account_id: &'a str,
-    /// One of claude | codex | opencode | generic (anything else → generic).
-    pub agent_type: &'a str,
+    pub account_id: String,
+    /// Catalog id, ACP registry id, or generic (drives adapter.command).
+    pub agent_type: String,
     /// Public WS base, e.g. `ws://localhost:30080` or `wss://host`. No trailing
     /// path — the control/data sub-paths are appended here.
-    pub public_base: &'a str,
+    pub public_base: String,
     /// How the config should reference the bot token.
     pub token_ref: TokenRef,
 }
@@ -389,11 +365,14 @@ fn toml_str(value: &str) -> String {
 /// connector's parser exactly; a missing `~/.cheers/workspace` (referenced by
 /// the workspace policy) must be created before start — the install script and
 /// manual docs both do this.
+///
+/// Blocking: registry-derived presets may fetch the ACP and npm registries, so
+/// async callers must run this on a blocking thread.
 pub fn render_toml(params: &RenderParams) -> String {
-    let id = sanitize_account_id(params.account_id);
-    let preset = preset_for(params.agent_type);
-    let control = control_url(params.public_base);
-    let data = data_url(params.public_base);
+    let id = sanitize_account_id(&params.account_id);
+    let preset = preset_for(&params.agent_type);
+    let control = control_url(&params.public_base);
+    let data = data_url(&params.public_base);
 
     let token_line = match &params.token_ref {
         TokenRef::HostFile(path) => {
@@ -436,7 +415,7 @@ pub fn render_toml(params: &RenderParams) -> String {
         .collect::<Vec<_>>()
         .join(", ");
 
-    let edit_banner = if preset.needs_edit {
+    let edit_banner = if preset.needs_edit() {
         "#\n# ⚠ adapter.command below is a PLACEHOLDER — replace it with your ACP\n#   agent binary (absolute path or a command on PATH) before starting.\n"
     } else {
         ""
@@ -693,9 +672,9 @@ mod tests {
     #[test]
     fn renders_codex_with_file_token() {
         let toml = render_toml(&RenderParams {
-            account_id: "Codex",
-            agent_type: "codex",
-            public_base: "ws://localhost:30080",
+            account_id: "Codex".into(),
+            agent_type: "codex".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/codex.token".into()),
         });
         assert!(toml.contains("[accounts.codex.bridge]"));
@@ -721,9 +700,9 @@ mod tests {
     #[test]
     fn renders_opencode_as_a_subcommand_of_its_own_binary() {
         let toml = render_toml(&RenderParams {
-            account_id: "OpenCode",
-            agent_type: "opencode",
-            public_base: "wss://example.test",
+            account_id: "OpenCode".into(),
+            agent_type: "opencode".into(),
+            public_base: "wss://example.test".into(),
             token_ref: TokenRef::HostFile("secrets/opencode.token".into()),
         });
         assert!(toml.contains(r#"command = "opencode""#));
@@ -738,9 +717,9 @@ mod tests {
     fn renders_empty_args_for_dedicated_adapters() {
         for agent_type in ["claude", "codex", "generic"] {
             let toml = render_toml(&RenderParams {
-                account_id: "bot",
-                agent_type,
-                public_base: "wss://example.test",
+                account_id: "bot".into(),
+                agent_type: agent_type.into(),
+                public_base: "wss://example.test".into(),
                 token_ref: TokenRef::HostFile("secrets/bot.token".into()),
             });
             assert!(
@@ -753,9 +732,9 @@ mod tests {
     #[test]
     fn renders_claude_with_env_token_and_permission_mode() {
         let toml = render_toml(&RenderParams {
-            account_id: "claude",
-            agent_type: "claude",
-            public_base: "wss://cheers.example.com",
+            account_id: "claude".into(),
+            agent_type: "claude".into(),
+            public_base: "wss://cheers.example.com".into(),
             token_ref: TokenRef::HostEnv("CHEERS_CLAUDE_HOST_CREDENTIAL".into()),
         });
         assert!(toml.contains("host_credential_env  = \"CHEERS_CLAUDE_HOST_CREDENTIAL\""));
@@ -776,13 +755,13 @@ mod tests {
     #[test]
     fn generic_agent_is_marked_for_edit() {
         let toml = render_toml(&RenderParams {
-            account_id: "mybot",
-            agent_type: "something-else",
-            public_base: DEFAULT_PUBLIC_BASE,
+            account_id: "mybot".into(),
+            agent_type: "something-else".into(),
+            public_base: DEFAULT_PUBLIC_BASE.into(),
             token_ref: TokenRef::HostFile("secrets/mybot.token".into()),
         });
         assert!(toml.contains("PLACEHOLDER"));
-        assert!(toml.contains("/path/to/your-acp-agent"));
+        assert!(toml.contains(PLACEHOLDER_COMMAND));
     }
 
     #[test]
@@ -803,15 +782,74 @@ mod tests {
               }]
             }"#,
         );
+        crate::domain::acp_registry::seed_npm_manifest_for_test(
+            "@google/gemini-cli@0.52.0",
+            r#"{"bin":{"gemini":"bundle/gemini.js"}}"#,
+        );
         let toml = render_toml(&RenderParams {
-            account_id: "gem",
-            agent_type: "gemini",
-            public_base: "ws://localhost:30080",
+            account_id: "gem".into(),
+            agent_type: "gemini".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/gem.token".into()),
         });
         assert!(toml.contains("command = \"gemini\""));
         assert!(toml.contains(r#"args    = ["--acp"]"#));
         assert!(!toml.contains("PLACEHOLDER"));
+    }
+
+    #[test]
+    fn flags_npx_agent_whose_npm_command_is_unclear() {
+        let _lock = crate::domain::acp_registry::test_registry_lock();
+        crate::domain::acp_registry::seed_cache_for_test(
+            r#"{
+              "agents": [{
+                "id": "multi",
+                "name": "Multi",
+                "version": "1.0.0",
+                "distribution": { "npx": { "package": "@acme/multi-tool@1.0.0" } }
+              }]
+            }"#,
+        );
+        crate::domain::acp_registry::seed_npm_manifest_for_test(
+            "@acme/multi-tool@1.0.0",
+            r#"{"bin":{"multi":"cli.js","multi-acp":"acp.js"}}"#,
+        );
+        let toml = render_toml(&RenderParams {
+            account_id: "multi".into(),
+            agent_type: "multi".into(),
+            public_base: "ws://localhost:30080".into(),
+            token_ref: TokenRef::HostFile("secrets/multi.token".into()),
+        });
+        assert!(toml.contains(&format!("command = \"{PLACEHOLDER_COMMAND}\"")));
+        assert!(!toml.contains("command = \"multi-tool\""));
+        assert!(toml.contains("PLACEHOLDER"));
+    }
+
+    #[test]
+    fn unreachable_npm_never_guesses_command_from_package_name() {
+        let _lock = crate::domain::acp_registry::test_registry_lock();
+        crate::domain::acp_registry::seed_cache_for_test(
+            r#"{
+              "agents": [{
+                "id": "minimax",
+                "name": "MiniMax",
+                "version": "1.0.0",
+                "distribution": {
+                  "npx": { "package": "@minimax-ai/code@1.0.0", "args": ["--acp"] }
+                }
+              }]
+            }"#,
+        );
+        let toml = render_toml(&RenderParams {
+            account_id: "mini".into(),
+            agent_type: "minimax".into(),
+            public_base: "ws://localhost:30080".into(),
+            token_ref: TokenRef::HostFile("secrets/mini.token".into()),
+        });
+        assert!(toml.contains(&format!("command = \"{PLACEHOLDER_COMMAND}\"")));
+        assert!(!toml.contains("command = \"code\""));
+        assert!(toml.contains(r#"args    = ["--acp"]"#));
+        assert!(toml.contains("PLACEHOLDER"));
     }
 
     #[test]
@@ -833,9 +871,9 @@ mod tests {
             }"#,
         );
         let toml = render_toml(&RenderParams {
-            account_id: "fast",
-            agent_type: "fast-agent",
-            public_base: "ws://localhost:30080",
+            account_id: "fast".into(),
+            agent_type: "fast-agent".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/fast.token".into()),
         });
         assert!(toml.contains("command = \"uvx\""));
@@ -865,9 +903,9 @@ mod tests {
             }"#,
         );
         let toml = render_toml(&RenderParams {
-            account_id: "cur",
-            agent_type: "cursor",
-            public_base: "ws://localhost:30080",
+            account_id: "cur".into(),
+            agent_type: "cursor".into(),
+            public_base: "ws://localhost:30080".into(),
             token_ref: TokenRef::HostFile("secrets/cur.token".into()),
         });
         assert!(toml.contains("command = \"cursor-agent\""));

@@ -7,7 +7,6 @@
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, HashMap};
-use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,10 +19,11 @@ use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{Child, ChildStdin};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 
+use crate::acp_runtime::{request_id_key, spawn_agent};
 use crate::acp_semantics::{
     apply_settings_to_config, auth_failure_hint, default_client_capabilities,
     permission_options_from_params, ACP_PROTOCOL_VERSION,
@@ -32,7 +32,7 @@ use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, Permiss
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
     drain_updates, AgentCapabilities, ConfigApplyResult, PermissionOutcome, PromptClient,
-    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionLoadResult,
+    PromptResult, RequestRoute, RuntimeAdapter, RuntimeEvent, SessionListPage, SessionLoadResult,
     SessionStartOptions, SessionStartResult,
 };
 
@@ -127,16 +127,11 @@ impl AcpAdapter {
     }
 
     pub fn supports_load_session(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("loadSession"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().load_session
     }
 
-    fn agent_capabilities(&self) -> Option<&Value> {
-        self.initialize_response
-            .as_ref()
-            .and_then(|value| value.get("agentCapabilities"))
+    fn agent_capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities::from_initialize(self.initialize_response.as_ref())
     }
 
     /// Whether the agent accepts image content blocks in a prompt
@@ -144,43 +139,27 @@ impl AcpAdapter {
     /// spec says the client must not send a modality the agent never advertised,
     /// so we degrade images to a text summary instead of pushing blocks blindly.
     pub fn supports_prompt_image(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("promptCapabilities"))
-            .and_then(|value| value.get("image"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().prompt_image
     }
 
     /// Whether the agent accepts audio content blocks in a prompt
     /// (`agentCapabilities.promptCapabilities.audio`). Same default-deny rule
     /// as images: never push a modality the agent didn't advertise.
     pub fn supports_prompt_audio(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("promptCapabilities"))
-            .and_then(|value| value.get("audio"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().prompt_audio
     }
 
     /// Whether the agent supports the optional HTTP MCP transport
     /// (`agentCapabilities.mcpCapabilities.http`). stdio MCP is the ACP baseline
     /// and needs no capability; only the `http`/`sse` transports are gated.
     pub fn supports_mcp_http(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("mcpCapabilities"))
-            .and_then(|value| value.get("http"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().mcp_http
     }
 
     /// Whether the agent supports the optional SSE MCP transport
     /// (`agentCapabilities.mcpCapabilities.sse`).
     pub fn supports_mcp_sse(&self) -> bool {
-        self.agent_capabilities()
-            .and_then(|value| value.get("mcpCapabilities"))
-            .and_then(|value| value.get("sse"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        self.agent_capabilities().mcp_sse
     }
 
     async fn spawn_peer(&mut self) -> anyhow::Result<()> {
@@ -188,37 +167,7 @@ impl AcpAdapter {
             return Ok(());
         }
 
-        let mut command = Command::new(&self.config.command);
-        command
-            .args(&self.config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if !self.config.inherit_env {
-            command.env_clear();
-        }
-        if let Some(cwd) = &self.config.cwd {
-            command.current_dir(cwd);
-        }
-        for (key, value) in &self.config.env {
-            command.env(key, value);
-        }
-
-        let mut child = command.spawn().with_context(|| {
-            format!(
-                "failed to start ACP agent account={} command={}",
-                self.account_id, self.config.command
-            )
-        })?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow!("ACP agent stdin was not piped"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow!("ACP agent stdout was not piped"))?;
-        let stderr = child.stderr.take();
+        let (child, stdin, stdout) = spawn_agent(&self.account_id, &self.config)?;
 
         *self.writer.lock().await = Some(stdin);
         spawn_stdout_reader(
@@ -229,9 +178,6 @@ impl AcpAdapter {
             self.request_routes.clone(),
             self.event_tx.clone(),
         );
-        if let Some(stderr) = stderr {
-            spawn_stderr_reader(self.account_id.clone(), stderr);
-        }
 
         self.child = Some(child);
         Ok(())
@@ -297,21 +243,7 @@ impl AcpAdapter {
             }
         };
         self.request_routes.lock().await.remove(&route_key);
-        match reply {
-            JsonRpcReply::Result(value) => Ok(value),
-            JsonRpcReply::Error(error) => Err(anyhow!(
-                "ACP request failed method={} id={} code={} message={}{}",
-                method,
-                id,
-                error.code,
-                error.message,
-                error
-                    .data
-                    .as_ref()
-                    .map(|data| format!(" data={data}"))
-                    .unwrap_or_default()
-            )),
-        }
+        reply_into_result(method, id, reply)
     }
 
     async fn notify(&mut self, method: &str, params: Value) -> anyhow::Result<()> {
@@ -409,21 +341,7 @@ impl AcpRequester {
                 return Err(anyhow!("ACP request timeout method={method} id={id}"));
             }
         };
-        match reply {
-            JsonRpcReply::Result(value) => Ok(value),
-            JsonRpcReply::Error(error) => Err(anyhow!(
-                "ACP request failed method={} id={} code={} message={}{}",
-                method,
-                id,
-                error.code,
-                error.message,
-                error
-                    .data
-                    .as_ref()
-                    .map(|data| format!(" data={data}"))
-                    .unwrap_or_default()
-            )),
-        }
+        reply_into_result(method, id, reply)
     }
 
     pub(crate) async fn prompt(
@@ -640,6 +558,17 @@ impl RuntimeAdapter for AcpAdapter {
         Ok(SessionLoadResult { metadata: result })
     }
 
+    async fn list_sessions(&mut self, cursor: Option<&str>) -> anyhow::Result<SessionListPage> {
+        let mut params = json!({});
+        if let Some(cursor) = cursor {
+            params["cursor"] = json!(cursor);
+        }
+        let result = self
+            .request("session/list", params, self.request_timeout_ms())
+            .await?;
+        Ok(SessionListPage::from_response(&result))
+    }
+
     async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()> {
         self.notify("session/cancel", json!({ "sessionId": session_id }))
             .await
@@ -719,7 +648,7 @@ impl RuntimeAdapter for AcpAdapter {
     }
 
     fn capabilities(&self) -> AgentCapabilities {
-        AgentCapabilities::from_initialize(self.initialize_response.as_ref())
+        self.agent_capabilities()
     }
 
     fn initialize_response(&self) -> Option<Value> {
@@ -784,15 +713,6 @@ fn spawn_stdout_reader(
         *writer.lock().await = None;
         fail_all_pending(&pending, "ACP stdout closed").await;
         tracing::warn!(account = %account_id, "ACP stdout reader stopped");
-    });
-}
-
-fn spawn_stderr_reader(account_id: String, stderr: tokio::process::ChildStderr) {
-    tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            tracing::info!(account = %account_id, "[acp stderr] {}", line);
-        }
     });
 }
 
@@ -923,14 +843,19 @@ async fn handle_peer_notification(
 /// (`default_client_capabilities()`),
 /// so a spec-compliant agent never calls `fs/read_text_file`, `fs/write_text_file`,
 /// or any `terminal/*`. The implemented agent→client requests are
-/// `session/request_permission` and ACP v1 `elicitation/create`; everything else is answered with JSON-RPC
+/// `session/request_permission`, ACP v1 `elicitation/create`, and MCP-over-ACP
+/// `mcp/message` (served only when the Cheers server was declared as `acp`;
+/// see [`crate::mcp_over_acp`]); everything else is answered with JSON-RPC
 /// `-32601`. This is intentional, not an oversight — see
 /// docs/arch/ACP_FS_PROXY.md (why ACP fs is not proxied) and
 /// docs/arch/ACP_APPROVAL_FLOW.md §0.5 (the permission model). Do NOT flip a
 /// capability to `true` without first implementing the corresponding handler
 /// here, or the connector would advertise a capability it cannot serve.
 fn peer_method_supported(method: &str) -> bool {
-    matches!(method, "session/request_permission" | "elicitation/create")
+    matches!(
+        method,
+        "session/request_permission" | "elicitation/create" | "mcp/message"
+    )
 }
 
 async fn handle_peer_request(
@@ -968,6 +893,36 @@ async fn handle_peer_request(
     }
 
     let params = value.get("params").cloned().unwrap_or(Value::Null);
+    if method == "mcp/message" {
+        let (tx, rx) = oneshot::channel();
+        let outcome = if event_tx
+            .send(RuntimeEvent::McpMessage {
+                params,
+                respond_to: tx,
+            })
+            .await
+            .is_ok()
+        {
+            rx.await.ok()
+        } else {
+            None
+        };
+        let reply = match outcome {
+            Some(Ok(result)) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+            Some(Err(error)) => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": error.code, "message": error.message}
+            }),
+            None => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32603, "message": "the connector stopped before answering"}
+            }),
+        };
+        write_json_line(writer, &reply).await?;
+        return Ok(());
+    }
     if method == "elicitation/create" {
         let acp_session_id = params
             .get("sessionId")
@@ -979,6 +934,10 @@ async fn handle_peer_request(
             None => None,
         };
         let valid = serde_json::from_value::<CreateElicitationRequest>(params.clone()).is_ok();
+        let cancel = || {
+            serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
+                .expect("elicitation cancel serializes")
+        };
         let response = if valid && (acp_session_id.is_some() || request_route.is_some()) {
             let (tx, rx) = oneshot::channel();
             if event_tx
@@ -991,17 +950,12 @@ async fn handle_peer_request(
                 .await
                 .is_ok()
             {
-                rx.await.unwrap_or_else(|_| {
-                    serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
-                        .expect("elicitation cancel serializes")
-                })
+                rx.await.unwrap_or_else(|_| cancel())
             } else {
-                serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
-                    .expect("elicitation cancel serializes")
+                cancel()
             }
         } else {
-            serde_json::to_value(CreateElicitationResponse::new(ElicitationAction::Cancel))
-                .expect("elicitation cancel serializes")
+            cancel()
         };
         let response = serde_json::from_value::<CreateElicitationResponse>(response)
             .unwrap_or_else(|_| CreateElicitationResponse::new(ElicitationAction::Cancel));
@@ -1065,13 +1019,6 @@ async fn handle_peer_request(
     Ok(())
 }
 
-/// Canonicalizes JSON-RPC request IDs without conflating strings and numbers.
-fn request_id_key(value: &Value) -> Option<String> {
-    matches!(value, Value::String(_) | Value::Number(_))
-        .then(|| serde_json::to_string(value).ok())
-        .flatten()
-}
-
 /// Writes a JSON-RPC success reply carrying an ACP `RequestPermissionResponse`.
 ///
 /// The response shape is owned by the official `agent-client-protocol-schema`
@@ -1094,6 +1041,24 @@ async fn write_permission_response(
         }),
     )
     .await
+}
+
+fn reply_into_result(method: &str, id: u64, reply: JsonRpcReply) -> anyhow::Result<Value> {
+    match reply {
+        JsonRpcReply::Result(value) => Ok(value),
+        JsonRpcReply::Error(error) => Err(anyhow!(
+            "ACP request failed method={} id={} code={} message={}{}",
+            method,
+            id,
+            error.code,
+            error.message,
+            error
+                .data
+                .as_ref()
+                .map(|data| format!(" data={data}"))
+                .unwrap_or_default()
+        )),
+    }
 }
 
 async fn write_json_line(writer: &SharedWriter, value: &Value) -> anyhow::Result<()> {
@@ -1183,6 +1148,7 @@ mod tests {
         // any to supported requires implementing its handler first.
         assert!(peer_method_supported("session/request_permission"));
         assert!(!peer_method_supported("fs/read_text_file"));
+        assert!(peer_method_supported("mcp/message"));
         assert!(!peer_method_supported("fs/write_text_file"));
         assert!(!peer_method_supported("terminal/create"));
         assert!(!peer_method_supported("terminal/output"));
@@ -1366,6 +1332,7 @@ mod tests {
             json!({
                 "fs": {"readTextFile": false, "writeTextFile": false},
                 "terminal": false,
+                "auth": {"terminal": false},
                 "elicitation": {"form": {}, "url": {}}
             })
         );
@@ -1413,6 +1380,53 @@ mod tests {
         assert_eq!(request_id_key(&json!(12)).as_deref(), Some("12"));
         assert_eq!(request_id_key(&json!("12")).as_deref(), Some("\"12\""));
         assert_eq!(request_id_key(&Value::Null), None);
+    }
+
+    /// `mcp/message` goes to the runtime and its answer comes back on the
+    /// same JSON-RPC id: a result as `result`, an envelope error as `error`.
+    #[tokio::test]
+    async fn mcp_message_is_answered_by_the_runtime() {
+        let mut echo = tokio::process::Command::new("cat")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let writer: SharedWriter = Arc::new(Mutex::new(echo.stdin.take()));
+        let mut lines = BufReader::new(echo.stdout.take().unwrap()).lines();
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+        tokio::spawn(async move {
+            while let Some(RuntimeEvent::McpMessage { params, respond_to }) = event_rx.recv().await
+            {
+                let outcome = if params["serverId"] == "cheers:channel-a" {
+                    Ok(json!({"result": {"tools": []}}))
+                } else {
+                    Err(crate::mcp_over_acp::EnvelopeError {
+                        code: -32602,
+                        message: "unknown MCP server".into(),
+                    })
+                };
+                let _ = respond_to.send(outcome);
+            }
+        });
+        let routes: RequestRoutes = Arc::default();
+        for (id, server) in [(7, "cheers:channel-a"), (8, "other")] {
+            let request = json!({"jsonrpc": "2.0", "id": id, "method": "mcp/message",
+                "params": {"serverId": server, "requestId": "r", "method": "tools/list"}});
+            handle_peer_request("test", &writer, &event_tx, &routes, id, request)
+                .await
+                .unwrap();
+        }
+        let answered: Value =
+            serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert_eq!(
+            answered,
+            json!({"jsonrpc": "2.0", "id": 7, "result": {"result": {"tools": []}}})
+        );
+        let refused: Value =
+            serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert_eq!(refused["id"], 8);
+        assert_eq!(refused["error"]["code"], -32602);
+        let _ = echo.kill().await;
     }
 
     #[tokio::test]

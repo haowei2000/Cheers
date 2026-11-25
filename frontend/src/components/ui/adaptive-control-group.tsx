@@ -33,6 +33,9 @@ export interface AdaptiveControlItem {
   overflow?: ReactNode;
 }
 
+/** Every presentation, widest first; each one is measured by an offscreen probe. */
+const PRESENTATIONS = ["iconText", "text", "icon", "collapsed"] as const;
+
 export interface AdaptiveControlWidths {
   iconText: number;
   text: number;
@@ -260,7 +263,7 @@ export function AdaptiveControlGroup({
     const measure = () => {
       const width = availableWidth ?? slot?.getBoundingClientRect().width ?? root.getBoundingClientRect().width;
       const measured = Object.fromEntries(
-        (["iconText", "text", "icon", "collapsed"] as const).map((candidate) => {
+        PRESENTATIONS.map((candidate) => {
           const probe = probeRefs.current[candidate];
           return [candidate, probe ? Math.max(probe.scrollWidth, probe.getBoundingClientRect().width) : Number.POSITIVE_INFINITY];
         }),
@@ -299,7 +302,7 @@ export function AdaptiveControlGroup({
       />
       <div data-adaptive-measurements="" className="pointer-events-none fixed left-[-10000px] top-0 invisible flex w-max items-center gap-1" aria-hidden="true">
         {/* design-system-exempt: menu-option — hidden intrinsic-width probes, not visible item rows. */}
-        {(["iconText", "text", "icon", "collapsed"] as const).map((candidate) => (
+        {PRESENTATIONS.map((candidate) => (
           <div
             key={candidate}
             ref={(element) => { probeRefs.current[candidate] = element; }}

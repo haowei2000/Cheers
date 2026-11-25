@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE connector_hosts\n             SET mcp_header_refresh = $2, mcp_header_refresh_agent = $3,\n                 mcp_header_refresh_at = NOW()\n             WHERE host_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "946c3b2d12e7c8003e6af81eb71a02c9ba97d5c7e43966883f525230a0475408"
+}

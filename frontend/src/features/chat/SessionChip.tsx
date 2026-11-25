@@ -204,15 +204,22 @@ export function SessionChip({
 
   // If the targeted session vanished (closed elsewhere), fall back to Auto so we
   // never send a stale session_id the backend would reject. Gated on `loaded` so
-  // a failed fetch can't cause the reset.
+  // a failed fetch can't cause the reset. A session created outside this chip
+  // (attached from a pasted link) is missing from the last load, so reload once
+  // before treating it as gone.
+  const reloadedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!value || !loaded) return;
-    if (!entries.some((s) => s.session_id === value)) onChange("");
-  }, [entries, loaded, value, onChange]);
+    if (entries.some((s) => s.session_id === value)) return;
+    if (reloadedFor.current !== value) {
+      reloadedFor.current = value;
+      void load();
+      return;
+    }
+    onChange("");
+  }, [entries, loaded, value, onChange, load]);
 
   const selected = value ? entries.find((s) => s.session_id === value) : undefined;
-  const tagOf = (s: SessionEntry) =>
-    sessionTag({ is_primary: s.is_primary, session_id: s.session_id, cwd: s.cwd, when: s.when });
   const selectedDirectory = selected?.cwd ? cwdBasename(selected.cwd) : null;
 
   function select(next: string) {
@@ -224,7 +231,7 @@ export function SessionChip({
       toast("Default routing restored (@mention → primary session)");
       return;
     }
-    if (t) toast.success(`Switched · messages will go directly to @${t.bot_name} (${tagOf(t)})`);
+    if (t) toast.success(`Switched · messages will go directly to @${t.bot_name} (${sessionTag(t)})`);
   }
 
   // Popover rows, grouped by bot in the channel's bot order (unknown bots — a
@@ -258,13 +265,16 @@ export function SessionChip({
     return out;
   }, [groups, creatableBots]);
 
+  function openNewSession() {
+    setOpen(false);
+    setNewOpen(true);
+  }
+
   function activate(item: Item) {
     if (item.kind === "auto") select("");
     else if (item.kind === "session") select(item.entry.session_id);
-    else if (item.kind === "new") {
-      setOpen(false);
-      setNewOpen(true);
-    } else {
+    else if (item.kind === "new") openNewSession();
+    else {
       setOpen(false);
       onManageSessions();
     }
@@ -334,7 +344,7 @@ export function SessionChip({
             ? `Workspace: ${selected.cwd || "Bot default"}\nMessages go directly to @${selected.bot_name}, ignoring @mentions`
             : "Session target — Auto routes by @mention to each bot's primary session"
         }
-        aria-label={selected ? `Pinned to @${selected.bot_name}; mentions ignored; workspace ${selectedDirectory ?? "Bot default"}; session ${tagOf(selected)}` : "Workspace and session target: Auto"}
+        aria-label={selected ? `Pinned to @${selected.bot_name}; mentions ignored; workspace ${selectedDirectory ?? "Bot default"}; session ${sessionTag(selected)}` : "Workspace and session target: Auto"}
       >
         <span className="min-w-0 flex-1 truncate">{selected ? selected.bot_name : "Auto"}</span>
         <ChevronDown className={cn(controlIconClasses.regular, "shrink-0 transition-transform", open && "rotate-180")} />
@@ -357,10 +367,7 @@ export function SessionChip({
             trailing={creatableBots.length === 0 ? <span className="text-minimal text-content-muted">No permission</span> : undefined}
             controlSize="compact"
             disabled={creatableBots.length === 0}
-            onClick={() => {
-              setOpen(false);
-              setNewOpen(true);
-            }}
+            onClick={openNewSession}
             className="bg-accent-500/10 font-medium text-accent-200 hover:bg-accent-500/15"
           />
           <div className="px-3 pb-1 pt-2 text-minimal uppercase tracking-label text-content-muted">
@@ -438,10 +445,7 @@ export function SessionChip({
                     label="Create session"
                     controlSize="regular"
                     type="button"
-                    onClick={() => {
-                      setOpen(false);
-                      setNewOpen(true);
-                    }}
+                    onClick={openNewSession}
                     onMouseEnter={(event) => whenPointerMeans(event.currentTarget, () => setActiveIndex(idx))}
                     className={idx === activeIndex ? highlightedClasses : undefined}
                   >

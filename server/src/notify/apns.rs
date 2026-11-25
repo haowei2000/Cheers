@@ -101,7 +101,7 @@ fn complete_credentials(
     }
 }
 
-fn env_value(name: &str) -> Option<String> {
+pub(super) fn env_value(name: &str) -> Option<String> {
     std::env::var(name)
         .ok()
         .filter(|value| !value.trim().is_empty())
@@ -172,10 +172,7 @@ impl ApnsClient {
             key,
             key_id,
             team_id,
-            topic: std::env::var("APNS_TOPIC")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| "app.cheers.ios".into()),
+            topic: env_value("APNS_TOPIC").unwrap_or_else(|| "app.cheers.ios".into()),
             endpoint,
             cached: Mutex::new(None),
         })

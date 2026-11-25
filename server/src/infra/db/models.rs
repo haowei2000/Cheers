@@ -7,51 +7,6 @@ use serde_json::Value;
 /// Message API 对外消息体的统一版本。
 pub const MESSAGE_SCHEMA_VERSION: u8 = 1;
 
-// ── User ──────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone)]
-pub struct User {
-    pub id: String,
-    pub username: String,
-    pub email: String,
-    pub display_name: Option<String>,
-    pub hashed_password: String,
-    pub role: String, // "user" | "admin"
-    pub avatar_url: Option<String>,
-}
-
-// ── Channel ───────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Channel {
-    pub id: String,
-    pub name: String,
-    pub channel_type: String, // "public" | "private" | "dm"
-    pub workspace_id: Option<String>,
-    pub topic: Option<String>,
-    pub auto_assist: Option<bool>,
-    pub created_at: Option<DateTime<Utc>>,
-}
-
-// ── Message ───────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Message {
-    pub id: String,
-    pub channel_id: String,
-    pub sender_type: String, // "user" | "bot" | "system"
-    pub sender_id: Option<String>,
-    pub sender_name: Option<String>,
-    pub content: Option<String>,
-    pub msg_type: Option<String>,
-    pub is_partial: bool,
-    pub is_deleted: Option<bool>,
-    pub reply_to_msg_id: Option<String>,
-    pub file_ids: Vec<String>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub edited_at: Option<DateTime<Utc>>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageMention {
     pub member_id: String,

@@ -130,6 +130,38 @@ describe("BotTracePanel disclosure labels", () => {
     expect(markup).toContain("pnpm typecheck");
   });
 
+  it.each(["prompt_started", "prompt_finished", "prompt_failed"])("leaves %s status to the run overview", phase => {
+    const markup = renderToStaticMarkup(
+      <BotTracePanel channelId="channel-1" msgId="message-1"
+        liveEvents={[{ ...toolEvent, phase, title: "Lifecycle status", data: null }]}
+        streaming expanded showToggle={false} view="inline" />,
+    );
+    expect(markup).not.toContain("Lifecycle status");
+  });
+
+  it("shows the tool status only once when no preview is available", () => {
+    const markup = renderToStaticMarkup(
+      <BotTracePanel channelId="channel-1" msgId="message-1"
+        liveEvents={[{ ...toolEvent, status: "in_progress", is_terminal: false, title: "Checking types", data: null }]}
+        streaming expanded showToggle={false} view="inline" />,
+    );
+    expect(markup.match(/In progress/g)).toHaveLength(1);
+  });
+
+  it("prioritizes approval over the tool row that repeats the same command", () => {
+    const markup = renderToStaticMarkup(
+      <BotTracePanel channelId="channel-1" msgId="message-1"
+        liveEvents={[{ ...secondToolEvent, data: { command: "git push origin feature" } }]}
+        pendingApprovals={[pendingApproval]} currentUserId="user-1"
+        streaming expanded showToggle={false} view="inline" />,
+    );
+    expect(markup.match(/id="trace-source-/g)).toHaveLength(1);
+    expect(markup).toContain("Publish frontend changes");
+    expect(markup).toContain("Needs approval");
+    expect(markup).toContain(">Allow once<");
+    expect(markup.match(/Needs approval/g)).toHaveLength(1);
+  });
+
   it("renders an inline approval without a duplicate trace header", () => {
     const markup = renderToStaticMarkup(
       <BotTracePanel

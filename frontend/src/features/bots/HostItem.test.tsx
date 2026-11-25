@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HostItem, hostIndicator, type HostItemData } from "./HostItem";
+import {
+  HostItem,
+  headerRefreshLabel,
+  hostIndicator,
+  mcpDeliveryLabel,
+  type HostItemData,
+} from "./HostItem";
 
 const host: HostItemData = {
   bot_id: "bot-1",
@@ -47,5 +53,18 @@ describe("HostItem", () => {
     ).toBe("Pairing");
     expect(hostIndicator({ ...host, online: true }).label).toBe("Online");
     expect(hostIndicator({ ...host, status: "standby" }).label).toBe("Standby");
+  });
+  it("names the MCP delivery mode and the token-refresh verdict", () => {
+    expect(mcpDeliveryLabel(null)).toBe("Not reported");
+    expect(
+      mcpDeliveryLabel({ modes: ["direct", "gateway"], mode: "gateway", reason: "" }),
+    ).toBe("Loopback gateway (the connector holds the token)");
+    expect(headerRefreshLabel({ mcp_header_refresh: null })).toBe("Not tested yet");
+    const verdict = headerRefreshLabel({
+      mcp_header_refresh: false,
+      mcp_header_refresh_agent: "codex-acp@2.2.2",
+      mcp_header_refresh_at: "2026-11-01T10:00:00Z",
+    });
+    expect(verdict).toMatch(/^Keeps old tokens · codex-acp@2\.2\.2 · /);
   });
 });

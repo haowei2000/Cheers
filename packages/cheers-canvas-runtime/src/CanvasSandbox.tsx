@@ -2,6 +2,19 @@ import { useEffect, useRef, type ReactNode } from "react";
 import type { PresentationLevel } from "./types.ts";
 import { boundedPayload, boundedText } from "./bridge.ts";
 
+/** An element the user inspected or right-clicked inside the sandbox. */
+export interface CanvasElementPick {
+  x: number;
+  y: number;
+  label: string;
+  domPath: string;
+  sourceText: string;
+  inspectableId?: string;
+  sourceLine?: number;
+  sourceUri?: string;
+  frameRect?: DOMRect;
+}
+
 export interface CanvasSandboxProps {
   srcDoc: string;
   title?: string;
@@ -12,29 +25,9 @@ export interface CanvasSandboxProps {
   onFormSubmit?: (data: { actionId: string; formData: Record<string, unknown> }) => void;
   onTrigger?: (data: { actionId: string; payload: Record<string, unknown> }) => void;
   onRequest?: (data: { actionId: string; payload: Record<string, unknown> }) => void;
-  onInspect?: (params: {
-    x: number;
-    y: number;
-    label: string;
-    domPath: string;
-    sourceText: string;
-    inspectableId?: string;
-    sourceLine?: number;
-    sourceUri?: string;
-    frameRect?: DOMRect;
-  }) => void;
+  onInspect?: (params: CanvasElementPick) => void;
   onCanvasMove?: (params: { id: string; x: number; y: number }) => void;
-  onContextPick?: (params: {
-    x: number;
-    y: number;
-    label: string;
-    domPath: string;
-    sourceText: string;
-    inspectableId?: string;
-    sourceLine?: number;
-    sourceUri?: string;
-    frameRect?: DOMRect;
-  }) => void;
+  onContextPick?: (params: CanvasElementPick) => void;
   onMessage?: (event: MessageEvent) => void;
   children?: ReactNode;
 }

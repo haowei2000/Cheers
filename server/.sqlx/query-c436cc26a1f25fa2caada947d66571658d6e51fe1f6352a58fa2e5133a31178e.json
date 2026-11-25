@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.role AS \"role!\", u.role AS \"user_role?\"\n         FROM channel_memberships b\n         LEFT JOIN channel_memberships u\n           ON u.channel_id = b.channel_id AND u.member_type = 'user' AND u.member_id = $4\n         WHERE b.channel_id = $1 AND b.member_id = $2 AND b.member_type = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_role?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c436cc26a1f25fa2caada947d66571658d6e51fe1f6352a58fa2e5133a31178e"
+}

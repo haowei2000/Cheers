@@ -224,23 +224,10 @@ struct DrawerView: View {
         return shell.personalWorkspace?.workspaceId != selected.workspaceId
     }
 
-    private func resolveAvatarURL(_ raw: String?) -> URL? {
-        guard let raw, !raw.isEmpty else { return nil }
-        if let absolute = URL(string: raw), absolute.scheme != nil { return absolute }
-        guard let base = app.baseURL,
-              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
-            return nil
-        }
-        components.path = ""
-        components.query = nil
-        components.fragment = nil
-        return URL(string: raw, relativeTo: components.url)?.absoluteURL
-    }
-
     private func loadWorkspaceAvatars() async {
         for workspace in shell.workspaces {
             guard workspaceAvatarImages[workspace.workspaceId] == nil,
-                  let url = resolveAvatarURL(workspace.avatarUrl),
+                  let url = app.resolveServerResourceURL(workspace.avatarUrl),
                   let (data, response) = try? await URLSession.shared.data(from: url),
                   (response as? HTTPURLResponse)?.statusCode == 200,
                   let image = UIImage(data: data)
@@ -251,7 +238,7 @@ struct DrawerView: View {
 
     private func loadUserAvatar() async {
         guard let profile = try? await app.api?.getMe() else { return }
-        userAvatarURL = resolveAvatarURL(profile.avatarURL)
+        userAvatarURL = app.resolveServerResourceURL(profile.avatarURL)
     }
 
     private var channelList: some View {

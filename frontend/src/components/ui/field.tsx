@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { HelpLabel } from "./help-text";
+import { FieldContext } from "./field-context";
 
 // Form field stack (DESIGN.md §2.13): a persistent label over a control, with an
 // optional hint. The label is never replaced by a placeholder (HIG data-entry
@@ -25,18 +26,23 @@ export function Field({
   className?: string;
 }) {
 
+  const labelId = useId();
+  const statusId = `${labelId}-status`;
+  const errorId = `${labelId}-error`;
   return (
-    <div className={cn("space-y-2", className)}>
-      <HelpLabel helpLabel={typeof label === "string" ? `About ${label}` : undefined} help={tip && hint ? <>{tip}<br />{hint}</> : tip ?? hint}>
-        {htmlFor ? (
-          /* eslint-disable-next-line jsx-a11y/label-has-for -- Custom Input children expose the matching id through this field API. */
-          <label htmlFor={htmlFor} className="text-label uppercase">{label}</label>
-        ) : <span className="text-label uppercase">{label}</span>}
-      </HelpLabel>
-      {children}
-      {status && <p className="text-caption" role="status">{status}</p>}
-      {error && <p className="text-caption-error" role="alert">{error}</p>}
-    </div>
+    <FieldContext.Provider value={{ labelId, htmlFor, invalid: Boolean(error), descriptionIds: [status && statusId, error && errorId].filter((id): id is string => typeof id === "string") }}>
+      <div className={cn("space-y-2", className)}>
+        <HelpLabel helpLabel={typeof label === "string" ? `About ${label}` : undefined} help={tip && hint ? <>{tip}<br />{hint}</> : tip ?? hint}>
+          {htmlFor ? (
+            /* eslint-disable-next-line jsx-a11y/label-has-for -- Custom Input children expose the matching id through this field API. */
+            <label id={labelId} htmlFor={htmlFor} className="text-label uppercase">{label}</label>
+          ) : <span id={labelId} className="text-label uppercase">{label}</span>}
+        </HelpLabel>
+        {children}
+        {status && <p id={statusId} className="text-caption" role="status">{status}</p>}
+        {error && <p id={errorId} className="text-caption-error" role="alert">{error}</p>}
+      </div>
+    </FieldContext.Provider>
   );
 }
 

@@ -14,7 +14,10 @@ export interface AcpAgentInfo {
   name: string;
   version?: string;
   package?: string;
+  command?: string;
   args?: string[];
+  /** Env var for headless API-key auth, when the agent supports one. */
+  api_key_env?: string | null;
   source: string;
   installable: boolean;
 }
@@ -126,6 +129,14 @@ export async function getBotStatus(botId: string): Promise<BotStatus> {
   return apiJson<BotStatus>(`/bots/${botId}/status`);
 }
 
+export type McpDeliveryMode = "acp" | "direct" | "gateway";
+
+export interface McpDeliveryReport {
+  modes: McpDeliveryMode[];
+  mode: McpDeliveryMode;
+  reason: string;
+}
+
 export interface ConnectorHost {
   host_id: string;
   device_name: string;
@@ -144,6 +155,14 @@ export interface ConnectorHost {
   mcp_state_updated_at?: string | null;
   mcp_connected_at?: string | null;
   mcp_last_seen_at?: string | null;
+  /** How the Agent reaches Cheers MCP, as the connector last reported it. Absent
+   *  for connectors older than 0.1.58. */
+  mcp_delivery?: McpDeliveryReport | null;
+  /** The Gateway's verdict on whether this Agent build picks up renewed tokens
+   *  in `direct` delivery; null until it has been tested. */
+  mcp_header_refresh?: boolean | null;
+  mcp_header_refresh_agent?: string | null;
+  mcp_header_refresh_at?: string | null;
   agent_profile?: {
     id: string;
     display_name: string;
@@ -231,28 +250,6 @@ export async function deleteHostRecord(botId: string, hostId: string): Promise<v
 export interface Reachability {
   public_base: string;
   configured: boolean;
-}
-
-export interface ConnectorConfig {
-  bot_id: string;
-  account_id: string;
-  agent_type: string;
-  credential_file: string;
-  control_url: string;
-  data_url: string;
-  config_toml: string;
-  reachability: Reachability;
-  note?: string;
-}
-
-/** Connector config skeleton. Pairing is still required to obtain the
- * host-bound credential referenced by this file. */
-export async function getConnectorConfig(
-  botId: string,
-  agentType?: AgentType
-): Promise<ConnectorConfig> {
-  const q = agentType ? `?agent_type=${encodeURIComponent(agentType)}` : "";
-  return apiJson<ConnectorConfig>(`/bots/${botId}/connector-config${q}`);
 }
 
 export interface HostPairing {
@@ -650,5 +647,23 @@ export async function updateBotSocialPolicy(
   return apiJson<BotSocialPolicy>(`/bots/${botId}/social-policy`, {
     method: "PUT",
     body: JSON.stringify(policy),
+  });
+}
+
+/** Whether the bot's MCP calls on a person's task are limited to that person's
+ *  channel role (docs/arch/MCP_AUTH_ISOLATION.md §5). On by default. */
+export interface BotMcpPolicy {
+  bot_id: string;
+  narrow_to_sender: boolean;
+}
+
+export async function getBotMcpPolicy(botId: string): Promise<BotMcpPolicy> {
+  return apiJson<BotMcpPolicy>(`/bots/${botId}/mcp-policy`);
+}
+
+export async function updateBotMcpPolicy(botId: string, narrowToSender: boolean): Promise<BotMcpPolicy> {
+  return apiJson<BotMcpPolicy>(`/bots/${botId}/mcp-policy`, {
+    method: "PUT",
+    body: JSON.stringify({ narrow_to_sender: narrowToSender }),
   });
 }

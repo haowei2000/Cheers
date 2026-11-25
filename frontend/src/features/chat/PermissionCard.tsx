@@ -147,12 +147,13 @@ export function PermissionCard({
     tool?.name ??
     data.body ??
     null;
-  const title =
+  const approvalTitle =
     (data.title && data.title !== "ACP permission request" ? data.title : null) ??
     (tool?.title && tool.title.trim() && tool.title !== "ACP permission request"
       ? tool.title
       : null) ??
     "Approval needed";
+  const title = approvalTitle === command ? "Approval needed" : approvalTitle;
   const impact = data.body && data.body !== command ? data.body : null;
 
   // The patch the agent wants to write, distilled by the connector from the ACP

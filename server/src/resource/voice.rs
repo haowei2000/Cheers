@@ -13,11 +13,7 @@ pub async fn handle_transcript(
     principal: &Principal,
     params: &Value,
 ) -> ResourceResult {
-    let channel_id: Uuid = params
-        .get("channel_id")
-        .and_then(Value::as_str)
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))?;
+    let channel_id: Uuid = super::channel_id_or_bad_request(params)?;
     authorize_channel_read(db, principal, channel_id).await?;
 
     let since_seq = params

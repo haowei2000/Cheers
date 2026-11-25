@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var showPasskeys = false
     @State private var showBlockedUsers = false
     @State private var showAIConsents = false
+    @State private var showScheduled = false
+    @State private var showChangeEmail = false
     @State private var showDeleteAccount = false
     @State private var showWorkspaceAdmin = false
     @State private var showAccountSessions = false
@@ -70,6 +72,8 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showBlockedUsers) { BlockedUsersSheet() }
         .sheet(isPresented: $showAIConsents) { AIConsentSettingsSheet() }
+        .sheet(isPresented: $showScheduled) { ScheduledMessagesView() }
+        .sheet(isPresented: $showChangeEmail) { ChangeEmailSheet() }
         .sheet(isPresented: $showDeleteAccount) { DeleteAccountSheet() }
         .sheet(isPresented: $showWorkspaceAdmin) {
             if let workspace = shell.selectedWorkspace {
@@ -218,6 +222,12 @@ struct SettingsView: View {
                 settingsNavRow("Manage \(workspace.name)", systemImage: "building.2") {
                     showWorkspaceAdmin = true
                 }
+            }
+            settingsNavRow("Scheduled tasks", systemImage: "calendar.badge.clock") {
+                showScheduled = true
+            }
+            settingsNavRow("Change email", systemImage: "envelope") {
+                showChangeEmail = true
             }
             settingsNavRow("Change password", systemImage: "key") {
                 showChangePassword = true
@@ -372,6 +382,27 @@ struct SettingsView: View {
     }
 }
 
+extension PhotosPickerItem {
+    /// PhotosPicker's `Data` transferable is unreliable for HEIC/Live Photos;
+    /// decode via UIImage and re-encode JPEG so the gateway always accepts it.
+    /// Shared by the profile, bot and channel avatar pickers.
+    func avatarJPEGData() async throws -> Data? {
+        if let data = try await loadTransferable(type: Data.self),
+           let image = UIImage(data: data),
+           let jpeg = image.jpegData(compressionQuality: 0.88) {
+            return jpeg
+        }
+        // Fallback: some iOS versions only expose a file URL transferable.
+        if let url = try await loadTransferable(type: URL.self),
+           let data = try? Data(contentsOf: url),
+           let image = UIImage(data: data),
+           let jpeg = image.jpegData(compressionQuality: 0.88) {
+            return jpeg
+        }
+        return nil
+    }
+}
+
 // MARK: - Profile edit
 
 private struct ProfileEditSheet: View {
@@ -475,7 +506,7 @@ private struct ProfileEditSheet: View {
             pickerItem = nil
         }
         do {
-            guard let jpeg = try await Self.jpegData(from: item) else {
+            guard let jpeg = try await item.avatarJPEGData() else {
                 errorText = "Could not read the selected photo."
                 return
             }
@@ -486,24 +517,6 @@ private struct ProfileEditSheet: View {
         } catch {
             errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
-    }
-
-    /// PhotosPicker's `Data` transferable is unreliable for HEIC/Live Photos;
-    /// decode via UIImage and re-encode JPEG so the gateway always accepts it.
-    private static func jpegData(from item: PhotosPickerItem) async throws -> Data? {
-        if let data = try await item.loadTransferable(type: Data.self),
-           let image = UIImage(data: data),
-           let jpeg = image.jpegData(compressionQuality: 0.88) {
-            return jpeg
-        }
-        // Fallback: some iOS versions only expose a file URL transferable.
-        if let url = try await item.loadTransferable(type: URL.self),
-           let data = try? Data(contentsOf: url),
-           let image = UIImage(data: data),
-           let jpeg = image.jpegData(compressionQuality: 0.88) {
-            return jpeg
-        }
-        return nil
     }
 
     private func save() async {
@@ -880,6 +893,33 @@ private struct SignInMethodsView: View {
                 }
             }
 
+            if let apple = appleIdentity, apple.linked, !apple.hasPassword {
+                Section {
+                    SecureField("New password", text: $newPassword)
+                        .textContentType(.newPassword)
+                    SecureField("Confirm password", text: $confirmation)
+                        .textContentType(.newPassword)
+                    if !newPassword.isEmpty && newPassword.count < 12 {
+                        Text("Use at least 12 characters.")
+                            .foregroundStyle(Theme.danger)
+                    }
+                    AppleAuthorizationControl { payload in
+                        guard newPassword.count >= 12, newPassword == confirmation else {
+                            throw APIError.http(
+                                status: 400,
+                                detail: "Passwords must match and contain at least 12 characters."
+                            )
+                        }
+                        try await app.setPassword(newPassword, apple: payload)
+                        newPassword = ""
+                        confirmation = ""
+                        await load()
+                    }
+                } header: {
+                    Text("Add a password for Web sign-in")
+                }
+            }
+
             if isLoading && appleIdentity == nil && googleIdentity == nil && githubIdentity == nil {
                 Section {
                     ProgressView()
@@ -1136,6 +1176,90 @@ private struct BlockedUsersSheet: View {
     }
     private func load() async { do { users = try await app.api?.blockedUsers() ?? [] } catch { errorText = error.localizedDescription } }
     private func unblock(_ user: BlockedUserDto) async { do { try await app.api?.unblockUser(user.userId); await load() } catch { errorText = error.localizedDescription } }
+}
+
+/// Links or changes the account email: a code goes to the new address, and
+/// entering it confirms the change (`/auth/email/request-code`, `/auth/email/update`).
+private struct ChangeEmailSheet: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var currentEmail: String?
+    @State private var email = ""
+    @State private var code = ""
+    @State private var codeSentTo: String?
+    @State private var isBusy = false
+    @State private var errorText: String?
+
+    private var trimmedEmail: String { email.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Current email", value: currentEmail ?? String(localized: "None"))
+                }
+                Section {
+                    TextField("New email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    CheersContentActionButton(action: codeSentTo == nil ? .sendCode : .resendCode) {
+                        Task { await sendCode() }
+                    }
+                    .disabled(isBusy || trimmedEmail.isEmpty)
+                }
+                if let codeSentTo, codeSentTo == trimmedEmail {
+                    Section {
+                        TextField("Verification code", text: $code)
+                            .textContentType(.oneTimeCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                        CheersContentActionButton(action: .confirmEmail) { Task { await confirm() } }
+                            .disabled(isBusy || code.trimmingCharacters(in: .whitespaces).isEmpty)
+                    } footer: {
+                        Text("We sent a code to \(codeSentTo).")
+                    }
+                }
+                if let errorText {
+                    Section { Text(errorText).foregroundStyle(Theme.danger) }
+                }
+            }
+            .navigationTitle("Change email")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { CheersContentActionButton(action: .cancel) { dismiss() } }
+            }
+            .task { currentEmail = (try? await app.api?.getMe())?.email }
+        }
+    }
+
+    private func sendCode() async {
+        await run {
+            try await $0.requestEmailUpdateCode(email: trimmedEmail)
+            codeSentTo = trimmedEmail
+            code = ""
+        }
+    }
+
+    private func confirm() async {
+        await run {
+            try await $0.updateEmail(email: trimmedEmail, code: code.trimmingCharacters(in: .whitespaces))
+            dismiss()
+        }
+    }
+
+    private func run(_ work: (APIClient) async throws -> Void) async {
+        guard let api = app.api, !isBusy else { return }
+        isBusy = true
+        errorText = nil
+        defer { isBusy = false }
+        do {
+            try await work(api)
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
 }
 
 private struct AIConsentSettingsSheet: View {

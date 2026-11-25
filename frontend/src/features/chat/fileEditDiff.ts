@@ -22,15 +22,15 @@ const DIFF_LINE_LIMIT = 2_000;
 /** Context lines kept on each side of a change hunk (matches connector radius). */
 const CONTEXT_RADIUS = 3;
 
-type JsonRecord = Record<string, unknown>;
+export type JsonRecord = Record<string, unknown>;
 
-function asRecord(value: unknown): JsonRecord | null {
+export function asRecord(value: unknown): JsonRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
     : null;
 }
 
-function stringField(record: JsonRecord | null, ...keys: string[]): string | null {
+export function stringField(record: JsonRecord | null, ...keys: string[]): string | null {
   for (const key of keys) {
     const value = record?.[key];
     if (typeof value === "string" && value.trim()) return value;
@@ -142,6 +142,15 @@ export function aggregateDiffStats(diffs: FileDiff[]): DiffStats {
   );
 }
 
+function unifiedDiff(path: string, body: string[]): string {
+  return [
+    `diff --git a/${path} b/${path}`,
+    `--- a/${path}`,
+    `+++ b/${path}`,
+    ...body,
+  ].join("\n");
+}
+
 /**
  * Bounded unified diff with CONTEXT_RADIUS around changes.
  * Oversized sources decline rather than misrepresent every line as a rewrite.
@@ -153,23 +162,15 @@ export function fileDiffPreview({ path, oldText, newText }: FileDiff): string {
     oldText.length + newText.length > DIFF_SOURCE_LIMIT
     || oldLines.length + newLines.length > DIFF_LINE_LIMIT
   ) {
-    return [
-      `diff --git a/${path} b/${path}`,
-      `--- a/${path}`,
-      `+++ b/${path}`,
+    return unifiedDiff(path, [
       "@@ diff omitted @@",
       " Diff is too large to render safely in the inspector.",
-    ].join("\n");
+    ]);
   }
 
   const ops = lineOps(oldText, newText);
   if (ops.length === 0 || ops.every((op) => op.kind === "eq")) {
-    return [
-      `diff --git a/${path} b/${path}`,
-      `--- a/${path}`,
-      `+++ b/${path}`,
-      "@@ no changes @@",
-    ].join("\n");
+    return unifiedDiff(path, ["@@ no changes @@"]);
   }
 
   // Mark ops that sit within CONTEXT_RADIUS of a change.
@@ -228,12 +229,7 @@ export function fileDiffPreview({ path, oldText, newText }: FileDiff): string {
     i = end + 1;
   }
 
-  return [
-    `diff --git a/${path} b/${path}`,
-    `--- a/${path}`,
-    `+++ b/${path}`,
-    ...hunks,
-  ].join("\n");
+  return unifiedDiff(path, hunks);
 }
 
 export function formatDiffDelta(stats: DiffStats): string {

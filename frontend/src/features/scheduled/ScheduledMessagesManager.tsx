@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { AsyncContent } from "@/components/ui/async-content";
+import { Banner } from "@/components/ui/banner";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CalendarClock, CirclePause, CirclePlay, History, Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -51,6 +53,10 @@ interface FormState {
   enabled: boolean;
   sourceExtensionId?: string;
   sourceAutomationId?: string;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function localInput(date: Date): string {
@@ -131,11 +137,21 @@ export function ScheduledMessagesManager() {
   const [personalTemplates, setPersonalTemplates] = useState<TemplateOption[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
+  const initialForm = useRef<FormState | null>(null);
+  function openForm(value: FormState) { initialForm.current = value; setForm(value); setFormError(null); }
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const deleteInFlight = useRef(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [history, setHistory] = useState<{ task: ScheduledMessage; runs: ScheduledMessageRun[] } | null>(null);
 
   const reload = useCallback(async () => {
+    setLoading(true);
+    try {
     const [nextTasks, nextChannels, nextExtensions, nextPersonal] = await Promise.all([
       listScheduledMessages(),
       listChannels(),
@@ -155,9 +171,12 @@ export function ScheduledMessagesManager() {
     setChannels(nextChannels.filter((channel) => channel.is_member !== false));
     setExtensions(nextExtensions);
     setPersonalTemplates(nextPersonal);
+    setLoadError(null);
+    } catch (error) { setLoadError(errorText(error)); }
+    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void reload().catch((error) => toast.error(String(error))); }, [reload]);
+  useEffect(() => { void reload(); }, [reload]);
   useEffect(() => {
     if (!form?.channelId) { setMembers([]); return; }
     void listChannelMembers(form.channelId)
@@ -187,9 +206,10 @@ export function ScheduledMessagesManager() {
   ].filter((value): value is string => Boolean(value)))), [form?.timezone]);
 
   const save = async () => {
-    if (!form) return;
+    if (!form || saving) return;
+    setFormError(null);
     if (!form.channelId || !form.title.trim() || !form.content.trim()) {
-      toast.error("Title, channel, and message are required");
+      setFormError("Title, channel, and message are required");
       return;
     }
     setSaving(true);
@@ -200,11 +220,23 @@ export function ScheduledMessagesManager() {
       await reload();
       toast.success(form.id ? "Scheduled task updated" : "Scheduled task created");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      setFormError(errorText(error));
     } finally {
       setSaving(false);
     }
   };
+
+  async function confirmDelete(id: string) {
+    if (deleteInFlight.current) return;
+    deleteInFlight.current = true;
+    setDeleteBusy(true); setActionError(null);
+    try {
+      await deleteScheduledMessage(id);
+      setDeletingId(null);
+      await reload();
+    } catch (error) { setActionError(errorText(error)); }
+    finally { deleteInFlight.current = false; setDeleteBusy(false); }
+  }
 
   const toggle = async (task: ScheduledMessage) => {
     const next = editForm(task);
@@ -213,7 +245,7 @@ export function ScheduledMessagesManager() {
       await updateScheduledMessage(task.id, toInput(next));
       await reload();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(errorText(error));
     }
   };
 
@@ -223,11 +255,13 @@ export function ScheduledMessagesManager() {
         title="Channel messages"
         description="Create, pause, and inspect recurring or one-time channel messages."
       >
+      {actionError && <Banner severity="error">{actionError}</Banner>}
+      <AsyncContent loading={loading} error={loadError} onRetry={() => void reload()}>
       <ItemSection
         label="Tasks"
         presentationLevel="max"
         controlSize="regular"
-        action={<UiButton action="create" content="iconText" variant="plain" controlSize="compact" onClick={() => setForm(emptyForm())}><Plus className="h-3.5 w-3.5" /></UiButton>}
+        action={<UiButton action="create" content="iconText" variant="plain" controlSize="compact" onClick={() => openForm(emptyForm())}><Plus className="h-3.5 w-3.5" /></UiButton>}
       >
         {tasks.map((task) => deletingId === task.id ? (
           <CollectionConfirmationItem
@@ -236,8 +270,9 @@ export function ScheduledMessagesManager() {
             description="This scheduled task and its future runs will be removed."
             action="delete"
             prompt="Delete?"
-            onCancel={() => setDeletingId(null)}
-            onConfirm={() => void deleteScheduledMessage(task.id).then(async () => { setDeletingId(null); await reload(); })}
+            busy={deleteBusy}
+            onCancel={() => { setDeletingId(null); setActionError(null); }}
+            onConfirm={() => void confirmDelete(task.id)}
           />
         ) : (
           <WorkbenchItem
@@ -248,26 +283,28 @@ export function ScheduledMessagesManager() {
             status={<span className={task.lastError ? "text-danger-400" : "text-content-muted"}>{scheduleLabel(task)}</span>}
             metadata={task.sourceExtensionId ? `Extension: ${task.sourceExtensionId}:${task.sourceAutomationId}` : undefined}
             actions={<>
-              <UiButton action="start" content="icon" variant="plain" title="Run now" aria-label={`Run ${task.title} now`} onClick={async () => { try { await runScheduledMessageNow(task.id); toast.success("Message sent"); await reload(); } catch (error) { toast.error(error instanceof Error ? error.message : String(error)); } }}><CirclePlay className="h-3.5 w-3.5" /></UiButton>
-              <UiButton action="review" content="icon" variant="plain" title="Run history" aria-label={`Run history for ${task.title}`} onClick={async () => { try { setHistory({ task, runs: await listScheduledMessageRuns(task.id) }); } catch (error) { toast.error(error instanceof Error ? error.message : String(error)); } }}><History className="h-3.5 w-3.5" /></UiButton>
+              <UiButton action="start" content="icon" variant="plain" title="Run now" aria-label={`Run ${task.title} now`} onClick={async () => { try { await runScheduledMessageNow(task.id); toast.success("Message sent"); await reload(); } catch (error) { toast.error(errorText(error)); } }}><CirclePlay className="h-3.5 w-3.5" /></UiButton>
+              <UiButton action="review" content="icon" variant="plain" title="Run history" aria-label={`Run history for ${task.title}`} onClick={async () => { try { setHistory({ task, runs: await listScheduledMessageRuns(task.id) }); } catch (error) { toast.error(errorText(error)); } }}><History className="h-3.5 w-3.5" /></UiButton>
               {!(task.schedule.kind === "once" && !task.nextRunAt && task.lastRunAt) && <UiButton action={task.enabled ? "disable" : "enable"} content="icon" variant="plain" title={task.enabled ? "Pause" : "Resume"} aria-label={`${task.enabled ? "Pause" : "Resume"} ${task.title}`} onClick={() => void toggle(task)}>{task.enabled ? <CirclePause className="h-3.5 w-3.5" /> : <CirclePlay className="h-3.5 w-3.5" />}</UiButton>}
               <InlineEditActions
                 label={task.title}
                 editing={false}
-                onEdit={() => setForm(editForm(task))}
+                onEdit={() => openForm(editForm(task))}
                 onSave={() => undefined}
                 onCancel={() => undefined}
               />
-              <UiButton action="delete" content="icon" variant="plain" title="Delete" aria-label={`Delete ${task.title}`} className="hover:text-danger-400" onClick={() => setDeletingId(task.id)}><Trash2 className="h-3.5 w-3.5" /></UiButton>
+              <UiButton action="delete" content="icon" variant="plain" title="Delete" aria-label={`Delete ${task.title}`} className="hover:text-danger-400" disabled={deleteBusy} onClick={() => { setDeletingId(task.id); setActionError(null); }}><Trash2 className="h-3.5 w-3.5" /></UiButton>
             </>}
           />
         ))}
         {tasks.length === 0 && <EmptyState icon={CalendarClock} title="No scheduled tasks" className="py-4" />}
       </ItemSection>
+      </AsyncContent>
       </SettingsCard>
 
-      {form && <Dialog title={form.id ? "Edit scheduled task" : "New scheduled task"} onClose={() => setForm(null)} maxWidth="max-w-lg">
+      {form && <Dialog title={form.id ? "Edit scheduled task" : "New scheduled task"} onClose={() => setForm(null)} dirty={JSON.stringify(form) !== JSON.stringify(initialForm.current)} busy={saving} maxWidth="max-w-lg">
         <div className="space-y-4 p-5">
+          {formError && <Banner severity="error">{formError}</Banner>}
           {!form.id && templates.length > 0 && <Field label="Extension template">
             <UiSelect defaultValue="" onChange={(event) => {
               const template = templates.find((item) => `${item.extensionId}:${item.automation.id}` === event.target.value);

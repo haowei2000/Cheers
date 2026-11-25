@@ -18,8 +18,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    api::middleware::Claims, app_state::AppState, domain::messages::hydrate_message_rows,
-    errors::AppError, infra::db::models::MessageDto,
+    api::{approval::user_id, middleware::Claims},
+    app_state::AppState,
+    domain::messages::hydrate_message_rows,
+    errors::AppError,
+    infra::db::models::MessageDto,
 };
 
 const DEFAULT_LIMIT: i64 = 30;
@@ -160,10 +163,7 @@ pub async fn list_discussions(
     Path(channel_id): Path<Uuid>,
     Query(query): Query<ListDiscussionsQuery>,
 ) -> Result<Json<ListDiscussionsResponse>, AppError> {
-    let user_id = claims
-        .sub
-        .parse::<Uuid>()
-        .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
+    let user_id = user_id(&claims)?;
     ensure_discuss_member(&state, channel_id, user_id).await?;
 
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 100);
@@ -424,10 +424,7 @@ pub async fn get_discussion(
     Path((channel_id, root_msg_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<DiscussionDetailQuery>,
 ) -> Result<Json<DiscussionDetailResponse>, AppError> {
-    let user_id = claims
-        .sub
-        .parse::<Uuid>()
-        .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
+    let user_id = user_id(&claims)?;
     ensure_discuss_member(&state, channel_id, user_id).await?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
 

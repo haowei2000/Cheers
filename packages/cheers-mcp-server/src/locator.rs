@@ -387,9 +387,9 @@ pub fn resolve(locator: &Locator, channel_id: &str) -> Result<(&'static str, Val
                     .unwrap_or(json!({})),
             ),
         ),
-        Locator::Global(uri) => (
+        Locator::Global(_) => (
             "resource.resolve",
-            json!({"channel_id":channel_id,"uri":format(&Locator::Global(uri.clone()))}),
+            json!({"channel_id":channel_id,"uri":format(locator)}),
         ),
         Locator::Desk {
             path,

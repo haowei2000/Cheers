@@ -1,5 +1,9 @@
 # Unified artifacts
 
+> ⚠️ PARTLY SUPERSEDED (2026-11-13): the storage split (text in `context_files`, bytes in
+> object storage) and the renderer picker are replaced by [FLAT_ARTIFACTS.md](FLAT_ARTIFACTS.md)
+> once its phases land. Identity, versions, availability and links below still apply.
+
 Status: implementation in progress. This document records the target contract and
 the migration gates; a checked gate means verified implementation, not a proposal.
 
@@ -50,6 +54,8 @@ number. Native clients currently open the source document without node focusing.
 - [ ] P2: unified Bot create/update/deliver tools, idempotency and producer migration.
 - [ ] P3: one Web/macOS artifact library, shared host and reference previews.
 - [ ] P4: canvas references, versioned design edits and truthful action results.
+  Canvas references by artifact id and versioned canvas edits are implemented on Web
+  (see [Web client model](#web-client-model)); the gate stays open for the rest.
 - [ ] P5: iOS/Android routing, library and capability-aware rendering.
 - [ ] P6: verify migration, remove duplicate business paths and retire old producers.
 
@@ -70,7 +76,10 @@ extension allowlist. Rendering failures remain visible and source remains availa
 | Android | Resource request lifecycle and scope binding; unified paginated library, availability, inert source preview, message-reference routing and system file export implemented | Native visual/accessibility and end-to-end verification; editing and composer context capabilities remain unavailable |
 
 New MCP tools are `artifact_list`, `artifact_get`, `artifact_read`,
-`artifact_create`, `artifact_update` and `artifact_deliver`. Gateway initialization
+`artifact_create`, `artifact_update`, `artifact_rename`, `artifact_delete`,
+`artifact_upload_prepare`, `artifact_upload_finish` and `artifact_deliver`. Rename and
+delete cover text artifacts only, share the `fs.mv`/`fs.rm` approval gate, and check
+source identity and version under the provider row lock. Gateway initialization
 instructions direct new outputs to these tools and canonical artifact links.
 `inbox_list`, `inbox_open` and `inbox_deliver` are callable compatibility bindings,
 omitted from `tools/list`; discovery is declared in the shared tool registry and
@@ -134,6 +143,55 @@ MCP's 33 tests and Gateway's 485 unit tests pass, including canonical discovery,
 legacy dispatch, OAuth scopes and resource URI validation. Formatting and diff
 checks pass. Remaining Desk operations and collection consumers
 still prevent marking P2/P6 complete.
+
+## Web client model
+
+Status: implemented for references and for library/collection editing sessions; the
+items under "Not yet" below are open. Verified by unit tests and a local fixture, plus
+one browser run against a development stack.
+
+The gateway has one catalog, so the Web client must not grow one loader per surface.
+Three shared pieces own what used to be repeated in each view.
+
+**Reference store** (`frontend/src/features/chat/artifacts/referenceStore.ts`). One store
+per channel, keyed by artifact id. A surface that points at an artifact (a message
+card, a canvas node) subscribes to it and never fetches by itself. The store fetches an
+artifact once for all subscribers, keeps the catalog entry and only the head of a text
+source, retries a failed lookup instead of caching it as missing, keeps the last answer
+when a refresh fails, and reloads visible references when the host reports a file change.
+The host that sees `filesTick` reports it; lenses and cards only subscribe.
+
+**Routed file client** (`artifactEditorClient` in `artifacts/client.ts`). One client per
+base file client and channel. Binding an artifact routes its path through
+`channel.artifacts.read/update/patch`; other paths stay with the provider. File sessions
+and drafts are keyed by client identity, so every surface that opens the same artifact
+must receive this same object. A client per artifact would give one file two buffers
+and two version counters. A pinned historical revision keeps its own read-only client
+and is never routed.
+
+**Renderer registry** (`workbench/renderers/registry.ts`). The only place that decides
+which view can show a text format.
+
+| Surface | Reference data | Editing session |
+| --- | --- | --- |
+| Message card (`cheers:artifact/<id>`) | Reference store: title, type, availability; text previews through the Desk preview | None (read-only) |
+| Canvas node (`source.kind: artifact`) | Reference store: title, type, availability, source excerpt | None |
+| Artifacts library | Catalog list, optionally canvases only (`type: canvas`); creates canvases; routed client for the open artifact | Routed client |
+| Collections | Routed client for canvases; a failed lookup opens the path | Routed client for canvases, provider client otherwise |
+
+Not yet:
+
+- "Source files" and non-canvas collection items still open by path on the provider
+  client, so they do not share a session with the same file opened as an artifact.
+- A message card chooses its preview by extension, not through the registry. Showing
+  `.html` as source in a reply is deliberate; whether replies should run it is undecided.
+- `FilePreviewModal` classifies uploaded files with its own table (`previewKind`), and
+  the registry has no entries for binary types. Images, PDF and audio therefore have a
+  separate preview path from text artifacts.
+- The reference store reads a whole text source to keep its head; the gateway has no
+  bounded read.
+- The library's attachment view passes HTML/TSX pages a draft-only form handler, so a
+  declared request is unavailable there.
 
 ## Acceptance and rollout
 

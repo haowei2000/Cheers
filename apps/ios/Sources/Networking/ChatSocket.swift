@@ -35,8 +35,35 @@ struct PresencePayload: Decodable {
     }
 }
 
-private struct VoiceTranscriptPayload: Decodable {
-    let data: VoiceTranscriptSegment
+private struct BotUnavailablePayload: Decodable {
+    let botId: String
+    let placeholderMsgId: String
+
+    enum CodingKeys: String, CodingKey {
+        case botId = "bot_id"
+        case placeholderMsgId = "placeholder_msg_id"
+    }
+}
+
+private struct ContentDataPayload: Decodable {
+    let msgId: String
+    let contentData: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case msgId = "msg_id"
+        case contentData = "content_data"
+    }
+}
+
+private struct FileTranscribedPayload: Decodable {
+    let fileId: String
+    let status: String?
+    let summary: String?
+
+    enum CodingKeys: String, CodingKey {
+        case fileId = "file_id"
+        case status, summary
+    }
 }
 
 private struct MemberUpdatedPayload: Decodable {
@@ -52,10 +79,20 @@ enum SocketEvent {
     case connected
     case authFailed(String)
     case subscribed(channelId: String)
+    /// The gateway refused (or dropped) one channel subscription; the socket
+    /// and every other subscription stay up.
+    case subscriptionDenied(channelId: String, code: String?, reason: String?)
     case message(channelId: String, MessageDto)
     case messageStream(channelId: String, msgId: String, delta: String)
     case messageDone(channelId: String, MessageDto)
     case messageDeleted(channelId: String, msgId: String)
+    /// The addressed bot was offline: the server already deleted the reply
+    /// placeholder (no `message_deleted` follows).
+    case botUnavailable(channelId: String, botId: String, placeholderMsgId: String)
+    /// A bot added suggested questions or resource cards to a finished message.
+    case contentDataUpdated(channelId: String, msgId: String, contentData: JSONValue?)
+    case fileTranscribed(channelId: String, fileId: String, status: String?, summary: String?)
+    case taskClaimCreated(channelId: String)
     case taskClaimUpdated(TaskClaimUpdate)
     case botTrace(channelId: String, TraceEventDto)
     case memberUpdated(channelId: String, memberId: String?)
@@ -90,7 +127,8 @@ enum ResourceError: Error, LocalizedError {
 //   1. connect, send {"type":"auth","token":...} within 10 s
 //   2. on {"type":"auth_ok"} send {"type":"subscribe","channel_id":...} per channel
 //   3. on {"type":"subscribed"} the app RESTs ?since_seq= to heal any gap
-// Close codes: 4401 auth, 4403 not member, 4408 backpressure (catch up + resubscribe).
+// Close codes: 4401 auth, 4408 backpressure (catch up + resubscribe). A refused
+// channel subscription is a `subscription_error` frame, not a close.
 // Reconnect: exponential backoff 1 s → 30 s. Unlike the web client's 10-retry
 // budget (masked there by natural page reloads), attempts are NOT capped —
 // a phone offline for a few minutes must pick realtime back up on its own.
@@ -150,13 +188,6 @@ final class ChatSocket: NSObject {
         subscriptions.insert(channelId)
         if isAuthed {
             sendJSON(["type": "subscribe", "channel_id": channelId])
-        }
-    }
-
-    func unsubscribe(channelId: String) {
-        subscriptions.remove(channelId)
-        if isAuthed {
-            sendJSON(["type": "unsubscribe", "channel_id": channelId])
         }
     }
 
@@ -247,11 +278,7 @@ final class ChatSocket: NSObject {
         receiveTask = nil
         pingTask?.cancel()
         pingTask = nil
-        if let code {
-            task?.cancel(with: code, reason: nil)
-        } else {
-            task?.cancel(with: .goingAway, reason: nil)
-        }
+        task?.cancel(with: code ?? .goingAway, reason: nil)
         task = nil
         isAuthed = false
         failPendingResources(.notConnected)
@@ -330,12 +357,6 @@ final class ChatSocket: NSObject {
                     if task.closeCode.rawValue == 4401 {
                         pauseForAuthenticationRefresh(reason: "session token expired or revoked")
                         return
-                    } else if task.closeCode.rawValue == 4403 {
-                        // "not a channel member": one stale subscription would
-                        // otherwise be replayed after every reconnect, closing
-                        // the socket in a loop. Drop the set — attached models
-                        // re-subscribe what they still need on .connected.
-                        subscriptions.removeAll()
                     }
                     scheduleReconnect()
                 }
@@ -364,16 +385,32 @@ final class ChatSocket: NSObject {
         let data: T
     }
 
+    /// `resource_res` (server/src/resource/mod.rs `ok_res` / `err_res`).
     private struct ResourceResFrame: Decodable {
         let reqId: String
         let ok: Bool
         let data: JSONValue?
-        let code: String?
-        let error: String?
+        let error: ErrorBody?
+
+        struct ErrorBody: Decodable {
+            let code: String?
+            let message: String?
+        }
 
         enum CodingKeys: String, CodingKey {
             case reqId = "req_id"
-            case ok, data, code, error
+            case ok, data, error
+        }
+    }
+
+    private struct SubscriptionErrorFrame: Decodable {
+        let channelId: String
+        let code: String?
+        let reason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case channelId = "channel_id"
+            case code, reason
         }
     }
 
@@ -404,6 +441,14 @@ final class ChatSocket: NSObject {
         return payload.data.channelId
     }
 
+    static func resourceResponse(from data: Data) -> (reqId: String, result: Result<JSONValue, ResourceError>)? {
+        guard let frame = try? JSONDecoder().decode(ResourceResFrame.self, from: data) else { return nil }
+        if frame.ok {
+            return (frame.reqId, .success(frame.data ?? .null))
+        }
+        return (frame.reqId, .failure(.server(code: frame.error?.code, message: frame.error?.message)))
+    }
+
     static func taskClaimUpdate(from data: Data) -> TaskClaimUpdate? {
         guard let head = try? JSONDecoder().decode(FrameHead.self, from: data),
               head.type == "task_claim_updated",
@@ -414,8 +459,12 @@ final class ChatSocket: NSObject {
     }
 
     private func handleFrame(_ text: String) {
+        let decoder = JSONDecoder()
         guard let data = text.data(using: .utf8),
-              let head = try? JSONDecoder().decode(FrameHead.self, from: data) else { return }
+              let head = try? decoder.decode(FrameHead.self, from: data) else { return }
+        func payload<T: Decodable>(_ type: T.Type) -> T? {
+            (try? decoder.decode(DataEnvelope<T>.self, from: data))?.data
+        }
 
         switch head.type {
         // ---- Control frames (ServerControl) ----
@@ -438,6 +487,14 @@ final class ChatSocket: NSObject {
             if let channelId = head.channelId {
                 onEvent?(.subscribed(channelId: channelId))
             }
+        case "subscription_error":
+            if let frame = try? decoder.decode(SubscriptionErrorFrame.self, from: data) {
+                Self.logger.notice("Realtime subscription refused code=\(frame.code ?? "unknown", privacy: .public)")
+                // Don't replay a refused channel after every reconnect; a model
+                // that regains access subscribes again.
+                subscriptions.remove(frame.channelId)
+                onEvent?(.subscriptionDenied(channelId: frame.channelId, code: frame.code, reason: frame.reason))
+            }
         case "unsubscribed", "pong":
             break
         case "error":
@@ -445,76 +502,95 @@ final class ChatSocket: NSObject {
 
         // ---- Event envelope frames (WireFrame) ----
         case "message":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<MessageDto>.self, from: data) {
-                onEvent?(.message(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let message = payload(MessageDto.self) {
+                onEvent?(.message(channelId: channelId, message))
             }
         case "message_stream":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<StreamDelta>.self, from: data) {
-                onEvent?(.messageStream(channelId: channelId, msgId: payload.data.msgId, delta: payload.data.delta))
+            if let channelId = head.channelId, let stream = payload(StreamDelta.self) {
+                onEvent?(.messageStream(channelId: channelId, msgId: stream.msgId, delta: stream.delta))
             }
         case "message_done":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<MessageDto>.self, from: data) {
-                onEvent?(.messageDone(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let message = payload(MessageDto.self) {
+                onEvent?(.messageDone(channelId: channelId, message))
             }
         case "message_deleted":
+            if let channelId = head.channelId, let deleted = payload(DeletedPayload.self) {
+                onEvent?(.messageDeleted(channelId: channelId, msgId: deleted.msgId))
+            }
+        case "bot_unavailable":
             if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<DeletedPayload>.self, from: data) {
-                onEvent?(.messageDeleted(channelId: channelId, msgId: payload.data.msgId))
+               let payload = try? decoder.decode(DataEnvelope<BotUnavailablePayload>.self, from: data) {
+                onEvent?(.botUnavailable(
+                    channelId: channelId,
+                    botId: payload.data.botId,
+                    placeholderMsgId: payload.data.placeholderMsgId
+                ))
+            }
+        case "suggestions_updated", "cards_updated":
+            if let channelId = head.channelId,
+               let payload = try? decoder.decode(DataEnvelope<ContentDataPayload>.self, from: data) {
+                onEvent?(.contentDataUpdated(
+                    channelId: channelId,
+                    msgId: payload.data.msgId,
+                    contentData: payload.data.contentData
+                ))
+            }
+        case "file_transcribed":
+            if let channelId = head.channelId,
+               let payload = try? decoder.decode(DataEnvelope<FileTranscribedPayload>.self, from: data) {
+                onEvent?(.fileTranscribed(
+                    channelId: channelId,
+                    fileId: payload.data.fileId,
+                    status: payload.data.status,
+                    summary: payload.data.summary
+                ))
+            }
+        case "task_claim_created":
+            if let channelId = head.channelId {
+                onEvent?(.taskClaimCreated(channelId: channelId))
             }
         case "task_claim_updated":
             if let update = Self.taskClaimUpdate(from: data) {
                 onEvent?(.taskClaimUpdated(update))
             }
         case "bot_trace":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<TraceEventDto>.self, from: data) {
-                onEvent?(.botTrace(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let trace = payload(TraceEventDto.self) {
+                onEvent?(.botTrace(channelId: channelId, trace))
             }
         case "member_updated":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<MemberUpdatedPayload>.self, from: data) {
-                onEvent?(.memberUpdated(channelId: channelId, memberId: payload.data.memberId))
+            if let channelId = head.channelId, let member = payload(MemberUpdatedPayload.self) {
+                onEvent?(.memberUpdated(channelId: channelId, memberId: member.memberId))
             }
         case "presence":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<PresencePayload>.self, from: data) {
-                onEvent?(.presence(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let presence = payload(PresencePayload.self) {
+                onEvent?(.presence(channelId: channelId, presence))
             }
         case "voice_transcript_final":
-            if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(VoiceTranscriptPayload.self, from: data) {
-                onEvent?(.voiceTranscript(channelId: channelId, payload.data))
+            if let channelId = head.channelId, let segment = payload(VoiceTranscriptSegment.self) {
+                onEvent?(.voiceTranscript(channelId: channelId, segment))
             }
         case "notification":
-            if let payload = try? JSONDecoder().decode(DataEnvelope<NotificationDto>.self, from: data) {
-                onEvent?(.notification(payload.data))
+            if let notification = payload(NotificationDto.self) {
+                onEvent?(.notification(notification))
             } else if let channelId = Self.directMessageChannelId(fromNotificationFrame: data) {
                 onEvent?(.dmCreated(channelId: channelId))
             }
         case "notification_resolved":
-            if let payload = try? JSONDecoder().decode(DataEnvelope<NotificationResolvedPayload>.self, from: data) {
-                onEvent?(.notificationResolved(id: payload.data.id))
+            if let resolved = payload(NotificationResolvedPayload.self) {
+                onEvent?(.notificationResolved(id: resolved.id))
             }
         case "dm_created":
-            if let payload = try? JSONDecoder().decode(DataEnvelope<DMCreatedPayload>.self, from: data) {
-                onEvent?(.dmCreated(channelId: payload.data.channelId))
+            if let created = payload(DMCreatedPayload.self) {
+                onEvent?(.dmCreated(channelId: created.channelId))
             }
         case "resource_res":
-            if let frame = try? JSONDecoder().decode(ResourceResFrame.self, from: data),
-               let continuation = pendingResources.removeValue(forKey: frame.reqId) {
-                if frame.ok {
-                    continuation.resume(returning: frame.data ?? .null)
-                } else {
-                    continuation.resume(throwing: ResourceError.server(code: frame.code, message: frame.error))
-                }
+            if let response = Self.resourceResponse(from: data),
+               let continuation = pendingResources.removeValue(forKey: response.reqId) {
+                continuation.resume(with: response.result.mapError { $0 as Error })
             }
         case "board_signal":
             if let channelId = head.channelId,
-               let payload = try? JSONDecoder().decode(DataEnvelope<BoardSignalPayload>.self, from: data),
-               let board = payload.data.board {
+               let board = payload(BoardSignalPayload.self)?.board {
                 onEvent?(.boardSignal(channelId: channelId, board: board))
             }
 

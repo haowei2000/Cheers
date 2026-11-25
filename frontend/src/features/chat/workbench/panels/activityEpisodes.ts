@@ -245,7 +245,6 @@ export function buildEpisodes(
       bestN = count;
     }
     ep.dominantActorId = best;
-    if (!ep.title) ep.title = ""; // filled by the panel from actor name
   }
 
   return episodes.reverse(); // newest episode first

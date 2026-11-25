@@ -258,7 +258,7 @@ pub async fn sweep_once(
 
     let mut reclaimed = 0usize;
     for row in rows {
-        let Some(msg_id) = Some(row.msg_id.clone()).and_then(|s| s.parse::<Uuid>().ok()) else {
+        let Ok(msg_id) = row.msg_id.parse::<Uuid>() else {
             continue;
         };
 

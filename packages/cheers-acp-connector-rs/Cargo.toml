@@ -7,7 +7,7 @@ members = [".", "bridge-protocol"]
 
 [package]
 name = "cce-acp-connector"
-version = "0.1.57"
+version = "0.1.59"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
@@ -19,13 +19,12 @@ path = "src/main.rs"
 portable-pty = "0.9"
 # Official ACP runtime and protocol types, consumed through the main crate's
 # schema re-export. The connector remains on stable wire protocol
-# v1; only the SDK's v1 `unstable_elicitation` API surface is enabled so Cheers
-# can implement structured form and URL interactions. Protocol v2 and native
-# MCP-over-ACP remain disabled.
+# v1. Since 3.0 the v1 elicitation types are stable, so no `unstable_*` feature
+# is enabled; protocol v2 and native MCP-over-ACP remain disabled.
 # The official runtime is the default in 0.1.37; the hand-written transport is
 # retained only as the one-release rollback. Raw hooks preserve opaque update,
 # permission, and elicitation extensions (see ACP_RUST_SDK_ADOPTION.md).
-agent-client-protocol = { version = "2.0.0", features = ["unstable_elicitation"] }
+agent-client-protocol = "3.6.0"
 # Tier B: adapt tokio ChildStdin/ChildStdout (tokio::io) to the futures_io
 # AsyncRead/AsyncWrite that the runtime crate's `ByteStreams` transport expects.
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -37,6 +36,12 @@ cheers-bridge-protocol = { path = "bridge-protocol" }
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
 futures-util = "0.3"
+# Loopback credential gateway server (src/credential_gateway.rs); already in the
+# tree through reqwest, so only the server features are new.
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 libc = "0.2"
 mime_guess = "2"
 # Filesystem watch for remote-workspace live-refresh (workspace_req watch/unwatch →
@@ -46,7 +51,7 @@ notify = "8"
 rand = "0.10"
 # Self-update downloads (signed manifest + binaries) through the gateway's
 # release proxy. rustls-only, matching tokio-tungstenite's TLS stack.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Content etags for safe remote writes: lowercase-hex SHA-256 of raw file bytes
@@ -66,7 +71,7 @@ similar = { version = "3.1.1", default-features = false, features = ["text"] }
 
 [dev-dependencies]
 tempfile = "3"
-toml_edit = "0.22"
+toml_edit = "0.25"
 # `test-util` (not part of tokio's "full") gives tests a paused clock, so a
 # concurrency test proves a task parked on a semaphore instead of sleeping long
 # enough to make the scheduler probably do the right thing.

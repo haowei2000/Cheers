@@ -3,10 +3,9 @@ import { AddContextIcon } from "@/components/ui/editorial-icons";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Captions, Download, Eye, FileText, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
-import { apiFetch } from "@/api/client";
 import { transcribeFile } from "@/api/files";
 import type { FileInfo } from "@/types";
-import { downloadFile, formatBytes, isAudioFile } from "./fileUtils";
+import { downloadFile, formatBytes, isAudioFile, useDownloadObjectUrl } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
 import { useImageObjectUrl } from "./imageObjectUrl";
 import { useNearViewport } from "@/hooks/useNearViewport";
@@ -73,25 +72,7 @@ function ImagePreview({ file, onOpen }: { file: FileInfo; onOpen: () => void }) 
 // the blob with auth and play an object URL. When the transcription worker has
 // produced a transcript snippet (file.summary), show it under the player.
 function AudioTile({ file }: { file: FileInfo }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let url: string | null = null;
-    let alive = true;
-    apiFetch(`/files/${file.file_id}/download`)
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("dl"))))
-      .then((b) => {
-        if (alive) {
-          url = URL.createObjectURL(b);
-          setSrc(url);
-        }
-      })
-      .catch(() => alive && setFailed(true));
-    return () => {
-      alive = false;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [file.file_id]);
+  const { src, failed } = useDownloadObjectUrl(file.file_id);
 
   return (
     <div className="flex max-w-[320px] flex-col gap-1 rounded-sm bg-zinc-800/60 px-3 py-2">

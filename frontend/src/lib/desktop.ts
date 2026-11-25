@@ -39,7 +39,8 @@ export interface DownloadedExtension {
   source: string;
 }
 
-function bytesFromBase64(value: string): Uint8Array {
+/** Decode standard base64 into raw bytes. */
+export function bytesFromBase64(value: string): Uint8Array {
   const binary = atob(value);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
@@ -70,24 +71,6 @@ export async function installPersonalExtension(id: string, bytes: Uint8Array, sh
 export async function removePersonalExtension(id: string): Promise<void> {
   await invokeDesktop("extensions_remove", { id });
   window.dispatchEvent(new Event("cheers:extensions-changed"));
-}
-
-/** Pick and read a development package without installing it. */
-export async function pickDevelopmentExtension(): Promise<(PersonalExtension & { path: string }) | null> {
-  if (!isTauri()) return null;
-  const { open } = await import("@tauri-apps/plugin-dialog");
-  const path = await open({
-    directory: false,
-    multiple: false,
-    filters: [{ name: "Cheers extension", extensions: ["cheers-extension"] }],
-  });
-  if (typeof path !== "string") return null;
-  const extension = await invokeDesktop<PersonalExtension>("extension_dev_read", { path });
-  return { ...extension, path };
-}
-
-export function readDevelopmentExtension(path: string): Promise<PersonalExtension> {
-  return invokeDesktop<PersonalExtension>("extension_dev_read", { path });
 }
 
 /** Launch-at-login (login item). Wraps @tauri-apps/plugin-autostart. */

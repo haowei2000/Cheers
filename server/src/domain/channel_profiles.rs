@@ -66,14 +66,11 @@ pub async fn get(db: &PgPool, channel_id: &str) -> Result<Option<ChannelProfile>
     )
     .fetch_optional(db)
     .await?;
-    row.map(|row| {
-        Ok(ChannelProfile {
-            profile: row.profile.clone(),
-            config: row.config.clone(),
-            status: row.status.clone(),
-        })
-    })
-    .transpose()
+    Ok(row.map(|row| ChannelProfile {
+        profile: row.profile,
+        config: row.config,
+        status: row.status,
+    }))
 }
 
 pub async fn put_code(
@@ -106,9 +103,9 @@ pub async fn put_code(
     .fetch_one(db)
     .await?;
     Ok(ChannelProfile {
-        profile: row.profile.clone(),
-        config: row.config.clone(),
-        status: row.status.clone(),
+        profile: row.profile,
+        config: row.config,
+        status: row.status,
     })
 }
 
@@ -128,14 +125,11 @@ pub async fn update_code_status(
     )
     .fetch_optional(db)
     .await?;
-    row.map(|row| {
-        Ok(ChannelProfile {
-            profile: row.profile.clone(),
-            config: row.config.clone(),
-            status: row.status.clone(),
-        })
-    })
-    .transpose()
+    Ok(row.map(|row| ChannelProfile {
+        profile: row.profile,
+        config: row.config,
+        status: row.status,
+    }))
 }
 
 #[cfg(test)]

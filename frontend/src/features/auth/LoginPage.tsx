@@ -1,4 +1,3 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -289,6 +288,15 @@ export default function LoginPage() {
     }
   }
 
+  function beginOAuth(provider: "apple" | "google" | "github", label: string) {
+    sessionStorage.setItem("cheers.oauth_redirect", redirect);
+    setLoading(true);
+    void startOAuth(provider).catch((error) => {
+      setLoading(false);
+      toast.error(errorMessage(error, `${label} sign-in failed`));
+    });
+  }
+
   const factorHelp = (() => {
     const parts: string[] = [];
     if (allowedFactors.includes("totp")) parts.push("authenticator app");
@@ -389,7 +397,7 @@ export default function LoginPage() {
               Use Passkey
             </Button>
           )}
-          <UiButton action="signIn" controlWidth="fill" variant="plain"
+          <Button action="signIn" controlWidth="fill" variant="plain"
             type="button"
             className={` ${publicLinkClass}`}
             onClick={() => {
@@ -403,7 +411,7 @@ export default function LoginPage() {
             }}
           >
             Back to sign in
-          </UiButton>
+          </Button>
         </form> : <form
           onSubmit={handleSubmit}
           className={publicPanelClass}
@@ -421,14 +429,7 @@ export default function LoginPage() {
                   variant="secondary"
                   disabled={loading || accountLinkProvider === "apple"}
                   title={accountLinkProvider === "apple" ? "Sign in with an existing method before linking Apple" : undefined}
-                  onClick={() => {
-                    sessionStorage.setItem("cheers.oauth_redirect", redirect);
-                    setLoading(true);
-                    void startOAuth("apple").catch((error) => {
-                      setLoading(false);
-                      toast.error(errorMessage(error, "Apple sign-in failed"));
-                    });
-                  }}
+                  onClick={() => beginOAuth("apple", "Apple")}
                 >
                   <AppleMark className="h-4 w-4" />
                 </Button>
@@ -439,14 +440,7 @@ export default function LoginPage() {
                   variant="secondary"
                   disabled={loading || accountLinkProvider === "google"}
                   title={accountLinkProvider === "google" ? "Sign in with an existing method before linking Google" : undefined}
-                  onClick={() => {
-                    sessionStorage.setItem("cheers.oauth_redirect", redirect);
-                    setLoading(true);
-                    void startOAuth("google").catch((error) => {
-                      setLoading(false);
-                      toast.error(errorMessage(error, "Google sign-in failed"));
-                    });
-                  }}
+                  onClick={() => beginOAuth("google", "Google")}
                 >
                   <GoogleMark className="h-4 w-4" />
                 </Button>
@@ -457,14 +451,7 @@ export default function LoginPage() {
                   variant="secondary"
                   disabled={loading || accountLinkProvider === "github"}
                   title={accountLinkProvider === "github" ? "Sign in with an existing method before linking GitHub" : undefined}
-                  onClick={() => {
-                    sessionStorage.setItem("cheers.oauth_redirect", redirect);
-                    setLoading(true);
-                    void startOAuth("github").catch((error) => {
-                      setLoading(false);
-                      toast.error(errorMessage(error, "GitHub sign-in failed"));
-                    });
-                  }}
+                  onClick={() => beginOAuth("github", "GitHub")}
                 >
                   <GitHubMark className="h-4 w-4" />
                 </Button>

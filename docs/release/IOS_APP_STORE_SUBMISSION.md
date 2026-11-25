@@ -139,7 +139,7 @@ The current codebase has meaningful controls: RS256 bearer-token authentication,
 rate-limited login and registration, channel/file authorization checks,
 gateway-proxied object storage, file response hardening, Keychain token storage,
 and explicit CORS/WebSocket-origin controls. The two past M1 vulnerabilities
-recorded in `docs/SECURITY_REVIEW_M1.md` are fixed, but that review is historical
+recorded in `docs/archive/SECURITY_REVIEW_M1.md` are fixed, but that review is historical
 and must not be treated as a production sign-off.
 
 The release-blocking risks are operational configuration and agent execution

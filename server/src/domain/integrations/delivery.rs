@@ -113,19 +113,17 @@ pub async fn claim(db: &PgPool) -> Result<Vec<ClaimedEvent>, AppError> {
     .fetch_all(db)
     .await?;
 
-    rows.into_iter()
-        .map(|row| {
-            Ok(ClaimedEvent {
-                integration_id: row.integration_id.clone(),
-                installation_id: row.installation_id.clone(),
-                event_id: row.event_id.clone(),
-                event_type: row.event_type.clone(),
-                payload: row.payload.clone(),
-                attempt: row.process_attempts.clone(),
-            })
+    Ok(rows
+        .into_iter()
+        .map(|row| ClaimedEvent {
+            integration_id: row.integration_id,
+            installation_id: row.installation_id,
+            event_id: row.event_id,
+            event_type: row.event_type,
+            payload: row.payload,
+            attempt: row.process_attempts,
         })
-        .collect::<Result<Vec<_>, sqlx::Error>>()
-        .map_err(AppError::Db)
+        .collect())
 }
 
 async fn mark_processed(

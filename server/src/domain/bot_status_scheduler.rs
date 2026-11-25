@@ -105,7 +105,7 @@ async fn prompt_one(state: &AppState, bot_id: &str, owner: &str) -> anyhow::Resu
     .await
     .ok()
     .flatten()
-    .and_then(|r| Some(r.role.clone()))
+    .map(|r| r.role)
     .unwrap_or_else(|| "member".to_string());
     let may_prompt = crate::domain::acp_policy::allows(
         &state.db,

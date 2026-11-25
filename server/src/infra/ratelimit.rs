@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use dashmap::DashMap;
+use dashmap::{mapref::one::RefMut, DashMap};
 
 struct Window {
     count: u32,
@@ -52,6 +52,12 @@ impl FixedWindowLimiter {
 
     /// Record one failed attempt for `key`, opening or extending its window.
     pub fn record_failure(&self, key: &str) {
+        let mut e = self.current_window(key);
+        e.count = e.count.saturating_add(1);
+    }
+
+    /// `key`'s window, opened or restarted when absent or expired.
+    fn current_window(&self, key: &str) -> RefMut<'_, String, Window> {
         let now = Instant::now();
         // Bound memory under a spoofed-key flood: evict only already-expired windows
         // (never live ones), so a flood of throwaway keys can't reset the counters of
@@ -74,7 +80,7 @@ impl FixedWindowLimiter {
             e.reset_at = now + self.window;
             e.admitted_events.clear();
         }
-        e.count = e.count.saturating_add(1);
+        e
     }
 
     /// Clear a key's window after a successful attempt.
@@ -102,28 +108,7 @@ impl FixedWindowLimiter {
     }
 
     fn try_hit_inner(&self, key: &str, event_id: Option<&str>) -> bool {
-        let now = Instant::now();
-        // Bound memory under a spoofed-key flood: evict only already-expired windows
-        // (never live ones), so a flood of throwaway keys can't reset the counters of
-        // clients with in-progress windows. If the map is STILL over the cap afterwards
-        // — a sustained flood of >100k *live* distinct keys — fall back to a hard clear
-        // so memory stays bounded (retain-only would free nothing and grow unbounded).
-        if self.hits.len() > 100_000 {
-            self.hits.retain(|_, v| v.reset_at > now);
-            if self.hits.len() > 100_000 {
-                self.hits.clear();
-            }
-        }
-        let mut e = self.hits.entry(key.to_string()).or_insert_with(|| Window {
-            count: 0,
-            reset_at: now + self.window,
-            admitted_events: HashSet::new(),
-        });
-        if now >= e.reset_at {
-            e.count = 0;
-            e.reset_at = now + self.window;
-            e.admitted_events.clear();
-        }
+        let mut e = self.current_window(key);
         if event_id.is_some_and(|id| e.admitted_events.contains(id)) {
             return true;
         }

@@ -12,6 +12,13 @@ import {
   publicPanelClass,
 } from "@/components/public/PublicPageShell";
 
+/** Read and clear the post-OAuth destination; same-app paths only. */
+function takeOAuthRedirect(fallback: string): string {
+  const redirect = sessionStorage.getItem("cheers.oauth_redirect") || fallback;
+  sessionStorage.removeItem("cheers.oauth_redirect");
+  return redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : fallback;
+}
+
 export default function OAuthCallbackPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -36,16 +43,9 @@ export default function OAuthCallbackPage() {
       handledRef.current = true;
       const label = linked === "google" ? "Google" : linked;
       setLinkedMessage(`${label} linked to your account.`);
-      const redirect =
-        sessionStorage.getItem("cheers.oauth_redirect") || "/settings/account";
-      sessionStorage.removeItem("cheers.oauth_redirect");
+      const redirect = takeOAuthRedirect("/settings/account");
       window.setTimeout(() => {
-        navigate(
-          redirect.startsWith("/") && !redirect.startsWith("//")
-            ? redirect
-            : "/settings/account",
-          { replace: true }
-        );
+        navigate(redirect, { replace: true });
       }, 600);
       return;
     }
@@ -80,9 +80,7 @@ export default function OAuthCallbackPage() {
           display_name: outcome.display_name ?? null,
           role: outcome.role,
         }, outcome.access_token);
-        const redirect = sessionStorage.getItem("cheers.oauth_redirect") || "/chat";
-        sessionStorage.removeItem("cheers.oauth_redirect");
-        navigate(redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/chat", { replace: true });
+        navigate(takeOAuthRedirect("/chat"), { replace: true });
       })
       .catch((reason) => {
         if (

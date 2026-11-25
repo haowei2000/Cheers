@@ -3,13 +3,12 @@ import SwiftUI
 @main
 struct CheersApp: App {
     @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
-    @State private var appModel = AppModel()
     @State private var shellModel = ShellModel()
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(appModel)
+                .environment(pushDelegate.appModel)
                 .environment(shellModel)
         }
     }
@@ -52,6 +51,11 @@ struct RootView: View {
                     await app.refreshSessionIfNeeded()
                     app.resumeRealtimeAfterForeground()
                 }
+            }
+        }
+        .onChange(of: app.pendingStepUp) { _, request in
+            if let request {
+                StepUpPresenter.present(request, app: app)
             }
         }
     }

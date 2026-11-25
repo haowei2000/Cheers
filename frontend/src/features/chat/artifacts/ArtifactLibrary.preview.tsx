@@ -10,6 +10,7 @@ import "../workbench/lens/builtins";
 import "@/index.css";
 
 const files: Record<string, string> = {
+  "rows.json": '[{"name":"Migration example","status":"ready"}]',
   "Report.md": "# Research report\n\nOne artifact, available from the conversation and the library.\n",
   "Analysis.html": '<main style="padding:24px"><h1>Sales analysis</h1><p>HTML artifact preview</p></main>',
   "Dashboard.tsx": 'export default function Dashboard() { return <main data-cheers-canvas><article data-cheers-id="revenue" data-cheers-position="30,40" style={{padding:24}}>Revenue: €42,180</article></main>; }',
@@ -25,7 +26,16 @@ artifacts.push({ ...artifacts[0], artifact_id: "00000000-0000-4000-8000-00000000
   uri: "cheers:artifact/00000000-0000-4000-8000-000000000009", title: "Expired attachment.pdf",
   source_kind: "attachment", path: null, availability: "expired" });
 const send: SendResourceReq = async (verb, params) => {
-  if (verb === "channel.artifacts.list") return { artifacts, next_cursor: null };
+  if (verb === "channel.artifacts.list") return { artifacts: [...artifacts], next_cursor: null };
+  if (verb === "channel.artifacts.rename") {
+    const item = artifacts.find((item) => item.artifact_id === params.artifact_id);
+    if (!item || item.version !== params.if_version) throw new Error("VERSION_CONFLICT");
+    const next = String(params.new_path);
+    if (next in files) throw new Error("PATH_CONFLICT");
+    files[next] = files[item.path!]; delete files[item.path!];
+    item.path = next; item.title = next; item.version++;
+    return { artifact: { ...item } };
+  }
   if (verb === "channel.artifacts.get" || verb === "channel.artifacts.resolve" || verb === "channel.artifacts.read" || verb === "channel.artifacts.update") {
     const item = artifacts.find((item) => item.artifact_id === params.artifact_id || item.uri === String(params.uri ?? "").split("#")[0] || item.path === params.path);
     if (!item) throw new Error("Artifact not found");
@@ -48,8 +58,8 @@ const send: SendResourceReq = async (verb, params) => {
   throw new Error(`Unsupported preview operation: ${verb}`);
 };
 const ctx: WorkbenchContext = { active: true, channelId: "preview", fs: makeFsClient(send, "preview"),
-  sendResourceReq: send, pinned: [], togglePin: () => {}, rendererExtensions: [], bindings: {},
-  setBinding: () => {}, configs: {}, composeMessage: (text) => { document.title = text; } };
+  sendResourceReq: send, pinned: [], togglePin: () => {}, rendererExtensions: [],
+  composeMessage: (text) => { document.title = text; } };
 
 createRoot(document.getElementById("root")!).render(<ThemeProvider><ContextActionsProvider><AnnotationPreviewProvider>
   <main className="h-screen bg-panel text-content-primary"><ArtifactLibrary ctx={ctx} /></main>

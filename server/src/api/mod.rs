@@ -1,4 +1,5 @@
 pub mod acp_capability;
+pub mod agent_uploads;
 pub mod apple_auth;
 pub mod approval;
 pub mod auth;
@@ -30,7 +31,9 @@ pub mod passkey;
 pub mod push;
 pub mod remote_executions;
 pub mod resources;
+pub mod runtime_settings;
 pub mod scheduled_messages;
+pub mod session_attach;
 pub mod session_control;
 pub mod stt_settings;
 pub mod task_claims;

@@ -157,7 +157,8 @@ All policy tables are optional; each key falls back to the default below.
 
 | Key                   | Type     | Default | Meaning |
 |-----------------------|----------|---------|---------|
-| `default_cwd`         | string   | none    | CWD the agent starts in when the Backend doesn't set one. |
+| `default_cwd`         | string   | none    | Base for channels the Backend pins no cwd for: each runs in `<default_cwd>/.cheers/channels/<channel_id>` (created on first use; `.cheers/` is git-ignored). |
+| `shared_cwd`          | bool     | `false` | Run those channels directly in `default_cwd` instead, sharing one directory (the pre-isolation behaviour). Not a sandbox either way. |
 | `backend_may_set_cwd` | bool     | `false` | May the Backend pick the session cwd (from `allowed_roots`)? |
 | `allowed_roots`       | string[] | `[]`    | The only directories the session cwd + additional dirs may live under. |
 | `git_ops`             | string   | `"read"`| `"read"` = expose read-only `git_status`/`git_diff`/`git_log`; `"off"` = no git resources. |
@@ -233,6 +234,7 @@ All policy tables are optional; each key falls back to the default below.
 
 | Key                                | Type     | Default | Meaning |
 |------------------------------------|----------|---------|---------|
+| `delivery`                         | string   | `"auto"` | How the Agent reaches Cheers MCP. `"auto"`: decided per Agent build from what the Gateway observed: `direct` for an Agent that picks up renewed tokens (an unjudged build is tested by renewing one channel's token at its second prompt), `gateway` for one that keeps old tokens, switched by restarting the Agent once idle; the verdict is cached per `name@version` in the state file. `"direct"`: the Agent calls the Gateway's `/mcp` with the bearer in `mcpServers[].headers`. `"gateway"`: the Agent gets `http://127.0.0.1:<port>/mcp` and a stable per-channel local secret, and the connector swaps in the real, rotated token on each request. The Gateway's `MCP_ALLOWED_DELIVERY_MODES` always wins over this setting. See [MCP_AUTH_ISOLATION](MCP_AUTH_ISOLATION.md) §3.4.1, §3.5. |
 | `backend_may_inject_extra_servers` | bool     | `false` | May the Backend add more MCP servers at runtime? **Inert today** — see below. |
 | `allowed_servers`                  | string[] | `[]`    | Allow-list of server names the Backend may inject. **Inert today** — see below. |
 | `servers`                          | array of tables | `[]` | Extra MCP servers *you* define locally. Enforced: these are injected as written (minus any the Agent's `mcpCapabilities` cannot transport). |

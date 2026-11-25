@@ -43,7 +43,8 @@ describe("shared Workbench configuration transactions", () => {
       throw new ResourceError("VERSION_CONFLICT", "changed");
     }).mockImplementation(write);
     await mutateWorkbenchConfiguration(backend.fs, (document) => { document.pinned = [...document.pinned as string[], "human.md"]; });
-    expect(backend.latest()).toMatchObject({ pinned: ["agent.md", "human.md"], bindings: { "board.json": "builtin:chart" }, future: { keep: true } });
+    expect(backend.latest()).toMatchObject({ pinned: ["agent.md", "human.md"], future: { keep: true } });
+    expect(backend.latest()).not.toHaveProperty("bindings");
     expect(backend.fs.write).toHaveBeenCalledTimes(2);
     expect(vi.mocked(backend.fs.write).mock.calls.map((call) => call[2])).toEqual([1, 2]);
   });

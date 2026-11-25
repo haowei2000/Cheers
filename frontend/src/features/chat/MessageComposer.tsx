@@ -24,6 +24,7 @@ import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { isComposing } from "@/lib/ime";
 import { isTauri } from "@/lib/serverConfig";
+import { clientSessionGeneration } from "@/lib/clientSession";
 import {
   captureScreenshot,
   onQuickAttach,
@@ -32,11 +33,13 @@ import {
 } from "@/lib/desktopQuick";
 import { uploadFile, transcribeFile, getFileStatus } from "@/api/files";
 import type { FileInfo } from "@/types";
+import { ReplyComposerBanner } from "./ReplyComposerBanner";
+import type { ReplyTarget } from "./replyDraft";
 import { isAudioFile } from "./fileUtils";
 import { CommandPalette, type CommandCandidate } from "./CommandPalette";
 import { ExistingFilePicker } from "./ExistingFilePicker";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
-import { appendMentionToken } from "./mentionInsertion";
+import { appendMentionToken, createMentionContinuation, hasComposerBody, pickedMentionsInText } from "./mentionInsertion";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button as UiButton } from "@/components/ui/button";
 import { MenuOption } from "@/components/ui/menu-option";
@@ -50,6 +53,8 @@ import {
   clearComposerDrafts,
   getComposerDraft,
   persistComposerText,
+  persistComposerMentions,
+  restoreComposerMentions,
   restoreComposerText,
   stashComposerDraft,
   persistSuggestionBindings,
@@ -101,7 +106,20 @@ const GROUP_MENTIONS: MentionCandidate[] = [
 const mentionRank = (c: MentionCandidate): number =>
   c.type === "bot" ? 0 : c.type === "group" ? 1 : 2;
 
+/** Restored picks plus any mention a restored suggestion binding still carries. */
+function withBindingMentions(picked: MentionCandidate[], bindings: SuggestionBinding[]): MentionCandidate[] {
+  return [...picked, ...bindings.flatMap((b) =>
+    b.mention && !picked.some((p) => p.id === b.mention?.id) ? [b.mention] : [],
+  )];
+}
+
 interface Props {
+  /** Reply context is displayed above the body, never inserted into the draft. */
+  reply?: {
+    target: ReplyTarget;
+    senderName?: string;
+    onCancel: () => void;
+  };
   channelId?: string;
   channelName?: string;
   /** A fixed Session destination overrides @mention routing for this draft. */
@@ -130,7 +148,7 @@ interface Props {
       tokens matching `mentionables` are registered as picked mentions, so the
       suggested command routes to its bot when the user presses send. */
   prefill?: ComposerPrefill | null;
-  /** Bot turns currently streaming in the channel. With an empty draft the send
+  /** Bot turns currently streaming in the channel. With no message body the send
       button morphs into Stop; a typed draft always keeps Send (concurrent sends
       are legal in a channel chat). */
   streamingCount?: number;
@@ -155,6 +173,7 @@ interface PickerState {
 }
 
 function MessageComposerImpl({
+  reply,
   channelId,
   channelName,
   sessionTargetName,
@@ -189,13 +208,17 @@ function MessageComposerImpl({
   const [uploading, setUploading] = useState(false);
   // Mentions the user has picked, keyed by id. Routing source of truth.
   const [picked, setPicked] = useState<MentionCandidate[]>(
-    () => getComposerDraft(channelId)?.picked ?? restoreSuggestionBindings(channelId).flatMap((b) => b.mention ? [b.mention] : [])
+    () => withBindingMentions(restoreComposerMentions(channelId), restoreSuggestionBindings(channelId)),
   );
   const [picker, setPicker] = useState<PickerState | null>(null);
   // Paperclip → small menu (upload vs. pick existing) + the channel-file picker dialog.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const replyTarget = reply?.target;
+  useEffect(() => {
+    if (replyTarget) textareaRef.current?.focus();
+  }, [replyTarget]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const adjustHeight = useCallback(() => {
     const element = textareaRef.current;
@@ -231,9 +254,11 @@ function MessageComposerImpl({
   useEffect(() => {
     if (!prefill || prefill.seq === prefillSeq.current) return;
     prefillSeq.current = prefill.seq;
+    const replaceRecipients = prefill.kind === "mention" && !hasComposerBody(draftRef.current.text, draftRef.current.picked.map(p => p.label));
     setText((t) => {
       if (prefill.kind === "mention") {
-        return appendMentionToken(t, prefill.text.replace(/^@/, "").trim());
+        const base = replaceRecipients ? "" : t;
+        return appendMentionToken(base, prefill.text.replace(/^@/, "").trim());
       }
       if (prefill.kind === "suggestion") {
         return prefill.text;
@@ -247,13 +272,7 @@ function MessageComposerImpl({
       setSuggestionBindings([]);
     }
     if (prefill.kind === "clear") {
-      const el = textareaRef.current;
-      if (el) {
-        requestAnimationFrame(() => {
-          el.style.height = "auto";
-          el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-        });
-      }
+      requestAnimationFrame(adjustHeight);
       return;
     }
     const mentioned =
@@ -262,6 +281,7 @@ function MessageComposerImpl({
         : mentionables.filter((m) => prefill.text.includes(`@${m.label}`));
     if (mentioned.length) {
       setPicked((prev) => {
+        if (replaceRecipients) return mentioned;
         const have = new Set(prev.map((p) => p.id));
         return [...prev, ...mentioned.filter((m) => !have.has(m.id))];
       });
@@ -312,25 +332,17 @@ function MessageComposerImpl({
     setText(incomingText);
     setAttachments(mem?.attachments ?? []);
     const restoredBindings = mem?.suggestionBindings ?? restoreSuggestionBindings(channelId);
-    setPicked(() => {
-      const picked = mem?.picked ?? [];
-      return [...picked, ...restoredBindings.flatMap((b) => b.mention && !picked.some((p) => p.id === b.mention?.id) ? [b.mention] : [])];
-    });
+    setPicked(() => withBindingMentions(restoreComposerMentions(channelId), restoredBindings));
     setTranscribedIds(mem?.transcribedIds ?? new Set());
-    setSuggestionBindings(mem?.suggestionBindings ?? restoreSuggestionBindings(channelId));
+    setSuggestionBindings(restoredBindings);
     setBindingChannelId(channelId);
     setPicker(null);
     setAttachMenuOpen(false);
     setLibraryOpen(false);
     setVoiceWarning(null);
     stopDictationRef.current(true);
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-    });
-  }, [channelId]);
+    requestAnimationFrame(adjustHeight);
+  }, [channelId, adjustHeight]);
 
   // Unmount (e.g. mobile back-navigation unmounts ChannelView): keep the draft.
   useEffect(
@@ -347,6 +359,11 @@ function MessageComposerImpl({
     if (!channelId) return;
     persistComposerText(channelId, text);
   }, [channelId, text]);
+
+  useEffect(() => {
+    if (!channelId || bindingChannelId !== channelId) return;
+    persistComposerMentions(channelId, pickedMentionsInText(text, picked));
+  }, [channelId, bindingChannelId, picked, text]);
 
   useEffect(() => {
     if (!channelId || bindingChannelId !== channelId) return;
@@ -378,7 +395,7 @@ function MessageComposerImpl({
   // (mirrors submit()'s routing filter). Emitted up so the parent can show the
   // mentioned bot's session controls. Keyed by id so we only notify on change.
   const mentionedBots = useMemo(
-    () => picked.filter((p) => p.type === "bot" && text.includes(`@${p.label}`)),
+    () => pickedMentionsInText(text, picked).filter(p => p.type === "bot"),
     [picked, text]
   );
   const mentionKey = mentionedBots.map((b) => b.id).join(",");
@@ -714,7 +731,7 @@ function MessageComposerImpl({
       (fileIds.length
         ? attachments.map((a) => a.original_filename || "file").join(", ")
         : "");
-    if (!content || sending || uploading || disabled) return;
+    if ((!hasComposerBody(text, picked.map(p => p.label)) && !fileIds.length) || !content || sending || uploading || disabled) return;
     // Pause the send when untranscribed voice is headed at a bot that can't
     // hear it (capability persisted from the connector handshake). Audio-capable
     // bots get native audio blocks, so no warning there.
@@ -731,13 +748,15 @@ function MessageComposerImpl({
     // Only keep mentions whose "@label" token still survives in the text, then
     // split them: real members → mention_ids, group tokens → mention_names (the
     // server expands @all/@bots/… into concrete members).
-    const survivors = picked.filter((p) => typed.includes(`@${p.label}`));
+    const survivors = pickedMentionsInText(typed, picked);
     const ids = Array.from(
       new Set(survivors.filter((p) => p.type !== "group").map((p) => p.id))
     );
     const names = Array.from(
       new Set(survivors.filter((p) => p.type === "group").map((p) => p.id))
     );
+    const sentChannelId = channelId;
+    const sentSessionGeneration = clientSessionGeneration();
     const draft = { text, attachments, picked, transcribedIds, suggestionBindings };
     setSending(true);
     setText("");
@@ -746,23 +765,45 @@ function MessageComposerImpl({
     setAttachments([]);
     setTranscribedIds(new Set());
     setSuggestionBindings([]);
+    draftRef.current = { text: "", attachments: [], picked: [], transcribedIds: new Set(), suggestionBindings: [] };
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     try {
       await onSend(content, ids, fileIds, names);
+      if (clientSessionGeneration() !== sentSessionGeneration) return;
+      // Reuse the channel draft rather than introducing another recipient preference.
+      // Explicit session routing and group broadcasts are never carried forward.
+      const { text: nextText, picked: retained } = createMentionContinuation(survivors, mentionables, Boolean(sessionTargetName));
+      if (prevChannelRef.current === sentChannelId) {
+        // A reply or suggested-question prefill received during send takes priority.
+        if (!draftRef.current.text.trim()) {
+          setText(nextText);
+          setPicked(retained);
+        }
+      } else if (sentChannelId && !getComposerDraft(sentChannelId)) {
+        const nextDraft: ComposerDraft = { text: nextText, picked: retained, attachments: [], transcribedIds: new Set(), suggestionBindings: [] };
+        stashComposerDraft(sentChannelId, nextDraft);
+        persistComposerText(sentChannelId, nextText);
+        persistComposerMentions(sentChannelId, retained);
+      }
     } catch {
+      if (clientSessionGeneration() !== sentSessionGeneration) return;
       // The parent surfaces the send error. Restore the exact draft so an
       // offline bot or transient network failure never discards user input.
+      if (prevChannelRef.current !== sentChannelId) {
+        if (sentChannelId) {
+          stashComposerDraft(sentChannelId, draft);
+          persistComposerText(sentChannelId, draft.text);
+          persistComposerMentions(sentChannelId, draft.picked);
+          persistSuggestionBindings(sentChannelId, draft.suggestionBindings);
+        }
+        return;
+      }
       setText(draft.text);
       setAttachments(draft.attachments);
       setPicked(draft.picked);
       setTranscribedIds(draft.transcribedIds);
       setSuggestionBindings(draft.suggestionBindings);
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.style.height = "auto";
-        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-      });
+      requestAnimationFrame(adjustHeight);
     } finally {
       setSending(false);
       textareaRef.current?.focus();
@@ -831,13 +872,13 @@ function MessageComposerImpl({
   }
 
   const canSend =
-    (text.trim().length > 0 || attachments.length > 0) &&
+    (hasComposerBody(text, picked.map(p => p.label)) || attachments.length > 0) &&
     unresolvedSlots.length === 0 &&
     !sending &&
     !uploading &&
     !disabled;
 
-  // Send→stop morph: with an EMPTY draft while bot turns stream, the send slot
+  // Send→stop morph: with no message body while bot turns stream, the send slot
   // becomes Stop. A typed draft always keeps Send — interrupting is never the
   // price of talking. `stopping` guards double-fire; it re-arms when a new turn
   // starts streaming after all previous ones ended.
@@ -952,6 +993,17 @@ function MessageComposerImpl({
             : "focus-within:ring-1 focus-within:ring-content-strong/40"
         )}
       >
+        {reply && (
+          <ReplyComposerBanner
+            message={reply.target.message}
+            quote={reply.target.quote}
+            senderName={reply.senderName}
+            onCancel={() => {
+              reply.onCancel();
+              textareaRef.current?.focus();
+            }}
+          />
+        )}
         {unresolvedSlots.length > 0 && (
           <div className="flex min-w-0 flex-wrap items-center gap-1 px-2 pt-2" aria-label="Fill question references">
             {unresolvedSlots.map((slot) => (

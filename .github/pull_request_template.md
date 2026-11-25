@@ -16,14 +16,14 @@
 ## Test
 
 - [ ] Unit tests added/updated
-- [ ] Local `pytest` passed in full
+- [ ] Local `cargo test` passed for the touched Rust crates
 - [ ] Front-end `pnpm build` no error reported
 - [ ] Front-end `pnpm lint` / `pnpm test` / `pnpm build` passed
 
 ## Database migration
 
 - [ ] Does not involve database changes
-- [ ] New sequential sqlx migration added under `gateway/migrations/` and verified locally (`cargo build`, then run against a clean Postgres); no edits to already-applied migrations
+- [ ] New sequential sqlx migration added under `server/migrations/` and verified locally (`cargo build`, then run against a clean Postgres); no edits to already-applied migrations
 
 ## Security and Release Impact
 

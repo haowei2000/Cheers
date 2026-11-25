@@ -28,6 +28,8 @@ export interface ContextAction {
   shortcut?: string;
   disabled?: boolean;
   group?: ContextActionGroup;
+  /** Disable when the action moves focus into another surface, such as a reply. */
+  restoreFocus?: boolean;
   run: () => void | Promise<void>;
 }
 
@@ -82,30 +84,6 @@ export function quoteSelectedText(text: string): string {
     .join("\n");
 }
 
-export function isPointInSelection(
-  selection: Selection | null,
-  x: number,
-  y: number,
-): boolean {
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
-  const text = selection.toString();
-  if (!text.trim()) return false;
-  try {
-    const range = selection.getRangeAt(0);
-    const rects = range.getClientRects();
-    for (let i = 0; i < rects.length; i++) {
-      const r = rects[i];
-      if (!r) continue;
-      if (x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 2) {
-        return true;
-      }
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-
 export function selectionInSurface(
   surface: HTMLElement,
   selection: Selection | null = window.getSelection(),
@@ -146,6 +124,7 @@ function ContextActionsOverlay({
   const actions = useMemo(() => available(request.actions), [request.actions]);
   const isToolbar = request.source === "selection";
   const isSheet = request.source === "touch";
+  const readyToFocus = isSheet || position !== null;
 
   useLayoutEffect(() => {
     if (isSheet) return;
@@ -163,14 +142,14 @@ function ContextActionsOverlay({
 
   useEffect(() => {
     const panel = panelRef.current;
-    if (!panel) return;
-    if (isToolbar) return;
+    // Floating menus are hidden until measured; hidden elements cannot receive focus.
+    if (!panel || !readyToFocus || isToolbar) return;
     if (request.source === "keyboard") {
       panel.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
       return;
     }
     panel.focus({ preventScroll: true });
-  }, [isToolbar, request.source]);
+  }, [isToolbar, readyToFocus, request]);
 
   useEffect(() => {
     const closeWithoutFocus = () => onClose(false);
@@ -182,7 +161,7 @@ function ContextActionsOverlay({
     if (action.disabled) return;
     try {
       await action.run();
-      onClose(true);
+      onClose(action.restoreFocus !== false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Action failed");
     }
@@ -380,9 +359,6 @@ export function useContextSurface({
   return {
     onContextMenu(event: ReactMouseEvent<HTMLElement>) {
       if (disabled || preservesNativeContextMenu(event.target)) return;
-      // Preserve native context menu when right-clicking directly on selected text,
-      // allowing standard copy/search actions.
-      if (isPointInSelection(window.getSelection(), event.clientX, event.clientY)) return;
       const surface = surfaceRef.current;
       if (!surface) return;
       const selection = selectionInSurface(surface);

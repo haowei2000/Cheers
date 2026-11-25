@@ -1,11 +1,11 @@
-import { HelpLabel } from "@/components/ui/help-text";
+import { SettingsSection } from "@/components/ui/settings-card";
+import { AsyncContent } from "@/components/ui/async-content";
+import { PageLayout } from "@/components/ui/page-layout";
 import { SectionNav } from "@/components/ui/section-nav";
-import { ButtonGroup } from "@/components/ui/button-group";
 import { ContentActionScope } from "@/components/ui/content-action-scope";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft,
   CircleGauge,
   History,
   Laptop,
@@ -15,9 +15,7 @@ import {
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { isTauri } from "@/lib/serverConfig";
-import { SurfaceSpinner } from "@/components/ui/spinner";
 import { ActionButton } from "@/components/ui/action-button";
-import { Button as UiButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { BotIcon, FleetIcon } from "@/components/ui/editorial-icons";
 import { NavigationItem } from "@/components/ui/item";
@@ -30,10 +28,10 @@ import {
 } from "@/api/fleet";
 import { listBots } from "@/api/bots";
 import { useFleetLive } from "./useFleetLive";
-import { RouteChromeHeader } from "@/features/desktop/RouteChromeHeader";
 import { CreateBotDialog } from "@/features/bots/CreateBotDialog";
 import { CreateHostWizard } from "@/features/bots/CreateHostWizard";
 import { BotDetailPanel } from "@/features/bots/BotDetailPanel";
+import { mcpStateTone } from "@/features/bots/hostLifecycle";
 import type { BotItem } from "@/types";
 import { FleetAudit } from "./FleetAudit";
 import { FleetBots } from "./FleetBots";
@@ -93,6 +91,8 @@ export default function FleetPage() {
   const [audit, setAudit] = useState<FleetAuditEvent[]>([]);
   const [catalog, setCatalog] = useState<BotItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [botEditorState, setBotEditorState] = useState({ dirty: false, busy: false });
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [createBotOpen, setCreateBotOpen] = useState(false);
   const [hostBotId, setHostBotId] = useState<string | undefined>();
@@ -112,17 +112,20 @@ export default function FleetPage() {
     if (!quiet) setRefreshing(true);
     // Roster and catalog gate the first paint; hosts and the audit feed fill in
     // when they land instead of holding the whole page on the slowest request.
-    const extras = Promise.all([
-      getFleetHosts().catch(() => []).then(setHosts),
-      getFleetAudit({ limit: 100 }).catch(() => ({ events: [] })).then((result) => setAudit(result.events)),
+    const extras = Promise.allSettled([
+      getFleetHosts().then(setHosts),
+      getFleetAudit({ limit: 100 }).then((result) => setAudit(result.events)),
     ]);
     try {
       const [fleet, botCatalog] = await Promise.all([getAllFleet(), listBots()]);
       applyFleet(fleet);
       setCatalog(botCatalog);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't load Fleet"); }
+      setLoadError(null);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Couldn't load Fleet"); }
     finally { setLoading(false); }
-    await extras;
+    const extraResults = await extras;
+    const extraFailure = extraResults.find(result => result.status === "rejected");
+    if (extraFailure?.status === "rejected") setLoadError(extraFailure.reason instanceof Error ? extraFailure.reason.message : "Couldn't load hosts or audit history");
     if (!quiet) setRefreshing(false);
   }, [applyFleet]);
 
@@ -142,7 +145,7 @@ export default function FleetPage() {
   useFleetLive(liveChannelIds, () => void refreshLive());
   const selectedBot = catalog.find((bot) => bot.bot_id === route.botId);
   const actionableCount = approvals.filter((approval) => approval.actionable).length;
-  const hostIssues = hosts.filter((item) => !item.revoked_at && (item.mcp_connection_state === "action_required" || item.mcp_connection_state === "refresh_failed")).length;
+  const hostIssues = hosts.filter((item) => !item.revoked_at && mcpStateTone(item.mcp_connection_state) === "warning").length;
   const manageableBots = catalog.filter((bot) => bot.can_manage);
 
   function openBot(botId: string, tab = "overview") { navigate(`/fleet/bots/${botId}/${tab}`); }
@@ -161,30 +164,7 @@ export default function FleetPage() {
     </>
   );
 
-  return <div className="h-full overflow-y-auto overscroll-contain bg-canvas text-content-primary">
-    <RouteChromeHeader>
-      <header className="mx-auto flex w-full max-w-5xl items-center gap-4 px-6 py-5 max-md:px-4">
-        <UiButton
-          variant="plain"
-          type="button"
-          content="icon"
-          controlSize="regular"
-          onClick={() => navigate("/chat")}
-          title="Back to chat"
-          aria-label="Back to chat"
-          className="rounded-sm text-content-primary transition-colors hover:text-content-strong"
-        >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-        </UiButton>
-        <FleetIcon className="text-accent-400" />
-        <div>
-          <h1 className="font-serif text-regular font-bold tracking-tight text-content-strong leading-none"><HelpLabel help={<>Personal bot cockpit</>}>Fleet</HelpLabel></h1>
-
-        </div>
-      </header>
-    </RouteChromeHeader>
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:flex-row">
-      <SectionNav
+  return <PageLayout title="Fleet" icon={FleetIcon} description="Personal bot cockpit" navigation={<SectionNav
         ariaLabel="Fleet sections"
         items={sections.map((item) => ({
           ...item,
@@ -194,15 +174,12 @@ export default function FleetPage() {
         }))}
         selected={section}
         onSelect={(id) => navigate(id === "overview" ? "/fleet" : `/fleet/${id}`)}
-      />
-      <main className="min-w-0 flex-1">
-        <ContentActionScope>
-        <div className="mb-4 flex flex-wrap items-center gap-3" data-content-toolbar="fleet">
-          <h2 className="text-comfortable font-semibold">{sections.find(item => item.id === section)?.label ?? "Fleet"}</h2>
-          <ButtonGroup label="Fleet actions" controlSize="regular">{headerActions}</ButtonGroup>
-        </div>
+      />}>
+<ContentActionScope>
+        <SettingsSection title={sections.find(item => item.id === section)?.label ?? "Fleet"} icon={sections.find(item => item.id === section)?.icon} actions={headerActions}>
         <div className="space-y-7">
-        {loading ? <SurfaceSpinner /> : section === "overview" ? (
+        <AsyncContent loading={loading} error={loadError} onRetry={() => void refresh()}>
+        {section === "overview" ? (
           <FleetOverview
             summary={summary}
             actionableCount={actionableCount}
@@ -222,11 +199,12 @@ export default function FleetPage() {
         ) : (
           <FleetAudit events={audit} bots={bots} />
         )}
+        </AsyncContent>
         </div>
+        </SettingsSection>
         </ContentActionScope>
-      </main>
-    </div>
-    {selectedBot && <Dialog ariaLabel={`${selectedBot.display_name || selectedBot.username} — Bot details`} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel onClose={() => navigate("/fleet/bots")} key={selectedBot.bot_id} bot={selectedBot} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddHost={() => { navigate("/fleet/hosts"); openHost(selectedBot.bot_id); }} /></Dialog>}
+
+    {selectedBot && <Dialog dirty={botEditorState.dirty} busy={botEditorState.busy} ariaLabel={`${selectedBot.display_name || selectedBot.username} — Bot details`} onClose={() => navigate("/fleet/bots")} maxWidth="max-w-3xl"><BotDetailPanel onEditorStateChange={setBotEditorState} onClose={() => navigate("/fleet/bots")} key={selectedBot.bot_id} bot={selectedBot} initialTab={route.tab} onError={(message) => toast.error(message)} onChanged={() => void refresh(true)} onPoll={() => void refresh(true)} onAddHost={() => { navigate("/fleet/hosts"); openHost(selectedBot.bot_id); }} /></Dialog>}
     {createBotOpen && <CreateBotDialog onClose={() => setCreateBotOpen(false)} onCreated={(bot) => {
       setCreateBotOpen(false);
       // Seed from the POST response (it carries can_manage) rather than waiting
@@ -238,5 +216,6 @@ export default function FleetPage() {
       void refresh(true);
     }} />}
     {hostBotId !== undefined && <CreateHostWizard bots={manageableBots} initialBotId={hostBotId || undefined} onClose={() => setHostBotId(undefined)} onDone={() => void refresh()} />}
-  </div>;
+
+</PageLayout>;
 }

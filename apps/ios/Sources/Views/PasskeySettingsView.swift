@@ -124,7 +124,6 @@ struct PasskeySettingsView: View {
                 credentials = []
             }
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             if case .http(let status, _) = error, status == 503 {
                 passkeyEnabled = false
                 credentials = []
@@ -180,7 +179,6 @@ struct PasskeySettingsView: View {
             try await api.deletePasskey(credentialPk: item.credentialPk)
             await reload()
         } catch let error as APIError {
-            if case .unauthorized = error { app.clearSession(); return }
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription

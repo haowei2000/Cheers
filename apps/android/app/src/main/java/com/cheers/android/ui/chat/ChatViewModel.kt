@@ -9,13 +9,11 @@ import com.cheers.android.data.api.CheersApi
 import com.cheers.android.data.api.MessageDto
 import com.cheers.android.data.api.SendMessageRequest
 import com.cheers.android.data.api.userMessage
-import com.cheers.android.data.auth.SessionRefreshResult
 import com.cheers.android.data.ws.ChatSocket
 import com.cheers.android.data.ws.ConnectionStatus
 import com.cheers.android.data.ws.SocketEvent
 import com.cheers.android.di.AppContainer
 import com.cheers.android.di.SessionState
-import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -29,6 +27,8 @@ import com.cheers.android.data.api.ChannelArtifact
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
@@ -86,9 +86,7 @@ class ChatViewModel(
     val draft = MutableStateFlow("")
 
     private var socket: ChatSocket? = null
-    val artifacts = ArtifactController(viewModelScope, json) { resource, params ->
-        socket?.request(resource, params) ?: throw ResourceException("OFFLINE", "Not connected")
-    }
+    val artifacts = ArtifactController(viewModelScope, json) { resource, params -> request(resource, params) }
     private var loadedOnce = false
     private var markReadJob: Job? = null
 
@@ -140,15 +138,10 @@ class ChatViewModel(
         identity?.let { authRepository.isCurrent(it) } == true
 
     /** Bind each call to this page's login; refresh never retargets an old VM. */
-    private suspend fun scopedApi(): CheersApi {
-        val expected = identity ?: throw CancellationException("No active session")
-        return when (val result = authRepository.validSession(expected)) {
-            is SessionRefreshResult.Fresh -> container.apiFor(result.session)
-            SessionRefreshResult.Retryable -> throw IOException("Connection temporarily unavailable")
-            SessionRefreshResult.Ended, SessionRefreshResult.Stale ->
-                throw CancellationException("Session changed")
-        }
-    }
+    private suspend fun scopedApi(): CheersApi = container.scopedApi(identity)
+
+    private suspend fun request(resource: String, params: JsonObject): JsonElement =
+        socket?.request(resource, params) ?: throw ResourceException("OFFLINE", "Not connected")
 
     // ── Ordering (clone of web sortMessages/upsertMessage) ──
 
@@ -372,8 +365,7 @@ class ChatViewModel(
                         }
                     }
                 } else {
-                    val raw = socket?.request("channel.artifacts.read", buildJsonObject { put("artifact_id", artifact.artifactId) })
-                        ?: throw ResourceException("OFFLINE", "Not connected")
+                    val raw = request("channel.artifacts.read", buildJsonObject { put("artifact_id", artifact.artifactId) })
                     val value = json.decodeFromJsonElement<ArtifactContent>(raw)
                     val text = value.content
                     check(text != null && !value.truncated) { "The full source is unavailable" }

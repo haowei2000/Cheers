@@ -3,17 +3,17 @@
     {
       "id": "open-questions",
       "title": "Open questions",
-      "file": "notes/open-questions.md",
+      "file": "notes/open-questions.notes.md",
       "renderer": "self:notes"
     }
   ],
   "seed": [
     {
-      "path": "notes/open-questions.md",
+      "path": "notes/open-questions.notes.md",
       "source": "seed/notes/notes/open-questions.md"
     }
   ],
   "pin": [
-    "notes/open-questions.md"
+    "notes/open-questions.notes.md"
   ]
 }
