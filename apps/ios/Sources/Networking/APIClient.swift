@@ -170,15 +170,6 @@ struct APIClient: Sendable {
             "HTTP \(request.httpMethod ?? "-", privacy: .public) \(request.url?.path ?? "-", privacy: .public) -> \(http.statusCode) request_id=\(requestId, privacy: .public)"
         )
         guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 428,
-               (try? JSONDecoder().decode(ApiErrorBody.self, from: data))?.code == "recent_authentication_required" {
-                throw APIError.recentAuthenticationRequired
-            }
-            if http.statusCode == 428,
-               let required = try? JSONDecoder().decode(AIConsentRequiredResponse.self, from: data),
-               required.code == "ai_consent_required" {
-                throw APIError.aiConsentRequired(required.disclosures)
-            }
             if http.statusCode == 428, mayConfirmIdentity, let confirmIdentity,
                (try? JSONDecoder().decode(ErrorCodeBody.self, from: data))?.code
                    == "recent_authentication_required" {
@@ -188,6 +179,15 @@ struct APIClient: Sendable {
                     mayReauthenticate: mayReauthenticate,
                     mayConfirmIdentity: false
                 )
+            }
+            if http.statusCode == 428,
+               (try? JSONDecoder().decode(ApiErrorBody.self, from: data))?.code == "recent_authentication_required" {
+                throw APIError.recentAuthenticationRequired
+            }
+            if http.statusCode == 428,
+               let required = try? JSONDecoder().decode(AIConsentRequiredResponse.self, from: data),
+               required.code == "ai_consent_required" {
+                throw APIError.aiConsentRequired(required.disclosures)
             }
             // 401 means "session revoked/expired" only when the body is empty.
             // Authenticated management calls (change-password, 2FA enable/disable)
