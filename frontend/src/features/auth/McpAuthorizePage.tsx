@@ -31,6 +31,16 @@ const scopeLabels: Record<string, string> = {
   "cheers:task-claims:write": "Respond to assigned task claims",
 };
 
+export function selectConsentTarget(hosts: ConsentPreview["hosts"], requestedChannel?: string) {
+  const host = requestedChannel
+    ? hosts.find((host) => host.channels.some((channel) => channel.channel_id === requestedChannel))
+    : hosts.find((host) => host.channels.length > 0);
+  return {
+    hostId: host?.host_id ?? "",
+    channelId: requestedChannel ? (host ? requestedChannel : "") : host?.channels[0]?.channel_id ?? "",
+  };
+}
+
 export default function McpAuthorizePage() {
   const query = window.location.search;
   const request = useMemo(() => Object.fromEntries(new URLSearchParams(query)), [query]);
@@ -44,12 +54,12 @@ export default function McpAuthorizePage() {
     apiJson<ConsentPreview>(`/mcp/oauth/authorize${query}`)
       .then((value) => {
         setPreview(value);
-        const firstHostWithChannels = value.hosts.find((host) => host.channels.length > 0) ?? value.hosts[0];
-        setHostId(firstHostWithChannels?.host_id ?? "");
-        setChannelId(firstHostWithChannels?.channels[0]?.channel_id ?? "");
+        const target = selectConsentTarget(value.hosts, request.cheers_channel);
+        setHostId(target.hostId);
+        setChannelId(target.channelId);
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Authorization request is invalid"));
-  }, [query]);
+  }, [query, request]);
 
   async function finish(approved: boolean) {
     setBusy(true);
@@ -89,6 +99,7 @@ export default function McpAuthorizePage() {
                 <p className="truncate text-compact text-content-muted">{preview.client.client_id}</p>
               </div>
             </div>
+            {preview.hosts.length === 0 && <p role="alert" className="text-regular text-content-secondary">No Agent hosts are available. Connect an Agent and add it to your channel, then reopen this request.</p>}
             <Field label="Act as" htmlFor="authorize-host">
               <Select
                 id="authorize-host"
@@ -96,9 +107,12 @@ export default function McpAuthorizePage() {
                 onChange={(event) => {
                   const nextHost = preview.hosts.find((host) => host.host_id === event.target.value);
                   setHostId(event.target.value);
-                  setChannelId(nextHost?.channels[0]?.channel_id ?? "");
+                  setChannelId(request.cheers_channel
+                    ? nextHost?.channels.find((channel) => channel.channel_id === request.cheers_channel)?.channel_id ?? ""
+                    : nextHost?.channels[0]?.channel_id ?? "");
                 }}
               >
+                {!hostId && <option value="">Choose an Agent host</option>}
                 {preview.hosts.map((host) => (
                   <option key={host.host_id} value={host.host_id}>
                     {host.bot_name} · {host.device_name}
@@ -111,7 +125,9 @@ export default function McpAuthorizePage() {
                 id="authorize-channel"
                 value={channelId}
                 onChange={(event) => setChannelId(event.target.value)}
+                disabled={!!request.cheers_channel}
               >
+                {!channelId && <option value="">No matching channel</option>}
                 {(preview.hosts.find((host) => host.host_id === hostId)?.channels ?? [])
                   .map((channel) => (
                     <option key={channel.channel_id} value={channel.channel_id}>
@@ -122,7 +138,7 @@ export default function McpAuthorizePage() {
             </Field>
             {!channelId && (
               <p role="alert" className="text-compact text-danger-300">
-                This host has no channel that you can authorize.
+                {request.cheers_channel ? "Choose a host with access to the requested channel." : "This host has no channel that you can authorize."}
               </p>
             )}
             <div>

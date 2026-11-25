@@ -2,6 +2,25 @@ import XCTest
 @testable import Cheers
 
 final class ReleaseReadinessTests: XCTestCase {
+    func testGitHubSignInCapabilityAndOptionalProviders() throws {
+        let enabled = try JSONDecoder().decode(AuthCapabilities.self,
+            from: Data("{\"providers\":{\"github\":true,\"google\":true}}".utf8))
+        XCTAssertTrue(enabled.signInWithGitHub)
+        XCTAssertTrue(enabled.signInWithGoogle)
+        let absent = try JSONDecoder().decode(AuthCapabilities.self, from: Data("{}".utf8))
+        XCTAssertFalse(absent.signInWithGitHub)
+    }
+
+    func testIdentityConfirmationAndStructuredAuthErrorDecode() throws {
+        let flow = try JSONDecoder().decode(IdentityConfirmationFlow.self,
+            from: Data("{\"transaction_id\":\"proof\",\"status\":\"method_required\",\"methods\":[\"passkey\",\"email\"]}".utf8))
+        XCTAssertEqual(flow.transactionId, "proof")
+        XCTAssertEqual(flow.methods, ["passkey", "email"])
+        let error = try JSONDecoder().decode(ApiErrorBody.self,
+            from: Data("{\"code\":\"account_link_required\",\"message\":\"Sign in first\"}".utf8))
+        XCTAssertEqual(error.message, "Sign in first")
+    }
+
     func testArtifactIdentityAndAttachmentAvailability() throws {
         let raw = Data("""
         {"artifact_id":"stable-id","channel_id":"channel","uri":"cheers:artifact/stable-id",

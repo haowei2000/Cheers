@@ -1,15 +1,31 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import {
   ChangePasswordAction,
   DeleteAccountAction,
   EmailAction,
+  ExternalIdentitiesCard,
   SignOutAction,
 } from "./AccountSettings";
 import { PasskeyCard, TwoFactorCard } from "./SecurityCards";
 
 describe("account action launchers", () => {
+  it("keeps provider link and unlink actions available when confirmation is stale", () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(["account", "external-identities"], [
+      { provider: "google", linked: true, can_unlink: true, recent_authentication: false, email: "alice@example.com" },
+      { provider: "github", linked: false, can_unlink: false, recent_authentication: false },
+    ]);
+    const markup = renderToStaticMarkup(
+      <MemoryRouter><QueryClientProvider client={queryClient}><ExternalIdentitiesCard /></QueryClientProvider></MemoryRouter>
+    );
+    expect(markup).toContain("Unlink Google sign-in method");
+    expect(markup).toContain("Link GitHub sign-in method");
+    expect(markup).not.toContain("Sign in again");
+  });
+
   it("keeps credential fields hidden until an action is opened", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
