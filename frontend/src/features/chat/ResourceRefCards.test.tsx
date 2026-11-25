@@ -24,7 +24,7 @@ describe("resource reference cards", () => {
     expect(html).toContain("Details for Report");
     expect(html).not.toContain("Complete this form to prepare your report."); // Supplementary help is revealed on demand.
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('title="Prepare report request"');
+    expect(html).toContain('title="Prepare report request — Prepares a structured report draft in the chat composer."');
     expect(html).toContain('data-button-content="icon"');
     expect(html).not.toContain(">Request</");
     expect(html.indexOf("</a>")).toBeLessThan(html.indexOf("<input"));

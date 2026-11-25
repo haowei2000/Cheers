@@ -4333,8 +4333,7 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
     .await;
     assert_eq!(good["ok"], true, "{good}");
     let mut bad = example.clone();
-    bad["messages"][0]["createSurface"]["components"][0]["children"] =
-        serde_json::json!(["root"]);
+    bad["messages"][0]["createSurface"]["components"][0]["children"] = serde_json::json!(["root"]);
     let rejected = dispatch(
         &db,
         Principal::bot(bot),
