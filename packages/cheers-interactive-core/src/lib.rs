@@ -260,6 +260,136 @@ fn validate_accessibility(value: &Value, proto: ProtoVersion) -> Result<(), &'st
     Ok(())
 }
 
+fn parse_quantifier(bytes: &[u8], start: usize) -> Option<(usize, bool)> {
+    let ch = *bytes.get(start)?;
+    if ch == b'?' || ch == b'*' || ch == b'+' {
+        return Some((start + 1, ch == b'*' || ch == b'+'));
+    }
+    if ch == b'{' {
+        let end = bytes[start + 1..].iter().position(|&b| b == b'}')? + start + 1;
+        let body = std::str::from_utf8(&bytes[start + 1..end]).ok()?;
+        let (min_s, max_opt) = match body.split_once(',') {
+            Some((a, b)) => (a, Some(b)),
+            None => (body, None),
+        };
+        if min_s.is_empty() || !min_s.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let min: u32 = min_s.parse().ok()?;
+        if min > 256 {
+            return None;
+        }
+        let repeating = match max_opt {
+            None => min > 1,
+            Some("") => true,
+            Some(max_s) => {
+                if !max_s.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                let max: u32 = max_s.parse().ok()?;
+                if max > 256 || max < min {
+                    return None;
+                }
+                max > 1
+            }
+        };
+        return Some((end + 1, repeating));
+    }
+    None
+}
+
+fn is_safe_check_pattern(pattern: &str) -> bool {
+    let bytes = pattern.as_bytes();
+    let mut stack: Vec<(bool, bool)> = vec![(false, false)];
+    let mut in_class = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let ch = bytes[i];
+        if ch == b'\\' {
+            let Some(&next) = bytes.get(i + 1) else {
+                return false;
+            };
+            if next.is_ascii_digit() && next != b'0' || next == b'k' {
+                return false;
+            }
+            i += 2;
+            if let Some((next_i, _)) = parse_quantifier(bytes, i) {
+                stack.last_mut().unwrap().0 = true;
+                i = next_i;
+                if parse_quantifier(bytes, i).is_some() {
+                    return false;
+                }
+            }
+            continue;
+        }
+        if in_class {
+            if ch == b']' {
+                in_class = false;
+                i += 1;
+                if let Some((next_i, _)) = parse_quantifier(bytes, i) {
+                    stack.last_mut().unwrap().0 = true;
+                    i = next_i;
+                    if parse_quantifier(bytes, i).is_some() {
+                        return false;
+                    }
+                }
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        if ch == b'[' {
+            in_class = true;
+            i += 1;
+            continue;
+        }
+        if ch == b'(' {
+            if bytes.get(i + 1) == Some(&b'?')
+                && matches!(bytes.get(i + 2), Some(b'=' | b'!' | b'<'))
+            {
+                return false;
+            }
+            stack.push((false, false));
+            i += 1;
+            continue;
+        }
+        if ch == b')' {
+            if stack.len() <= 1 {
+                return false;
+            }
+            let (has_q, has_alt) = stack.pop().unwrap();
+            i += 1;
+            if let Some((next_i, repeating)) = parse_quantifier(bytes, i) {
+                if repeating && (has_q || has_alt) {
+                    return false;
+                }
+                stack.last_mut().unwrap().0 = true;
+                i = next_i;
+                if parse_quantifier(bytes, i).is_some() {
+                    return false;
+                }
+            } else if has_q {
+                stack.last_mut().unwrap().0 = true;
+            }
+            continue;
+        }
+        if ch == b'|' {
+            stack.last_mut().unwrap().1 = true;
+            i += 1;
+            continue;
+        }
+        i += 1;
+        if let Some((next_i, _)) = parse_quantifier(bytes, i) {
+            stack.last_mut().unwrap().0 = true;
+            i = next_i;
+            if parse_quantifier(bytes, i).is_some() {
+                return false;
+            }
+        }
+    }
+    !in_class && stack.len() == 1
+}
+
 fn validate_checks(value: &Value) -> Result<(), &'static str> {
     let items = value.as_array().ok_or("checks must be an array")?;
     if items.len() > 8 {
@@ -289,7 +419,7 @@ fn validate_checks(value: &Value) -> Result<(), &'static str> {
             "pattern" => {
                 keys(item, &["rule", "value", "message"])?;
                 let pat = item["value"].as_str().ok_or("invalid check pattern")?;
-                if pat.is_empty() || pat.len() > 256 {
+                if pat.is_empty() || pat.len() > 256 || !is_safe_check_pattern(pat) {
                     return Err("invalid check pattern");
                 }
             }
@@ -959,10 +1089,14 @@ mod tests {
             json!({"path": "/report/topic"});
         assert!(validate_document(&mixed).is_err());
 
-        // Reject unsupported @checks rule
+        // Reject unsupported @checks rule and unsafe ReDoS pattern
         let mut bad_check: Value = serde_json::from_str(EXAMPLE).unwrap();
         bad_check["messages"][0]["createSurface"]["components"][3]["@checks"] =
             json!([{"rule": "eval"}]);
+        assert!(validate_document(&bad_check).is_err());
+
+        bad_check["messages"][0]["createSurface"]["components"][3]["@checks"] =
+            json!([{"rule": "pattern", "value": "^(a+)+$"}]);
         assert!(validate_document(&bad_check).is_err());
     }
     #[test]

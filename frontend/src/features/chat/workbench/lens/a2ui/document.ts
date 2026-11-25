@@ -135,6 +135,101 @@ function parseAccessibility(raw: unknown, proto: ProtoVersion): A2UIAccessibilit
   if (raw.description !== undefined) result.description = normalizeBinding(raw.description, proto);
   return result;
 }
+function parseQuantifier(pattern: string, start: number): { next: number; repeating: boolean } | null {
+  const ch = pattern[start];
+  if (ch === "?" || ch === "*" || ch === "+") {
+    return { next: start + 1, repeating: ch === "*" || ch === "+" };
+  }
+  if (ch === "{") {
+    const end = pattern.indexOf("}", start + 1);
+    if (end === -1) return null;
+    const body = pattern.slice(start + 1, end);
+    const match = /^(\d+)(?:,(\d*))?$/.exec(body);
+    if (!match) return null;
+    const min = Number(match[1]);
+    const max = match[2] === undefined ? min : match[2] === "" ? Infinity : Number(match[2]);
+    if (min > 256 || (Number.isFinite(max) && max > 256) || max < min) return null;
+    return { next: end + 1, repeating: max > 1 };
+  }
+  return null;
+}
+function isSafeCheckPattern(pattern: string): boolean {
+  const stack: Array<{ hasQuantifier: boolean; hasAlternation: boolean }> = [{ hasQuantifier: false, hasAlternation: false }];
+  let inClass = false;
+  let i = 0;
+  while (i < pattern.length) {
+    const ch = pattern[i];
+    if (ch === "\\") {
+      if (i + 1 >= pattern.length) return false;
+      const next = pattern[i + 1];
+      if ((next >= "1" && next <= "9") || next === "k") return false;
+      i += 2;
+      const q = parseQuantifier(pattern, i);
+      if (q) {
+        stack[stack.length - 1].hasQuantifier = true;
+        i = q.next;
+        if (parseQuantifier(pattern, i)) return false;
+      }
+      continue;
+    }
+    if (inClass) {
+      if (ch === "]") {
+        inClass = false;
+        i += 1;
+        const q = parseQuantifier(pattern, i);
+        if (q) {
+          stack[stack.length - 1].hasQuantifier = true;
+          i = q.next;
+          if (parseQuantifier(pattern, i)) return false;
+        }
+      } else {
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "[") {
+      inClass = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "(") {
+      if (pattern[i + 1] === "?" && (pattern[i + 2] === "=" || pattern[i + 2] === "!" || pattern[i + 2] === "<")) {
+        return false;
+      }
+      stack.push({ hasQuantifier: false, hasAlternation: false });
+      i += 1;
+      continue;
+    }
+    if (ch === ")") {
+      if (stack.length <= 1) return false;
+      const group = stack.pop()!;
+      i += 1;
+      const q = parseQuantifier(pattern, i);
+      if (q) {
+        if (q.repeating && (group.hasQuantifier || group.hasAlternation)) return false;
+        stack[stack.length - 1].hasQuantifier = true;
+        i = q.next;
+        if (parseQuantifier(pattern, i)) return false;
+      } else if (group.hasQuantifier) {
+        stack[stack.length - 1].hasQuantifier = true;
+      }
+      continue;
+    }
+    if (ch === "|") {
+      stack[stack.length - 1].hasAlternation = true;
+      i += 1;
+      continue;
+    }
+    i += 1;
+    const q = parseQuantifier(pattern, i);
+    if (q) {
+      stack[stack.length - 1].hasQuantifier = true;
+      i = q.next;
+      if (parseQuantifier(pattern, i)) return false;
+    }
+  }
+  return !inClass && stack.length === 1;
+}
 function parseChecks(raw: unknown): A2UICheck[] {
   requireThat(Array.isArray(raw) && raw.length <= 8, "Invalid component checks.");
   return raw.map((item) => {
@@ -154,6 +249,7 @@ function parseChecks(raw: unknown): A2UICheck[] {
     if (item.rule === "pattern") {
       keys(item, ["rule", "value", "message"]);
       requireThat(typeof item.value === "string" && item.value.length >= 1 && item.value.length <= 256, "Invalid check pattern.");
+      requireThat(isSafeCheckPattern(item.value), "Unsafe check pattern.");
       try { new RegExp(item.value); } catch { throw new Error("Invalid check pattern."); }
       return message !== undefined ? { rule: "pattern", value: item.value, message } : { rule: "pattern", value: item.value };
     }
@@ -167,6 +263,9 @@ export function validateFieldChecks(value: string, checks?: A2UICheck[]): string
     if (check.rule === "minLength" && value.length < check.value) return check.message ?? `Enter at least ${check.value} characters.`;
     if (check.rule === "maxLength" && value.length > check.value) return check.message ?? `Enter at most ${check.value} characters.`;
     if (check.rule === "pattern" && value.length > 0) {
+      if (value.length > 4096 || !isSafeCheckPattern(check.value)) {
+        return check.message ?? "Value does not match the required format.";
+      }
       try {
         if (!new RegExp(check.value).test(value)) return check.message ?? "Value does not match the required format.";
       } catch {

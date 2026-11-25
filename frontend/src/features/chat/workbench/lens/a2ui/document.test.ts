@@ -109,6 +109,9 @@ describe("persisted A2UI protocol and Cheers catalog", () => {
     ["multiple operations", (d: ReturnType<typeof copy>) => { d.messages[0].deleteSurface = { surfaceId: "report" }; }],
     ["unsupported check rule", (d: ReturnType<typeof copy>) => { d.messages[0].createSurface.components[3]["@checks"] = [{ rule: "eval" }]; }],
     ["invalid check regex", (d: ReturnType<typeof copy>) => { d.messages[0].createSurface.components[3]["@checks"] = [{ rule: "pattern", value: "[unclosed" }]; }],
+    ["unsafe nested quantifier regex", (d: ReturnType<typeof copy>) => { d.messages[0].createSurface.components[3]["@checks"] = [{ rule: "pattern", value: "^(a+)+$" }]; }],
+    ["unsafe quantified alternation regex", (d: ReturnType<typeof copy>) => { d.messages[0].createSurface.components[3]["@checks"] = [{ rule: "pattern", value: "^(a|aa)+$" }]; }],
+    ["lookahead check regex", (d: ReturnType<typeof copy>) => { d.messages[0].createSurface.components[3]["@checks"] = [{ rule: "pattern", value: "^(?=.*a)b$" }]; }],
   ])("refuses unsupported or unsafe %s", (_name, mutate) => {
     const doc = copy();
     mutate(doc);

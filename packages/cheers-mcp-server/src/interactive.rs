@@ -18,7 +18,7 @@ mod tests {
     #[test]
     fn rejects_unknown_binding_and_cycle() {
         let mut d: Value = serde_json::from_str(EXAMPLE).unwrap();
-        d["messages"][1]["updateComponents"]["components"][0]["children"] = json!(["root"]);
+        d["messages"][0]["createSurface"]["components"][0]["children"] = json!(["root"]);
         assert!(validate_document(&d).is_err());
         assert!(pointer("/__proto__/polluted").is_err());
         assert!(pointer("/bad~2").is_err());

@@ -4313,7 +4313,7 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
     .await;
     assert_eq!(contract["ok"], true, "{contract}");
     assert_eq!(
-        contract["data"]["request_example"]["messages"][1]["updateComponents"]["components"][6]
+        contract["data"]["request_example"]["messages"][0]["createSurface"]["components"][6]
             ["action"]["event"]["context"]["botId"],
         bot.to_string()
     );
@@ -4333,7 +4333,7 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
     .await;
     assert_eq!(good["ok"], true, "{good}");
     let mut bad = example.clone();
-    bad["messages"][1]["updateComponents"]["components"][0]["children"] =
+    bad["messages"][0]["createSurface"]["components"][0]["children"] =
         serde_json::json!(["root"]);
     let rejected = dispatch(
         &db,
