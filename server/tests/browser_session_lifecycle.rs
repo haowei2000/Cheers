@@ -734,7 +734,7 @@ async fn password_change_preserves_native_refresh_and_revokes_other_sessions(db:
             &f.first.token,
             Method::POST,
             "/auth/change-password",
-            Some(json!({"new_password": new_password})),
+            Some(json!({"current_password": f.password, "new_password": new_password})),
         )
         .await;
     let token = changed["access_token"].as_str().unwrap();
@@ -802,7 +802,7 @@ async fn password_change_preserves_web_refresh_cookies(db: PgPool) {
         .client
         .post(format!("{}/api/v1/auth/change-password", f.base))
         .bearer_auth(auth["access_token"].as_str().unwrap())
-        .json(&json!({"new_password": Uuid::new_v4().to_string()}))
+        .json(&json!({"current_password": f.password, "new_password": Uuid::new_v4().to_string()}))
         .send()
         .await
         .unwrap();
