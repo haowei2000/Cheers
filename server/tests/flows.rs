@@ -4312,9 +4312,14 @@ async fn interactive_files_validate_writes_and_renames(db: PgPool) {
     )
     .await;
     assert_eq!(contract["ok"], true, "{contract}");
+    let prepare = contract["data"]["request_example"]["messages"][0]["createSurface"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "prepare")
+        .unwrap();
     assert_eq!(
-        contract["data"]["request_example"]["messages"][0]["createSurface"]["components"][6]
-            ["action"]["event"]["context"]["botId"],
+        prepare["action"]["event"]["context"]["botId"],
         bot.to_string()
     );
     let example = &contract["data"]["example"];
