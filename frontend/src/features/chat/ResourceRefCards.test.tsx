@@ -9,26 +9,18 @@ import { artifactReferenceStore } from "./artifacts/referenceStore";
 import example from "./workbench/lens/a2ui/example.a2ui.json";
 
 describe("resource reference cards", () => {
-  it("renders a minimal form in the reply with controls outside the navigation link", () => {
+  it("renders an A2UI form directly in the reply without enclosure link chrome", () => {
     const fs = makeFsClient(vi.fn(), "channel");
     fileResourceStore(fs).publish("forms/report.a2ui.json", { path: "forms/report.a2ui.json", content: JSON.stringify(example), version: 4, is_dir: false });
     const open = vi.fn();
     const html = renderToStaticMarkup(<ResourceCardProvider fs={fs} channelId="channel" filesTick={0} openLocator={open} composeMessage={vi.fn()}>
       <LocatorOpenContext.Provider value={open}><ResourceRefCards cards={[{ v: 1, kind: "resource_ref", uri: "cheers:desk/forms/report.a2ui.json", title: "Report", description: "Complete this form to prepare your report." }]} /></LocatorOpenContext.Provider>
     </ResourceCardProvider>);
-    expect(html).toContain('data-presentation="minimal"');
-    expect(html).toContain("Report topic");
-    expect(html).toContain('type="checkbox"');
-    expect(html).not.toContain("Version 4");
-    expect(html).toContain("Enclosure 01");
-    expect(html).toContain("Details for Report");
-    expect(html).not.toContain("Complete this form to prepare your report."); // Supplementary help is revealed on demand.
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('title="Prepare report request — Prepares a structured report draft in the chat composer."');
-    expect(html).toContain('data-button-content="icon"');
-    expect(html).not.toContain(">Request</");
-    expect(html.indexOf("</a>")).toBeLessThan(html.indexOf("<input"));
-    expect(html).not.toContain("Prepare a report"); // The declared summary excludes the full heading.
+    expect(html).toContain('data-presentation="medium"');
+    expect(html).toContain("a2ui-textfield");
+    expect(html).toContain("a2ui-checkbox");
+    expect(html).not.toContain("Enclosure 01");
+    expect(html).not.toContain("Details for Report");
   });
   it("previews plain source safely without mounting model-supplied HTML", () => {
     const fs = makeFsClient(vi.fn(), "channel");

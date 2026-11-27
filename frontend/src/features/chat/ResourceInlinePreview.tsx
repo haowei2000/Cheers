@@ -19,7 +19,7 @@ import { sendResourceInteraction } from "@/api/messages";
 import { builtinView } from "./workbench/renderers/registry";
 import { makeFsClient } from "./workbench/fsClient";
 
-function GlobalPreview({uri}:{uri:string}) {
+function GlobalPreview({ uri, directA2ui }: { uri: string; directA2ui?: boolean }) {
   const parent=useContext(ResourceCardContext)!;
   const [resource,setResource]=useState<ResolvedDeskResource>();
   const [error,setError]=useState("");
@@ -35,11 +35,11 @@ function GlobalPreview({uri}:{uri:string}) {
     openLocator={(target)=>{void resolveDeskResource(target,resource.channel_id).then(r=>parent.interactions({kind:"open",uri:r.uri})).catch(e=>setError(errMsg(e)));}}
     composeMessage={(text)=>{void parent.interactions({kind:"compose",actionId:"resource.draft",formData:{text}});}}
     requestInteraction={event=>sendResourceInteraction(resource.channel_id,event)}>
-    <DeskPreview path={resource.path} active />
+    <DeskPreview path={resource.path} active directA2ui={directA2ui} />
   </ResourceCardProvider>;
 }
 
-function DeskPreview({ path, active }: { path: string; active: boolean }) {
+function DeskPreview({ path, active, directA2ui }: { path: string; active: boolean; directA2ui?: boolean }) {
   const host = useContext(ResourceCardContext)!;
   const store = useMemo(() => fileResourceStore(host.fs), [host.fs]);
   const subscribe = useCallback((notify: () => void) => store.subscribe(path, notify), [store, path]);
@@ -78,7 +78,7 @@ function DeskPreview({ path, active }: { path: string; active: boolean }) {
         <p role="alert" className="text-body-error">Preview syntax error: {parsed.error}. Open the full view to correct it.</p>
       ) : isA2ui ? (
         <A2UILens data={parsed.data} path={path} sourceVersion={file.version} resourceUri={file.uri} config={undefined}
-          presentation={expanded ? "medium" : "minimal"} onChange={() => {}} onInteraction={host.interactions} />
+          presentation={directA2ui || expanded ? "medium" : "minimal"} onChange={() => {}} onInteraction={host.interactions} />
       ) : isTsx ? (
         <div className={`w-full overflow-hidden rounded-sm bg-canvas ${expanded ? "h-96" : "h-52"}`}>
           <ArtifactLens
@@ -101,12 +101,14 @@ function DeskPreview({ path, active }: { path: string; active: boolean }) {
         <pre className={`${expanded ? "" : "line-clamp-4 "}whitespace-pre-wrap break-words text-regular ${isText?"font-reading leading-reading":"font-code text-content-secondary"}`}>{file.content.slice(0, limit) || "Empty file."}{file.content.length > limit ? "\n…" : ""}</pre>
       )}
     </div>
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <ControlTrigger controlSize="compact" square title={expanded?`Collapse preview of ${path}`:`Expand preview of ${path}`} aria-label={expanded?`Collapse preview of ${path}`:`Expand preview of ${path}`} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((value) => !value)}>
-        {expanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-      </ControlTrigger>
-      {snapshot.loading&&<span role="status" className="text-caption">Refreshing…</span>}
-    </div>
+    {!directA2ui && (
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <ControlTrigger controlSize="compact" square title={expanded?`Collapse preview of ${path}`:`Expand preview of ${path}`} aria-label={expanded?`Collapse preview of ${path}`:`Expand preview of ${path}`} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((value) => !value)}>
+          {expanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+        </ControlTrigger>
+        {snapshot.loading&&<span role="status" className="text-caption">Refreshing…</span>}
+      </div>
+    )}
   </div>;
 }
 
@@ -146,7 +148,7 @@ function ArtifactPreview({ artifactId, active }: { artifactId: string; active: b
 
 /** Do not fetch every card in message history. Offscreen cards keep their
  * ordinary URI entry; visible Desk cards join the shared authorized file read. */
-export function ResourceInlinePreview({ uri }: { uri: string }) {
+export function ResourceInlinePreview({ uri, directA2ui }: { uri: string; directA2ui?: boolean }) {
   const host = useContext(ResourceCardContext);
   const target = parseLocator(uri);
   const canPreview = !!host && (target?.kind === "desk" || (target?.kind==="resource"&&target.resourceKind==="desk")
@@ -158,10 +160,10 @@ export function ResourceInlinePreview({ uri }: { uri: string }) {
     if (visible) setActivated(true);
   }, [visible]);
   if (!host || !canPreview || !target) return null;
-  return <div ref={element} className="min-w-0 px-4 pb-4 font-utility text-regular">
+  return <div ref={element} className={directA2ui ? "min-w-0 p-4 font-utility text-regular" : "min-w-0 px-4 pb-4 font-utility text-regular"}>
     {!activated ? <p className="text-body-secondary">Preview loads when this card is visible.</p>
       : target.kind === "artifact" ? <ArtifactPreview key={target.artifactId} artifactId={target.artifactId} active={visible} />
-      : target.kind === "resource" ? <GlobalPreview uri={uri}/>
-      : target.kind === "desk" ? <DeskPreview key={target.path} path={target.path} active={visible} /> : null}
+      : target.kind === "resource" ? <GlobalPreview uri={uri} directA2ui={directA2ui}/>
+      : target.kind === "desk" ? <DeskPreview key={target.path} path={target.path} active={visible} directA2ui={directA2ui} /> : null}
   </div>;
 }

@@ -5,7 +5,7 @@
       "version": "1.0",
       "createSurface": {
         "surfaceId": "report",
-        "catalogId": "urn:cheers:a2ui:catalog:v2",
+        "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
         "components": [
           {
             "id": "root",
@@ -38,7 +38,12 @@
             },
             "@checks": [
               {
-                "rule": "required",
+                "condition": {
+                  "@call": "required",
+                  "value": {
+                    "@path": "/report/topic"
+                  }
+                },
                 "message": "Please enter a report topic."
               }
             ]
@@ -60,9 +65,14 @@
             ]
           },
           {
+            "id": "prepare_label",
+            "component": "Text",
+            "text": "Prepare report request"
+          },
+          {
             "id": "prepare",
             "component": "Button",
-            "label": "Prepare report request",
+            "child": "prepare_label",
             "@accessibility": {
               "description": "Prepares a structured report draft in the chat composer."
             },
@@ -84,9 +94,14 @@
             }
           },
           {
+            "id": "open_label",
+            "component": "Text",
+            "text": "Open the report source"
+          },
+          {
             "id": "open",
             "component": "Button",
-            "label": "Open the report source",
+            "child": "open_label",
             "action": {
               "event": {
                 "name": "cheers.open",

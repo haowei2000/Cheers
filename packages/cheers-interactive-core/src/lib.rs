@@ -7,6 +7,8 @@ pub const VERSION_V1: &str = "v0.9.1";
 pub const CATALOG_ID_V1: &str = "urn:cheers:a2ui:catalog:v1";
 pub const VERSION: &str = "1.0";
 pub const CATALOG_ID: &str = "urn:cheers:a2ui:catalog:v2";
+pub const BASIC_CATALOG_ID: &str = "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json";
+pub const BASIC_CATALOG_ALIAS_ID: &str = "https://a2ui.org/specification/v1_0/basic_catalog.json";
 pub const GUIDE_URI: &str = "cheers://help/interactive-ui";
 pub const CATALOG_URI: &str = "cheers://help/interactive-ui/catalog";
 pub const EXAMPLE_URI: &str = "cheers://help/interactive-ui/example";
@@ -94,7 +96,8 @@ pub fn contract() -> Value {
     json!({
         "version": VERSION,
         "supported_versions": [VERSION, VERSION_V1],
-        "catalog_id": CATALOG_ID,
+        "catalog_id": BASIC_CATALOG_ID,
+        "legacy_catalog_ids": [CATALOG_ID, CATALOG_ID_V1],
         "guide": GUIDE,
         "view_suffixes": serde_json::from_str::<Value>(VIEW_SUFFIXES).expect("embedded view suffixes"),
         "renderers": ["a2ui", "tsx", "html"],
@@ -458,7 +461,149 @@ fn safe_json(value: &Value, depth: usize) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn validate_component(node: &Value, proto: ProtoVersion) -> Result<(), &'static str> {
+fn validate_cheers_event(event: &Value, proto: ProtoVersion) -> Result<(), &'static str> {
+    keys(event, &["name", "context"])?;
+    let context = &event["context"];
+    match event["name"].as_str() {
+        Some("cheers.open" | "cheers.openNative") => {
+            let native = event["name"] == "cheers.openNative";
+            keys(context, if native { &["uri", "opener"] } else { &["uri"] })?;
+            binding(&context["uri"], proto)?;
+            if let Some(uri) = context["uri"].as_str() {
+                if !uri.starts_with("cheers:") {
+                    return Err("invalid locator");
+                }
+            }
+            if native
+                && !matches!(
+                    context["opener"].as_str(),
+                    Some("finder" | "vscode" | "zed")
+                )
+            {
+                return Err("unsupported opener");
+            }
+        }
+        Some("cheers.compose" | "cheers.request" | "cheers.execute") => {
+            let request = matches!(
+                event["name"].as_str(),
+                Some("cheers.request" | "cheers.execute")
+            );
+            keys(
+                context,
+                if request {
+                    &["actionId", "payload", "botId"]
+                } else {
+                    &["actionId", "payload"]
+                },
+            )?;
+            if !id(&context["actionId"], 80) {
+                return Err("invalid action id");
+            }
+            if request && !uuid_shape(&context["botId"]) {
+                return Err("request needs stable bot id");
+            }
+            let payload = context["payload"]
+                .as_object()
+                .ok_or("payload must be object")?;
+            for value in payload.values() {
+                if value.is_object() {
+                    binding(value, proto)?;
+                } else if value.is_array() {
+                    return Err("invalid payload value");
+                }
+            }
+        }
+        _ => return Err("unsupported action"),
+    }
+    Ok(())
+}
+
+const BASIC_COMPONENTS: &[&str] = &[
+    "Text",
+    "Image",
+    "Icon",
+    "Video",
+    "AudioPlayer",
+    "Row",
+    "Column",
+    "List",
+    "Card",
+    "Tabs",
+    "Modal",
+    "Divider",
+    "Button",
+    "TextField",
+    "CheckBox",
+    "ChoicePicker",
+    "Slider",
+    "DateTimeInput",
+];
+
+fn validate_basic_component(node: &Value, proto: ProtoVersion) -> Result<(), &'static str> {
+    if !id(&node["id"], 128) {
+        return Err("invalid component id");
+    }
+    if let Some(a11y) = node.get("@accessibility") {
+        validate_accessibility(a11y, proto)?;
+    }
+    let kind = node["component"].as_str().ok_or("component required")?;
+    if !BASIC_COMPONENTS.contains(&kind) {
+        return Err("unsupported component");
+    }
+    if let Some(children) = node.get("children") {
+        if let Some(arr) = children.as_array() {
+            let mut seen = HashSet::new();
+            if arr.len() > 256 || arr.iter().any(|c| !id(c, 128) || !seen.insert(c.to_string())) {
+                return Err("invalid children");
+            }
+        } else if let Some(obj) = children.as_object() {
+            if !obj.get("componentId").is_some_and(|v| id(v, 128)) {
+                return Err("invalid children template");
+            }
+        } else {
+            return Err("invalid children");
+        }
+    }
+    if let Some(child) = node.get("child") {
+        if !id(child, 128) {
+            return Err("invalid child");
+        }
+    }
+    if let Some(val) = node.get("value") {
+        if val.is_object() {
+            binding(val, proto)?;
+        }
+    }
+    if let Some(checks) = node.get("@checks") {
+        if checks
+            .as_array()
+            .is_some_and(|arr| arr.iter().any(|item| item.get("rule").is_some()))
+        {
+            validate_checks(checks)?;
+        }
+    }
+    if let Some(action) = node.get("action") {
+        if let Some(event) = action.get("event") {
+            if event
+                .get("name")
+                .and_then(Value::as_str)
+                .is_some_and(|n| n.starts_with("cheers."))
+            {
+                validate_cheers_event(event, proto)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_component(
+    node: &Value,
+    proto: ProtoVersion,
+    is_basic: bool,
+) -> Result<(), &'static str> {
+    if is_basic {
+        return validate_basic_component(node, proto);
+    }
     if !id(&node["id"], 128) {
         return Err("invalid component id");
     }
@@ -551,60 +696,7 @@ fn validate_component(node: &Value, proto: ProtoVersion) -> Result<(), &'static 
             )?;
             binding(&node["label"], proto)?;
             keys(&node["action"], &["event"])?;
-            keys(&node["action"]["event"], &["name", "context"])?;
-            let event = &node["action"]["event"];
-            let context = &event["context"];
-            match event["name"].as_str() {
-                Some("cheers.open" | "cheers.openNative") => {
-                    let native = event["name"] == "cheers.openNative";
-                    keys(context, if native { &["uri", "opener"] } else { &["uri"] })?;
-                    binding(&context["uri"], proto)?;
-                    if let Some(uri) = context["uri"].as_str() {
-                        if !uri.starts_with("cheers:") {
-                            return Err("invalid locator");
-                        }
-                    }
-                    if native
-                        && !matches!(
-                            context["opener"].as_str(),
-                            Some("finder" | "vscode" | "zed")
-                        )
-                    {
-                        return Err("unsupported opener");
-                    }
-                }
-                Some("cheers.compose" | "cheers.request" | "cheers.execute") => {
-                    let request = matches!(
-                        event["name"].as_str(),
-                        Some("cheers.request" | "cheers.execute")
-                    );
-                    keys(
-                        context,
-                        if request {
-                            &["actionId", "payload", "botId"]
-                        } else {
-                            &["actionId", "payload"]
-                        },
-                    )?;
-                    if !id(&context["actionId"], 80) {
-                        return Err("invalid action id");
-                    }
-                    if request && !uuid_shape(&context["botId"]) {
-                        return Err("request needs stable bot id");
-                    }
-                    let payload = context["payload"]
-                        .as_object()
-                        .ok_or("payload must be object")?;
-                    for value in payload.values() {
-                        if value.is_object() {
-                            binding(value, proto)?;
-                        } else if value.is_array() {
-                            return Err("invalid payload value");
-                        }
-                    }
-                }
-                _ => return Err("unsupported action"),
-            }
+            validate_cheers_event(&node["action"]["event"], proto)?;
         }
         _ => return Err("unsupported component"),
     }
@@ -640,9 +732,11 @@ pub fn validate_document(
         return Err("too many messages");
     }
     let mut surfaces: HashMap<String, HashMap<String, Value>> = HashMap::new();
+    let mut surface_basic: HashMap<String, bool> = HashMap::new();
     let mut data_models: HashMap<String, Value> = HashMap::new();
     let apply_components = |surface: &mut HashMap<String, Value>,
-                            components_val: &Value|
+                            components_val: &Value,
+                            is_basic: bool|
      -> Result<(), &'static str> {
         let components = components_val.as_array().ok_or("components required")?;
         if components.len() > 256 {
@@ -650,7 +744,7 @@ pub fn validate_document(
         }
         let mut seen = HashSet::new();
         for node in components {
-            validate_component(node, proto)?;
+            validate_component(node, proto, is_basic)?;
             let cid = node["id"].as_str().unwrap();
             if !seen.insert(cid) {
                 return Err("duplicate component");
@@ -691,7 +785,11 @@ pub fn validate_document(
                     &["surfaceId", "catalogId"]
                 },
             )?;
-            if body["catalogId"] != proto.catalog_id()
+            let catalog_str = body["catalogId"].as_str().unwrap_or("");
+            let is_basic = proto == ProtoVersion::V1_0
+                && (catalog_str == BASIC_CATALOG_ID || catalog_str == BASIC_CATALOG_ALIAS_ID);
+            let valid_catalog = is_basic || catalog_str == proto.catalog_id();
+            if !valid_catalog
                 || surfaces.contains_key(sid)
                 || surfaces.len() >= 8
             {
@@ -704,18 +802,21 @@ pub fn validate_document(
                     patch_data(&mut data, &[], Some(dm))?;
                 }
                 if let Some(components) = body.get("components") {
-                    apply_components(&mut surface, components)?;
+                    apply_components(&mut surface, components, is_basic)?;
                 }
             }
             surfaces.insert(sid.into(), surface);
+            surface_basic.insert(sid.into(), is_basic);
             data_models.insert(sid.into(), data);
             continue;
         }
+        let is_basic = *surface_basic.get(sid).unwrap_or(&false);
         let surface = surfaces.get_mut(sid).ok_or("surface not created")?;
         match kind {
             "deleteSurface" => {
                 keys(body, &["surfaceId"])?;
                 surfaces.remove(sid);
+                surface_basic.remove(sid);
                 data_models.remove(sid);
             }
             "updateDataModel" => {
@@ -733,7 +834,7 @@ pub fn validate_document(
             }
             _ => {
                 keys(body, &["surfaceId", "components"])?;
-                apply_components(surface, &body["components"])?;
+                apply_components(surface, &body["components"], is_basic)?;
             }
         }
     }
@@ -752,6 +853,13 @@ pub fn validate_document(
             for child in children {
                 walk(child.as_str().unwrap(), nodes, ancestors, visits)?;
             }
+        } else if let Some(template) = node["children"].as_object() {
+            if let Some(cid) = template.get("componentId").and_then(Value::as_str) {
+                walk(cid, nodes, ancestors, visits)?;
+            }
+        }
+        if let Some(child) = node["child"].as_str() {
+            walk(child, nodes, ancestors, visits)?;
         }
         ancestors.remove(id);
         Ok(())
@@ -1197,7 +1305,13 @@ mod tests {
     #[test]
     fn repeated_a2ui_action_ids_retain_their_component_and_surface() {
         let mut doc = contract()["request_example"].clone();
-        let mut other = doc["messages"][0]["createSurface"]["components"][6].clone();
+        let mut other = doc["messages"][0]["createSurface"]["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == "prepare")
+            .unwrap()
+            .clone();
         other["id"] = json!("prepare-other");
         other["action"]["event"]["context"]["payload"]["includeSources"] = json!(true);
         doc["messages"][0]["createSurface"]["components"]

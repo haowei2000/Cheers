@@ -1,174 +1,280 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { useResourceDraft,ResourceDraftFeedback } from "../../useResourceDraft";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { A2uiSurface, type ReactCatalogComponent } from "@a2ui/react";
+import type { ActionPayload, SurfaceModel } from "@a2ui/web_core";
+import { useResourceDraft, ResourceDraftFeedback } from "../../useResourceDraft";
 import { ExecutionTerminal } from "../../../RemoteTerminal";
-import { ActionButton } from "@/components/ui/action-button";
-import { CheckboxField } from "@/components/ui/checkbox-field";
-import { Input } from "@/components/ui/input";
-import { Field } from "@/components/ui/field";
 import type { LensProps } from "../registry";
 import type { WorkbenchInteraction } from "../../interaction";
 import { formatLocator } from "../../../locator";
-import { a2uiPresentation, parseA2UIDocument, readBinding, setDataPath, validateFieldChecks, type A2UIComponent, type A2UISurface } from "./document";
+import { createA2UIProcessor, pointerSegments, readBinding } from "./document";
 
-function SurfaceView({ surface, host, root }: { surface: A2UISurface; host: LensProps; root: string }) {
-  const prefix = useId();
-  const controlSize = host.presentation === "minimal" ? "compact" : "regular";
-  const spacing = host.presentation === "minimal" ? "gap-2" : "gap-4";
-  const inputs=useMemo(()=>[...surface.components.values()].filter(node=>node.component==="TextField"||node.component==="CheckBox"),[surface]);
-  const initialInputs=Object.fromEntries(inputs.map(node=>[(node.value as {path:string}).path,readBinding(node.value,surface.data)]));
-  const shape=inputs.map(node=>`${node.component}:${(node.value as {path:string}).path}`).sort().join("|");
-  let schemaHash=2166136261;for(const char of shape)schemaHash=Math.imul(schemaHash^char.charCodeAt(0),16777619);
-  const savedDraft=useResourceDraft(host.resourceUri,host.sourceVersion,`a2ui:${surface.id}:${(schemaHash>>>0).toString(16)}`,initialInputs);
-  const draft=useMemo(()=>inputs.reduce((data,node)=>{
-    const path=(node.value as {path:string}).path;const value=savedDraft.data[path];
-    return (node.component==="CheckBox"?typeof value==="boolean":typeof value==="string")?setDataPath(data,path,value):data;
-  },surface.data),[inputs,surface.data,savedDraft.data]);
-  const [feedback, setFeedback] = useState<{ error: boolean; text: string } | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [executionId,setExecutionId]=useState<string>();
-  const [pending, setPending] = useState(false);
-  const busy = useRef(false);
-  const invocations = useRef(new Map<string, string>());
-  const text = (value: unknown) => {
-    const resolved = readBinding(value, draft);
-    return typeof resolved === "string" || typeof resolved === "number" || typeof resolved === "boolean" ? String(resolved) : "";
-  };
-  const change = (node: A2UIComponent, value: string | boolean) => {
-    try {
-      const path = (node.value as { path: string }).path;
-      savedDraft.setData({...savedDraft.data,[path]:value});
-      setFieldErrors((prev) => {
-        if (!(node.id in prev)) return prev;
-        const next = { ...prev };
-        delete next[node.id];
-        return next;
-      });
-      setFeedback(null);
-    } catch (error) {
-      setFeedback({ error: true, text: error instanceof Error ? error.message : "The input could not be updated." });
+function resolveContextValue(value: unknown, data: Record<string, unknown>): unknown {
+  if (Array.isArray(value)) return value.map((item) => resolveContextValue(item, data));
+  if (value !== null && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj["@path"] === "string" || typeof obj.path === "string") {
+      return readBinding(obj, data);
     }
-  };
-  const activate = async (node: A2UIComponent) => {
-    if (busy.current) return;
-    const event = node.action!.event;
-    if (event.name === "cheers.compose" || event.name === "cheers.request" || event.name === "cheers.execute") {
-      const nextErrors: Record<string, string> = {};
-      for (const field of inputs) {
-        if (field.component !== "TextField" || !field.checks?.length) continue;
-        const err = validateFieldChecks(text(field.value), field.checks);
-        if (err) nextErrors[field.id] = err;
-      }
-      if (Object.keys(nextErrors).length > 0) {
-        setFieldErrors(nextErrors);
-        setFeedback({ error: true, text: Object.values(nextErrors)[0] });
-        return;
-      }
-      setFieldErrors({});
-    }
-    const context = Object.fromEntries(Object.entries(event.context).map(([key, value]) => [key, readBinding(value, draft)]));
-    let intent: WorkbenchInteraction;
-    if (event.name === "cheers.open" || event.name === "cheers.openNative") {
-      intent = { kind: "open", uri: typeof context.uri === "string" ? context.uri : "" };
-      if (event.name === "cheers.openNative") intent = { ...intent, kind: "openNative", opener: String(context.opener) };
-    } else {
-      const payload = event.context.payload as Record<string, unknown>;
-      const formData = Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, readBinding(value, draft)]));
-      intent = { kind: "compose", actionId: String(context.actionId), formData };
-      if (event.name === "cheers.request" || event.name === "cheers.execute") {
-        if (!host.path || !host.sourceVersion) {
-          setFeedback({ error: true, text: "Save and reload this resource before sending a request." });
-          return;
-        }
-        const identity = JSON.stringify([node.id, host.sourceVersion, formData]);
-        const invocationId = invocations.current.get(identity) ?? crypto.randomUUID();
-        invocations.current.set(identity, invocationId);
-        intent = { kind: event.name==="cheers.execute"?"execute":"request", event: { v: 1, sourceUri: host.resourceUri ?? formatLocator({ kind: "desk", path: host.path }), sourceVersion: host.sourceVersion,
-          surfaceId: surface.id, componentId: node.id, actionId: String(context.actionId), botId: String(context.botId), invocationId, input: formData } };
-      }
-    }
-    busy.current = true;
-    setPending(true);
-    let result;
-    try {
-      result = await host.onInteraction?.(intent);
-    } catch (error) {
-      result = { ok: false as const, error: error instanceof Error ? error.message : "The interaction failed. Try again." };
-    } finally {
-      busy.current = false;
-      setPending(false);
-    }
-    if(result?.ok&&result.executionId)setExecutionId(result.executionId);
-    setFeedback(!result
-      ? { error: true, text: "This interaction is unavailable in this view." }
-      : result.ok
-        ? { error: false, text: result.outcome === "drafted" ? "Draft added to the chat composer. Review it before sending."
-          : result.outcome === "executing" ? "Execution accepted. Its terminal and status appear here."
-          : result.outcome === "requested" ? "Request sent to the Bot. Its resource update will appear here."
-          : result.outcome === "local" ? "Original file opened on this device."
-          : result.outcome === "downloaded-copy" ? "Downloaded copy opened. Edits in the external application do not sync back."
-          : "Resource navigation requested." }
-        : { error: true, text: result.error });
-  };
-  const render = (id: string): ReactNode => {
-    const node = surface.components.get(id)!;
-    const a11yLabel = node.accessibility?.label ? text(node.accessibility.label) : undefined;
-    const a11yDesc = node.accessibility?.description ? text(node.accessibility.description) : undefined;
-    let content: ReactNode;
-    if (node.component === "Column" || node.component === "Row") {
-      content = <div aria-label={a11yLabel || undefined} className={`${node.component === "Row" ? "flex min-w-0 flex-wrap items-start" : "flex min-w-0 flex-col"} ${spacing}`}>{node.children!.map(render)}</div>;
-    } else if (node.component === "Text") {
-      content = <p aria-label={a11yLabel || undefined} className={host.presentation === "minimal" ? "line-clamp-3 whitespace-pre-wrap break-words font-reading text-regular leading-reading text-content-primary" : "whitespace-pre-wrap break-words font-reading text-regular leading-reading text-content-primary"}>{text(node.text)}</p>;
-    } else if (node.component === "TextField") {
-      const inputId = `${prefix}-${node.id}`;
-      const fieldError = fieldErrors[node.id];
-      const placeholder = node.placeholder ? text(node.placeholder) : undefined;
-      content = <Field htmlFor={inputId} label={text(node.label) || "Text input"} hint={a11yDesc || undefined} error={fieldError} className="min-w-0">
-        <Input variant="plain" id={inputId} controlSize={controlSize} disabled={pending} error={Boolean(fieldError)} placeholder={placeholder || undefined} aria-label={a11yLabel || undefined} value={text(node.value)} onChange={(event) => change(node, event.target.value)} />
-      </Field>;
-    } else if (node.component === "CheckBox") {
-      content = <CheckboxField controlSize={controlSize} disabled={pending} label={text(node.label) || "Option"} aria-label={a11yLabel || undefined} checked={readBinding(node.value, draft) === true} onChange={(event) => change(node, event.target.checked)} />;
-    } else {
-      const label = text(node.label);
-      const name = node.action!.event.name;
-      const kind = name.slice("cheers.".length) as WorkbenchInteraction["kind"];
-      const available = host.onInteraction?.capabilities.includes(kind);
-      const accessibleLabel = a11yLabel || (a11yDesc ? `${label || "Card action"} — ${a11yDesc}` : label || "Card action");
-      content = <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <span className="break-words font-reading text-regular leading-reading text-content-secondary">{label}</span>
-        <ActionButton context="resourceCard" action={kind === "open" || kind === "openNative" ? "open" : "request"} controlSize={controlSize} accessibleLabel={accessibleLabel} disabled={!available || pending} loading={pending} onClick={() => void activate(node)} />
-        {!available && <span className="text-body-secondary">This action is unavailable on this client.</span>}
-      </div>;
-    }
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Optional source picking delegates to the existing host context menu; actual actions use native controls.
-    return <div key={node.id} className="min-w-0" onContextMenu={(event) => {
-      if (!host.requestContextPick) return;
-      event.preventDefault();
-      event.stopPropagation();
-      host.requestContextPick(event, { label: text(node.label ?? node.text) || node.id, sourcePath: node.sourcePath });
-    }}>{content}</div>;
-  };
-  return <section aria-label={`Interactive surface ${surface.id}`} className="space-y-4">
-    {render(root)}
-    {executionId&&<ExecutionTerminal executionId={executionId}/>}
-    <ResourceDraftFeedback draft={savedDraft} />
-    {feedback && <p role={feedback.error ? "alert" : "status"} className={feedback.error ? "text-body-error" : "text-body-secondary"}>{feedback.text}</p>}
-  </section>;
+    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, resolveContextValue(v, data)]));
+  }
+  return value;
 }
 
-/** Uses the existing file session and lens host. Input is a local draft, never
- * a whole-document onChange or an implicit native/tool invocation. */
+function SurfaceHost({
+  surface,
+  host,
+  onRegisterAction,
+}: {
+  surface: SurfaceModel<ReactCatalogComponent>;
+  host: LensProps;
+  onRegisterAction: (surfaceId: string, handler: (action: ActionPayload) => Promise<void>) => void;
+}) {
+  const initialData = useMemo(() => {
+    const raw = surface.dataModel.get("/");
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  }, [surface]);
+
+  const schemaKey = useMemo(() => {
+    const ids = Array.from(surface.componentsModel.entries, ([id]) => id).sort().join("|");
+    let hash = 2166136261;
+    for (const char of ids) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    return `a2ui:${surface.id}:${(hash >>> 0).toString(16)}`;
+  }, [surface]);
+
+  const savedDraft = useResourceDraft(host.resourceUri, host.sourceVersion, schemaKey, initialData);
+  const [feedback, setFeedback] = useState<{ error: boolean; text: string } | null>(null);
+  const [executionId, setExecutionId] = useState<string>();
+  const busy = useRef(false);
+  const invocations = useRef(new Map<string, string>());
+  const appliedDraft = useRef(false);
+
+  // Restore persisted draft into the A2UI DataModel once per surface mount.
+  useEffect(() => {
+    if (appliedDraft.current) return;
+    appliedDraft.current = true;
+    const saved = savedDraft.data;
+    if (!saved || typeof saved !== "object") return;
+    for (const [key, val] of Object.entries(saved)) {
+      if (key.startsWith("/")) {
+        try {
+          pointerSegments(key);
+          surface.dataModel.set(key, val);
+        } catch {
+          // Ignore invalid legacy draft path
+        }
+      }
+    }
+  }, [surface, savedDraft.data]);
+
+  // Persist DataModel updates into Cheers' per-user resource draft.
+  useEffect(() => {
+    const sub = surface.dataModel.subscribe("/", (next) => {
+      if (next && typeof next === "object" && !Array.isArray(next)) {
+        savedDraft.setData(next as Record<string, unknown>);
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [surface, savedDraft]);
+
+  useEffect(() => {
+    onRegisterAction(surface.id, async (action: ActionPayload) => {
+      if (busy.current) return;
+      const data = (surface.dataModel.get("/") as Record<string, unknown>) ?? {};
+      const context = resolveContextValue(action.context ?? {}, data) as Record<string, unknown>;
+      let intent: WorkbenchInteraction;
+
+      if (action.name === "cheers.open" || action.name === "cheers.openNative") {
+        intent = {
+          kind: action.name === "cheers.openNative" ? "openNative" : "open",
+          uri: typeof context.uri === "string" ? context.uri : "",
+          ...(action.name === "cheers.openNative" ? { opener: String(context.opener ?? "") } : {}),
+        } as WorkbenchInteraction;
+      } else if (action.name === "cheers.compose" || action.name === "cheers.request" || action.name === "cheers.execute") {
+        const payload = (context.payload && typeof context.payload === "object" ? context.payload : {}) as Record<string, unknown>;
+        const formData = resolveContextValue(payload, data) as Record<string, unknown>;
+        if (action.name === "cheers.compose") {
+          intent = { kind: "compose", actionId: String(context.actionId ?? ""), formData };
+        } else {
+          if (!host.path || !host.sourceVersion) {
+            setFeedback({ error: true, text: "Save and reload this resource before sending a request." });
+            return;
+          }
+          const identity = JSON.stringify([action.sourceComponentId, host.sourceVersion, formData]);
+          const invocationId = invocations.current.get(identity) ?? crypto.randomUUID();
+          invocations.current.set(identity, invocationId);
+          intent = {
+            kind: action.name === "cheers.execute" ? "execute" : "request",
+            event: {
+              v: 1,
+              sourceUri: host.resourceUri ?? formatLocator({ kind: "desk", path: host.path }),
+              sourceVersion: host.sourceVersion,
+              surfaceId: surface.id,
+              componentId: action.sourceComponentId,
+              actionId: String(context.actionId ?? ""),
+              botId: String(context.botId ?? ""),
+              invocationId,
+              input: formData,
+            },
+          };
+        }
+      } else {
+        setFeedback({ error: false, text: `Action "${action.name}" triggered.` });
+        return;
+      }
+
+      busy.current = true;
+      try {
+        const result = await host.onInteraction?.(intent);
+        if (result?.ok && result.executionId) setExecutionId(result.executionId);
+        setFeedback(
+          !result
+            ? { error: true, text: "This interaction is unavailable in this view." }
+            : result.ok
+              ? {
+                  error: false,
+                  text:
+                    result.outcome === "drafted"
+                      ? "Draft added to the chat composer. Review it before sending."
+                      : result.outcome === "executing"
+                        ? "Execution accepted. Its terminal and status appear here."
+                        : result.outcome === "requested"
+                          ? "Request sent to the Bot. Its resource update will appear here."
+                          : result.outcome === "local"
+                            ? "Original file opened on this device."
+                            : result.outcome === "downloaded-copy"
+                              ? "Downloaded copy opened. Edits in the external application do not sync back."
+                              : "Resource navigation requested.",
+                }
+              : { error: true, text: result.error },
+        );
+      } catch (error) {
+        setFeedback({ error: true, text: error instanceof Error ? error.message : "The interaction failed. Try again." });
+      } finally {
+        busy.current = false;
+      }
+    });
+  }, [surface, host, onRegisterAction]);
+
+  return (
+    <section
+      aria-label={`Interactive surface ${surface.id}`}
+      className="space-y-4"
+      onContextMenu={(event) => {
+        if (!host.requestContextPick) return;
+        event.preventDefault();
+        event.stopPropagation();
+        host.requestContextPick(event, { label: surface.id, sourcePath: ["messages"] });
+      }}
+    >
+      {typeof document === "undefined" ? (
+        <div data-a2ui-surface={surface.id}>
+          {Array.from(surface.componentsModel.entries, ([id, comp]) => {
+            const tag = `a2ui-${comp.type.toLowerCase()}`;
+            return <div key={id} data-a2ui-component={tag} data-a2ui-id={id} />;
+          })}
+        </div>
+      ) : (
+        <A2uiSurface surface={surface} />
+      )}
+      {executionId && <ExecutionTerminal executionId={executionId} />}
+      <ResourceDraftFeedback draft={savedDraft} />
+      {feedback && (
+        <p role={feedback.error ? "alert" : "status"} className={feedback.error ? "text-body-error" : "text-body-secondary"}>
+          {feedback.text}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** Renders A2UI documents using Google's official `@a2ui/react` and `@a2ui/web_core`
+ * Basic Catalog while preserving Cheers' host interaction bridge and local draft persistence. */
 export function A2UILens(props: LensProps) {
-  const parsed = useMemo(() => {
-    try { return { surfaces: parseA2UIDocument(props.data), error: null }; }
-    catch (error) { return { surfaces: [], error: error instanceof Error ? error.message : "Invalid A2UI document." }; }
-  }, [props.data]);
-  if (parsed.error) return <div role="alert" className="p-4 text-body-error">{parsed.error} Open Raw to correct the document.</div>;
-  const presentation = a2uiPresentation(props.data, parsed.surfaces, props.presentation ?? "max");
-  if (!presentation.fits) return <p className="text-body-secondary">This form needs more space. Expand the preview to use all its controls.</p>;
-  return <div data-presentation={props.presentation ?? "max"} className={props.presentation === "minimal" || props.presentation === "medium"
-    ? "min-w-0 space-y-4 font-utility text-regular" : "h-full min-w-0 space-y-8 overflow-auto p-4 font-utility text-regular"}>
-    {!props.onInteraction && <p className="text-body-secondary">Actions are unavailable in this view.</p>}
-    {!parsed.surfaces.length && <p className="text-body-secondary">This document has no active surfaces. Open Raw to inspect it.</p>}
-    {presentation.selected.map(({ surface, root }) => <SurfaceView key={`${surface.id}:${props.sourceVersion}:${JSON.stringify(props.data)}`} surface={surface} root={root} host={props} />)}
-  </div>;
+  const actionHandlers = useRef(new Map<string, (action: ActionPayload) => Promise<void>>());
+  const registerAction = useMemo(
+    () => (surfaceId: string, handler: (action: ActionPayload) => Promise<void>) => {
+      actionHandlers.current.set(surfaceId, handler);
+    },
+    [],
+  );
+
+  const presentation = props.presentation ?? "max";
+  const ssrParsed = useMemo(() => {
+    if (typeof document !== "undefined") return null;
+    try {
+      return { ...createA2UIProcessor(props.data, { presentation }), error: null as string | null };
+    } catch (error) {
+      return { processor: null, surfaces: [] as SurfaceModel<ReactCatalogComponent>[], fits: true, error: error instanceof Error ? error.message : "Invalid A2UI document." };
+    }
+  }, [props.data, presentation]);
+
+  const [clientParsed, setClientParsed] = useState<{
+    processor: ReturnType<typeof createA2UIProcessor>["processor"] | null;
+    surfaces: SurfaceModel<ReactCatalogComponent>[];
+    fits: boolean;
+    error: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    let activeProcessor: ReturnType<typeof createA2UIProcessor>["processor"] | null = null;
+    try {
+      const result = createA2UIProcessor(props.data, {
+        presentation,
+        onAction: async (action) => {
+          const handler = actionHandlers.current.get(action.surfaceId);
+          if (handler) await handler(action);
+        },
+      });
+      activeProcessor = result.processor;
+      if (!disposed) {
+        setClientParsed({ ...result, error: null });
+      }
+    } catch (error) {
+      if (!disposed) {
+        setClientParsed({
+          processor: null,
+          surfaces: [],
+          fits: true,
+          error: error instanceof Error ? error.message : "Invalid A2UI document.",
+        });
+      }
+    }
+    return () => {
+      disposed = true;
+      activeProcessor?.dispose();
+    };
+  }, [props.data, presentation]);
+
+  const parsed = typeof document === "undefined" ? ssrParsed! : clientParsed;
+  if (!parsed) return null;
+
+  if (parsed.error) {
+    return <div role="alert" className="p-4 text-body-error">{parsed.error} Open Raw to correct the document.</div>;
+  }
+  if (!parsed.fits) {
+    return <p className="text-body-secondary">This form needs more space. Expand the preview to use all its controls.</p>;
+  }
+
+  return (
+    <div
+      data-presentation={presentation}
+      className={
+        presentation === "minimal" || presentation === "medium"
+          ? "min-w-0 space-y-4 font-utility text-regular"
+          : "h-full min-w-0 space-y-8 overflow-auto p-4 font-utility text-regular"
+      }
+    >
+      {!props.onInteraction && <p className="text-body-secondary">Actions are unavailable in this view.</p>}
+      {!parsed.surfaces.length && <p className="text-body-secondary">This document has no active surfaces. Open Raw to inspect it.</p>}
+      {parsed.surfaces.map((surface) => (
+        <SurfaceHost
+          key={`${surface.id}:${props.sourceVersion ?? 0}:${JSON.stringify(props.data)}`}
+          surface={surface}
+          host={props}
+          onRegisterAction={registerAction}
+        />
+      ))}
+    </div>
+  );
 }
