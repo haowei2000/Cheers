@@ -32,16 +32,27 @@ export function resourceRefCards(contentData: unknown): ResourceRefCard[] {
   });
 }
 
+function isDirectA2uiUri(uri: string): boolean {
+  const clean = uri.split(/[?#]/)[0];
+  return /\.a2ui\.(json|ya?ml)$/i.test(clean);
+}
+
 export function ResourceRefCards({ cards }: { cards: ResourceRefCard[] }) {
   const openLocator = useContext(LocatorOpenContext);
   if (!cards.length || !openLocator) return null;
   return (
     <div className="resource-enclosures my-4 flex min-w-0 max-w-xl flex-col gap-4" aria-label="Linked resources">
-      {cards.map((card,index) => (
-        <ResourceEnclosure key={card.uri} uri={card.uri} title={card.title} description={card.description} number={index+1}>
-          <ResourceInlinePreview uri={card.uri} />
-        </ResourceEnclosure>
-      ))}
+      {cards.map((card, index) =>
+        isDirectA2uiUri(card.uri) ? (
+          <div key={card.uri} className="min-w-0 rounded-sm bg-panel">
+            <ResourceInlinePreview uri={card.uri} directA2ui />
+          </div>
+        ) : (
+          <ResourceEnclosure key={card.uri} uri={card.uri} title={card.title} description={card.description} number={index + 1}>
+            <ResourceInlinePreview uri={card.uri} />
+          </ResourceEnclosure>
+        ),
+      )}
     </div>
   );
 }

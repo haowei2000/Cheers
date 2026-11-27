@@ -1,53 +1,44 @@
+import {
+  MessageProcessor,
+  type ActionListener,
+  type ProcessableMessage,
+  type SurfaceModel,
+} from "@a2ui/web_core";
+import { basicCatalog } from "@a2ui/web_core/catalogs/basic/v1";
+import type { ReactCatalogComponent } from "@a2ui/react";
+import { cheersBasicCatalog } from "./cheersCatalog";
 import { parseLocator } from "../../../locator";
 import { ACTION_ID, UUID } from "../../interaction";
-import catalogV1 from "../../../../../../../design-system/a2ui-catalog.json";
-import catalogV2 from "../../../../../../../design-system/a2ui-catalog-v2.json";
 
 export const A2UI_VERSION_V1 = "v0.9.1";
-export const A2UI_CATALOG_V1 = catalogV1.catalogId;
+export const A2UI_CATALOG_V1 = "urn:cheers:a2ui:catalog:v1";
+export const A2UI_CATALOG_V2 = "urn:cheers:a2ui:catalog:v2";
 export const A2UI_VERSION = "1.0";
-export const A2UI_CATALOG = catalogV2.catalogId;
+export const A2UI_CATALOG = basicCatalog.id;
+export const A2UI_SUPPORTED_CATALOGS = new Set([
+  basicCatalog.id,
+  "https://a2ui.org/specification/v1_0/basic_catalog.json",
+  A2UI_CATALOG_V2,
+  A2UI_CATALOG_V1,
+]);
+
 const BAD_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 type ProtoVersion = "v0.9.1" | "1.0";
-type Binding = string | boolean | { path: string };
-export type A2UIAccessibility = { label?: Binding; description?: Binding };
-export type A2UICheck =
-  | { rule: "required"; message?: string }
-  | { rule: "minLength" | "maxLength"; value: number; message?: string }
-  | { rule: "pattern"; value: string; message?: string };
-export type A2UIAction = {
-  event: { name: "cheers.open" | "cheers.compose" | "cheers.request" | "cheers.openNative" | "cheers.execute"; context: Record<string, unknown> };
-};
-export interface A2UIComponent {
-  id: string;
-  component: "Column" | "Row" | "Text" | "TextField" | "CheckBox" | "Button";
-  children?: string[];
-  text?: Binding;
-  label?: Binding;
-  placeholder?: Binding;
-  value?: Binding;
-  action?: A2UIAction;
-  accessibility?: A2UIAccessibility;
-  checks?: A2UICheck[];
-  sourcePath: (string | number)[];
-}
-export interface A2UISurface {
-  id: string;
-  components: Map<string, A2UIComponent>;
-  data: Record<string, unknown>;
-}
 
 function mapping(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+
 function requireThat(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+
 function keys(value: Record<string, unknown>, allowed: string[]) {
   requireThat(Object.keys(value).every((key) => allowed.includes(key)), "Unsupported A2UI property.");
 }
+
 export function pointerSegments(path: string): string[] {
   requireThat(path === "/" || path === "" || path.startsWith("/"), "Only absolute data paths are supported.");
   if (path === "/" || path === "") return [];
@@ -56,15 +47,19 @@ export function pointerSegments(path: string): string[] {
   requireThat(segments.length <= 32 && segments.every((part) => !BAD_KEYS.has(part)), "Unsafe data path.");
   return segments;
 }
+
 export function readBinding(value: unknown, data: Record<string, unknown>): unknown {
-  if (mapping(value) && typeof value.path === "string") {
-    let current: unknown = data;
-    for (const part of pointerSegments(value.path)) {
-      if (!mapping(current) && !Array.isArray(current)) return undefined;
-      if (!Object.prototype.hasOwnProperty.call(current, part)) return undefined;
-      current = (current as Record<string, unknown>)[part];
+  if (mapping(value)) {
+    const path = typeof value["@path"] === "string" ? value["@path"] : typeof value.path === "string" ? value.path : null;
+    if (path !== null) {
+      let current: unknown = data;
+      for (const part of pointerSegments(path)) {
+        if (!mapping(current) && !Array.isArray(current)) return undefined;
+        if (!Object.prototype.hasOwnProperty.call(current, part)) return undefined;
+        current = (current as Record<string, unknown>)[part];
+      }
+      return current;
     }
-    return current;
   }
   return value;
 }
@@ -110,270 +105,123 @@ function safeJson(value: unknown, depth = 0): void {
       requireThat(!BAD_KEYS.has(key), "Unsafe A2UI data key.");
       safeJson(item, depth + 1);
     }
-  } else requireThat(value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)), "A2UI data must be JSON.");
-}
-function bindingKey(proto: ProtoVersion): "path" | "@path" {
-  return proto === A2UI_VERSION ? "@path" : "path";
-}
-function normalizeBinding(value: unknown, proto: ProtoVersion, boolean = false): Binding {
-  if (mapping(value)) {
-    const key = bindingKey(proto);
-    keys(value, [key]);
-    const path = value[key];
-    requireThat(typeof path === "string", "A binding needs a data path.");
-    pointerSegments(path);
-    return { path };
+  } else {
+    requireThat(
+      value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)),
+      "A2UI data must be JSON.",
+    );
   }
-  requireThat(boolean ? typeof value === "boolean" : typeof value === "string", "Invalid component value.");
-  return value as string | boolean;
 }
-function parseAccessibility(raw: unknown, proto: ProtoVersion): A2UIAccessibility {
-  requireThat(mapping(raw), "Invalid accessibility metadata.");
-  keys(raw, ["label", "description"]);
-  const result: A2UIAccessibility = {};
-  if (raw.label !== undefined) result.label = normalizeBinding(raw.label, proto);
-  if (raw.description !== undefined) result.description = normalizeBinding(raw.description, proto);
-  return result;
-}
-function parseQuantifier(pattern: string, start: number): { next: number; repeating: boolean } | null {
-  const ch = pattern[start];
-  if (ch === "?" || ch === "*" || ch === "+") {
-    return { next: start + 1, repeating: ch === "*" || ch === "+" };
+
+function rewriteLegacyPaths(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(rewriteLegacyPaths);
+  if (!mapping(value)) return value;
+  const entries = Object.entries(value);
+  if (entries.length === 1 && entries[0][0] === "path" && typeof entries[0][1] === "string") {
+    pointerSegments(entries[0][1]);
+    return { "@path": entries[0][1] };
   }
-  if (ch === "{") {
-    const end = pattern.indexOf("}", start + 1);
-    if (end === -1) return null;
-    const body = pattern.slice(start + 1, end);
-    const match = /^(\d+)(?:,(\d*))?$/.exec(body);
-    if (!match) return null;
-    const min = Number(match[1]);
-    const max = match[2] === undefined ? min : match[2] === "" ? Infinity : Number(match[2]);
-    if (min > 256 || (Number.isFinite(max) && max > 256) || max < min) return null;
-    return { next: end + 1, repeating: max > 1 };
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of entries) {
+    out[k] = rewriteLegacyPaths(v);
   }
-  return null;
+  return out;
 }
-function isSafeCheckPattern(pattern: string): boolean {
-  const stack: Array<{ hasQuantifier: boolean; hasAlternation: boolean }> = [{ hasQuantifier: false, hasAlternation: false }];
-  let inClass = false;
-  let i = 0;
-  while (i < pattern.length) {
-    const ch = pattern[i];
-    if (ch === "\\") {
-      if (i + 1 >= pattern.length) return false;
-      const next = pattern[i + 1];
-      if ((next >= "1" && next <= "9") || next === "k") return false;
-      i += 2;
-      const q = parseQuantifier(pattern, i);
-      if (q) {
-        stack[stack.length - 1].hasQuantifier = true;
-        i = q.next;
-        if (parseQuantifier(pattern, i)) return false;
-      }
-      continue;
-    }
-    if (inClass) {
-      if (ch === "]") {
-        inClass = false;
-        i += 1;
-        const q = parseQuantifier(pattern, i);
-        if (q) {
-          stack[stack.length - 1].hasQuantifier = true;
-          i = q.next;
-          if (parseQuantifier(pattern, i)) return false;
-        }
-      } else {
-        i += 1;
-      }
-      continue;
-    }
-    if (ch === "[") {
-      inClass = true;
-      i += 1;
-      continue;
-    }
-    if (ch === "(") {
-      if (pattern[i + 1] === "?" && (pattern[i + 2] === "=" || pattern[i + 2] === "!" || pattern[i + 2] === "<")) {
-        return false;
-      }
-      stack.push({ hasQuantifier: false, hasAlternation: false });
-      i += 1;
-      continue;
-    }
-    if (ch === ")") {
-      if (stack.length <= 1) return false;
-      const group = stack.pop()!;
-      i += 1;
-      const q = parseQuantifier(pattern, i);
-      if (q) {
-        if (q.repeating && (group.hasQuantifier || group.hasAlternation)) return false;
-        stack[stack.length - 1].hasQuantifier = true;
-        i = q.next;
-        if (parseQuantifier(pattern, i)) return false;
-      } else if (group.hasQuantifier) {
-        stack[stack.length - 1].hasQuantifier = true;
-      }
-      continue;
-    }
-    if (ch === "|") {
-      stack[stack.length - 1].hasAlternation = true;
-      i += 1;
-      continue;
-    }
-    i += 1;
-    const q = parseQuantifier(pattern, i);
-    if (q) {
-      stack[stack.length - 1].hasQuantifier = true;
-      i = q.next;
-      if (parseQuantifier(pattern, i)) return false;
-    }
-  }
-  return !inClass && stack.length === 1;
-}
-function parseChecks(raw: unknown): A2UICheck[] {
-  requireThat(Array.isArray(raw) && raw.length <= 8, "Invalid component checks.");
-  return raw.map((item) => {
-    requireThat(mapping(item) && typeof item.rule === "string", "Invalid check rule.");
-    const message = item.message;
-    requireThat(message === undefined || (typeof message === "string" && message.length <= 256), "Invalid check message.");
+
+function convertLegacyChecks(rawChecks: unknown, fieldValue: unknown): unknown {
+  if (!Array.isArray(rawChecks)) return rawChecks;
+  return rawChecks.map((item) => {
+    if (!mapping(item) || typeof item.rule !== "string") return item;
+    const message = typeof item.message === "string" ? item.message : "Invalid value.";
+    const valueRef = rewriteLegacyPaths(fieldValue);
     if (item.rule === "required") {
-      keys(item, ["rule", "message"]);
-      return message !== undefined ? { rule: "required", message } : { rule: "required" };
+      return { condition: { "@call": "required", value: valueRef }, message };
     }
-    if (item.rule === "minLength" || item.rule === "maxLength") {
-      keys(item, ["rule", "value", "message"]);
-      const min = item.rule === "minLength" ? 0 : 1;
-      requireThat(typeof item.value === "number" && Number.isInteger(item.value) && item.value >= min && item.value <= 4096, "Invalid check length bound.");
-      return message !== undefined ? { rule: item.rule, value: item.value, message } : { rule: item.rule, value: item.value };
+    if (item.rule === "minLength") {
+      return { condition: { "@call": "length", value: valueRef, min: item.value }, message };
+    }
+    if (item.rule === "maxLength") {
+      return { condition: { "@call": "length", value: valueRef, max: item.value }, message };
     }
     if (item.rule === "pattern") {
-      keys(item, ["rule", "value", "message"]);
-      requireThat(typeof item.value === "string" && item.value.length >= 1 && item.value.length <= 256, "Invalid check pattern.");
-      requireThat(isSafeCheckPattern(item.value), "Unsafe check pattern.");
-      try { new RegExp(item.value); } catch { throw new Error("Invalid check pattern."); }
-      return message !== undefined ? { rule: "pattern", value: item.value, message } : { rule: "pattern", value: item.value };
+      return { condition: { "@call": "regex", value: valueRef, pattern: item.value }, message };
     }
     throw new Error("Unsupported check rule.");
   });
 }
-export function validateFieldChecks(value: string, checks?: A2UICheck[]): string | null {
-  if (!checks?.length) return null;
-  for (const check of checks) {
-    if (check.rule === "required" && !value.trim()) return check.message ?? "This field is required.";
-    if (check.rule === "minLength" && value.length < check.value) return check.message ?? `Enter at least ${check.value} characters.`;
-    if (check.rule === "maxLength" && value.length > check.value) return check.message ?? `Enter at most ${check.value} characters.`;
-    if (check.rule === "pattern" && value.length > 0) {
-      if (value.length > 4096 || !isSafeCheckPattern(check.value)) {
-        return check.message ?? "Value does not match the required format.";
-      }
-      try {
-        if (!new RegExp(check.value).test(value)) return check.message ?? "Value does not match the required format.";
-      } catch {
-        return check.message ?? "Value does not match the required format.";
-      }
-    }
-  }
-  return null;
-}
-function parseComponent(raw: unknown, sourcePath: (string | number)[], proto: ProtoVersion): A2UIComponent {
-  requireThat(mapping(raw) && typeof raw.id === "string" && ID.test(raw.id), "Invalid component id.");
-  const component = raw.component;
-  const activeCatalog = proto === A2UI_VERSION ? catalogV2 : catalogV1;
-  requireThat(Object.prototype.hasOwnProperty.call(activeCatalog.components, String(component)), "This component is not in the Cheers catalog.");
-  const common = proto === A2UI_VERSION ? ["id", "component", "@accessibility"] : ["id", "component"];
-  const accessibility = proto === A2UI_VERSION && raw["@accessibility"] !== undefined ? parseAccessibility(raw["@accessibility"], proto) : undefined;
-  const base: A2UIComponent = { id: raw.id, component: component as A2UIComponent["component"], ...(accessibility ? { accessibility } : {}), sourcePath };
-  if (component === "Column" || component === "Row") {
-    keys(raw, [...common, "children"]);
-    requireThat(Array.isArray(raw.children) && raw.children.length <= 256 && raw.children.every((id) => typeof id === "string" && ID.test(id)), "Invalid child list.");
-    requireThat(new Set(raw.children).size === raw.children.length, "Duplicate child reference.");
-    base.children = raw.children as string[];
-  } else if (component === "Text") {
-    keys(raw, [...common, "text"]);
-    base.text = normalizeBinding(raw.text, proto);
-  } else if (component === "TextField" || component === "CheckBox") {
-    const allowed = component === "TextField" && proto === A2UI_VERSION
-      ? [...common, "label", "value", "placeholder", "@checks"]
-      : [...common, "label", "value"];
-    keys(raw, allowed);
-    base.label = normalizeBinding(raw.label, proto);
-    const key = bindingKey(proto);
-    requireThat(mapping(raw.value) && typeof raw.value[key] === "string" && pointerSegments(raw.value[key] as string).length > 0, "Inputs need a writable non-root data path.");
-    base.value = normalizeBinding(raw.value, proto, component === "CheckBox");
-    if (component === "TextField" && proto === A2UI_VERSION) {
-      if (raw.placeholder !== undefined) base.placeholder = normalizeBinding(raw.placeholder, proto);
-      if (raw["@checks"] !== undefined) base.checks = parseChecks(raw["@checks"]);
+
+function validateCheersAction(action: unknown) {
+  if (!mapping(action) || !mapping(action.event)) return;
+  const event = action.event;
+  if (typeof event.name !== "string" || !event.name.startsWith("cheers.")) return;
+  requireThat(
+    ["cheers.open", "cheers.compose", "cheers.request", "cheers.openNative", "cheers.execute"].includes(event.name),
+    "This action binding is not supported.",
+  );
+  requireThat(mapping(event.context), "Action context must be an object.");
+  const ctx = event.context;
+  if (event.name === "cheers.open" || event.name === "cheers.openNative") {
+    if (typeof ctx.uri === "string") requireThat(parseLocator(ctx.uri), "Invalid resource locator.");
+    if (event.name === "cheers.openNative") {
+      requireThat(["finder", "vscode", "zed"].includes(String(ctx.opener)), "This native opener is not supported.");
     }
   } else {
-    keys(raw, [...common, "label", "action"]);
-    base.label = normalizeBinding(raw.label, proto);
-    requireThat(mapping(raw.action), "A button needs an action.");
-    keys(raw.action, ["event"]);
-    requireThat(mapping(raw.action.event), "Only registered event actions are supported.");
-    keys(raw.action.event, ["name", "context"]);
-    const eventName = String(raw.action.event.name);
-    requireThat(["cheers.open", "cheers.compose", "cheers.request", "cheers.openNative", "cheers.execute"].includes(eventName), "This action binding is not supported.");
-    requireThat(mapping(raw.action.event.context), "Action context must be an object.");
-    const normalizedContext: Record<string, unknown> = {};
-    if (eventName === "cheers.open" || eventName === "cheers.openNative") {
-      const native = eventName === "cheers.openNative";
-      keys(raw.action.event.context, native ? ["uri", "opener"] : ["uri"]);
-      normalizedContext.uri = normalizeBinding(raw.action.event.context.uri, proto);
-      if (typeof raw.action.event.context.uri === "string") requireThat(parseLocator(raw.action.event.context.uri), "Invalid resource locator.");
-      if (native) {
-        requireThat(["finder", "vscode", "zed"].includes(String(raw.action.event.context.opener)), "This native opener is not supported.");
-        normalizedContext.opener = raw.action.event.context.opener;
-      }
-    } else {
-      const request = eventName === "cheers.request" || eventName === "cheers.execute";
-      keys(raw.action.event.context, request ? ["actionId", "payload", "botId"] : ["actionId", "payload"]);
-      if (request) {
-        requireThat(typeof raw.action.event.context.botId === "string" && UUID.test(raw.action.event.context.botId), "Requests need a stable bot id.");
-        normalizedContext.botId = raw.action.event.context.botId;
-      }
-      requireThat(typeof raw.action.event.context.actionId === "string" && ACTION_ID.test(raw.action.event.context.actionId), "Invalid compose action id.");
-      normalizedContext.actionId = raw.action.event.context.actionId;
-      requireThat(mapping(raw.action.event.context.payload), "Compose payload must be an object.");
-      const normalizedPayload: Record<string, unknown> = {};
-      for (const [k, value] of Object.entries(raw.action.event.context.payload)) {
-        if (mapping(value)) normalizedPayload[k] = normalizeBinding(value, proto);
-        else {
-          requireThat(value === null || ["string", "boolean", "number"].includes(typeof value), "Unsupported action value.");
-          normalizedPayload[k] = value;
-        }
-      }
-      normalizedContext.payload = normalizedPayload;
+    if (event.name === "cheers.request" || event.name === "cheers.execute") {
+      requireThat(typeof ctx.botId === "string" && UUID.test(ctx.botId), "Requests need a stable bot id.");
     }
-    base.action = { event: { name: eventName as A2UIAction["event"]["name"], context: normalizedContext } };
+    requireThat(typeof ctx.actionId === "string" && ACTION_ID.test(ctx.actionId), "Invalid compose action id.");
+    requireThat(mapping(ctx.payload), "Compose payload must be an object.");
   }
-  return base;
 }
 
-/** A persisted file wraps an ordered protocol transcript. This wrapper is a
- * Cheers storage convention; each message uses the pinned A2UI envelope. */
-export function parseA2UIDocument(raw: unknown): A2UISurface[] {
+function normalizeComponentList(components: unknown, legacy: boolean): Record<string, unknown>[] {
+  requireThat(Array.isArray(components) && components.length <= 256, "Too many components.");
+  const out: Record<string, unknown>[] = [];
+  for (const rawComp of components) {
+    requireThat(mapping(rawComp) && typeof rawComp.id === "string" && ID.test(rawComp.id), "Invalid component id.");
+    const comp = (legacy ? rewriteLegacyPaths(rawComp) : { ...rawComp }) as Record<string, unknown>;
+    if ("action" in comp) validateCheersAction(comp.action);
+    if ("@checks" in comp) {
+      // @a2ui/web_core@0.16.1's TextField/CheckBox schema wrapper rejects @checks at runtime;
+      // strip @checks before feeding MessageProcessor while preserving document compatibility.
+      delete comp["@checks"];
+    }
+    if (legacy && comp.component === "Button" && "label" in comp && !("child" in comp)) {
+      const labelId = `${comp.id}__label`;
+      out.push({ id: labelId, component: "Text", text: comp.label });
+      const rest = { ...comp };
+      delete rest.label;
+      rest.child = labelId;
+      out.push(rest);
+      continue;
+    }
+    out.push(comp);
+  }
+  return out;
+}
+
+export interface NormalizedA2UIDocument {
+  messages: ProcessableMessage[];
+  views?: {
+    minimal?: { surfaceId: string; root: string };
+    medium?: { surfaceId: string; root: string };
+  };
+}
+
+/** Validates the Cheers A2UI envelope and normalizes legacy catalog:v1/v2 documents
+ * into standard A2UI 1.0 + Basic Catalog messages for `@a2ui/web_core`. */
+export function normalizeA2UIDocument(raw: unknown): NormalizedA2UIDocument {
   requireThat(mapping(raw), "Expected an A2UI document.");
   keys(raw, ["a2ui", "messages", "views"]);
   requireThat(raw.a2ui === A2UI_VERSION || raw.a2ui === A2UI_VERSION_V1, "Unsupported A2UI version; expected 1.0 or v0.9.1.");
   const proto: ProtoVersion = raw.a2ui;
-  const expectedCatalog = proto === A2UI_VERSION ? A2UI_CATALOG : A2UI_CATALOG_V1;
   requireThat(Array.isArray(raw.messages) && raw.messages.length <= 256, "Expected at most 256 A2UI messages.");
   const serialized = JSON.stringify(raw);
   requireThat(serialized.length <= 256_000, "A2UI document is too large.");
   safeJson(raw);
-  const surfaces = new Map<string, A2UISurface>();
-  const applyComponents = (surface: A2UISurface, components: unknown, pathPrefix: (string | number)[]) => {
-    requireThat(Array.isArray(components) && components.length <= 256, "Too many components.");
-    const ids = new Set<string>();
-    components.forEach((value, index) => {
-      const parsed = parseComponent(value, [...pathPrefix, index], proto);
-      requireThat(!ids.has(parsed.id), "Duplicate component in one update.");
-      ids.add(parsed.id);
-      surface.components.set(parsed.id, parsed);
-    });
-    requireThat(surface.components.size <= 256, "Too many surface components.");
-  };
-  raw.messages.forEach((message, at) => {
+
+  const surfaceCatalogs = new Map<string, string>();
+  const messages: ProcessableMessage[] = raw.messages.map((message) => {
     requireThat(mapping(message) && message.version === proto, `Every message must use ${proto}.`);
     const kinds = ["createSurface", "updateComponents", "updateDataModel", "deleteSurface"].filter((key) => key in message);
     requireThat(kinds.length === 1, "Each message needs exactly one operation.");
@@ -381,77 +229,168 @@ export function parseA2UIDocument(raw: unknown): A2UISurface[] {
     keys(message, ["version", kind]);
     const body = message[kind];
     requireThat(mapping(body) && typeof body.surfaceId === "string" && ID.test(body.surfaceId), "Invalid surface id.");
+
     if (kind === "createSurface") {
-      keys(body, proto === A2UI_VERSION ? ["surfaceId", "catalogId", "components", "dataModel"] : ["surfaceId", "catalogId"]);
-      requireThat(body.catalogId === expectedCatalog, "This A2UI catalog is not supported.");
-      requireThat(!surfaces.has(body.surfaceId) && surfaces.size < 8, "Duplicate surface or too many surfaces.");
-      const surface: A2UISurface = { id: body.surfaceId, components: new Map(), data: {} };
-      if (proto === A2UI_VERSION) {
-        if (body.dataModel !== undefined) surface.data = setDataPath({}, "/", body.dataModel);
-        if (body.components !== undefined) applyComponents(surface, body.components, ["messages", at, "createSurface", "components"]);
+      const catalogId = String(body.catalogId ?? "");
+      requireThat(A2UI_SUPPORTED_CATALOGS.has(catalogId), "This A2UI catalog is not supported.");
+      if (proto === A2UI_VERSION && catalogId === A2UI_CATALOG_V1) {
+        throw new Error("This A2UI catalog is not supported in 1.0.");
       }
-      surfaces.set(body.surfaceId, surface);
-      return;
+      surfaceCatalogs.set(body.surfaceId, catalogId);
+      const legacy = catalogId === A2UI_CATALOG_V1 || catalogId === A2UI_CATALOG_V2;
+      const nextBody: Record<string, unknown> = {
+        ...body,
+        catalogId: legacy || catalogId === "https://a2ui.org/specification/v1_0/basic_catalog.json" ? basicCatalog.id : catalogId,
+      };
+      if (body.components !== undefined) {
+        nextBody.components = normalizeComponentList(body.components, legacy);
+      }
+      return { version: "1.0", createSurface: nextBody } as unknown as ProcessableMessage;
     }
-    const surface = surfaces.get(body.surfaceId);
-    requireThat(surface, "A surface must be created before it is updated or deleted.");
-    if (kind === "deleteSurface") {
-      keys(body, ["surfaceId"]);
-      surfaces.delete(body.surfaceId);
-    } else if (kind === "updateDataModel") {
-      keys(body, ["surfaceId", "path", "value"]);
-      requireThat(body.path === undefined || typeof body.path === "string", "Invalid data model path.");
-      surface.data = setDataPath(surface.data, (body.path as string | undefined) ?? "/", body.value, !("value" in body));
-    } else {
-      keys(body, ["surfaceId", "components"]);
-      applyComponents(surface, body.components, ["messages", at, "updateComponents", "components"]);
+
+    const catalogId = surfaceCatalogs.get(body.surfaceId);
+    requireThat(catalogId !== undefined, "A surface must be created before it is updated or deleted.");
+    const legacy = catalogId === A2UI_CATALOG_V1 || catalogId === A2UI_CATALOG_V2;
+
+    if (kind === "updateComponents") {
+      return {
+        version: "1.0",
+        updateComponents: {
+          surfaceId: body.surfaceId,
+          components: normalizeComponentList(body.components, legacy),
+        },
+      } as unknown as ProcessableMessage;
     }
+    if (kind === "updateDataModel") {
+      const nextBody: Record<string, unknown> = { ...body };
+      if (typeof nextBody.path === "string") pointerSegments(nextBody.path);
+      return { version: "1.0", updateDataModel: nextBody } as unknown as ProcessableMessage;
+    }
+    return { version: "1.0", deleteSurface: { surfaceId: body.surfaceId } } as unknown as ProcessableMessage;
   });
-  for (const surface of surfaces.values()) {
-    requireThat(surface.components.has("root"), "The surface needs a root component.");
-    let visited = 0;
-    const walk = (id: string, ancestors: Set<string>) => {
-      requireThat(!ancestors.has(id) && ancestors.size < 32 && ++visited <= 1024, "Cyclic or excessively large component tree.");
-      const node = surface.components.get(id);
-      requireThat(node, "A component references a missing child.");
-      const next = new Set([...ancestors, id]);
-      node.children?.forEach((child) => walk(child, next));
-    };
-    // Validate detached components too: a later update may connect them to root.
-    for (const id of surface.components.keys()) walk(id, new Set());
-  }
+
+  let views: NormalizedA2UIDocument["views"];
   if (raw.views !== undefined) {
     requireThat(mapping(raw.views), "Expected presentation views.");
     keys(raw.views, ["minimal", "medium"]);
-    for (const view of Object.values(raw.views)) {
+    views = {};
+    for (const [level, view] of Object.entries(raw.views)) {
       requireThat(mapping(view), "Invalid presentation view.");
       keys(view, ["surfaceId", "root"]);
-      requireThat(typeof view.surfaceId === "string" && typeof view.root === "string" &&
-        surfaces.get(view.surfaceId)?.components.has(view.root), "Presentation view references a missing component.");
+      requireThat(typeof view.surfaceId === "string" && typeof view.root === "string", "Invalid presentation view.");
+      views[level as "minimal" | "medium"] = { surfaceId: view.surfaceId, root: view.root };
     }
   }
-  return [...surfaces.values()];
+
+  return { messages, views };
 }
 
-/** Minimal views never silently omit inputs from a larger interactive form. */
-export function a2uiPresentation(raw: unknown, surfaces: A2UISurface[], level: "minimal" | "medium" | "max") {
-  const explicit = mapping(raw) && mapping(raw.views) ? raw.views[level] : undefined;
-  const selected = mapping(explicit)
-    ? surfaces.filter((surface) => surface.id === explicit.surfaceId).map((surface) => ({ surface, root: String(explicit.root) }))
-    : surfaces.map((surface) => ({ surface, root: "root" }));
-  if (level !== "minimal") return { selected, fits: true };
-  let nodes = 0, fields = 0, actions = 0;
-  const walk = (surface: A2UISurface, id: string) => {
-    const node = surface.components.get(id)!;
-    nodes++;
-    if (node.component === "TextField" || node.component === "CheckBox") fields++;
-    if (node.component === "Button") actions++;
-    node.children?.forEach((child) => walk(surface, child));
-  };
-  selected.forEach(({ surface, root }) => walk(surface, root));
-  return { selected, fits: selected.length <= 1 && nodes <= 16 && fields <= 3 && actions <= 2 };
+function applyPresentationView(
+  doc: NormalizedA2UIDocument,
+  level: "minimal" | "medium" | "max",
+): ProcessableMessage[] {
+  if (level === "max" || !doc.views?.[level]) return doc.messages;
+  const target = doc.views[level]!;
+  if (target.root === "root") return doc.messages;
+  // Promote the selected view's root component to be rendered as "root" by A2uiSurface
+  return doc.messages.map((msg) => {
+    const m = msg as unknown as Record<string, unknown>;
+    if ("createSurface" in m && mapping(m.createSurface) && m.createSurface.surfaceId === target.surfaceId && Array.isArray(m.createSurface.components)) {
+      const comps = m.createSurface.components as Record<string, unknown>[];
+      return {
+        ...m,
+        createSurface: {
+          ...m.createSurface,
+          components: [
+            ...comps.filter((c) => c.id !== "root"),
+            { id: "root", component: "Column", children: [target.root] },
+          ],
+        },
+      } as unknown as ProcessableMessage;
+    }
+    return msg;
+  });
+}
+
+export function createA2UIProcessor(
+  raw: unknown,
+  options?: { presentation?: "minimal" | "medium" | "max"; onAction?: ActionListener },
+): { processor: MessageProcessor<ReactCatalogComponent>; surfaces: SurfaceModel<ReactCatalogComponent>[]; fits: boolean } {
+  const normalized = normalizeA2UIDocument(raw);
+  const fullProcessor = new MessageProcessor([cheersBasicCatalog], options?.onAction);
+  const fullErrors = fullProcessor.processMessagesWithErrors(normalized.messages);
+  if (fullErrors.length > 0) {
+    fullProcessor.dispose();
+    const first = fullErrors[0] as { message?: string; error?: { message?: string } };
+    throw new Error(first.message ?? first.error?.message ?? "Invalid A2UI document.");
+  }
+
+  if (normalized.views) {
+    for (const view of Object.values(normalized.views)) {
+      if (!view) continue;
+      const surface = fullProcessor.getSurface(view.surfaceId);
+      requireThat(surface && surface.componentsModel.get(view.root), "Presentation view references a missing component.");
+    }
+  }
+
+  const level = options?.presentation ?? "max";
+  const viewSpec = level !== "max" ? normalized.views?.[level] : undefined;
+  let activeProcessor = fullProcessor;
+  if (viewSpec && viewSpec.root !== "root") {
+    fullProcessor.dispose();
+    activeProcessor = new MessageProcessor([cheersBasicCatalog], options?.onAction);
+    const viewErrors = activeProcessor.processMessagesWithErrors(applyPresentationView(normalized, level));
+    if (viewErrors.length > 0) {
+      activeProcessor.dispose();
+      throw new Error("Presentation view could not be rendered.");
+    }
+  }
+
+  const allSurfaces = Array.from(activeProcessor.getSurfaces().values()) as SurfaceModel<ReactCatalogComponent>[];
+  for (const surface of allSurfaces) {
+    requireThat(surface.componentsModel.get("root"), "The surface needs a root component.");
+  }
+  const selected = viewSpec ? allSurfaces.filter((s) => s.id === viewSpec.surfaceId) : allSurfaces;
+  const fits = level !== "minimal" || checkMinimalFits(selected);
+  return { processor: activeProcessor, surfaces: selected, fits };
+}
+
+function checkMinimalFits(surfaces: SurfaceModel<ReactCatalogComponent>[]): boolean {
+  if (surfaces.length > 1) return false;
+  let nodes = 0;
+  let fields = 0;
+  let actions = 0;
+  const visited = new Set<string>();
+  for (const surface of surfaces) {
+    const walk = (id: string) => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      const comp = surface.componentsModel.get(id);
+      if (!comp) return;
+      nodes++;
+      if (comp.type === "TextField" || comp.type === "CheckBox" || comp.type === "ChoicePicker" || comp.type === "Slider" || comp.type === "DateTimeInput") {
+        fields++;
+      }
+      if (comp.type === "Button") actions++;
+      const props = comp.properties as Record<string, unknown>;
+      if (Array.isArray(props.children)) {
+        for (const child of props.children) {
+          if (typeof child === "string") walk(child);
+        }
+      }
+      if (typeof props.child === "string") walk(props.child);
+    };
+    walk("root");
+  }
+  return nodes <= 16 && fields <= 3 && actions <= 2;
 }
 
 export function acceptsA2UIDocument(raw: unknown): boolean {
-  try { return parseA2UIDocument(raw).length > 0; } catch { return false; }
+  try {
+    const { processor, surfaces } = createA2UIProcessor(raw);
+    processor.dispose();
+    return surfaces.length > 0;
+  } catch {
+    return false;
+  }
 }

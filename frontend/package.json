@@ -20,6 +20,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@a2ui/react": "^0.16.1",
+    "@a2ui/web_core": "^0.16.1",
     "@babel/standalone": "^8.0.7",
     "@cheers/canvas-runtime": "file:../packages/cheers-canvas-runtime",
     "@codemirror/commands": "^6.10.4",
@@ -56,6 +58,7 @@
     "tailwind-merge": "^3.7.0",
     "workbox-window": "^7.4.1",
     "yaml": "^2.9.0",
+    "zod": "^4.6.7",
     "zustand": "^5.1.0"
   },
   "devDependencies": {
