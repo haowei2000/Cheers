@@ -47,7 +47,7 @@ mime_guess = "2"
 # Filesystem watch for remote-workspace live-refresh (workspace_req watch/unwatch →
 # unsolicited workspace_event frames). We drive it with a manual ~300ms debounce
 # (no notify-debouncer crate) so event coalescing + the watch TTL live in one task.
-notify = "8"
+notify = "9"
 rand = "0.10"
 # Self-update downloads (signed manifest + binaries) through the gateway's
 # release proxy. rustls-only, matching tokio-tungstenite's TLS stack.
